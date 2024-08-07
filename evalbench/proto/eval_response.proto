@@ -1,0 +1,9 @@
+edition = "2023";
+
+package cloud_databases_nl2sql_eval_sqlgen_proto;
+
+option java_multiple_files = true;
+
+message EvalResponse {
+  string response = 1;
+}

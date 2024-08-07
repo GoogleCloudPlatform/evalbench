@@ -8,3 +8,6 @@ pymysql
 sqlalchemy
 pyaml_env
 pyarrow
+absl-py
+tabulate
+grpcio

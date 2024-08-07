@@ -1,0 +1,12 @@
+dataset_config: ../datasets/hackathon/air_travel.json
+database_config: configs/db/postgres.yaml
+model_config: configs/model/base_sqlgen_passthrough.yaml
+prompt_generator: 'NOOPGenerator'
+eval_ids: []
+scorers:
+  exact_match:
+  recall_match:
+  vertexmatcher:
+    gcp_project_location: "us-central1"
+    gcp_project_id: "cloud-db-nl2sql"
+    model: "gemini-1.0-pro-001"

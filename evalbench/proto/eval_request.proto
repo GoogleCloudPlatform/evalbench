@@ -1,0 +1,18 @@
+edition = "2023";
+
+package cloud_databases_nl2sql_eval_sqlgen_proto;
+
+option java_multiple_files = true;
+
+message EvalRequest {
+  string id = 1;
+  string query_type = 2;
+  string database = 3;
+  string nl_prompt = 4;
+  repeated string dialects = 5;
+  string golden_sql = 6;
+  string eval_query = 7;
+  string setup_sql = 8;
+  string cleanup_sql = 9;
+  repeated string tags = 10;
+}

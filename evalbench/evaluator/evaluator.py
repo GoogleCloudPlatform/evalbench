@@ -85,9 +85,9 @@ class Evaluator:
             )
             eval_outputs.append(eval_output)
 
-        with open("eval_output.json", "w") as f:
+        with open("/tmp/eval_output.json", "w") as f:
             json.dump(eval_outputs, f, sort_keys=True, indent=4, default=str)
 
-        with open("score_result.json", "w") as f:
+        with open("/tmp/score_result.json", "w") as f:
             json.dump(scoring_results, f, sort_keys=True, indent=4, default=str)
         return job_id, run_time

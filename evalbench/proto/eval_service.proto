@@ -1,0 +1,15 @@
+edition = "2023";
+
+package cloud_databases_nl2sql_eval_sqlgen_proto;
+
+import "eval_request.proto";
+import "eval_response.proto";
+
+option java_multiple_files = true;
+
+service EvalService {
+  // Evaluate.
+  rpc Eval(stream EvalRequest) returns (EvalResponse) {
+    // option deadline = 1800;
+  }
+}
