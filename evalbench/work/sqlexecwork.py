@@ -36,7 +36,12 @@ class SQLExecWork(Work):
                 .replace("`", "")
             )
             generated_result, generated_error = self.db.execute(self.eval_result["sanitized_sql"])
-            golden_result, golden_error = self.db.execute(self.eval_result["golden_sql"])
+            golden_sql = ""
+            if isinstance(self.eval_result["golden_sql"], str):
+                golden_sql = self.eval_result["golden_sql"]
+            elif isinstance(self.eval_result["golden_sql"], list) and len(self.eval_result["golden_sql"]) > 0:
+                golden_sql = self.eval_result["golden_sql"][0]
+            golden_result, golden_error = self.db.execute(golden_sql)
 
         self.eval_result["generated_result"] = generated_result
         self.eval_result["generated_error"] = generated_error
