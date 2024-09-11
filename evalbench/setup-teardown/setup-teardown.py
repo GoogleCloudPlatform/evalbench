@@ -1,12 +1,15 @@
 import sys
+import importlib
 import logging
 import argparse
-sys.path.append('..')
 
-from util.config import load_yaml_config
 from google.protobuf import text_format
 from schema_detail_pb2 import SchemaDetails
-import databaseHandler
+
+sys.path.append('..')
+
+util_config = importlib.import_module("util.config")
+databaseHandler = importlib.import_module("databaseHandler")
 
 logging.getLogger().setLevel(logging.INFO)
 
@@ -23,10 +26,15 @@ def main():
 
     parser = argparse.ArgumentParser(description="Setup Teardown Script")
     parser.add_argument("--setup_config_file", type=str, required=True, help="Path to the setup configuration file")
-    parser.add_argument("--no_data", action="store_true", help="Optional flag to indicate no data actions. Default is False.")
+    parser.add_argument(
+        "--no_data",
+        action="store_true",
+        help="Optional flag to indicate no data actions. Default is False."
+    )
+
     args = parser.parse_args()
 
-    setup_config = load_yaml_config(args.setup_config_file)
+    setup_config = util_config.load_yaml_config(args.setup_config_file)
     if not setup_config:
         logging.error("Setup configuration file not found.")
         return
@@ -35,7 +43,7 @@ def main():
     database_name = setup_config['database_name']
 
     setup_file = f"schema_details/bat/{database_name}/setup.yaml"
-    setup = load_yaml_config(setup_file)
+    setup = util_config.load_yaml_config(setup_file)
     if not setup:
         logging.error("setup.yaml file not found.")
         return
@@ -58,7 +66,7 @@ def main():
         sections_to_run = ["pre_setup", "schema_creation", "post_schema_creation"]
     else:
         sections_to_run = ["pre_setup", "schema_creation", "post_schema_creation",
-                            "data_insertion", "post_setup", "post_data_insertion_checks"]
+                           "data_insertion", "post_setup", "post_data_insertion_checks"]
 
     for section in sections_to_run:
         if section in ["pre_setup", "post_schema_creation", "post_setup", "post_data_insertion_checks"]:
@@ -67,7 +75,10 @@ def main():
 
     # Create schema creation commands
     schema = parse_textproto_file(f"schema_details/bat/{database_name}/{db_engine}.textproto")
-    setup_commands['schema_creation'] = db_handler.create_schema_statements(schema, setup['setup_commands']['excluded_columns'][db_engine])
+    setup_commands['schema_creation'] = db_handler.create_schema_statements(
+        schema,
+        setup['setup_commands']['excluded_columns'][db_engine]
+    )
 
     # Create data insertion commands
     if not args.no_data:
