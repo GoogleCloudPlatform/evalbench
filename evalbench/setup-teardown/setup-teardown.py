@@ -63,7 +63,7 @@ def main():
     }
 
     if args.no_data:
-        sections_to_run = ["pre_setup", "schema_creation", "post_schema_creation"]
+        sections_to_run = ["pre_setup", "schema_creation", "post_schema_creation", "post_setup"]
     else:
         sections_to_run = ["pre_setup", "schema_creation", "post_schema_creation",
                            "data_insertion", "post_setup", "post_data_insertion_checks"]
