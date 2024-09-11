@@ -21,17 +21,22 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 
 _sym_db = _symbol_database.Default()
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x13schema_detail.proto\"2\n\rColumnDetails\x12\x0e\n\x06\x63olumn\x18\x01 \x01(\t\x12\x11\n\tdata_type\x18\x02 \x01(\t\">\n\x0cTableDetails\x12\r\n\x05table\x18\x01 \x01(\t\x12\x1f\n\x07\x63olumns\x18\x02 \x03(\x0b\x32\x0e.ColumnDetails\".\n\rSchemaDetails\x12\x1d\n\x06tables\x18\x01 \x03(\x0b\x32\r.TableDetailsb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
+    b'\n\x13schema_detail.proto\"2\n\rColumnDetails\x12\x0e\n\x06\x63olumn\x18\x01 \x01(\t'
+    b'\x12\x11\n\tdata_type\x18\x02 \x01(\t\">\n\x0cTableDetails\x12\r\n\x05table\x18\x01 '
+    b'\x01(\t\x12\x1f\n\x07\x63olumns\x18\x02 \x03(\x0b\x32\x0e.ColumnDetails\".\n\rSchema'
+    b'Details\x12\x1d\n\x06tables\x18\x01 \x03(\x0b\x32\r.TableDetailsb\x06proto3'
+)
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'schema_detail_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
     DESCRIPTOR._loaded_options = None
-    _globals['_COLUMNDETAILS']._serialized_start=23
-    _globals['_COLUMNDETAILS']._serialized_end=73
-    _globals['_TABLEDETAILS']._serialized_start=75
-    _globals['_TABLEDETAILS']._serialized_end=137
-    _globals['_SCHEMADETAILS']._serialized_start=139
-    _globals['_SCHEMADETAILS']._serialized_end=185
+    _globals['_COLUMNDETAILS']._serialized_start = 23
+    _globals['_COLUMNDETAILS']._serialized_end = 73
+    _globals['_TABLEDETAILS']._serialized_start = 75
+    _globals['_TABLEDETAILS']._serialized_end = 137
+    _globals['_SCHEMADETAILS']._serialized_start = 139
+    _globals['_SCHEMADETAILS']._serialized_end = 185
 # @@protoc_insertion_point(module_scope)
