@@ -118,7 +118,7 @@ setup_commands:
     - "ALTER TABLE ONLY public.tbl_user_activity ALTER COLUMN activity_id SET DEFAULT nextval('public.tbl_user_activity_activity_id_seq'::regclass);"
     - "ALTER TABLE ONLY public.tbl_user_roles ALTER COLUMN role_id SET DEFAULT nextval('public.tbl_user_roles_role_id_seq'::regclass);"
     mysql:
-    - "ALTER TABLE tbl_attachments ADD PRIMARY KEY (`attachment_id`), ADD KEY `fk_post_id` (`post_id`), ADD KEY `fk_user_id` (`user_id`), ADD KEY `fk_parent_attachment_id` (`parent_attachment_id`), ADD CONSTRAINT `fk_parent_attachment_id` FOREIGN KEY (`parent_attachment_id`) REFERENCES `tbl_attachments` (`attachment_id`)"
+    - "ALTER TABLE tbl_attachments ADD PRIMARY KEY (`attachment_id`), ADD KEY `fk_post_id` (`post_id`), ADD KEY `fk_user_id` (`user_id`), ADD KEY `fk_parent_attachment_id` (`parent_attachment_id`)"
     - "ALTER TABLE tbl_categories_hierarchy ADD PRIMARY KEY (`category_hierarchy_id`), ADD KEY `category_id` (`category_id`), ADD KEY `created_by` (`created_by`), ADD KEY `updated_by` (`updated_by`)"
     - "ALTER TABLE tbl_categories ADD PRIMARY KEY (`category_id`), ADD KEY `created_by` (`created_by`), ADD KEY `updated_by` (`updated_by`)"
     - "ALTER TABLE tbl_comments ADD PRIMARY KEY (`comment_id`), ADD KEY `user_id` (`user_id`), ADD KEY `post_id` (`post_id`)"
@@ -139,7 +139,7 @@ setup_commands:
     - "ALTER TABLE tbl_user_roles ADD PRIMARY KEY (`role_id`), ADD KEY `created_by` (`created_by`), ADD KEY `updated_by` (`updated_by`)"
     - "ALTER TABLE tbl_users ADD PRIMARY KEY (`user_id`)"
     # Foreign key constraints
-    - "ALTER TABLE tbl_attachments ADD CONSTRAINT `fk_post_id` FOREIGN KEY (`post_id`) REFERENCES `tbl_posts` (`post_id`), ADD CONSTRAINT `fk_user_id` FOREIGN KEY (`user_id`) REFERENCES `tbl_users` (`user_id`)"
+    - "ALTER TABLE tbl_attachments ADD CONSTRAINT `fk_post_id` FOREIGN KEY (`post_id`) REFERENCES `tbl_posts` (`post_id`), ADD CONSTRAINT `fk_user_id` FOREIGN KEY (`user_id`) REFERENCES `tbl_users` (`user_id`), ADD CONSTRAINT `fk_parent_attachment_id` FOREIGN KEY (`parent_attachment_id`) REFERENCES `tbl_attachments` (`attachment_id`)"
     - "ALTER TABLE tbl_categories_hierarchy ADD CONSTRAINT `tbl_categories_hierarchy_ibfk_1` FOREIGN KEY (`category_id`) REFERENCES `tbl_categories` (`category_id`), ADD CONSTRAINT `tbl_categories_hierarchy_ibfk_2` FOREIGN KEY (`created_by`) REFERENCES `tbl_users` (`user_id`), ADD CONSTRAINT `tbl_categories_hierarchy_ibfk_3` FOREIGN KEY (`updated_by`) REFERENCES `tbl_users` (`user_id`)"
     - "ALTER TABLE tbl_categories ADD CONSTRAINT `tbl_categories_ibfk_1` FOREIGN KEY (`created_by`) REFERENCES `tbl_users` (`user_id`), ADD CONSTRAINT `tbl_categories_ibfk_2` FOREIGN KEY (`updated_by`) REFERENCES `tbl_users` (`user_id`)"
     - "ALTER TABLE tbl_comments ADD CONSTRAINT `tbl_comments_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `tbl_users` (`user_id`), ADD CONSTRAINT `tbl_comments_ibfk_2` FOREIGN KEY (`post_id`) REFERENCES `tbl_posts` (`post_id`)"

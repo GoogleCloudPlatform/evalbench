@@ -24,13 +24,21 @@ class MYSQLHandler(DBHandler):
 
         for table in schema.tables:
             table_name = table.table
-            columns = [
-                f"{column.column} {column.data_type}"
-                for column in table.columns
-                if column.column not in excluded_columns
-            ]
+            primary_key = None
+            columns = []
+
+            for column in table.columns:
+                column_def = f"`{column.column}` {column.data_type}"
+                if "AUTO_INCREMENT" in column.data_type.upper():
+                    primary_key = column.column
+                if column.column not in excluded_columns:
+                    columns.append(column_def)
 
             columns_str = ",\n    ".join(columns)
+
+            if primary_key:
+                columns_str += f",\n    PRIMARY KEY (`{primary_key}`)"
+
             create_statement = f"CREATE TABLE {table_name} (\n    {columns_str}\n);"
             create_statements.append(create_statement)
 
