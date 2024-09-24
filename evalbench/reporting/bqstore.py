@@ -4,6 +4,7 @@ import logging
 from enum import Enum
 
 STORETYPE = Enum('StoreType', ['CONFIGS', 'EVALS', 'SCORES', "SUMMARY"])
+_CHUNK_SIZE = 20
 
 project_id = "cloud-db-nl2sql"
 dataset_id = "{}.evalbench".format(project_id)
@@ -11,6 +12,24 @@ configs_table = "{}.configs".format(dataset_id)
 results_table = "{}.results".format(dataset_id)
 scores_table = "{}.scores".format(dataset_id)
 summary_table = "{}.summary".format(dataset_id)
+
+
+def _split_dataframe(df, chunk_size):
+    """
+    Splits a pandas DataFrame into chunks of a specified size.
+
+    Args:
+      df: The DataFrame to split.
+      chunk_size: The desired size of each chunk.
+
+    Yields:
+      A generator that yields each chunk of the DataFrame.
+    """
+    num_chunks = len(df) // chunk_size + (len(df) % chunk_size > 0)
+    for i in range(num_chunks):
+        start = i * chunk_size
+        end = (i + 1) * chunk_size  # Py/Pandas slicing handles not going out of bound
+        yield df[start:end]
 
 
 def store(df, STORETYPE):
@@ -35,5 +54,8 @@ def store(df, STORETYPE):
     elif STORETYPE == STORETYPE.SUMMARY:
         table = summary_table
 
-    job = client.load_table_from_dataframe(df, table, job_config=job_config)
-    job.result()  # Wait for the job to complete.
+    # Chunk this to avoid BQ OOM
+    job_config.write_disposition = bigquery.job.WriteDisposition.WRITE_APPEND
+    for chunk in _split_dataframe(df, _CHUNK_SIZE):
+        job = client.load_table_from_dataframe(chunk, table, job_config=job_config)
+        job.result()  # Wait for the job to complete.
