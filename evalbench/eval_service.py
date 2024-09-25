@@ -209,4 +209,4 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         summary_scores_df["run_time"] = run_time
         report.store(scores_df, bqstore.STORETYPE.SCORES)
         report.store(summary_scores_df, bqstore.STORETYPE.SUMMARY)
-        return eval_response_pb2.EvalResponse(response=f"ack")
+        return eval_response_pb2.EvalResponse(response=f"{job_id}")
