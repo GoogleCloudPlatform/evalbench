@@ -118,10 +118,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             dataset_config_json, experiment_config
         )
         session["db_config"]["database_name"] = database
-        dataset, database = load_dataset_from_json(
-            dataset_config_json, experiment_config
-        )
-        session["db_config"]["database_name"] = database
+
         for eval_input in dataset:
             if self.eval_ids is not None and eval_input.id not in self.eval_ids:
                 continue
