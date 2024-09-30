@@ -1,6 +1,7 @@
 """A gRPC servicer that handles EvalService requests."""
 
 from collections.abc import AsyncIterator
+import pathlib
 
 from absl import flags
 from absl import logging
@@ -191,4 +192,9 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         summary_scores_df["run_time"] = run_time
         report.store(scores_df, bqstore.STORETYPE.SCORES)
         report.store(summary_scores_df, bqstore.STORETYPE.SUMMARY)
+
+        # k8s emptyDir /tmp does not auto cleanup, so we explicitly delete
+        pathlib.Path(f"/tmp/eval_output_{job_id}.json").unlink()
+        pathlib.Path(f"/tmp/score_result_{job_id}.json").unlink()
+
         return eval_response_pb2.EvalResponse(response=f"{job_id}")
