@@ -35,7 +35,7 @@ def compare(eval_output_item: EvalOutput, experiment_config: dict[str, str], sco
         )
     if "returned_sql" in scorers:
         comparators.append(returnedsql.ReturnedSQL(scorers["returned_sql"]))
-    
+
     comparators.append(errorcategorizer.ErrorCategorizer())
 
     for comp in comparators:
