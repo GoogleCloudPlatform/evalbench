@@ -45,8 +45,10 @@ class LLMRater(comparator.Comparator):
         nl_prompt: str,
         golden_query: str,
         golden_execution_result: str,
+        golden_error: str,
         generated_query: str,
         generated_execution_result: str,
+        generated_error: str,
     ) -> Tuple[float, str]:
         only_first_n = 50
         if len(golden_execution_result) > only_first_n:

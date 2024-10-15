@@ -27,8 +27,10 @@ class Comparator(abc.ABC):
         nl_prompt: Any,
         golden_query: Any,
         golden_execution_result: Any,
+        golden_error: Any,
         generated_query: Any,
         generated_execution_result: Any,
+        generated_error: Any,
     ) -> Tuple[float, str]:
         """Abstract method to compare two execution results.
 

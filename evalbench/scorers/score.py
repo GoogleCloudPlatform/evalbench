@@ -7,6 +7,7 @@ from scorers import recallmatcher
 from scorers import vertextmatcher
 from scorers import llmrater
 from scorers import returnedsql
+from scorers import errorcategorizer
 from dataset.evaloutput import EvalOutput
 import logging
 
@@ -34,6 +35,8 @@ def compare(eval_output_item: EvalOutput, experiment_config: dict[str, str], sco
         )
     if "returned_sql" in scorers:
         comparators.append(returnedsql.ReturnedSQL(scorers["returned_sql"]))
+    
+    comparators.append(errorcategorizer.ErrorCategorizer())
 
     for comp in comparators:
         score = 0
@@ -44,8 +47,10 @@ def compare(eval_output_item: EvalOutput, experiment_config: dict[str, str], sco
                     eval_output_item["nl_prompt"],
                     eval_output_item["golden_sql"],
                     eval_output_item["golden_result"],
+                    eval_output_item["golden_error"],
                     eval_output_item["generated_sql"],
                     eval_output_item["generated_result"],
+                    eval_output_item["generated_error"],
                 )
                 comparison_result.score = score
                 comparison_result.comparison_logs = logs

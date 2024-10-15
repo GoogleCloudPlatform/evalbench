@@ -81,8 +81,10 @@ class RecallMatcher(Comparator):
         nl_prompt: str,
         golden_query: str,
         golden_execution_result: list[str],
+        golden_error: str,
         generated_query: str,
         generated_execution_result: list[str],
+        generated_error: str,
     ) -> Tuple[float, str]:
         """Use the recall strategy to compare results.
 
