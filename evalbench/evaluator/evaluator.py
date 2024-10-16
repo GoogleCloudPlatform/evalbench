@@ -168,7 +168,7 @@ class Evaluator:
             ]
             if eval_output["generated_sql"] is not None:
                 eval_output["generated_sql"] = sqlparse.format(
-                    eval_output["generated_sql"],reindent=True, keyword_case='upper'
+                    eval_output["generated_sql"], reindent=True, keyword_case='upper'
                 )
 
         with open(f"/tmp/eval_output_{job_id}.json", "w") as f:
