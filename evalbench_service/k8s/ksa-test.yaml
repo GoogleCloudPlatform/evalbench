@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: evalbench-test-ksa
+  namespace: evalbench-test-namespace
+  annotations:
+    iam.gke.io/gcp-service-account: "evalbench@cloud-db-nl2sql.iam.gserviceaccount.com"
