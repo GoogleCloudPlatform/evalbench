@@ -5,6 +5,7 @@ import queue
 import logging
 import databases
 import setup_teardown
+import sqlparse
 from databases.util import is_bat_dataset
 from util import printProgressBar
 from work import promptgenwork
@@ -158,6 +159,17 @@ class Evaluator:
                 logging.info("Dropping temp databases")
                 setup_teardown.drop_temp_databases(db_config, temp_databases)
                 logging.info("Dropped")
+
+        # Format golden and generated sql
+        for eval_output in eval_outputs:
+            eval_output["golden_sql"] = [
+                sqlparse.format(sql, reindent=True, keyword_case='upper') if sql is not None else None
+                for sql in eval_output["golden_sql"]
+            ]
+            if eval_output["generated_sql"] is not None:
+                eval_output["generated_sql"] = sqlparse.format(
+                    eval_output["generated_sql"],reindent=True, keyword_case='upper'
+                )
 
         with open(f"/tmp/eval_output_{job_id}.json", "w") as f:
             json.dump(eval_outputs, f, sort_keys=True, indent=4, default=str)

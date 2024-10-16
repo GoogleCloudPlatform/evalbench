@@ -20,3 +20,4 @@ aiologger
 jsonschema
 ratelimit
 backoff
+sqlparse

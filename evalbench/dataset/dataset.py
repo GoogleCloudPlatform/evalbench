@@ -63,7 +63,7 @@ def load_dataset_from_newFormat(dataset: Sequence[dict], dialect: str):
             tags=item["tags"],
             other=build_normalized_other(item["other"])
         )
-        input_items[eval_input.query_type].append(eval_input)
+        input_items[eval_input.query_type.lower()].append(eval_input)
     return input_items
 
 
