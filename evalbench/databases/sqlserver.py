@@ -19,6 +19,7 @@ class SQLServerDB(DB):
         db_user = db_config["user_name"]
         db_pass_secret_path = db_config["password"]
         db_pass = get_db_secret(db_pass_secret_path)
+        self.db_config = db_config
         self.db_name = db_config["database_name"]
         self.execs_per_minute = db_config["max_executions_per_minute"]
         self.semaphore = Semaphore(self.execs_per_minute)

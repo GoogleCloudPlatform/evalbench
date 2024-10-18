@@ -63,7 +63,6 @@ class Evaluator:
         job_id = f"{uuid.uuid4()}"
         run_time = datetime.datetime.now()
 
-        dialect = self.db.db_config["db"]
         db_config = self.db.db_config
 
         dataset = self.filter_dataset(dataset)
