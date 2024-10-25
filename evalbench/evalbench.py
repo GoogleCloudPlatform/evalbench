@@ -59,12 +59,6 @@ def main(argv: Sequence[str]) -> None:
                                      database=database, create_user=True)
     db = databases.get_database(db_config)
 
-    query_types = experiment_config.get("query_types", [])
-    if not query_types:
-        query_types = ["dql", "dml", "ddl"]
-
-    dataset = {k: v for k, v in dataset.items() if k in query_types}
-
     # Load the Query Generator
     model_generator = models.get_generator(model_config)
 

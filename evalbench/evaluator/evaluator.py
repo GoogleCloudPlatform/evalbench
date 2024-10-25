@@ -39,16 +39,21 @@ class Evaluator:
         return list(expanded_ids)
 
     def filter_dataset(self, dataset):
-        filtered_dataset = {}
+        query_types = self.experiment_config.get("query_types", [])
+        if not query_types:
+            query_types = ["dql", "dml", "ddl"]
+
+        filtered_dataset = {k: [] for k in query_types if k in dataset}
 
         for query_type, queries in dataset.items():
-            filtered_queries = []
-            for query in queries:
-                if len(self.eval_ids) > 0 and query.id not in self.eval_ids:
-                    continue
-                if len(self.tags) > 0 and not any(tag in query.tags for tag in self.tags):
-                    continue
-                filtered_queries.append(query)
+            if query_type not in query_types:
+                continue
+
+            filtered_queries = [
+                query for query in queries
+                if (not self.eval_ids or query.id in self.eval_ids) and
+                (not self.tags or any(tag in query.tags for tag in self.tags))
+            ]
             filtered_dataset[query_type] = filtered_queries
         return filtered_dataset
 
