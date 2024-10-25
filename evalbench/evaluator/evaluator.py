@@ -51,8 +51,8 @@ class Evaluator:
 
             filtered_queries = [
                 query for query in queries
-                if (not self.eval_ids or query.id in self.eval_ids) and
-                (not self.tags or any(tag in query.tags for tag in self.tags))
+                if (not self.eval_ids or query.id in self.eval_ids) and (
+                    not self.tags or any(tag in query.tags for tag in self.tags))
             ]
             filtered_dataset[query_type] = filtered_queries
         return filtered_dataset
