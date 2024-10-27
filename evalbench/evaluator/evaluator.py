@@ -91,6 +91,7 @@ class Evaluator:
             self.scoringrunner.futures.clear()
 
             db = self.db
+            db_queue = None
             if query_type == "dql" and is_bat_dataset(db_config["database_name"]):
                 config = db_config.copy()
                 config["user_name"] = "tmp_dql"
@@ -133,11 +134,8 @@ class Evaluator:
                 if query_type == "ddl":
                     db = db_queue.get()
 
-                work = sqlexecwork.SQLExecWork(db, self.experiment_config, eval_output)
+                work = sqlexecwork.SQLExecWork(db, self.experiment_config, eval_output, db_queue)
                 self.sqlrunner.execute_work(work)
-
-                if query_type == "ddl":
-                    db_queue.put(db)
 
             for future in concurrent.futures.as_completed(self.sqlrunner.futures):
                 eval_output = future.result()
