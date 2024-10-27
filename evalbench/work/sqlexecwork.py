@@ -8,7 +8,7 @@ import setup_teardown
 class SQLExecWork(Work):
     """SQLExecWork Generates SQL from the generator."""
 
-    def __init__(self, db: Any, experiment_config: dict, eval_result: dict, db_queue = None):
+    def __init__(self, db: Any, experiment_config: dict, eval_result: dict, db_queue=None):
         self.db = db
         self.experiment_config = experiment_config
         self.eval_result = eval_result
