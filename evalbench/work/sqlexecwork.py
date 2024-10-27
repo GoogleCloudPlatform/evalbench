@@ -8,7 +8,11 @@ import setup_teardown
 class SQLExecWork(Work):
     """SQLExecWork Generates SQL from the generator."""
 
+<<<<<<< HEAD
     def __init__(self, db: Any, experiment_config: dict, eval_result: dict, db_queue=None):
+=======
+    def __init__(self, db: Any, experiment_config: dict, eval_result: dict, db_queue = None):
+>>>>>>> 448c517 (Fix logic for distributing temp databases between runners)
         self.db = db
         self.experiment_config = experiment_config
         self.eval_result = eval_result
