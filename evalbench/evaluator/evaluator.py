@@ -66,7 +66,7 @@ class Evaluator:
         self.sqlrunner = mprunner.MPRunner(10)
         self.scoringrunner = mprunner.MPRunner(10)
         job_id = f"{uuid.uuid4()}"
-        run_time = datetime.datetime.now()
+        run_time = datetime.datetime.now(datetime.timezone.utc)
 
         db_config = self.db.db_config
 
