@@ -65,7 +65,7 @@ class SQLExecWork(Work):
             generated_result, generated_error = self.execute_sql_flow(self.eval_result["sanitized_sql"],
                                                                       rollback=rollback)
             if self.eval_result["query_type"] == "ddl":
-                self.eval_result["generated_metadata"] = self.db.get_metadata()
+                generated_result = self.db.get_metadata()
 
             golden_sql = ""
             if isinstance(self.eval_result["golden_sql"], str):
@@ -78,7 +78,7 @@ class SQLExecWork(Work):
 
             golden_result, golden_error = self.execute_sql_flow(golden_sql, rollback=rollback)
             if self.eval_result["query_type"] == "ddl":
-                self.eval_result["golden_metadata"] = self.db.get_metadata()
+                golden_result = self.db.get_metadata()
 
         self.eval_result["generated_result"] = generated_result
         self.eval_result["generated_error"] = generated_error
