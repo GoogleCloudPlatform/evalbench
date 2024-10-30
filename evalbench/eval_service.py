@@ -135,7 +135,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                     database=eval_input.database,
                     nl_prompt=eval_input.nl_prompt,
                     dialects=eval_input.dialects,
-                    golden_sql=eval_input.golden_sql,
+                    golden_sql=[q for q in eval_input.golden_sql if q is not None],
                     eval_query=[q for q in eval_input.eval_query if q is not None],
                     setup_sql=[q for q in eval_input.setup_sql if q is not None],
                     cleanup_sql=[q for q in eval_input.cleanup_sql if q is not None],
