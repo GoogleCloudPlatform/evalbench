@@ -16,9 +16,20 @@ def analyze_one_metric(
     original_df_size = int(len(df) / num_scorers)
     df = df[df["generated_sql"].notna()]
     if execution:
-        correct_results_count = len(
-            df[df["generated_error"].isna()]["id"].drop_duplicates()
-        )
+        if 'returned_sql' in df['comparator'].values:
+            correct_results_count = len(
+                df[
+                    (df["generated_error"].isna())
+                    & (df["comparator"] == "returned_sql")
+                    & (df["score"] == 100)
+                ]["id"].drop_duplicates()
+            )
+        else:
+            correct_results_count = len(
+                df[
+                    (df["generated_error"].isna())
+                ]["id"].drop_duplicates()
+            )
     else:
         df = df[df["comparator"] == metric_name]
         correct_results_count = len(df[df["score"] == metric_score])
