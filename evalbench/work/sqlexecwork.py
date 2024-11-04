@@ -34,7 +34,7 @@ class SQLExecWork(Work):
     def get_eval_result(self, is_golden=False):
         eval_result = None
         if self.eval_result["query_type"] == "ddl":
-            eval_result =  self.db.get_metadata()
+            eval_result = self.db.get_metadata()
         elif self.eval_result["query_type"] == "dml":
             if self.eval_result["eval_query"] and len(self.eval_result["eval_query"]) > 0:
                 eval_result, error = self.db.execute(self.eval_result["eval_query"][0])
