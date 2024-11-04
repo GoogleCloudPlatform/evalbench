@@ -14,7 +14,7 @@ class SQLExecWork(Work):
         self.eval_result = eval_result
         self.db_queue = db_queue
 
-    def execute_sql_flow(self, query, rollback=False):
+    def execute_sql_flow(self, query, rollback=False, is_golden=False):
         if self.eval_result["query_type"] == "ddl":
             setup_teardown.setupDatabase(db_config=self.db.db_config, experiment_config=self.experiment_config,
                                          no_data=True, database=self.eval_result["database"])
@@ -23,14 +23,25 @@ class SQLExecWork(Work):
             query = ""
         if self.eval_result["query_type"] in ["dml", "ddl"]:
             self.db.execute(self.eval_result["setup_sql"])
-            if self.eval_result["eval_query"] and len(self.eval_result["eval_query"]) > 0:
-                query = query + " " + self.eval_result['eval_query'][0]
             result, error = self.db.execute(query, rollback=rollback)
+            self.get_eval_result(is_golden=is_golden)
             self.db.execute(self.eval_result["cleanup_sql"])
         else:
             result, error = self.db.execute(query, rollback=rollback)
 
         return result, error
+
+    def get_eval_result(self, is_golden=False):
+        eval_result = None
+        if self.eval_result["query_type"] == "ddl":
+            eval_result =  self.db.get_metadata()
+        elif self.eval_result["query_type"] == "dml":
+            if self.eval_result["eval_query"] and len(self.eval_result["eval_query"]) > 0:
+                eval_result, error = self.db.execute(self.eval_result["eval_query"][0])
+        if is_golden:
+            self.eval_result["golden_eval_results"] = eval_result
+        else:
+            self.eval_result["eval_results"] = eval_result
 
     def run(self, work_config: str = None) -> dict:
         """Runs the work item.
@@ -63,9 +74,7 @@ class SQLExecWork(Work):
             )
 
             generated_result, generated_error = self.execute_sql_flow(self.eval_result["sanitized_sql"],
-                                                                      rollback=rollback)
-            if self.eval_result["query_type"] in ["dml", "ddl"]:
-                self.eval_result["eval_results"] = self.db.get_metadata()
+                                                                      rollback=rollback, is_golden=False)
 
             golden_sql = ""
             if isinstance(self.eval_result["golden_sql"], str):
@@ -76,9 +85,7 @@ class SQLExecWork(Work):
             ):
                 golden_sql = self.eval_result["golden_sql"][0]
 
-            golden_result, golden_error = self.execute_sql_flow(golden_sql, rollback=rollback)
-            if self.eval_result["query_type"] in ["dml", "ddl"]:
-                self.eval_result["golden_eval_results"] = self.db.get_metadata()
+            golden_result, golden_error = self.execute_sql_flow(golden_sql, rollback=rollback, is_golden=True)
 
         self.eval_result["generated_result"] = generated_result
         self.eval_result["generated_error"] = generated_error
