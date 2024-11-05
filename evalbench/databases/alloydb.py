@@ -31,6 +31,7 @@ class AlloyDB(DB):
         self.execs_per_minute = db_config["max_executions_per_minute"]
         self.semaphore = Semaphore(self.execs_per_minute)
         self.max_attempts = 3
+        self.db_config = db_config
 
         # Initialize the Cloud SQL Connector object
         connector = Connector()
@@ -67,7 +68,7 @@ class AlloyDB(DB):
     def get_metadata(self) -> dict:
         pass
 
-    def _execute(self, query: str, rollback: bool = False, use_transaction: bool = True) -> Tuple[Any, float]:
+    def _execute(self, query: str) -> Tuple[Any, float]:
         result = []
         error = None
         rows = None
@@ -83,16 +84,14 @@ class AlloyDB(DB):
             error = str(e)
         return rows, error
 
-    def execute(self, query: str, rollback: bool = False, use_transaction: bool = True) -> Tuple[Any, float]:
+    def execute(self, query: str) -> Tuple[Any, float]:
         if isinstance(self.execs_per_minute, int):
             return rate_limited_execute(
                 query,
-                rollback,
-                use_transaction,
                 self._execute,
                 self.execs_per_minute,
                 self.semaphore,
                 self.max_attempts,
             )
         else:
-            return self._execute(query, rollback, use_transaction)
+            return self._execute(query)

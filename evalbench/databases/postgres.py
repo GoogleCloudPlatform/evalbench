@@ -81,43 +81,75 @@ class PGDB(DB):
         headers, rows = self.generate_schema()
         return generate_ddl(rows, self.db_name)
 
-    def _execute(self, query: str, rollback: bool = False, use_transaction: bool = True) -> Tuple[Any, Any]:
+    def _execute(self, query: str):
         result = []
         error = None
         try:
             with self.engine.connect() as connection:
-                if use_transaction:
-                    with connection.begin() as transaction:
-                        resultset = connection.execute(text(query))
-                        if resultset.returns_rows:
-                            rows = resultset.fetchall()
-                            for r in rows:
-                                result.append(r._asdict())
-                        if rollback:
-                            transaction.rollback()
-                else:
-                    resultset = connection.execution_options(isolation_level="AUTOCOMMIT").execute(text(query))
+                with connection.begin():
+                    resultset = connection.execute(text(query))
                     if resultset.returns_rows:
                         rows = resultset.fetchall()
-                        for r in rows:
-                            result.append(r._asdict())
+                        result.extend(r._asdict() for r in rows)
         except Exception as e:
             error = str(e)
-            # Postgres cannot_connect_now, resource exhausted
             if "57P03" in error:
                 raise DBResourceExhaustedError("DB Exhausted") from e
         return result, error
 
-    def execute(self, query: str, rollback: bool = False, use_transaction: bool = True) -> Tuple[Any, float]:
+    def create_database(self, database_name: str):
+        result = []
+        error = None
+        query = f"CREATE DATABASE {database_name}"
+        try:
+            with self.engine.connect() as connection:
+                connection.execution_options(isolation_level="AUTOCOMMIT").execute(text(query))
+        except Exception as e:
+            error = str(e)
+        return result, error
+    
+    def drop_database(self, database_name: str):
+        result = []
+        error = None
+        query = f"DROP DATABASE {database_name}"
+        try:
+            with self.engine.connect() as connection:
+                connection.execution_options(isolation_level="AUTOCOMMIT").execute(text(query))
+        except Exception as e:
+            error = str(e)
+        return result, error
+
+    def execute_dml(self, query: str, eval_query: str = None):
+        result = []
+        eval_result = []
+        error = None
+        try:
+            with self.engine.connect() as connection:
+                with connection.begin() as transaction:
+                    resultset = connection.execute(text(query))
+                    if resultset.returns_rows:
+                        rows = resultset.fetchall()
+                        result.extend(r._asdict() for r in rows)
+
+                    if eval_query:
+                        eval_resultset = connection.execute(text(eval_query))
+                        if eval_resultset.returns_rows:
+                            eval_rows = eval_resultset.fetchall()
+                            eval_result.extend(r._asdict() for r in eval_rows)
+
+                    transaction.rollback()
+        except Exception as e:
+            error = str(e)
+        return result, eval_result, error
+
+    def execute(self, query: str) -> Tuple[Any, float]:
         if isinstance(self.execs_per_minute, int):
             return rate_limited_execute(
                 query,
-                rollback,
-                use_transaction,
                 self._execute,
                 self.execs_per_minute,
                 self.semaphore,
                 self.max_attempts,
             )
         else:
-            return self._execute(query, rollback, use_transaction)
+            return self._execute(query)

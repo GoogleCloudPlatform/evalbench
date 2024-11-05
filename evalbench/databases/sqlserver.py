@@ -59,7 +59,7 @@ class SQLServerDB(DB):
         # To be implemented
         pass
 
-    def _execute(self, query: str, rollback: bool = False, use_transaction: bool = True) -> Tuple[Any, float]:
+    def _execute(self, query: str) -> Tuple[Any, float]:
         result = []
         error = None
         try:
@@ -73,12 +73,10 @@ class SQLServerDB(DB):
             error = str(e)
         return result, error
 
-    def execute(self, query: str, rollback: bool = False, use_transaction: bool = True) -> Tuple[Any, float]:
+    def execute(self, query: str) -> Tuple[Any, float]:
         if isinstance(self.execs_per_minute, int):
             return rate_limited_execute(
                 query,
-                rollback,
-                use_transaction,
                 self._execute,
                 self.execs_per_minute,
                 self.semaphore,

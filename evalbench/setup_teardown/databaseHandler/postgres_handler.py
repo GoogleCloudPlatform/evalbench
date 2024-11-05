@@ -30,7 +30,10 @@ class PostgresHandler(DBHandler):
         self.db_config = db_config
 
     def drop_all_tables(self):
-        return self.execute(DROP_ALL_TABLE_QUERY)
+        result, error = self.execute(DROP_ALL_TABLE_QUERY)
+        if error:
+            print("Error dropping tables: ", error)
+        return result, error
 
     def create_user(self, db_config: dict):
         result, error = self.execute(CREATE_USER_QUERY)
@@ -69,7 +72,6 @@ class PostgresHandler(DBHandler):
         return insertion_strings
 
     def create_temp_databases(self, num_database: int):
-        commands = []
         db_names = []
 
         def generate_random_string(length=12):
@@ -77,25 +79,22 @@ class PostgresHandler(DBHandler):
 
         for _ in range(num_database):
             temp_db_name = f"temp_db_{generate_random_string()}"
-            create_db_query = f"CREATE DATABASE {temp_db_name};"
-            commands.append(create_db_query)
             db_names.append(temp_db_name)
 
-        for query in commands:
-            self.execute([query], use_transaction=False)
+        db_instance = get_database(self.db_config)
+        for database in db_names:
+            db_instance.create_database(database)
         return db_names
 
     def drop_temp_databases(self, temp_databases: List[str]):
-        if len(temp_databases) == 0:
-            return
-        drop_commands = [f"DROP DATABASE \"{db}\";" for db in temp_databases]
-        for query in drop_commands:
-            self.execute([query], use_transaction=False)
+        db_instance = get_database(self.db_config)
+        for database in temp_databases:
+            db_instance.drop_database(database)
 
-    def execute(self, queries: List[str], use_transaction: bool = True):
+    def execute(self, queries: List[str]):
         result = None
         error = None
         db_instance = get_database(self.db_config)
         combined_query = "\n".join(queries)
-        result, error = db_instance.execute(combined_query, use_transaction=use_transaction)
+        result, error = db_instance.execute(combined_query)
         return result, error

@@ -64,8 +64,6 @@ def is_bat_dataset(database_name):
 
 def rate_limited_execute(
     query: str,
-    rollback: bool,
-    use_transaction: bool,
     execution_method,
     execs_per_minute: int,
     semaphore: Semaphore,
@@ -75,7 +73,7 @@ def rate_limited_execute(
     attempt = 1
     while attempt <= max_attempts:
         try:
-            result, error = execution_method(query, rollback, use_transaction)
+            result, error = execution_method(query)
             break
         except DBResourceExhaustedError as e:
             # exponentially backoff starting at 5 seconds

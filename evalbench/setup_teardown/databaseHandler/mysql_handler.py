@@ -100,21 +100,19 @@ class MYSQLHandler(DBHandler):
             create_db_query = f"CREATE DATABASE {temp_db_name};"
             commands.append(create_db_query)
             db_names.append(temp_db_name)
-        self.execute(commands, use_transaction=False)
+        self.execute(commands)
         return db_names
 
     def drop_temp_databases(self, temp_databases: List[str]):
-        if len(temp_databases) == 0:
-            return
         drop_commands = [f"DROP DATABASE `{db}`;" for db in temp_databases]
         return self.execute(drop_commands)
 
-    def execute(self, queries: List[str], use_transaction: bool = True):
+    def execute(self, queries: List[str]):
         result = None
         error = None
         db_instance = get_database(self.db_config)
         for query in queries:
-            result, error = db_instance.execute(query, use_transaction=use_transaction)
+            result, error = db_instance.execute(query)
             if error:
                 print(f"Error while executing query. error: {error}")
         return result, error
