@@ -12,12 +12,12 @@ class DB(ABC):
         raise NotImplementedError("Subclasses must implement this method")
 
     @abstractmethod
-    def execute(self, query: str) -> Tuple[Any, float]:
-        """Execute a query string and return the execution result and the time spent.
+    def execute(self, query: str) -> Tuple[Any, Any]:
+        """Execute a query string and return the execution result and the error (or None if no error).
         Args:
             query (str): The SQL query to execute.
 
         Returns:
-            Tuple[Any, float]: The result of the query execution and the time spent.
+            Tuple[Any, Any]: The result of the query execution and the error (or None if no error).
         """
         raise NotImplementedError("Subclasses must implement this method")

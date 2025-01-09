@@ -115,7 +115,7 @@ class MySQLDB(DB):
             error = str(e)
         return result, eval_result, error
 
-    def execute(self, query: str) -> Tuple[Any, float]:
+    def execute(self, query: str) -> Tuple[Any, Any]:
         if isinstance(self.execs_per_minute, int):
             return rate_limited_execute(
                 query,

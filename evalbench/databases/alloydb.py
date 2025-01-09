@@ -68,7 +68,7 @@ class AlloyDB(DB):
     def get_metadata(self) -> dict:
         pass
 
-    def _execute(self, query: str) -> Tuple[Any, float]:
+    def _execute(self, query: str) -> Tuple[Any, Any]:
         result = []
         error = None
         rows = None
@@ -84,7 +84,7 @@ class AlloyDB(DB):
             error = str(e)
         return rows, error
 
-    def execute(self, query: str) -> Tuple[Any, float]:
+    def execute(self, query: str) -> Tuple[Any, Any]:
         if isinstance(self.execs_per_minute, int):
             return rate_limited_execute(
                 query,
