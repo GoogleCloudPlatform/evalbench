@@ -35,7 +35,7 @@ def analyze_one_metric(
         correct_results_count = len(df[df["score"] == metric_score])
     logging.info(
         f"{metric_name}: \t{correct_results_count}/{original_df_size} = "
-        f"{round(correct_results_count/original_df_size * 100, 2)}%"
+        f"{round(correct_results_count / original_df_size * 100, 2)}%"
     )
     return {
         "metric_name": metric_name,
