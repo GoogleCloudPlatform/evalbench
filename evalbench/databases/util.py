@@ -3,7 +3,10 @@ import time
 from threading import Semaphore
 from google.cloud import secretmanager_v1
 from typing import Any, Tuple
-
+import sqlparse
+import logging
+import hashlib
+import pickle
 
 class DBResourceExhaustedError(Exception):
     pass
@@ -81,4 +84,42 @@ def rate_limited_execute(
             attempt += 1
     time.sleep(60 / execs_per_minute)
     semaphore.release()
+    return result, error
+
+
+def with_cache_execute(
+    query: str,
+    engine_url: str,
+    execution_method,
+    cache_client: Any,
+) -> Tuple[Any, Any]:
+    try:
+        # Format the query for consistency
+        query = sqlparse.format(query, reindent=True, keyword_case="upper")
+    except Exception as e:
+        logging.warning(f"Failed to format query: {query} with error: {e}")
+
+    # Generate a hash of the query and database URL
+    query_hash = hashlib.sha256((query + str(engine_url)).encode()).hexdigest()
+
+    # Attempt to retrieve from cache
+    try:
+        cached_result = cache_client.get(query_hash)
+        if cached_result:
+            logging.debug(f"Using cached result for query: {query}")
+            return pickle.loads(cached_result), None
+    except Exception as e:
+        logging.warning(f"Failed to retrieve query from cache: {e}")
+
+    # Execute the query using the internal execute method
+    result, error = execution_method(query)
+
+    # If successful, store the result in the cache
+    if not error:
+        try:
+            cache_client.set(query_hash, pickle.dumps(result))
+            logging.debug(f"Cached result for query: {query}")
+        except Exception as e:
+            logging.warning(f"Failed to cache query result: {e}")
+
     return result, error

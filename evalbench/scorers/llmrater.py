@@ -12,7 +12,8 @@ import vertexai
 from vertexai.preview.generative_models import GenerationConfig, GenerativeModel
 
 from scorers import comparator
-from .util import rate_limited_execute, make_hashable
+from .util import rate_limited_execute, make_hashable, with_cache_execute
+import redis
 
 
 class LLMRater(comparator.Comparator):
@@ -40,6 +41,20 @@ class LLMRater(comparator.Comparator):
         self.semaphore = Semaphore(self.execs_per_minute)
         self.max_attempts = 4
         self.exact_match_checker = exactmatcher.ExactMatcher(None)
+        self.cache_client = None
+        if config.get("redis_host", None):
+            try:
+                redis_host = config["redis_host"]
+                redis_port = config.get("redis_port", 6379)
+                redis_db_id = config.get("redis_db_id", 0)
+                logging.debug(f"Found Redis config in db_config. redis_host: {redis_host} redis_port: {redis_port} redis_db_id: {redis_db_id}")
+                self.cache_client = redis.StrictRedis(
+                    host=redis_host,
+                    port=redis_port,
+                    db=redis_db_id)
+            except Exception as e:
+                logging.warning(f"redis_host is found in db_config but failed to connect: {e}")
+
 
     def _is_exact_match(
         self,
@@ -67,6 +82,17 @@ class LLMRater(comparator.Comparator):
             generated_error,
         )
         return score == 100
+
+    def _inference_without_caching(self, prompt):
+        response = rate_limited_execute(
+            prompt=prompt,
+            generation_config=self.generation_config,
+            execution_method=self.model.generate_content,
+            semaphore=self.semaphore,
+            execs_per_minute=self.execs_per_minute,
+            max_attempts=self.max_attempts
+        ).text
+        return response
 
     @staticmethod
     def take_n_uniques(output_list: list, n: int) -> list:
@@ -182,14 +208,23 @@ class LLMRater(comparator.Comparator):
         """
 
         logging.debug("\n --------- prompt:   --------- \n %s ", prompt)
-        response = rate_limited_execute(
-            prompt=prompt,
-            generation_config=self.generation_config,
-            execution_method=self.model.generate_content,
-            semaphore=self.semaphore,
-            execs_per_minute=self.execs_per_minute,
-            max_attempts=self.max_attempts
-        ).text
+        
+        if self.cache_client:
+            response = with_cache_execute(
+                prompt,
+                self.config["model"],
+                self._inference_without_caching,
+                self.cache_client,
+            )
+        else:
+            response = rate_limited_execute(
+                prompt=prompt,
+                generation_config=self.generation_config,
+                execution_method=self.model.generate_content,
+                semaphore=self.semaphore,
+                execs_per_minute=self.execs_per_minute,
+                max_attempts=self.max_attempts
+            ).text
 
         logging.debug("\n --------- llm_rater_output:   --------- \n %s ", response)
         score = (

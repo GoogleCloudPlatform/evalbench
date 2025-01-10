@@ -7,10 +7,13 @@ from .util import (
     generate_ddl,
     get_db_secret,
     rate_limited_execute,
+    with_cache_execute,
     DBResourceExhaustedError,
 )
 from typing import Any, Tuple
 from threading import Semaphore
+import logging
+import redis
 
 SCHEMA_QUERY = """
 SELECT table_name, column_name, data_type
@@ -53,6 +56,20 @@ class PGDB(DB):
             pool_size=50,
             connect_args={"command_timeout": 60},
         )
+
+        self.cache_client = None
+        if db_config.get("redis_host", None):
+            try:
+                redis_host = db_config["redis_host"]
+                redis_port = db_config.get("redis_port", 6379)
+                redis_db_id = db_config.get("redis_db_id", 0)
+                logging.info(f"Found Redis config in db_config. redis_host: {redis_host} redis_port: {redis_port} redis_db_id: {redis_db_id}")
+                self.cache_client = redis.StrictRedis(
+                    host=redis_host,
+                    port=redis_port,
+                    db=redis_db_id)
+            except Exception as e:
+                logging.warning(f"redis_host is found in db_config but failed to connect: {e}")
 
     def get_metadata(self) -> dict:
         metadata = MetaData()
@@ -142,7 +159,7 @@ class PGDB(DB):
             error = str(e)
         return result, eval_result, error
 
-    def execute(self, query: str) -> Tuple[Any, float]:
+    def _execute_with_no_caching(self, query: str) -> Tuple[Any, Any]:
         if isinstance(self.execs_per_minute, int):
             return rate_limited_execute(
                 query,
@@ -153,3 +170,24 @@ class PGDB(DB):
             )
         else:
             return self._execute(query)
+
+    def execute(self, query: str, use_cache=True) -> Tuple[Any, Any]:
+        """
+        Execute a query with optional caching. Falls back to the original logic if caching is not provided.
+
+        Args:
+            query (str): The SQL query to execute.
+            cache_client: An optional caching client (e.g., Redis).
+
+        Returns:
+            Tuple[Any, Any]: The query results and any error message (None if successful).
+        """
+        if not use_cache or not self.cache_client:
+            return self._execute_with_no_caching(query)
+        
+        return with_cache_execute(
+            query,
+            self.engine.url,
+            self._execute_with_no_caching,
+            self.cache_client,
+        )

@@ -21,3 +21,5 @@ jsonschema
 ratelimit
 backoff
 GitPython
+sqlparse
+redis
