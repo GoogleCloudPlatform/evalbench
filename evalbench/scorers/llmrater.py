@@ -55,7 +55,6 @@ class LLMRater(comparator.Comparator):
             except Exception as e:
                 logging.warning(f"redis_host is found in db_config but failed to connect: {e}")
 
-
     def _is_exact_match(
         self,
         nl_prompt: str,
@@ -208,7 +207,7 @@ class LLMRater(comparator.Comparator):
         """
 
         logging.debug("\n --------- prompt:   --------- \n %s ", prompt)
-        
+
         if self.cache_client:
             response = with_cache_execute(
                 prompt,

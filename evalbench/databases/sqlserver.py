@@ -118,7 +118,7 @@ class SQLServerDB(DB):
         """
         if not use_cache or not self.cache_client:
             return self._execute_with_no_caching(query)
-        
+
         return with_cache_execute(
             query,
             self.engine.url,

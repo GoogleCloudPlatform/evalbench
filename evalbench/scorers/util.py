@@ -7,6 +7,7 @@ import logging
 import hashlib
 import pickle
 
+
 class VertexAPIException(Exception):
     """Vertex API Exception Class"""
 
@@ -35,6 +36,7 @@ def rate_limited_execute(
     time.sleep(60 / execs_per_minute)
     semaphore.release()
     return result
+
 
 def with_cache_execute(
     prompt: str,
@@ -66,7 +68,6 @@ def with_cache_execute(
             return pickle.loads(cached_result)
     except Exception as e:
         logging.warning(f"Failed to retrieve query from cache: {e}")
-
 
     # Execute the method as the result is not cached
     try:

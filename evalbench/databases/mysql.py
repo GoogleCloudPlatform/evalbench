@@ -14,6 +14,7 @@ from threading import Semaphore
 import redis
 import logging
 
+
 class MySQLDB(DB):
 
     def __init__(self, db_config):
@@ -63,7 +64,6 @@ class MySQLDB(DB):
                     db=redis_db_id)
             except Exception as e:
                 logging.warning(f"redis_host is found in db_config but failed to connect: {e}")
-
 
     def get_metadata(self) -> dict:
         metadata = MetaData()
@@ -157,7 +157,7 @@ class MySQLDB(DB):
         """
         if not use_cache or not self.cache_client:
             return self._execute_with_no_caching(query)
-        
+
         return with_cache_execute(
             query,
             self.engine.url,
