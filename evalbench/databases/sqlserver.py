@@ -7,11 +7,11 @@ from .util import (
     get_db_secret,
     rate_limited_execute,
     with_cache_execute,
+    get_cache_client,
 )
 from typing import Any, Tuple
 from threading import Semaphore
 import logging
-import redis
 
 
 class SQLServerDB(DB):
@@ -53,19 +53,7 @@ class SQLServerDB(DB):
             logging_name=None,
         )
 
-        self.cache_client = None
-        if db_config.get("redis_host", None):
-            try:
-                redis_host = db_config["redis_host"]
-                redis_port = db_config.get("redis_port", 6379)
-                redis_db_id = db_config.get("redis_db_id", 0)
-                logging.info(f"Found Redis config in db_config. redis_host: {redis_host} redis_port: {redis_port} redis_db_id: {redis_db_id}")
-                self.cache_client = redis.StrictRedis(
-                    host=redis_host,
-                    port=redis_port,
-                    db=redis_db_id)
-            except Exception as e:
-                logging.warning(f"redis_host is found in db_config but failed to connect: {e}")
+        self.cache_client = get_cache_client(db_config)
 
     def generate_schema(self):
         # To be implemented
