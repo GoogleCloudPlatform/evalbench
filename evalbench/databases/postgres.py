@@ -158,7 +158,7 @@ class PGDB(DB):
         else:
             return self._execute(query)
 
-    def execute(self, query: str, use_cache=True) -> Tuple[Any, Any]:
+    def execute(self, query: str, use_cache=False) -> Tuple[Any, Any]:
         """
         Execute a query with optional caching. Falls back to the original logic if caching is not provided.
 

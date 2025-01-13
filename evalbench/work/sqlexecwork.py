@@ -25,7 +25,8 @@ class SQLExecWork(Work):
             self.db.execute(self.eval_result["setup_sql"])
             result, error = self._execute_with_eval(query, is_golden)
         else:
-            result, error = self.db.execute(query)
+            # Using cache when query_type is dql
+            result, error = self.db.execute(query, use_cache=True)
         return result, error
 
     def _execute_with_eval(self, query, is_golden=False):

@@ -84,7 +84,7 @@ class AlloyDB(DB):
             error = str(e)
         return rows, error
 
-    def execute(self, query: str) -> Tuple[Any, Any]:
+    def execute(self, query: str, use_cache=False) -> Tuple[Any, Any]:
         if isinstance(self.execs_per_minute, int):
             return rate_limited_execute(
                 query,
