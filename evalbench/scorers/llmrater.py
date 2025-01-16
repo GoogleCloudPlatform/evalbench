@@ -13,6 +13,7 @@ from vertexai.preview.generative_models import GenerationConfig, GenerativeModel
 
 from scorers import comparator
 from .util import rate_limited_execute, make_hashable, with_cache_execute
+from databases.util import get_cache_client
 import redis
 
 
@@ -41,19 +42,7 @@ class LLMRater(comparator.Comparator):
         self.semaphore = Semaphore(self.execs_per_minute)
         self.max_attempts = 4
         self.exact_match_checker = exactmatcher.ExactMatcher(None)
-        self.cache_client = None
-        if config.get("redis_host", None):
-            try:
-                redis_host = config["redis_host"]
-                redis_port = config.get("redis_port", 6379)
-                redis_db_id = config.get("redis_db_id", 0)
-                logging.debug(f"Found Redis config in db_config. redis_host: {redis_host} redis_port: {redis_port} redis_db_id: {redis_db_id}")
-                self.cache_client = redis.StrictRedis(
-                    host=redis_host,
-                    port=redis_port,
-                    db=redis_db_id)
-            except Exception as e:
-                logging.warning(f"redis_host is found in db_config but failed to connect: {e}")
+        self.cache_client = get_cache_client(config)
 
     def _is_exact_match(
         self,

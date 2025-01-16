@@ -127,13 +127,13 @@ def with_cache_execute(
     return result, error
 
 
-def get_cache_client(db_config):
+def get_cache_client(config):
     cache_client = None
-    if db_config.get("redis_host", None):
+    if config.get("redis_host", None):
         try:
-            redis_host = db_config["redis_host"]
-            redis_port = db_config.get("redis_port", 6379)
-            redis_db_id = db_config.get("redis_db_id", 0)
+            redis_host = config["redis_host"]
+            redis_port = config.get("redis_port", 6379)
+            redis_db_id = config.get("redis_db_id", 0)
             logging.info(f"Found Redis config in db_config. redis_host: {redis_host} redis_port: {redis_port} redis_db_id: {redis_db_id}")
             cache_client = redis.StrictRedis(
                 host=redis_host,
