@@ -1,6 +1,6 @@
 edition = "2023";
 
-package cloud_databases_nl2sql_eval_sqlgen_proto;
+package cloud_databases_eval_proto;
 
 import "eval_config.proto";
 import "eval_connect.proto";
