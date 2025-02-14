@@ -2,6 +2,7 @@ import os
 import csv
 import random
 import string
+import logging
 from typing import Any, Tuple, List
 from .db_handler import DBHandler
 from databases import get_database
@@ -86,7 +87,11 @@ class PostgresHandler(DBHandler):
     def drop_temp_databases(self, temp_databases: List[str]):
         db_instance = get_database(self.db_config)
         for database in temp_databases:
-            db_instance.drop_database(database)
+            _, error = db_instance.drop_database(database)
+            if error:
+                logging.error(
+                    f"Could not drop temporary database {database}. Error:{error}."
+                )
 
     def execute(self, queries: List[str]):
         result = None

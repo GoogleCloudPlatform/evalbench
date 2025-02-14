@@ -166,6 +166,10 @@ class Evaluator:
                 eval_outputs.append(eval_output)
 
             if query_type == "ddl":
+                logging.info("Closing connections to all temp databases")
+                while not db_queue.empty():
+                    db = db_queue.get()
+                    db.close_connections()
                 logging.info("Dropping temp databases")
                 setup_teardown.drop_temp_databases(db_config, temp_databases)
                 logging.info("Dropped")
