@@ -47,7 +47,6 @@ class SQLServerDB(DB):
             creator=getconn,
             pool_size=50,
             pool_recycle=3600,
-            pool_pre_ping=True,
             connect_args={
                 "connect_timeout": 60,
             },

@@ -1,7 +1,7 @@
 from google.protobuf.json_format import MessageToDict
 
 try:
-    import eval_request_pb2
+    from evalproto import eval_request_pb2
     PROTO_IMPORTED = True
 except ImportError:
     PROTO_IMPORTED = False

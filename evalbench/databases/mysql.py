@@ -47,7 +47,6 @@ class MySQLDB(DB):
             creator=getconn,
             pool_size=50,
             pool_recycle=3600,
-            pool_pre_ping=True,
             connect_args={
                 "connect_timeout": 60,
             },
@@ -166,3 +165,9 @@ class MySQLDB(DB):
             self._execute_with_no_caching,
             self.cache_client,
         )
+
+    def create_database(self, database_name: str):
+        return self.execute(f"CREATE DATABASE `{database_name}`;")
+
+    def drop_database(self, database_name: str):
+        return self.execute(f"DROP DATABASE `{database_name}`;")

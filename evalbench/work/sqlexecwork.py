@@ -1,24 +1,25 @@
 """Work is the base class for all work items."""
-
 from typing import Any
+from databases import DB
 from work import Work
-import setup_teardown
 
 
 class SQLExecWork(Work):
     """SQLExecWork Generates SQL from the generator."""
 
-    def __init__(self, db: Any, experiment_config: dict, eval_result: dict, db_queue=None):
+    def __init__(
+        self,
+        db: DB,
+        experiment_config: dict,
+        eval_result: dict,
+        db_queue=None,
+    ):
         self.db = db
         self.experiment_config = experiment_config
         self.eval_result = eval_result
         self.db_queue = db_queue
 
     def _execute_sql_flow(self, query, is_golden=False):
-        if self.eval_result["query_type"] == "ddl":
-            setup_teardown.setupDatabase(db_config=self.db.db_config, experiment_config=self.experiment_config,
-                                         no_data=True, database=self.eval_result["database"])
-
         if query is None:
             query = ""
         if self.eval_result["query_type"] in ["dml", "ddl"]:
@@ -37,8 +38,13 @@ class SQLExecWork(Work):
             result, error = self.db.execute(query)
             eval_result = self.db.get_metadata()
         else:
-            if self.eval_result["eval_query"] and len(self.eval_result["eval_query"]) > 0:
-                result, eval_result, error = self.db.execute_dml(query, self.eval_result["eval_query"][0])
+            if (
+                self.eval_result["eval_query"]
+                and len(self.eval_result["eval_query"]) > 0
+            ):
+                result, eval_result, error = self.db.execute_dml(
+                    query, self.eval_result["eval_query"][0]
+                )
 
         if is_golden:
             self.eval_result["golden_eval_results"] = eval_result
@@ -46,7 +52,7 @@ class SQLExecWork(Work):
             self.eval_result["eval_results"] = eval_result
         return result, error
 
-    def run(self, work_config: str = None) -> dict:
+    def run(self, work_config: Any = None) -> dict:
         """Runs the work item.
 
         Args:
@@ -76,8 +82,9 @@ class SQLExecWork(Work):
                     .replace("  ", "")
                     .replace("`", "")
                 )
-            generated_result, generated_error = self._execute_sql_flow(self.eval_result["sanitized_sql"],
-                                                                       is_golden=False)
+            generated_result, generated_error = self._execute_sql_flow(
+                self.eval_result["sanitized_sql"], is_golden=False
+            )
 
             golden_sql = ""
             if isinstance(self.eval_result["golden_sql"], str):
@@ -88,7 +95,9 @@ class SQLExecWork(Work):
             ):
                 golden_sql = self.eval_result["golden_sql"][0]
 
-            golden_result, golden_error = self._execute_sql_flow(golden_sql, is_golden=True)
+            golden_result, golden_error = self._execute_sql_flow(
+                golden_sql, is_golden=True
+            )
 
         self.eval_result["generated_result"] = generated_result
         self.eval_result["generated_error"] = generated_error

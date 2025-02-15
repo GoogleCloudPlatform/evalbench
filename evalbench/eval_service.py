@@ -1,15 +1,26 @@
 """A gRPC servicer that handles EvalService requests."""
 
 from collections.abc import AsyncIterator
+import json
 import pathlib
+import queue
+import uuid
+import datetime
+from typing import Any, List
 
-from absl import flags
 from absl import logging
 from typing import Awaitable, Callable, Optional
 import contextvars
 import yaml
 import grpc
-from util.config import load_yaml_config, config_to_df, update_google3_relative_paths
+from databases import DB, get_database
+from util.config import (
+    load_yaml_config,
+    config_to_df,
+    update_google3_relative_paths,
+    load_textproto,
+    load_db_data_from_csvs,
+)
 from repository import get_repository
 from util import get_SessionManager
 from dataset.dataset import load_json, load_dataset_from_json
@@ -20,21 +31,14 @@ import evaluator.evaluator as evaluator
 import reporting.report as report
 import reporting.bqstore as bqstore
 import reporting.analyzer as analyzer
-import databases
-
-
-import eval_request_pb2
-import eval_response_pb2
-import eval_service_pb2_grpc
-
-_experiment_config = flags.DEFINE_string(
-    "self.experiment_config",
-    "configs/base_experiment_service.yaml",
-    "Path to the eval execution configuration file.",
+from evalproto import (
+    schema_details_pb2,
+    eval_request_pb2,
+    eval_response_pb2,
+    eval_service_pb2_grpc,
 )
 
 SESSIONMANAGER = get_SessionManager()
-
 rpc_id_var = contextvars.ContextVar("rpc_id", default="default")
 
 
@@ -98,6 +102,20 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         session["config"] = experiment_config
         session["db_config"] = load_yaml_config(experiment_config["database_config"])
         session["model_config"] = load_yaml_config(experiment_config["model_config"])
+        if experiment_config["setup_config"]:
+            session["setup_config"] = load_yaml_config(
+                experiment_config["setup_config"]
+            )
+            if experiment_config["schema_path"]:
+                session["setup_config"]["schema"] = load_textproto(
+                    experiment_config["schema_path"], schema_details_pb2.SchemaDetails()
+                )
+            if experiment_config["data_directory"]:
+                session["setup_config"]["db_data"] = load_db_data_from_csvs(
+                    experiment_config["data_directory"]
+                )
+        else:
+            session["setup_config"] = None
         return eval_response_pb2.EvalResponse(response=f"ack")
 
     async def ListEvalInputs(
@@ -149,34 +167,68 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         request_iterator: AsyncIterator[eval_request_pb2.EvalInputRequest],
         context: grpc.ServicerContext,
     ) -> eval_response_pb2.EvalResponse:
-
-        dataset = {"dql": [], "dml": [], "ddl": []}
+        session = SESSIONMANAGER.get_session(rpc_id_var.get())
+        total_dataset_len = 0
+        dataset: dict[str, List[evalinput.EvalInputRequest]] = {
+            "dql": [],
+            "dml": [],
+            "ddl": [],
+        }
         async for request in request_iterator:
             input = evalinput.EvalInputRequest.init_from_proto(request)
             dataset[input.query_type].append(input)
+            total_dataset_len += 1
 
-        session = SESSIONMANAGER.get_session(rpc_id_var.get())
+        # Load the Database Connection
+        parent_db = session["db"] = get_database(session["db_config"])
 
-        session["db"] = databases.get_database(session["db_config"])
         # Load the Query Generator
         session["model_config"]["database_config"] = session["db_config"]
         session["model_generator"] = models.get_generator(session["model_config"])
+
         # Load the Prompt Generator
-        session["prompt_generator"] = prompts.get_generator(
-            session["db"], session["config"]
-        )
+        session["prompt_generator"] = prompts.get_generator(parent_db, session["config"])
+
+        # Load the evaluator
+        job_id = f"{uuid.uuid4()}"
+        run_time = datetime.datetime.now()
+        db_queue = queue.Queue[DB]()
+        for _ in range(evaluator.NUM_WORKERS):
+            db_queue.put(get_database(session["db_config"]))
         eval = evaluator.Evaluator(
+            job_id,
+            run_time,
             session["config"],
             session["prompt_generator"],
             session["model_generator"],
-            session["db"],
+            db_queue,
         )
 
-        job_id, run_time = eval.evaluate(dataset)
+        total_eval_outputs: List[Any] = []
+        total_scoring_results: List[Any] = []
+        for query_type in ["dql", "dml", "ddl"]:
+            filtered_dataset = dataset[query_type]
+            if len(filtered_dataset) == 0:
+                continue
+            logging.info(f"Processing {len(filtered_dataset)} {query_type} queries.")
+            eval_outputs, scoring_results = eval.evaluate(filtered_dataset, total_dataset_len)
+            total_eval_outputs.extend(eval_outputs)
+            total_scoring_results.extend(scoring_results)
+
+        with open(f"/tmp/eval_output_{job_id}.json", "w") as f:
+            json.dump(total_eval_outputs, f, sort_keys=True, indent=4, default=str)
+
+        with open(f"/tmp/score_result_{job_id}.json", "w") as f:
+            json.dump(total_scoring_results, f, sort_keys=True, indent=4, default=str)
+
         logging.info(
             f"Run eval job_id:{job_id} run_time:{run_time} for \
             {sum(len(eval_inputs) for _, eval_inputs in dataset.items())} eval entries."
         )
+
+        while not db_queue.empty():
+            db = db_queue.get()
+            db.close_connections()
 
         config_df = config_to_df(
             job_id,

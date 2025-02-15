@@ -10,7 +10,7 @@ import grpc
 import util
 from eval_service import EvalServicer
 from eval_service import SessionManagerInterceptor
-import eval_service_pb2_grpc
+from evalproto import eval_service_pb2_grpc
 
 _LOCALHOST = flags.DEFINE_bool(
     "localhost",

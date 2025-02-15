@@ -55,7 +55,6 @@ class PGDB(DB):
             creator=getconn,
             pool_size=50,
             pool_recycle=3600,
-            pool_pre_ping=True,
             connect_args={"command_timeout": 60},
         )
 
@@ -125,6 +124,7 @@ class PGDB(DB):
                 connection.execution_options(isolation_level="AUTOCOMMIT").execute(text(query))
         except Exception as e:
             error = str(e)
+            raise e
         return result, error
 
     def drop_database(self, database_name: str):

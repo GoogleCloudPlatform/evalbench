@@ -9,7 +9,7 @@ class Work:
     def __init__(self, item: Any):
         self.item = item
 
-    def run(self, work_config: Any = None) -> str:
+    def run(self, work_config: Any = None) -> str | dict:
         """Runs the work item.
 
         Args:

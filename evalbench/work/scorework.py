@@ -2,9 +2,10 @@
 
 from typing import Any
 from scorers import score
+from work import Work
 
 
-class ScorerWork:
+class ScorerWork(Work):
     """ScorerWork is the class for all scoring work."""
 
     def __init__(self, experiment_config: dict, eval_result: dict, scoring_results: list):
@@ -12,7 +13,7 @@ class ScorerWork:
         self.eval_result = eval_result
         self.scoring_results = scoring_results
 
-    def run(self, work_config: Any = None) -> str:
+    def run(self, work_config: Any = None) -> dict:
         """Score the work item.
 
         Args:
