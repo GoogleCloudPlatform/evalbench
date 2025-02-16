@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 
 class QueryGenerator(ABC):
 
-    def __init__(self, promptgenerator_config):
+    def __init__(self, core_db, promptgenerator_config):
         pass
 
     @abstractmethod

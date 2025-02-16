@@ -1,41 +1,31 @@
 """A gRPC servicer that handles EvalService requests."""
 
 from collections.abc import AsyncIterator
-import json
-import pathlib
-import queue
-import uuid
-import datetime
-from typing import Any, List
+from typing import AsyncGenerator
 
 from absl import logging
 from typing import Awaitable, Callable, Optional
 import contextvars
 import yaml
 import grpc
-from databases import DB, get_database
 from util.config import (
-    load_yaml_config,
-    config_to_df,
     update_google3_relative_paths,
-    load_textproto,
-    load_db_data_from_csvs,
+    set_session_configs
 )
 from repository import get_repository
 from util import get_SessionManager
-from dataset.dataset import load_json, load_dataset_from_json
-from dataset import evalinput
-import generators.models as models
-import generators.prompts as prompts
-import evaluator.evaluator as evaluator
-import reporting.report as report
-import reporting.bqstore as bqstore
-import reporting.analyzer as analyzer
+from dataset.dataset import load_dataset_from_json
+from evaluator.evaluator import Evaluator
 from evalproto import (
-    schema_details_pb2,
     eval_request_pb2,
     eval_response_pb2,
     eval_service_pb2_grpc,
+)
+from util.service import (
+    load_session_configs,
+    get_dataset_from_request,
+    create_eval_instances,
+    process_results,
 )
 
 SESSIONMANAGER = get_SessionManager()
@@ -54,9 +44,9 @@ class SessionManagerInterceptor(grpc.aio.ServerInterceptor):
         ],
         handler_call_details: grpc.HandlerCallDetails,
     ) -> grpc.RpcMethodHandler:
-        _metadata = dict(handler_call_details.invocation_metadata)
+        _metadata = dict(handler_call_details.invocation_metadata)  # type: ignore
         if rpc_id_var.get() == "default":
-            _metadata = dict(handler_call_details.invocation_metadata)
+            _metadata = dict(handler_call_details.invocation_metadata)  # type: ignore
             rpc_id_var.set(self.decorate(_metadata["client-rpc-id"]))
             SESSIONMANAGER.create_session(rpc_id_var.get())
         else:
@@ -72,7 +62,6 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
 
     def __init__(self) -> None:
         super().__init__()
-
         logging.info("EvalBench v1.0.0")
 
     async def Ping(
@@ -98,55 +87,23 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         session = SESSIONMANAGER.get_session(rpc_id_var.get())
         SESSIONMANAGER.write_resource_files(rpc_id_var.get(), request.resources)
         update_google3_relative_paths(experiment_config, rpc_id_var.get())
-
-        session["config"] = experiment_config
-        session["db_config"] = load_yaml_config(experiment_config["database_config"])
-        session["model_config"] = load_yaml_config(experiment_config["model_config"])
-        if experiment_config["setup_config"]:
-            session["setup_config"] = load_yaml_config(
-                experiment_config["setup_config"]
-            )
-            if experiment_config["schema_path"]:
-                session["setup_config"]["schema"] = load_textproto(
-                    experiment_config["schema_path"], schema_details_pb2.SchemaDetails()
-                )
-            if experiment_config["data_directory"]:
-                session["setup_config"]["db_data"] = load_db_data_from_csvs(
-                    experiment_config["data_directory"]
-                )
-        else:
-            session["setup_config"] = None
+        set_session_configs(session, experiment_config)
         return eval_response_pb2.EvalResponse(response=f"ack")
 
     async def ListEvalInputs(
         self,
         request,
         context,
-    ) -> eval_request_pb2.EvalInputRequest:
+    ) -> AsyncGenerator[eval_request_pb2.EvalInputRequest, None]:
         session = SESSIONMANAGER.get_session(rpc_id_var.get())
-        logging.info("Retrieve: %s.", rpc_id_var.get())
+        logging.info("Retrieving Evals for: %s.", rpc_id_var.get())
         experiment_config = session["config"]
-
-        repo = get_repository(experiment_config)
-        repo.clone()
-
         dataset_config_json = experiment_config["dataset_config"]
-        self.eval_ids = None
-        if (
-            "eval_ids" in experiment_config.keys()
-            and len(experiment_config["eval_ids"]) > 0
-        ):
-            self.eval_ids = experiment_config["eval_ids"]
-
-        # Load the dataset
-        dataset, database = load_dataset_from_json(
+        dataset, _ = load_dataset_from_json(
             dataset_config_json, experiment_config
         )
-        session["db_config"]["database_name"] = database
         for _, eval_inputs in dataset.items():
             for eval_input in eval_inputs:
-                if self.eval_ids is not None and eval_input.id not in self.eval_ids:
-                    continue
                 eval_input_request = eval_request_pb2.EvalInputRequest(
                     id=eval_input.id,
                     query_type=eval_input.query_type,
@@ -168,99 +125,16 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         context: grpc.ServicerContext,
     ) -> eval_response_pb2.EvalResponse:
         session = SESSIONMANAGER.get_session(rpc_id_var.get())
-        total_dataset_len = 0
-        dataset: dict[str, List[evalinput.EvalInputRequest]] = {
-            "dql": [],
-            "dml": [],
-            "ddl": [],
-        }
-        async for request in request_iterator:
-            input = evalinput.EvalInputRequest.init_from_proto(request)
-            dataset[input.query_type].append(input)
-            total_dataset_len += 1
-
-        # Load the Database Connection
-        parent_db = session["db"] = get_database(session["db_config"])
-
-        # Load the Query Generator
-        session["model_config"]["database_config"] = session["db_config"]
-        session["model_generator"] = models.get_generator(session["model_config"])
-
-        # Load the Prompt Generator
-        session["prompt_generator"] = prompts.get_generator(parent_db, session["config"])
-
-        # Load the evaluator
-        job_id = f"{uuid.uuid4()}"
-        run_time = datetime.datetime.now()
-        db_queue = queue.Queue[DB]()
-        for _ in range(evaluator.NUM_WORKERS):
-            db_queue.put(get_database(session["db_config"]))
-        eval = evaluator.Evaluator(
-            job_id,
-            run_time,
-            session["config"],
-            session["prompt_generator"],
-            session["model_generator"],
-            db_queue,
+        config, db_config, model_config = load_session_configs(session)
+        dataset = await get_dataset_from_request(request_iterator)
+        core_db, model_generator, prompt_generator = create_eval_instances(
+            config, db_config, model_config
+        )
+        evaluator = Evaluator(
+            config, prompt_generator, model_generator, db_config, core_db
         )
 
-        total_eval_outputs: List[Any] = []
-        total_scoring_results: List[Any] = []
-        for query_type in ["dql", "dml", "ddl"]:
-            filtered_dataset = dataset[query_type]
-            if len(filtered_dataset) == 0:
-                continue
-            logging.info(f"Processing {len(filtered_dataset)} {query_type} queries.")
-            eval_outputs, scoring_results = eval.evaluate(filtered_dataset, total_dataset_len)
-            total_eval_outputs.extend(eval_outputs)
-            total_scoring_results.extend(scoring_results)
-
-        with open(f"/tmp/eval_output_{job_id}.json", "w") as f:
-            json.dump(total_eval_outputs, f, sort_keys=True, indent=4, default=str)
-
-        with open(f"/tmp/score_result_{job_id}.json", "w") as f:
-            json.dump(total_scoring_results, f, sort_keys=True, indent=4, default=str)
-
-        logging.info(
-            f"Run eval job_id:{job_id} run_time:{run_time} for \
-            {sum(len(eval_inputs) for _, eval_inputs in dataset.items())} eval entries."
-        )
-
-        while not db_queue.empty():
-            db = db_queue.get()
-            db.close_connections()
-
-        config_df = config_to_df(
-            job_id,
-            run_time,
-            session["config"],
-            session["model_config"],
-            session["db_config"],
-        )
-        report.store(config_df, bqstore.STORETYPE.CONFIGS)
-
-        results = load_json(f"/tmp/eval_output_{job_id}.json")
-        results_df = report.get_dataframe(results)
-        if results_df.empty:
-            logging.warning(
-                "There were no matching evals in this run. Returning empty set."
-            )
-            return eval_response_pb2.EvalResponse(response=f"{job_id}")
-
-        report.quick_summary(results_df)
-        report.store(results_df, bqstore.STORETYPE.EVALS)
-
-        scores = load_json(f"/tmp/score_result_{job_id}.json")
-        scores_df, summary_scores_df = analyzer.analyze_result(
-            scores, session["config"]
-        )
-        summary_scores_df["job_id"] = job_id
-        summary_scores_df["run_time"] = run_time
-        report.store(scores_df, bqstore.STORETYPE.SCORES)
-        report.store(summary_scores_df, bqstore.STORETYPE.SUMMARY)
-
-        # k8s emptyDir /tmp does not auto cleanup, so we explicitly delete
-        pathlib.Path(f"/tmp/eval_output_{job_id}.json").unlink()
-        pathlib.Path(f"/tmp/score_result_{job_id}.json").unlink()
+        job_id, run_time = evaluator.evaluate(dataset)
+        process_results(job_id, run_time, config, model_config, db_config)
 
         return eval_response_pb2.EvalResponse(response=f"{job_id}")

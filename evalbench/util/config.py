@@ -8,6 +8,9 @@ from pyaml_env import parse_config
 import pandas as pd
 from .sessionmgr import SESSION_RESOURCES_PATH
 from google.protobuf import text_format
+from evalproto import (
+    schema_details_pb2,
+)
 
 logging.getLogger().setLevel(logging.INFO)
 
@@ -16,10 +19,12 @@ def load_yaml_config(yaml_file):
     config = parse_config(yaml_file)
     return config
 
+
 def load_textproto(textproto_file, text_proto_object):
     with open(textproto_file, "r") as file:
         text_format.Merge(file.read(), text_proto_object)
     return text_proto_object
+
 
 def load_db_data_from_csvs(data_directory: str):
     tables: dict[str, List[str]] = {}
@@ -33,7 +38,7 @@ def load_db_data_from_csvs(data_directory: str):
                     rows.append(row)
                 tables[table_name] = rows
     return tables
-                    
+
 
 def config_to_df(
     job_id: str,
@@ -78,3 +83,21 @@ def update_google3_relative_paths(experiment_config: dict, session_id: str):
                     experiment_config[key],
                 )
                 experiment_config[key] = updated_path
+
+
+def set_session_configs(session, experiment_config: dict):
+    session["config"] = experiment_config
+    session["db_config"] = load_yaml_config(experiment_config["database_config"])
+    session["model_config"] = load_yaml_config(experiment_config["model_config"])
+    if experiment_config["setup_config"]:
+        session["setup_config"] = load_yaml_config(experiment_config["setup_config"])
+        if experiment_config["schema_path"]:
+            session["setup_config"]["schema"] = load_textproto(
+                experiment_config["schema_path"], schema_details_pb2.SchemaDetails()
+            )
+        if experiment_config["data_directory"]:
+            session["setup_config"]["db_data"] = load_db_data_from_csvs(
+                experiment_config["data_directory"]
+            )
+    else:
+        session["setup_config"] = None

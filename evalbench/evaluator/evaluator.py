@@ -1,4 +1,9 @@
 from typing import Any, List
+import uuid
+import json
+import datetime
+import logging
+from evaluator.db_manager import build_db_queue
 from util import printProgressBar, truncateExecutionOutputs
 from work import promptgenwork
 from work import sqlgenwork
@@ -8,20 +13,79 @@ from mp import mprunner
 import concurrent.futures
 from dataset.evalinput import EvalInputRequest
 from dataset.evaloutput import EvalOutput
+from queue import Queue
+from databases import DB
+from dataset.dataset import breakdown_datasets_by_query_type
 
 NUM_WORKERS = 10
 
 class Evaluator:
-    def __init__(self, job_id, run_time, experiment_config, prompt_generator, model_generator, db_queue):
-        self.job_id = job_id
-        self.run_time = run_time
+    def __init__(
+        self, experiment_config, prompt_generator, model_generator, db_config, core_db
+    ):
         self.eval_ids = None
         self.experiment_config = experiment_config
         self.prompt_generator = prompt_generator
         self.model_generator = model_generator
-        self.db_queue = db_queue
+        self.db_config = db_config
+        self.core_db = core_db
 
-    def evaluate(self, dataset: List[EvalInputRequest], dataset_len: int):
+    def evaluate(self, dataset: List[EvalInputRequest]):
+        """This wrapper breaks down evaluations by category of evaluations. (dql, dml, ddl).
+        This allows the module to prepare the correct database connections as DDL queries
+        require setting up and tearing down the databsae and DML queries require prevention
+        of unintended consequences. Additionally, DQLs are run under a read-only user.
+        """
+        job_id = f"{uuid.uuid4()}"
+        run_time = datetime.datetime.now()
+        total_eval_outputs: List[Any] = []
+        total_scoring_results: List[Any] = []
+        datasets_by_category, total_dataset_len = breakdown_datasets_by_query_type(
+            dataset
+        )
+        for query_type in ["dql", "dml", "ddl"]:
+            filtered_dataset = datasets_by_category[query_type]
+            if len(filtered_dataset) == 0:
+                continue
+            try:
+                db_queue = build_db_queue(self.core_db, self.db_config, query_type, NUM_WORKERS)
+            except Exception as e:
+                logging.info(
+                    f"Skipping {len(filtered_dataset)} {query_type} queries as DB could "
+                    + "not be setup properly due to {e}."
+                )
+                continue
+            logging.info(f"Evaluating {len(filtered_dataset)} {query_type} queries.")
+            eval_outputs, scoring_results = self._evaluate(
+                db_queue, filtered_dataset, total_dataset_len, job_id, run_time
+            )
+            total_eval_outputs.extend(eval_outputs)
+            total_scoring_results.extend(scoring_results)
+
+            while not db_queue.empty():
+                db = db_queue.get()
+                db.close_connections()
+
+        with open(f"/tmp/eval_output_{job_id}.json", "w") as f:
+            json.dump(total_eval_outputs, f, sort_keys=True, indent=4, default=str)
+
+        with open(f"/tmp/score_result_{job_id}.json", "w") as f:
+            json.dump(total_scoring_results, f, sort_keys=True, indent=4, default=str)
+
+        logging.info(
+            f"Run eval job_id:{job_id} run_time:{run_time} for \
+            {total_dataset_len} eval entries."
+        )
+        return job_id, run_time
+
+    def _evaluate(
+        self,
+        db_queue: Queue[DB],
+        dataset: List[EvalInputRequest],
+        dataset_len: int,
+        job_id: str,
+        run_time: datetime.datetime,
+    ):
         eval_outputs: List[Any] = []
         scoring_results: List[Any] = []
 
@@ -42,8 +106,8 @@ class Evaluator:
 
         for eval_input in dataset:
             eval_output = EvalOutput(eval_input)
-            eval_output["job_id"] = self.job_id
-            eval_output["run_time"] = self.run_time
+            eval_output["job_id"] = job_id
+            eval_output["run_time"] = run_time
             work = promptgenwork.SQLPromptGenWork(self.prompt_generator, eval_output)
             self.promptrunner.execute_work(work)
 
@@ -62,7 +126,9 @@ class Evaluator:
             printProgressBar(
                 gen_i, dataset_len, prefix="SQLGen:", suffix="Complete", length=50
             )
-            work = sqlexecwork.SQLExecWork(self.db_queue.get(), self.experiment_config, eval_output)
+            work = sqlexecwork.SQLExecWork(
+                db_queue.get(), self.experiment_config, eval_output
+            )
             self.sqlrunner.execute_work(work)
 
         for future in concurrent.futures.as_completed(self.sqlrunner.futures):
@@ -92,5 +158,5 @@ class Evaluator:
                 length=50,
             )
             eval_outputs.append(eval_output)
-       
+
         return eval_outputs, scoring_results

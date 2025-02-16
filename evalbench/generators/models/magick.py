@@ -7,16 +7,14 @@ from util.config import load_yaml_config
 class MagicSQLGenerator(QueryGenerator):
     """Generator queries using Vertex model."""
 
-    def __init__(self, querygenerator_config):
-        super().__init__(querygenerator_config)
+    def __init__(self, core_db, querygenerator_config):
+        super().__init__(core_db, querygenerator_config)
         self.name = "magic_alloydb"
         self.model = querygenerator_config["vertex_model"]
         self.base_prompt = querygenerator_config["base_prompt"]
         self.project_id = querygenerator_config["project_id"]
         self.location = querygenerator_config["location"]
-        db_config = querygenerator_config["database_config"]
-        # # Load the DB config
-        self.db = databases.get_database(db_config)
+        self.db = core_db
 
         self.magic_get_sql = """
           SELECT alloydb_ai_nl.google_get_sql_with_context('{}', '', '{}')->>'sql';
@@ -32,8 +30,8 @@ class MagicSQLGenerator(QueryGenerator):
       model_provider => 'google',
       model_auth_type => 'alloydb_service_agent_iam')"""
 
-    def generate(self, human_language_question):
-        question = human_language_question.replace("'", "''")
+    def generate(self, prompt):
+        question = prompt.replace("'", "''")
         magic_get_sql = self.magic_get_sql.format(self.model, question)
 
         with self.db.engine.connect() as connection:

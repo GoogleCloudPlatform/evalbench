@@ -5,15 +5,15 @@ from .generator import QueryGenerator
 
 class OAIQueryGenerator(QueryGenerator):
 
-    def __init__(self, base_prompt: str = ""):
-        super().__init__()
+    def __init__(self, core_db, querygenerator_config):
+        super().__init__(core_db, querygenerator_config)
         self.name = "gpt-4-0125-preview"
-        self.base_prompt = base_prompt
+        self.base_prompt = querygenerator_config["base_prompt"]
         self.name = "openai"
 
-    def generate(self, question: str) -> str:
+    def generate(self, prompt: str) -> str:
         start_time = time.time()
-        prompt = self.base_prompt + question
+        prompt = self.base_prompt + prompt
         client = OpenAI()
         completion = client.chat.completions.create(
             model="gpt-4-0125-preview",
@@ -23,4 +23,4 @@ class OAIQueryGenerator(QueryGenerator):
             ],
             temperature=0.0,
         )
-        return completion.choices[0].message.content, time.time() - start_time
+        return str(completion.choices[0].message.content)

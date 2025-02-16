@@ -11,8 +11,8 @@ from .generator import QueryGenerator
 class GeminiGenerator(QueryGenerator):
     """Generator queries using Vertex model."""
 
-    def __init__(self, querygenerator_config):
-        super().__init__(querygenerator_config)
+    def __init__(self, core_db, querygenerator_config):
+        super().__init__(core_db, querygenerator_config)
         self.name = "gemini"
         self.project_id = querygenerator_config["project_id"]
         self.location = querygenerator_config["location"]
@@ -25,9 +25,9 @@ class GeminiGenerator(QueryGenerator):
         self.model = GenerativeModel(self.vertex_model)
         self.base_prompt = self.base_prompt
 
-    def generate(self, human_language_question):
+    def generate(self, prompt):
         response = self.model.generate_content(
-            self.base_prompt + human_language_question,
+            self.base_prompt + prompt,
             generation_config=self.generation_config,
         )
         if isinstance(response, GenerationResponse):

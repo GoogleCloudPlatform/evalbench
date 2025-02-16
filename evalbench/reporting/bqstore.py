@@ -39,7 +39,7 @@ def store(df, STORETYPE):
     dataset = bigquery.Dataset(dataset_id)
     dataset.location = "US"
     dataset = client.create_dataset(dataset, exists_ok=True, timeout=30)
-    logging.info("Created dataset {}.{}".format(client.project, dataset.dataset_id))
+    logging.info("Created dataset {}.{} for {}".format(client.project, dataset.dataset_id, STORETYPE))
     job_config = bigquery.LoadJobConfig()
     job_config.schema_update_options = [
         bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION,

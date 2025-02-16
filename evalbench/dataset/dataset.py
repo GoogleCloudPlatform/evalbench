@@ -120,6 +120,21 @@ def load_dataset_from_bird(dataset: Sequence[dict], dialect: str):
     return input_items
 
 
+def breakdown_datasets_by_query_type(
+    total_dataset: list[EvalInputRequest]
+):
+    total_dataset_len = 0
+    dataset: dict[str, list[EvalInputRequest]] = {
+        "dql": [],
+        "dml": [],
+        "ddl": [],
+    }
+    for input in total_dataset:
+        dataset[input.query_type].append(input)
+        total_dataset_len += 1
+    return dataset, total_dataset_len
+
+
 def main(argv: Sequence[str]) -> None:
     logging.info("Dataset converter v1.0.0")
     logging.info("Loading dataset from %s", _SOURCE_DATASET_PATH.value)

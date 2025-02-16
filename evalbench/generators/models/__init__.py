@@ -3,10 +3,10 @@ from .magick import MagicSQLGenerator
 from .passthrough import NOOPGenerator
 
 
-def get_generator(model_config):
+def get_generator(core_db, model_config):
     if model_config["generator"] == "gemini":
-        return GeminiGenerator(model_config)
+        return GeminiGenerator(core_db, model_config)
     if model_config["generator"] == "magick":
-        return MagicSQLGenerator(model_config)
+        return MagicSQLGenerator(core_db, model_config)
     if model_config["generator"] == "noop":
-        return NOOPGenerator(model_config)
+        return NOOPGenerator(core_db, model_config)
