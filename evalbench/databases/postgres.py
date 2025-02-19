@@ -1,3 +1,4 @@
+from sqlalchemy.pool import NullPool
 import sqlalchemy
 from sqlalchemy import text, MetaData
 import logging
@@ -51,11 +52,11 @@ class PGDB(DB):
         super().__init__(db_config)
         instance_connection_name = f"{db_config['project_id']}:{db_config['region']}:{db_config['instance_name']}"
         db_user = db_config["user_name"]
-        db_pass_secret_path = db_config["password"]
-        db_pass = get_db_secret(db_pass_secret_path)
+        db_pass = get_db_secret(db_config["password"])
         self.db_name = db_config["database_name"]
-        self.db_config = db_config
         self.execs_per_minute = db_config["max_executions_per_minute"]
+        self.is_tmp_db = "is_tmp_db" in db_config
+        self.db_config = db_config
         self.semaphore = Semaphore(self.execs_per_minute)
         self.max_attempts = 3
         self.tmp_dbs = []
@@ -65,7 +66,7 @@ class PGDB(DB):
         # Initialize the Cloud SQL Connector object
         self.connector = Connector()
 
-        def getconn():
+        def get_conn():
             conn = self.connector.connect(
                 instance_connection_name,
                 "pg8000",
@@ -75,19 +76,28 @@ class PGDB(DB):
             )
             return conn
 
+        def get_engine_args(is_tmp_db):
+            common_args = {
+                "creator": get_conn,
+                "connect_args": {"command_timeout": 60},
+            }
+            if is_tmp_db:
+                common_args["poolclass"] = NullPool
+            else:
+                common_args["pool_size"] = 50
+                common_args["pool_recycle"] = 300
+            return common_args
+
         self.engine = sqlalchemy.create_engine(
             "postgresql+pg8000://",
-            creator=getconn,
-            pool_size=50,
-            pool_recycle=300,
-            connect_args={"command_timeout": 60},
+            **get_engine_args(self.is_tmp_db)
         )
 
         self.cache_client = get_cache_client(db_config)
 
     def clean_tmp_creations(self):
-        self.drop_tmp_databases(self.tmp_dbs)
-        self.delete_tmp_users(self.tmp_users)
+        self.drop_tmp_databases(self.tmp_dbs.copy())
+        self.delete_tmp_users(self.tmp_users.copy())
 
     def close_connections(self):
         try:
@@ -128,7 +138,6 @@ class PGDB(DB):
             self.max_attempts,
         )
 
-
     def _execute_with_no_caching(self, query: str) -> Tuple[Any, Any]:
         return rate_limited_execute(
             (query,),
@@ -141,7 +150,6 @@ class PGDB(DB):
     def _execute(self, query: str):
         result = []
         error = None
-        connection = None
         try:
             with self.engine.connect() as connection:
                 with connection.begin():
@@ -153,9 +161,6 @@ class PGDB(DB):
             error = str(e)
             if "57P03" in error:
                 raise DBResourceExhaustedError("DB Exhausted") from e
-        finally:
-            if connection:
-                connection.close()
         return result, error
 
     def _execute_auto_commit(self, query: str):
@@ -173,24 +178,23 @@ class PGDB(DB):
         result = []
         eval_result = []
         error = None
-        connection = self.engine.connect()
-        transaction = connection.begin()
         try:
-            resultset = connection.execute(text(query))
-            if resultset.returns_rows:
-                rows = resultset.fetchall()
-                result.extend(r._asdict() for r in rows)
+            with self.engine.connect() as connection:
+                with connection.begin() as transaction:
+                    resultset = connection.execute(text(query))
+                    if resultset.returns_rows:
+                        rows = resultset.fetchall()
+                        result.extend(r._asdict() for r in rows)
 
-            if eval_query:
-                eval_resultset = connection.execute(text(eval_query))
-                if eval_resultset.returns_rows:
-                    eval_rows = eval_resultset.fetchall()
-                    eval_result.extend(r._asdict() for r in eval_rows)
+                    if eval_query:
+                        eval_resultset = connection.execute(text(eval_query))
+                        if eval_resultset.returns_rows:
+                            eval_rows = eval_resultset.fetchall()
+                            eval_result.extend(r._asdict() for r in eval_rows)
+
+                    transaction.rollback()
         except Exception as e:
             error = str(e)
-        finally:
-            transaction.rollback()
-            connection.close()
         return result, eval_result, error
 
     def set_setup_instructions(self, setup_config, data, schema):
@@ -255,15 +259,16 @@ class PGDB(DB):
             raise RuntimeError(error)
 
     def get_metadata(self) -> dict:
-        metadata = MetaData()
-        metadata.reflect(bind=self.engine, schema="public")
-
         db_metadata = {}
-        for table in metadata.tables.values():
-            columns = []
-            for column in table.columns:
-                columns.append({"name": column.name, "type": str(column.type)})
-            db_metadata[table.name] = columns
+
+        with self.engine.connect() as connection:
+            metadata = MetaData()
+            metadata.reflect(bind=connection, schema="public")
+            for table in metadata.tables.values():
+                columns = []
+                for column in table.columns:
+                    columns.append({"name": column.name, "type": str(column.type)})
+                db_metadata[table.name] = columns
 
         return db_metadata
 
@@ -296,7 +301,7 @@ class PGDB(DB):
             result = conn.execute(text(SCHEMA_QUERY))
             headers = tuple(result.keys())
             rows = result.fetchall()
-            return headers, rows
+        return headers, rows
 
     def generate_ddl(self):
         headers, rows = self.generate_schema()
@@ -339,7 +344,7 @@ class PGDB(DB):
             self.tmp_users.remove(username)
         _, error = self.execute(DELETE_USER_QUERY.format(USERNAME=username))
         if error:
-            logging.info(f"Could not delete tmp users due to {error}")
+            logging.info(f"Could not delete tmp user due to {error}")
 
     def get_dql_user(self):
         if not self.dql_user:

@@ -56,6 +56,7 @@ def _prepare_db_queue_for_ddl(core_db: DB, db_config, setup_config, num_dbs):
     for db_name in tmp_dbs:
         tmp_ddl_db_config = deepcopy(db_config)
         tmp_ddl_db_config["database_name"] = db_name
+        tmp_ddl_db_config["is_tmp_db"] = True
         tmp_db = get_database(tmp_ddl_db_config)
         tmp_db.set_setup_instructions(setup_config, None, schema)
         db_queue.put(tmp_db)
