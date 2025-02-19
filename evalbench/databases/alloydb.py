@@ -88,7 +88,7 @@ class AlloyDB(DB):
     def execute(self, query: str, use_cache=False) -> Tuple[Any, Any]:
         if isinstance(self.execs_per_minute, int):
             return rate_limited_execute(
-                query,
+                (query,),
                 self._execute,
                 self.execs_per_minute,
                 self.semaphore,

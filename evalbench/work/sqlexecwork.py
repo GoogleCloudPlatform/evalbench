@@ -35,6 +35,7 @@ class SQLExecWork(Work):
         result = None
         error = None
         if self.eval_result["query_type"] == "ddl":
+            self.db.resetup_database()
             result, error = self.db.execute(query)
             eval_result = self.db.get_metadata()
         else:

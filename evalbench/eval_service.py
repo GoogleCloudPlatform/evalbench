@@ -125,16 +125,19 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         context: grpc.ServicerContext,
     ) -> eval_response_pb2.EvalResponse:
         session = SESSIONMANAGER.get_session(rpc_id_var.get())
-        config, db_config, model_config = load_session_configs(session)
+        config, db_config, model_config, setup_config = load_session_configs(session)
         dataset = await get_dataset_from_request(request_iterator)
         core_db, model_generator, prompt_generator = create_eval_instances(
             config, db_config, model_config
         )
         evaluator = Evaluator(
-            config, prompt_generator, model_generator, db_config, core_db
+            config, prompt_generator, model_generator, db_config, core_db, setup_config
         )
+        evaluator.evaluate(dataset)
 
-        job_id, run_time = evaluator.evaluate(dataset)
+        job_id, run_time = evaluator.process()
         process_results(job_id, run_time, config, model_config, db_config)
+        core_db.clean_tmp_creations()
+        core_db.close_connections()
 
         return eval_response_pb2.EvalResponse(response=f"{job_id}")

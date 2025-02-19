@@ -16,7 +16,7 @@ from evalproto import eval_response_pb2
 
 
 def load_session_configs(session):
-        return session["config"], session["db_config"], session["model_config"]
+    return session["config"], session["db_config"], session["model_config"], session["setup_config"]
 
 def create_eval_instances(config, db_config, model_config):
     core_db = get_database(db_config)

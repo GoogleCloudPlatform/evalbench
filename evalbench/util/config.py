@@ -2,15 +2,14 @@ import datetime
 import logging
 import os
 import csv
+import random
+import string
 from typing import List
 
 from pyaml_env import parse_config
 import pandas as pd
 from .sessionmgr import SESSION_RESOURCES_PATH
 from google.protobuf import text_format
-from evalproto import (
-    schema_details_pb2,
-)
 
 logging.getLogger().setLevel(logging.INFO)
 
@@ -92,12 +91,13 @@ def set_session_configs(session, experiment_config: dict):
     if experiment_config["setup_config"]:
         session["setup_config"] = load_yaml_config(experiment_config["setup_config"])
         if experiment_config["schema_path"]:
-            session["setup_config"]["schema"] = load_textproto(
-                experiment_config["schema_path"], schema_details_pb2.SchemaDetails()
-            )
+            session["setup_config"]["schema_path"] = experiment_config["schema_path"]
         if experiment_config["data_directory"]:
-            session["setup_config"]["db_data"] = load_db_data_from_csvs(
-                experiment_config["data_directory"]
-            )
+            session["setup_config"]["data_directory"] = experiment_config["data_directory"]
     else:
         session["setup_config"] = None
+
+def generate_key(length=12):
+    return "".join(
+        random.choices(string.ascii_lowercase + string.digits, k=length)
+    )

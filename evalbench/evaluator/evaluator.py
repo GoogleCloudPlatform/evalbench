@@ -19,9 +19,16 @@ from dataset.dataset import breakdown_datasets_by_query_type
 
 NUM_WORKERS = 10
 
+
 class Evaluator:
     def __init__(
-        self, experiment_config, prompt_generator, model_generator, db_config, core_db
+        self,
+        experiment_config,
+        prompt_generator,
+        model_generator,
+        db_config,
+        core_db,
+        setup_config,
     ):
         self.eval_ids = None
         self.experiment_config = experiment_config
@@ -29,6 +36,11 @@ class Evaluator:
         self.model_generator = model_generator
         self.db_config = db_config
         self.core_db = core_db
+        self.setup_config = setup_config
+        self.job_id = f"{uuid.uuid4()}"
+        self.run_time = datetime.datetime.now()
+        self.total_eval_outputs = []
+        self.total_scoring_results = []
 
     def evaluate(self, dataset: List[EvalInputRequest]):
         """This wrapper breaks down evaluations by category of evaluations. (dql, dml, ddl).
@@ -36,49 +48,49 @@ class Evaluator:
         require setting up and tearing down the databsae and DML queries require prevention
         of unintended consequences. Additionally, DQLs are run under a read-only user.
         """
-        job_id = f"{uuid.uuid4()}"
-        run_time = datetime.datetime.now()
-        total_eval_outputs: List[Any] = []
-        total_scoring_results: List[Any] = []
         datasets_by_category, total_dataset_len = breakdown_datasets_by_query_type(
             dataset
         )
         for query_type in ["dql", "dml", "ddl"]:
-            filtered_dataset = datasets_by_category[query_type]
-            if len(filtered_dataset) == 0:
-                continue
-            try:
-                db_queue = build_db_queue(self.core_db, self.db_config, query_type, NUM_WORKERS)
-            except Exception as e:
-                logging.info(
-                    f"Skipping {len(filtered_dataset)} {query_type} queries as DB could "
-                    + "not be setup properly due to {e}."
-                )
-                continue
-            logging.info(f"Evaluating {len(filtered_dataset)} {query_type} queries.")
-            eval_outputs, scoring_results = self._evaluate(
-                db_queue, filtered_dataset, total_dataset_len, job_id, run_time
+            self._prepare_databases_and_run_evaluations(
+                datasets_by_category, total_dataset_len, query_type
             )
-            total_eval_outputs.extend(eval_outputs)
-            total_scoring_results.extend(scoring_results)
 
-            while not db_queue.empty():
-                db = db_queue.get()
-                db.close_connections()
-
-        with open(f"/tmp/eval_output_{job_id}.json", "w") as f:
-            json.dump(total_eval_outputs, f, sort_keys=True, indent=4, default=str)
-
-        with open(f"/tmp/score_result_{job_id}.json", "w") as f:
-            json.dump(total_scoring_results, f, sort_keys=True, indent=4, default=str)
-
-        logging.info(
-            f"Run eval job_id:{job_id} run_time:{run_time} for \
-            {total_dataset_len} eval entries."
+    def _prepare_databases_and_run_evaluations(
+        self,
+        datasets_by_category: dict[str, list[EvalInputRequest]],
+        total_dataset_len,
+        query_type: str,
+    ):
+        filtered_dataset = datasets_by_category[query_type]
+        if len(filtered_dataset) == 0:
+            return
+        try:
+            db_queue = build_db_queue(
+                self.core_db, self.db_config, self.setup_config, query_type, NUM_WORKERS
+            )
+        except Exception as e:
+            logging.info(
+                f"Skipping {len(filtered_dataset)} {query_type} queries as DB could "
+                + f"not be setup properly due to {e}."
+            )
+            return
+        logging.info(f"Evaluating {len(filtered_dataset)} {query_type} queries.")
+        eval_outputs, scoring_results = self._execute_evaluations(
+            db_queue,
+            filtered_dataset,
+            total_dataset_len,
+            self.job_id,
+            self.run_time,
         )
-        return job_id, run_time
+        self.total_eval_outputs.extend(eval_outputs)
+        self.total_scoring_results.extend(scoring_results)
 
-    def _evaluate(
+        while not db_queue.empty():
+            db = db_queue.get()
+            db.close_connections()
+
+    def _execute_evaluations(
         self,
         db_queue: Queue[DB],
         dataset: List[EvalInputRequest],
@@ -160,3 +172,12 @@ class Evaluator:
             eval_outputs.append(eval_output)
 
         return eval_outputs, scoring_results
+
+    def process(self):
+        with open(f"/tmp/eval_output_{self.job_id}.json", "w") as f:
+            json.dump(self.total_eval_outputs, f, sort_keys=True, indent=4, default=str)
+        with open(f"/tmp/score_result_{self.job_id}.json", "w") as f:
+            json.dump(
+                self.total_scoring_results, f, sort_keys=True, indent=4, default=str
+            )
+        return self.job_id, self.run_time

@@ -62,8 +62,6 @@ class SessionManager:
         return self.sessions
 
     def delete_session(self, session_id):
-        if "db" in self.sessions[session_id]:
-            self.sessions[session_id]["db"].close_connections()
         del self.sessions[session_id]
 
     def shutdown(self):
