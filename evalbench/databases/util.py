@@ -77,15 +77,19 @@ def rate_limited_execute(
     execs_per_minute: int,
     semaphore: Semaphore,
     max_attempts: int,
-) -> Tuple[Any, float]:
+) -> Tuple[Any, Any, Any]:
     # If no limit is specified, run immediately.
     if not isinstance(execs_per_minute, int):
         return execution_method(*query)
+
+    result = None
+    eval_result = None
+    error = None
     semaphore.acquire()
     attempt = 1
     while attempt <= max_attempts:
         try:
-            result = execution_method(*query)
+            result, eval_result, error = execution_method(*query)
             break
         except DBResourceExhaustedError as e:
             # exponentially backoff starting at 5 seconds
@@ -93,7 +97,7 @@ def rate_limited_execute(
             attempt += 1
     time.sleep(60 / execs_per_minute)
     semaphore.release()
-    return result
+    return result, eval_result, error
 
 
 def with_cache_execute(
@@ -101,7 +105,7 @@ def with_cache_execute(
     engine_url,
     execution_method,
     cache_client: Any,
-) -> Tuple[Any, Any]:
+) -> Tuple[Any, Any, Any]:
     try:
         # Format the query for consistency
         query = sqlparse.format(query, reindent=True, keyword_case="upper")
@@ -116,12 +120,12 @@ def with_cache_execute(
         cached_result = cache_client.get(query_hash)
         if cached_result:
             logging.debug(f"Using cached result for query: {query}")
-            return pickle.loads(cached_result), None
+            return pickle.loads(cached_result), None, None
     except Exception as e:
         logging.warning(f"Failed to retrieve query from cache: {e}")
 
     # Execute the query using the internal execute method
-    result, error = execution_method(query)
+    result, _, error = execution_method(query)
 
     # If successful, store the result in the cache
     if not error:
@@ -131,7 +135,7 @@ def with_cache_execute(
         except Exception as e:
             logging.warning(f"Failed to cache query result: {e}")
 
-    return result, error
+    return result, None, error
 
 
 def get_cache_client(config):

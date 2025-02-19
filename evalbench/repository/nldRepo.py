@@ -1,6 +1,7 @@
 import os
 import shutil
 import logging
+import uuid
 from git import Repo
 from .base import Repository
 

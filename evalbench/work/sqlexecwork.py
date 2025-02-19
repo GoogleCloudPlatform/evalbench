@@ -1,7 +1,9 @@
 """Work is the base class for all work items."""
+
 from typing import Any
 from databases import DB
 from work import Work
+from util.sanitizer import sanitize_sql
 
 
 class SQLExecWork(Work):
@@ -19,40 +21,6 @@ class SQLExecWork(Work):
         self.eval_result = eval_result
         self.db_queue = db_queue
 
-    def _execute_sql_flow(self, query, is_golden=False):
-        if query is None:
-            query = ""
-        if self.eval_result["query_type"] in ["dml", "ddl"]:
-            self.db.execute(self.eval_result["setup_sql"])
-            result, error = self._execute_with_eval(query, is_golden)
-        else:
-            # Using cache when query_type is dql
-            result, error = self.db.execute(query, use_cache=True)
-        return result, error
-
-    def _execute_with_eval(self, query, is_golden=False):
-        eval_result = None
-        result = None
-        error = None
-        if self.eval_result["query_type"] == "ddl":
-            self.db.resetup_database()
-            result, error = self.db.execute(query)
-            eval_result = self.db.get_metadata()
-        else:
-            if (
-                self.eval_result["eval_query"]
-                and len(self.eval_result["eval_query"]) > 0
-            ):
-                result, eval_result, error = self.db.execute_dml(
-                    query, self.eval_result["eval_query"][0]
-                )
-
-        if is_golden:
-            self.eval_result["golden_eval_results"] = eval_result
-        else:
-            self.eval_result["eval_results"] = eval_result
-        return result, error
-
     def run(self, work_config: Any = None) -> dict:
         """Runs the work item.
 
@@ -63,50 +31,85 @@ class SQLExecWork(Work):
 
         """
         generated_result = None
+        generated_eval_result = None
         generated_error = None
         golden_result = None
+        golden_eval_result = None
         golden_error = None
 
         if (
             self.eval_result["sql_generator_error"] is None
             and self.eval_result["generated_sql"]
         ):
-            if self.experiment_config["prompt_generator"] == "NOOPGenerator":
-                self.eval_result["sanitized_sql"] = self.eval_result["generated_sql"]
-            else:
-                self.eval_result["sanitized_sql"] = (
-                    self.eval_result["generated_sql"]
-                    .replace('sql: "', "")
-                    .replace("\\n", " ")
-                    .replace("\\n", " ")
-                    .replace("\\", "")
-                    .replace("  ", "")
-                    .replace("`", "")
+            query_type = self.eval_result["query_type"]
+            eval_query = self._get_eval_query()
+            sanitized_generated_sql = self._sanitize_sql()
+            golden_sql = self._get_golden_sql()
+
+            if sanitized_generated_sql:
+                generated_result, generated_eval_result, generated_error = self._evaluate_execution_results(
+                    sanitized_generated_sql, eval_query, query_type, is_golden=False
                 )
-            generated_result, generated_error = self._execute_sql_flow(
-                self.eval_result["sanitized_sql"], is_golden=False
-            )
-
-            golden_sql = ""
-            if isinstance(self.eval_result["golden_sql"], str):
-                golden_sql = self.eval_result["golden_sql"]
-            elif (
-                isinstance(self.eval_result["golden_sql"], list)
-                and len(self.eval_result["golden_sql"]) > 0
-            ):
-                golden_sql = self.eval_result["golden_sql"][0]
-
-            golden_result, golden_error = self._execute_sql_flow(
-                golden_sql, is_golden=True
+            golden_result, golden_eval_result, golden_error = self._evaluate_execution_results(
+                golden_sql, eval_query, query_type, is_golden=True
             )
 
         self.eval_result["generated_result"] = generated_result
+        self.eval_result["eval_results"] = generated_eval_result
         self.eval_result["generated_error"] = generated_error
-
         self.eval_result["golden_result"] = golden_result
+        self.eval_result["golden_eval_results"] = golden_eval_result
         self.eval_result["golden_error"] = golden_error
 
         # Release the database
         if self.eval_result["query_type"] == "ddl" and self.db_queue is not None:
             self.db_queue.put(self.db)
         return self.eval_result
+
+    def _evaluate_execution_results(self, query, eval_query, query_type, is_golden=False):
+        result = None
+        eval_result = None
+        error = None
+        if query_type == "dql":
+            result, _, error = self.db.execute(query, use_cache=True)
+        elif query_type == "dml":
+            # self.db.execute(self.eval_result["setup_sql"])
+            result, eval_result, error = self.db.execute(
+                query, eval_query, use_cache=False, rollback=True
+            )
+            # self.db.execute(self.eval_result["cleanup_sql"])
+        elif query_type == "ddl":
+            # self.db.execute(self.eval_result["setup_sql"])
+            self.db.resetup_database(force=True)
+            result, _, error = self.db.execute(
+                query, use_cache=False
+            )
+            eval_result = self.db.get_metadata()
+            # self.db.execute(self.eval_result["cleanup_sql"])
+        return result, eval_result, error
+
+    def _sanitize_sql(self):
+        if self.experiment_config["prompt_generator"] == "NOOPGenerator":
+            self.eval_result["sanitized_sql"] = self.eval_result["generated_sql"]
+        else:
+            self.eval_result["sanitized_sql"] = sanitize_sql(
+                self.eval_result["generated_sql"]
+            )
+        return self.eval_result["sanitized_sql"]
+
+    def _get_golden_sql(self):
+        golden_sql = ""
+        if isinstance(self.eval_result["golden_sql"], str):
+            golden_sql = self.eval_result["golden_sql"]
+        elif (
+            isinstance(self.eval_result["golden_sql"], list)
+            and len(self.eval_result["golden_sql"]) > 0
+        ):
+            golden_sql = self.eval_result["golden_sql"][0]
+        return golden_sql
+
+    def _get_eval_query(self):
+        if self.eval_result["eval_query"] and len(self.eval_result["eval_query"]) > 0:
+            return self.eval_result["eval_query"][0]
+        else:
+            return None

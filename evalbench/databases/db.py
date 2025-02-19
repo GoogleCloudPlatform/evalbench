@@ -1,24 +1,244 @@
 from abc import ABC, abstractmethod
-from typing import Any, Tuple
+from typing import Any, Optional, Set, Tuple, List
+from threading import Semaphore
+from util.config import generate_key
+from evalproto import (
+    schema_details_pb2,
+)
+
+from .util import (
+    get_cache_client,
+)
 
 
 class DB(ABC):
 
     def __init__(self, db_config):
-        pass
+        self.db_name = db_config["database_name"]
+        self.db_type = db_config["db"]
+
+        # Setup the concurrency requirements
+        self.execs_per_minute = db_config["max_executions_per_minute"]
+        self.max_attempts = 3
+        self.semaphore = Semaphore(self.execs_per_minute)
+
+        # Maintain setup / teardown information
+        self.tmp_dbs = []
+        self.tmp_users = []
+        self.was_re_setup_this_session = False
+
+        # Initialize the Redis cache client
+        self.cache_client = get_cache_client(db_config)
+
+    def clean_tmp_creations(self) -> None:
+        self.drop_tmp_databases(self.tmp_dbs.copy())
+        self.delete_tmp_users(self.tmp_users.copy())
+
+    def set_setup_instructions(self, setup_config, data, schema) -> None:
+        self.setup_config = setup_config
+        self.data = data
+        self.schema = schema
+
+    def resetup_database(self, force=False, setup_users=False) -> None:
+        if not self.setup_config:
+            raise ValueError("Setup config is required for setup.")
+        if self.was_re_setup_this_session and not force:
+            # If database was already re-setup (for DQL, DML, etc.)
+            # and it can be re-used, don't re-run setup unless forced.
+            return
+        self.drop_all_tables()
+        self.run_setup_commands(self.setup_config, "pre_setup", self.db_type)
+        self.setup_schema(self.schema)
+        self.run_setup_commands(self.setup_config, "post_schema_creation", self.db_type)
+        self.insert_data(self.data)
+        self.run_setup_commands(self.setup_config, "post_setup", self.db_type)
+        if setup_users:
+            self.setup_tmp_users()
+        self.was_re_setup_this_session = True
+
+    def setup_schema(
+        self, schema: schema_details_pb2.SchemaDetails,
+    ) -> None:
+        if not schema:
+            return
+        create_statements = self.generate_ddl(schema)
+        try:
+            self.batch_execute(create_statements)
+        except RuntimeError as e:
+            raise RuntimeError(f"Could not setup database schema: {e}")
+
+    def run_setup_commands(self, setup_config, section, db_type):
+        if section in setup_config and db_type in setup_config[section]:
+            try:
+                self.batch_execute(setup_config[section][db_type])
+            except RuntimeError as error:
+                raise RuntimeError(
+                    f"Could not run setup instructions for {section}: {error}"
+                )
+
+    def create_tmp_databases(self, db_config, num_dbs: int) -> list[str]:
+        tmp_dbs = []
+        for _ in range(num_dbs):
+            tmp_db_name = f"tmp_{db_config["database_name"]}_{generate_key()}"
+            self.create_tmp_database(tmp_db_name)
+            tmp_dbs.append(tmp_db_name)
+        return tmp_dbs
+
+    def drop_tmp_databases(self, databases) -> None:
+        for database_name in databases:
+            self.drop_tmp_database(database_name)
+
+    def setup_tmp_users(self):
+        self.dql_user = "tmp_dql_user_" + generate_key()
+        self.dml_user = "tmp_dml_user_" + generate_key()
+        self.tmp_user_password = generate_key()
+        self.create_tmp_users(self.dql_user, self.dml_user, self.tmp_user_password)
+        self.tmp_users.extend([self.dql_user, self.dml_user])
+
+    def delete_tmp_users(self, users) -> None:
+        for username in users:
+            self.delete_tmp_user(username)
+
+    def get_dql_user(self) -> str:
+        if not self.dql_user:
+            raise RuntimeError("No DQL user was created by this connection.")
+        return self.dql_user
+
+    def get_dml_user(self) -> str:
+        if not self.dql_user:
+            raise RuntimeError("No DML user was created by this connection.")
+        return self.dml_user
+
+    def get_tmp_user_password(self) -> str:
+        if not self.dql_user:
+            raise RuntimeError("No users were created by this connection.")
+        return self.tmp_user_password
 
     @abstractmethod
-    def generate_schema(self):
+    def execute(
+        self,
+        query: str,
+        eval_query: Optional[str] = None,
+        use_cache=False,
+        rollback=False,
+    ) -> Tuple[Any, Any, Any]:
+        """
+        Executes a database query.
+
+        Args:
+            query (str): The SQL query to execute.
+            eval_query (Optional[str], optional): An optional query to evaluate the result of the main query. Defaults to None.
+            use_cache (bool, optional): Whether to use caching for the query result. Defaults to False.
+            rollback (bool, optional): Whether to rollback the transaction after execution. Defaults to False.
+
+        Returns:
+            Tuple[Any, Any, Any]: A tuple containing the result of the main query, the result of the eval query (if provided), and any error that occurred.
+        """
         raise NotImplementedError("Subclasses must implement this method")
 
     @abstractmethod
-    def execute(self, query: str, use_cache=False) -> Tuple[Any, Any]:
-        """Execute a query string and return the execution result and the error (or None if no error).
+    def batch_execute(self, commands: list[str]) -> None:
+        """
+        Executes a batch of SQL commands.
+         * Raises RuntimeError if it cannot execute any command in batch.
+
         Args:
-            query (str): The SQL query to execute.
-            use_cache (bool): Whether to use cache for DB execution result.
+            commands (list[str]): A list of SQL commands to execute.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    @abstractmethod
+    def get_metadata(self) -> dict:
+        """
+        Retrieves metadata about the database schema.
 
         Returns:
-            Tuple[Any, Any]: The result of the query execution and the error (or None if no error).
+            dict: A dictionary containing metadata about the database schema.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    @abstractmethod
+    def create_tmp_database(self, database_name: str) -> None:
+        """
+        Creates a temporary database.
+        * Raises RuntimeError if it cannot create databases.
+
+        Args:
+            database_name (str): The name of the temporary database to create.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    @abstractmethod
+    def drop_tmp_database(self, database_name: str) -> None:
+        """
+        Drops a temporary database.
+
+        Args:
+            database_name (str): The name of the temporary database to drop.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    @abstractmethod
+    def drop_all_tables(self) -> None:
+        """
+        Drops all tables in the database.
+        * Raises RuntimeError if it cannot drop tables.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    @abstractmethod
+    def insert_data(self, data: dict[str, List[str]]) -> None:
+        """
+        Inserts data into the database tables.
+        * Raises RuntimeError if it cannot insert data.
+
+        Args:
+            data (dict[str, List[str]]): A dictionary mapping table names to lists of rows to insert.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    @abstractmethod
+    def create_tmp_users(self, dql_user: str, dml_user: str, tmp_password: str) -> None:
+        """
+        Creates temporary database users for DQL and DML.
+        * Raises RuntimeError if cannot create user.
+
+        Args:
+            dql_user (str): The name of the DQL (Data Query Language) user.
+            dml_user (str): The name of the DML (Data Manipulation Language) user.
+            tmp_password (str): The password for the temporary users.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    @abstractmethod
+    def delete_tmp_user(self, username: str) -> None:
+        """
+        Deletes a temporary database user.
+
+        Args:
+            username (str): The name of the user to delete.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    @abstractmethod
+    def close_connections(self) -> None:
+        """
+        Closes all database connections.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    @abstractmethod
+    def generate_ddl(
+        self,
+        schema: schema_details_pb2.SchemaDetails,
+    ) -> list[str]:
+        """
+        Generates Data Definition Language (DDL) statements for the given schema.
+
+        Args:
+            schema (schema_details_pb2.SchemaDetails): Details of the schema.
+
+        Returns:
+            list[str]: The generated DDL statements.
         """
         raise NotImplementedError("Subclasses must implement this method")
