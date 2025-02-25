@@ -250,7 +250,7 @@ class SQLServerDB(DB):
                 DROP_TABLE_COMMAND.format(TABLE_NAME=table["name"])
             )
         self.batch_execute(drop_all_tables_commands)
- 
+
     def insert_data(self, data: dict[str, List[str]]):
         if not data:
             return
