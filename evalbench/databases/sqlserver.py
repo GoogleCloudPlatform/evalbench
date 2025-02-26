@@ -120,7 +120,7 @@ class SQLServerDB(DB):
             )
         else:
             return self._execute(query)
-        
+
     def batch_execute(self, commands: list[str]):
         batch_commands = []
         for command in commands:
