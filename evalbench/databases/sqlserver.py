@@ -217,12 +217,10 @@ class SQLServerDB(DB):
         create_statements = []
         for table in schema.tables:
             table_name = table.table
-            columns = [
-                f"{column.column} {column.data_type}" for column in table.columns
-            ]
-            create_statements.append(
-                f"CREATE TABLE {table_name} ({",\n".join(columns)});"
+            columns = ", ".join(
+                [f"{column.column} {column.data_type}" for column in table.columns]
             )
+            create_statements.append(f"CREATE TABLE `{table_name}` ({columns});")
         return create_statements
 
     def create_tmp_database(self, database_name: str):
@@ -255,10 +253,11 @@ class SQLServerDB(DB):
         if not data:
             return
         insertion_statements = []
-        for table in data:
-            for row in data[table]:
+        for table_name in data:
+            for row in data[table_name]:
+                inline_columns = ", ".join([f"{value}" for value in row])
                 insertion_statements.append(
-                    f"INSERT INTO `{table}` VALUES ({",".join([f"{value}" for value in row])});"
+                    f"INSERT INTO `{table_name}` VALUES ({inline_columns});"
                 )
         try:
             self.batch_execute(insertion_statements)
