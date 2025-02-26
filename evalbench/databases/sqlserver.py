@@ -95,14 +95,6 @@ class SQLServerDB(DB):
         # To be implemented
         pass
 
-    def generate_ddl(self):
-        # To be implemented
-        pass
-
-    def get_metadata(self) -> dict:
-        # To be implemented
-        pass
-
     def _execute(self, query: str) -> Tuple[Any, Any]:
         result = []
         error = None
@@ -128,6 +120,15 @@ class SQLServerDB(DB):
             )
         else:
             return self._execute(query)
+        
+    def batch_execute(self, commands: list[str]):
+        batch_commands = []
+        for command in commands:
+            if command.strip() != "":
+                batch_commands.append(command)
+        _, _, error = self._execute("SELECT 1;", batch_commands=batch_commands)
+        if error:
+            raise RuntimeError(f"{error}")
 
     def execute(self, query: str, use_cache=False) -> Tuple[Any, Any]:
         """
