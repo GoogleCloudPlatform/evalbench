@@ -51,10 +51,7 @@ def analyze_result(scores, experiment_config: dict[str, str]):
     num_scorers = len(scorers)
     for metric_name in scorers:
         metric_name = metric_name.strip()
-        if metric_name == "recall_match":
-            metric_score = 1
-        else:
-            metric_score = 100
+        metric_score=100
         summary = analyze_one_metric(
             df=df,
             metric_name=metric_name,

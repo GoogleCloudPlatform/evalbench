@@ -18,6 +18,7 @@ Run configurations:
 from typing import Tuple
 
 from scorers.comparator import Comparator
+from scorers.comparator import convert_to_set
 
 
 class RecallMatcher(Comparator):
@@ -37,42 +38,6 @@ class RecallMatcher(Comparator):
 
         if config and "score_type" in config:
             self.score_type = config["score_type"]
-
-    def find_common_dicts(self, list1, list2):
-        """
-        Finds common dictionaries between two lists of dictionaries.
-        Two dictionaries are considered the same if all their key-value pairs are the same.
-        Dictionaries can contain lists as values.
-
-        Args:
-            1. list1: The first list of dictionaries.
-            2. list2: The second list of dictionaries.
-
-        Returns:
-            1. A list of common dictionaries.
-            2. No. of unique items in list1
-            3. No. of unique items in list2
-        """
-
-        def make_hashable(item):
-            """Recursively converts items to hashable types (tuples)."""
-            if isinstance(item, list):
-                return tuple(make_hashable(x) for x in item)
-            elif isinstance(item, dict):
-                return tuple(sorted((k, make_hashable(v)) for k, v in item.items()))
-            else:
-                return item
-
-        set1 = {make_hashable(d) for d in list1}
-        set2 = {make_hashable(d) for d in list2}
-
-        common_hashables = set1.intersection(set2)
-
-        # Preserve original dictionaries
-        common_dicts = [
-            d for d in list1 if make_hashable(d) in common_hashables
-        ]
-        return common_dicts, len(set1), len(set2)
 
     def compute_precision_recall(self, golden_results, generated_results):
         """
@@ -103,8 +68,14 @@ class RecallMatcher(Comparator):
         orig_golden_size = len(golden_results)
         orig_generated_size = len(generated_results)
 
-        common_results, dedup_golden_size, dedup_generated_size = self.find_common_dicts(golden_results, generated_results)
-        correct_predictions = len(common_results)
+        golden_results_set = convert_to_set(golden_results)
+        generated_results_set = convert_to_set(generated_results)
+
+        dedup_golden_size = len(golden_results_set)
+        dedup_generated_size = len(generated_results_set)
+
+        common_results_set = golden_results_set.intersection(generated_results_set)
+        correct_predictions = len(common_results_set)
 
         if golden_results == generated_results:
             precision = 1
@@ -142,4 +113,4 @@ class RecallMatcher(Comparator):
         full_result = self.compute_precision_recall(
             golden_execution_result, generated_execution_result
         )
-        return full_result["recall"], str(full_result)
+        return full_result[self.score_type] * 100, str(full_result)

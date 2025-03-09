@@ -110,38 +110,27 @@ def convert_to_hashable(obj: Any) -> Any | None:
     else:
         return obj
 
-
-def process_list(items: list[Any]) -> list[Any] | None:
-    """process_list.
+def convert_to_set(results: list[dict]):
+    """
+    Converts a list of dictionaries to a set of tuples sorted according to their key
+    Two dictionaries are considered the same if all their key-value pairs are the same.
+    Dictionaries can contain lists as values.
 
     Args:
-      items:
+        1. results: The list of dictionaries.
 
     Returns:
+        1. A set of sorted tuples
     """
-    hashable_items = [convert_to_hashable(item) for item in items]
-    unique_items = list(set(hashable_items))
-    return sorted(unique_items)
 
+    def make_hashable(item):
+        """Recursively converts items to hashable types (tuples)."""
+        if isinstance(item, list):
+            return tuple(make_hashable(x) for x in item)
+        elif isinstance(item, dict):
+            return tuple(sorted((k, make_hashable(v)) for k, v in item.items()))
+        else:
+            return item
 
-def convert_to_set(results: list[Any]) -> list[Any] | None:
-    """convert_to_set.
-
-    Args:
-      results:
-
-    Returns:
-    """
-    try:
-        if isinstance(results, list):
-            return results
-        # trying to not process unless required to avoid File too large error as
-        # results set are too large specially for air_travel.
-        results = list(set(results))
-    except TypeError:
-        print(f"Error converting results to set {traceback.format_exc()}")
-        logging.exception('Call to "list" resulted in an error')
-        # Convert to hashable items as we cannot create set out of non-hashable
-        # values, remove duplicates & sort.
-        results = process_list(results)
-    return results
+    results_set = {make_hashable(d) for d in results}
+    return results_set
