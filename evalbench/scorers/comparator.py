@@ -110,6 +110,7 @@ def convert_to_hashable(obj: Any) -> Any | None:
     else:
         return obj
 
+
 def convert_to_set(results: list[dict]):
     """
     Converts a list of dictionaries to a set of tuples sorted according to their key
