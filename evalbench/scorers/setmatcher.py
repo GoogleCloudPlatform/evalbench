@@ -1,15 +1,23 @@
-"""Set match between the golden query execution result and the generated query execution result. This is the Execution Accuracy measured in BIRD"""
+"""
+This comparison strategy compares the set of generated and expected results and gives full score if the sets match exactly.
+This is the execution accuracy measured in BIRD
+
+Run configurations: None
+"""
 
 from typing import Tuple
 
 from scorers import comparator
+from scorers.comparator import convert_to_set
 
 
 class SetMatcher(comparator.Comparator):
-    """SetMatcher.
+    """
+    SetMatcher class implements the Comparator base class with set comparison logic.
 
     Attributes:
-      name:
+        1. name: Name of the comparator. Set to "set_match"
+        2. config: Scorer config defined in the run config yaml file
     """
 
     def __init__(self, config: dict):
@@ -29,20 +37,26 @@ class SetMatcher(comparator.Comparator):
         generated_eval_result: str,
         generated_error: str,
     ) -> Tuple[float, str]:
+        """Implements the set comparison logic"""
+
         if golden_error or generated_error:
             return 0, None
         else:
-            # Current results are a list of Dict. Converting to Tuple for set comparison
-            golden_execution_result_tuple = [
-                tuple(d.values()) for d in golden_execution_result
-            ]
-            generated_execution_result_tuple = [
-                tuple(d.values()) for d in generated_execution_result
-            ]
+            # Filter out None values (assuming they shouldn't be considered)
+            golden_results = (
+                [x for x in golden_execution_result if x is not None] if golden_execution_result else []
+            )
+            generated_results = (
+                [x for x in generated_execution_result if x is not None] if generated_execution_result else []
+            )
+
+            golden_results_set = convert_to_set(golden_results)
+            generated_results_set = convert_to_set(generated_results)
+
             score = (
                 100
-                if set(golden_execution_result_tuple)
-                == set(generated_execution_result_tuple)
+                if golden_results_set == generated_results_set
                 else 0
             )
+
             return score, None
