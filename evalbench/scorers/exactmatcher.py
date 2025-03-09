@@ -3,6 +3,8 @@ ExactMatcher
 
 It is a simple comparison strategy which checks if expected and generated results are exactly the same.
 
+Note: Since this is a list comparison, ordering of the results matter here.
+
 Run Configuration Options:
     1. use_eval_sql: Optional
         - Allowed values: True, False
