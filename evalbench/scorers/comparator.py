@@ -5,9 +5,9 @@ import dataclasses
 import datetime
 import decimal
 import json
-import logging
-import traceback
 from typing import Any, Tuple
+
+from .util import make_hashable
 
 
 class Comparator(abc.ABC):
@@ -135,3 +135,25 @@ def convert_to_set(results: list[dict]):
 
     results_set = {make_hashable(d) for d in results}
     return results_set
+
+def take_n_uniques(output_list: list, n: int) -> list:
+    """Takes n number of unique (non duplicate) values from the output list.
+
+    Args:
+        output_list: The execution output result set
+        n: Max number of unique values needed.
+
+    Returns:
+        The execution output result set without duplicates in a size of n values or less.
+    """
+    seen_dicts = set()
+    new_list = []
+    for d in output_list:
+        # Convert the dictionary to a hashable frozenset for efficient lookup
+        t = frozenset((k, make_hashable(v)) for k, v in d.items())
+        if t not in seen_dicts:
+            seen_dicts.add(t)
+            new_list.append(d)
+            if len(new_list) == n:
+                break
+    return new_list

@@ -13,9 +13,8 @@ import vertexai
 from vertexai.preview.generative_models import GenerationConfig, GenerativeModel
 
 from scorers import comparator
-from .util import rate_limited_execute, make_hashable, with_cache_execute
+from .util import rate_limited_execute, with_cache_execute
 from databases.util import get_cache_client
-import redis
 
 
 class LLMRater(comparator.Comparator):
@@ -82,30 +81,7 @@ class LLMRater(comparator.Comparator):
             max_attempts=self.max_attempts,
         ).text
         return response
-
-    @staticmethod
-    def take_n_uniques(output_list: list, n: int) -> list:
-        """Takes n number of unique (non duplicate) values from the output list.
-
-        Args:
-          output_list: The execution output result set
-          n: Max number of unique values needed.
-
-        Returns:
-          The execution output result set without duplicates in a size of n values or less.
-        """
-        seen_dicts = set()
-        new_list = []
-        for d in output_list:
-            # Convert the dictionary to a hashable frozenset for efficient lookup
-            t = frozenset((k, make_hashable(v)) for k, v in d.items())
-            if t not in seen_dicts:
-                seen_dicts.add(t)
-                new_list.append(d)
-                if len(new_list) == n:
-                    break
-        return new_list
-
+    
     def compare(
         self,
         nl_prompt: str,
@@ -140,10 +116,10 @@ class LLMRater(comparator.Comparator):
 
         only_first_n = 50
 
-        golden_execution_result = self.take_n_uniques(
+        golden_execution_result = comparator.take_n_uniques(
             golden_execution_result, only_first_n
         )
-        generated_execution_result = self.take_n_uniques(
+        generated_execution_result = comparator.take_n_uniques(
             generated_execution_result, only_first_n
         )
 

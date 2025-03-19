@@ -79,10 +79,13 @@ class VertexMatcher(comparator.Comparator):
             return 0, "Generated query failed to execute."
 
         only_first_n = 50
-        if len(golden_execution_result) > only_first_n:
-            golden_execution_result = golden_execution_result[:only_first_n]
-        if len(generated_execution_result) > only_first_n:
-            generated_execution_result = generated_execution_result[:only_first_n]
+        
+        golden_execution_result = comparator.take_n_uniques(
+            golden_execution_result, only_first_n
+        )
+        generated_execution_result = comparator.take_n_uniques(
+            generated_execution_result, only_first_n
+        )
 
         prompt = f"""
         Here's the task: Evaluate if the LLM-generated SQL query is semantically
