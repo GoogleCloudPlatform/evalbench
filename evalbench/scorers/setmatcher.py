@@ -49,7 +49,6 @@ class SetMatcher(comparator.Comparator):
             generated_execution_result_tuple = [
                 tuple(d.values()) for d in generated_execution_result
             ]
-            
             score = (
                 100
                 if set(golden_execution_result_tuple)
