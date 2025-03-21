@@ -1,7 +1,7 @@
 """
 LLMRater
-In this comparison strategy, an LLM compares the golden execution results with the generated sql execution results. 
-It returns a score between 0 and 10, with a score of 100 for concrete positive cases, 
+In this comparison strategy, an LLM compares the golden execution results with the generated sql execution results.
+It returns a score between 0 and 10, with a score of 100 for concrete positive cases,
 where either there is a mismatch of columns names or extra relevant columns in Generated SQL exists.
 
 Evaluation rules given to LLM:
