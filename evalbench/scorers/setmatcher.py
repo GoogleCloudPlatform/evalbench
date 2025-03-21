@@ -42,14 +42,6 @@ class SetMatcher(comparator.Comparator):
         if golden_error or generated_error:
             return 0, None
         else:
-            # Filter out None values (assuming they shouldn't be considered)
-            golden_results = (
-                [x for x in golden_execution_result if x is not None] if golden_execution_result else []
-            )
-            generated_results = (
-                [x for x in generated_execution_result if x is not None] if generated_execution_result else []
-            )
-
             golden_results_set = convert_to_set(golden_results)
             generated_results_set = convert_to_set(generated_results)
 
