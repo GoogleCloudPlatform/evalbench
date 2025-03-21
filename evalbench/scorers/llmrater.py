@@ -1,7 +1,7 @@
 """
 LLMRater
 In this comparison strategy, an LLM compares the golden execution results with the generated sql execution results.
-It returns a score between 0 and 10, with a score of 100 for concrete positive cases,
+It returns a score between 0 and 100, with a score of 100 for concrete positive cases,
 where either there is a mismatch of columns names or extra relevant columns in Generated SQL exists.
 
 Evaluation rules given to LLM:
@@ -13,12 +13,8 @@ Evaluation rules given to LLM:
     4. The mapped column names might differ, do not make any assumptions based on them.
 
 Run Configuration Options:
-    1. gcp_project_id: Required
-        - A valid GCP project ID which will be used for querying the LLM
-    2. gcp_project_location: Required
-        - A valid region from where the vertexAI resources will be utilized
-    3. model: Required
-        - An LLM model to use for evaluation. e.g. gemini-1.5-pro-002
+    1. model_config: Required
+        - File that defines the configuration settings for the LLM model to be used in evaluation.
 """
 
 from typing import Tuple
@@ -37,11 +33,8 @@ class LLMRater(comparator.Comparator):
     LLMRater class implements the Comparator base class.
 
     Attributes:
-        1. name: Name of the comparator. Set to "vertexmatcher"
-        2. config: Scorer config defined in the run config yaml file
-        3. gcp_project_id: ID of the GCP project ID from where the resources will be utilized
-        4. gcp_project_location: A valid region for vertexAI resources
-        5. model: The LLM model to use
+        1. name: Name of the comparator. Set to "llmrater"
+        2. model_config: File that defines the configuration settings for the LLM model used in evaluation.
     """
 
     def __init__(self, config: dict):
