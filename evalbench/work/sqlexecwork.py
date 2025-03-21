@@ -76,7 +76,7 @@ class SQLExecWork(Work):
         eval_result = None
         error = None
         if query_type == "dql":
-            result, _, error = self.db.execute(query, use_cache=True)
+            result, _, error = self.db.execute(query, use_cache=True, rollback=True)
         elif query_type == "dml":
             # self.db.execute(self.eval_result["setup_sql"])
             result, eval_result, error = self.db.execute(

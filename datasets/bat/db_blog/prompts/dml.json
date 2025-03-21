@@ -7,7 +7,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -18,6 +19,9 @@
       ],
       "sqlserver": [
         "UPDATE tbl_users SET username = 'magic_one', updated_at = GETDATE() WHERE user_id = 9;"
+      ],
+      "sqlite": [
+        "UPDATE tbl_users SET username = 'magic_one', updated_at = CURRENT_TIMESTAMP WHERE user_id = 9;"
       ]
     },
     "eval_query": {
@@ -29,12 +33,16 @@
       ],
       "sqlserver": [
         "SELECT username, updated_at, CASE WHEN updated_at > '2024-02-27 07:27:14' THEN 1 ELSE 0 END AS is_updated FROM tbl_users WHERE user_id = 9;"
+      ],
+      "sqlite": [
+        "SELECT username, updated_at, updated_at > '2024-02-27 07:27:14' AS is_updated FROM tbl_users WHERE user_id = 9;"
       ]
     },
     "setup_sql": {
       "postgres": [],
       "mysql": [],
-      "sqlserver" : []
+      "sqlserver" : [],
+      "sqlite": []
     },
     "cleanup_sql": {
       "postgres": [
@@ -44,6 +52,9 @@
         "UPDATE tbl_users SET username = 'sophia.anderson ', updated_at = '2024-02-27 07:26:14' WHERE user_id = 9;"
       ],
       "sqlserver": [
+        "UPDATE tbl_users SET username = 'sophia.anderson', updated_at = '2024-02-27 07:26:14' WHERE user_id = 9;"
+      ],
+      "sqlite": [
         "UPDATE tbl_users SET username = 'sophia.anderson', updated_at = '2024-02-27 07:26:14' WHERE user_id = 9;"
       ]
     },
@@ -67,7 +78,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -77,6 +89,9 @@
         "UPDATE tbl_posts SET content = 'Updated content' WHERE post_id = 3;"
       ],
       "sqlserver": [
+        "UPDATE tbl_posts SET content = 'Updated content' WHERE post_id = 3;"
+      ],
+      "sqlite": [
         "UPDATE tbl_posts SET content = 'Updated content' WHERE post_id = 3;"
       ]
     },
@@ -89,6 +104,9 @@
       ],
       "sqlserver": [
         "SELECT content FROM tbl_posts WHERE post_id = 3;"
+      ],
+      "sqlite": [
+        "SELECT content FROM tbl_posts WHERE post_id = 3;"
       ]
     },
     "setup_sql": {
@@ -100,6 +118,9 @@
       ],
       "sqlserver": [
         "UPDATE tbl_posts SET content = 'Tips and tricks for efficient web development.' WHERE post_id = 3;"
+      ],
+      "sqlite": [
+        "UPDATE tbl_posts SET content = 'Tips and tricks for efficient web development.' WHERE post_id = 3;"
       ]
     },
     "cleanup_sql": {
@@ -110,6 +131,9 @@
         "UPDATE tbl_posts SET content = 'Tips and tricks for efficient web development.' WHERE post_id = 3;"
       ],
       "sqlserver": [
+        "UPDATE tbl_posts SET content = 'Tips and tricks for efficient web development.' WHERE post_id = 3;"
+      ],
+      "sqlite": [
         "UPDATE tbl_posts SET content = 'Tips and tricks for efficient web development.' WHERE post_id = 3;"
       ]
     },
@@ -132,7 +156,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -142,8 +167,11 @@
         "UPDATE tbl_attachments SET tags_file = JSON_ARRAY_APPEND(tags_file, '$', 'data_security'), tags_file = JSON_ARRAY_APPEND(tags_file, '$', 'data_privacy'), category_file = JSON_ARRAY_APPEND(category_file, '$', 'security'), category_file = JSON_ARRAY_APPEND(category_file, '$', 'privacy'), access_permissions = JSON_SET(access_permissions, '$.read_write', true, '$.read_only', false), metadata = JSON_SET(metadata, '$.additional_info', 'This attachment contains sensitive data related to security and privacy measures.') WHERE attachment_id = 1; UPDATE tbl_attachments SET tags_file = JSON_ARRAY_APPEND(tags_file, '$', 'user_data'), tags_file = JSON_ARRAY_APPEND(tags_file, '$', 'customer_information'), category_file = JSON_ARRAY_APPEND(category_file, '$', 'personal_data'), category_file = JSON_ARRAY_APPEND(category_file, '$', 'client_data'), access_permissions = JSON_SET(access_permissions, '$.read_write', true, '$.read_only', false), metadata = JSON_SET(metadata, '$.additional_info', 'This attachment contains user data and customer information for analysis purposes.') WHERE attachment_id = 2;"
       ],
       "sqlserver": [
-      "UPDATE tbl_attachments SET tags_file = JSON_MODIFY(JSON_MODIFY(COALESCE(tags_file, '[]'), 'append $', 'data_security'), 'append $', 'data_privacy'), category_file = JSON_MODIFY(JSON_MODIFY(COALESCE(category_file, '[]'), 'append $', 'security'), 'append $', 'privacy'), access_permissions = JSON_MODIFY(JSON_MODIFY(COALESCE(access_permissions, '{}'), '$.read_write', 'true'), '$.read_only', 'false'), metadata = JSON_MODIFY(COALESCE(metadata, '{}'), '$.additional_info', 'This attachment contains sensitive data related to security and privacy measures.') WHERE attachment_id = 1;"
-    ]
+        "UPDATE tbl_attachments SET tags_file = JSON_MODIFY(JSON_MODIFY(COALESCE(tags_file, '[]'), 'append $', 'data_security'), 'append $', 'data_privacy'), category_file = JSON_MODIFY(JSON_MODIFY(COALESCE(category_file, '[]'), 'append $', 'security'), 'append $', 'privacy'), access_permissions = JSON_MODIFY(JSON_MODIFY(COALESCE(access_permissions, '{}'), '$.read_write', 'true'), '$.read_only', 'false'), metadata = JSON_MODIFY(COALESCE(metadata, '{}'), '$.additional_info', 'This attachment contains sensitive data related to security and privacy measures.') WHERE attachment_id = 1;"
+      ],
+      "sqlite": [
+        "UPDATE tbl_attachments SET tags_file = json_insert(COALESCE(tags_file, '[]'), '$[#]', '\"data_security\"', '$[#]', '\"data_privacy\"'), category_file = json_insert(COALESCE(category_file, '[]'), '$[#]', '\"security\"', '$[#]', '\"privacy\"'), metadata = json_set(COALESCE(metadata, '{}'), '$.additional_info', '\"This attachment contains sensitive data related to security and privacy measures.\"') WHERE attachment_id IN (1, 2);"
+      ]
     },
     "eval_query": {
       "postgres": [
@@ -153,6 +181,9 @@
         "SELECT COUNT(*) FROM tbl_attachments WHERE attachment_id = 1; SELECT COUNT(*) FROM tbl_attachments WHERE attachment_id = 2;"
       ],
       "sqlserver": [
+        "SELECT * FROM tbl_attachments;"
+      ],
+      "sqlite": [
         "SELECT * FROM tbl_attachments;"
       ]
     },
@@ -165,6 +196,9 @@
       ],
       "sqlserver": [
         "DELETE FROM tbl_attachments WHERE attachment_id = 1; INSERT INTO tbl_attachments VALUES ('1', '1', '1', 'attachment1.pdf', '/attachments/attachment1.pdf', '1024', 'pdf', '2024-02-26 11:00:00', 'Attachment for the SQL post', '1', 'public', '50', 'pdf', '192.168.1.1', '2024-02-26 11:00:00', '2024-03-26 11:00:00', N'[\"database\", \"attachment\"]', N'[\"programming\"]', N'{\"read_write\": true}', 'cloud', NULL, '0', NULL);"
+      ],
+      "sqlite": [
+        "INSERT INTO tbl_attachments (attachment_id, post_id, user_id, file_name, file_path, file_size, file_type, upload_date, description, is_active, visibility_status, download_count, file_extension, uploaded_by_ip, last_modified, expiration_date, tags_file, category_file, access_permissions, storage_location, metadata, is_featured, parent_attachment_id) VALUES (1, 1, 1, 'attachment1.pdf', '/attachments/attachment1.pdf', 1024, 'pdf', '2024-02-26 11:00:00', 'Attachment for the SQL post', 1, 'public', 50, 'pdf', '192.168.1.1', '2024-02-26 11:00:00', '2024-03-26 11:00:00', '[\"database\", \"attachment\"]', '[\"programming\"]', '{\"read_write\": true}', 'cloud', NULL, 0, NULL);"
       ]
     },
     "cleanup_sql": {
@@ -175,6 +209,9 @@
         "SET SQL_SAFE_UPDATES = 0; delete from tbl_attachments where attachment_id = 1; INSERT INTO tbl_attachments VALUES ('1', '1', '1', 'attachment1.pdf', '/attachments/attachment1.pdf', '1024', 'pdf', '2024-02-26 11:00:00', 'Attachment for the SQL post', '1', 'public', '50', 'pdf', '192.168.1.1', '2024-02-26 11:00:00', '2024-03-26 11:00:00', '[\\\"database\\\", \\\"attachment\\\"]', '[\\\"programming\\\"]', '{\\\"read_write\\\": true}', 'cloud', NULL, '0', NULL); delete from tbl_attachments where attachment_id = 2; INSERT INTO tbl_attachments VALUES ('2', '2', '2', 'attachment2.jpg', '/attachments/attachment2.jpg', '2048', 'jpg', '2024-02-25 17:00:00', 'Attachment for the Marketing post', '1', 'public', '30', 'jpg', '192.168.1.2', '2024-02-25 17:00:00', '2024-03-25 17:00:00', '[\\\"marketing\\\", \\\"attachment\\\"]', '[\\\"digital\\\"]', '{\\\"read_write\\\": true}', 'cloud', NULL, '0', NULL); SET SQL_SAFE_UPDATES = 1;"
       ],
       "sqlserver": [
+        "DELETE FROM tbl_attachments WHERE attachment_id = 1;"
+      ],
+      "sqlite": [
         "DELETE FROM tbl_attachments WHERE attachment_id = 1;"
       ]
     },

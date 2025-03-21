@@ -7,7 +7,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -18,6 +19,9 @@
       ],
       "sqlserver": [
         "ALTER TABLE tbl_labels ADD comments_description NVARCHAR(MAX);"
+      ],
+      "sqlite": [
+        "ALTER TABLE tbl_labels ADD COLUMN comments_description TEXT CHECK (json_valid(comments_description));"
       ]
     },
     "eval_query": {
@@ -29,6 +33,9 @@
       ],
       "sqlserver": [
         "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'tbl_labels' AND COLUMN_NAME = 'comments_description' AND DATA_TYPE = 'nvarchar';"
+      ],
+      "sqlite": [
+        "SELECT COUNT(*) FROM tbl_labels WHERE json_valid(comments_description);"
       ]
     },
     "setup_sql": {
@@ -40,6 +47,9 @@
       ],
       "sqlserver": [
         "ALTER TABLE tbl_labels DROP COLUMN comments_description;"
+      ],
+      "sqlite": [
+        "BEGIN TRANSACTION; CREATE TABLE tbl_labels_new (label_id INTEGER PRIMARY KEY, creator_id INTEGER DEFAULT NULL, updated_by INTEGER DEFAULT NULL, name TEXT DEFAULT NULL, description TEXT DEFAULT NULL, created_at TEXT DEFAULT NULL, updated_at TEXT DEFAULT NULL, post_count INTEGER DEFAULT NULL, visibility_status TEXT DEFAULT NULL, is_active INTEGER DEFAULT NULL, usage_frequency INTEGER DEFAULT NULL, parent_label_id INTEGER DEFAULT NULL, FOREIGN KEY (creator_id) REFERENCES tbl_users(user_id), FOREIGN KEY (updated_by) REFERENCES tbl_users(user_id), FOREIGN KEY (parent_label_id) REFERENCES tbl_labels(label_id)); INSERT INTO tbl_labels_new (label_id, creator_id, updated_by, name, description, created_at, updated_at, post_count, visibility_status, is_active, usage_frequency, parent_label_id) SELECT label_id, creator_id, updated_by, name, description, created_at, updated_at, post_count, visibility_status, is_active, usage_frequency, parent_label_id FROM tbl_labels; DROP TABLE tbl_labels; ALTER TABLE tbl_labels_new RENAME TO tbl_labels; COMMIT;"
       ]
     },
     "cleanup_sql": {
@@ -51,6 +61,9 @@
       ],
       "sqlserver": [  
         "ALTER TABLE tbl_labels DROP COLUMN comments_description;"  
+      ],
+      "sqlite": [
+        "BEGIN TRANSACTION; CREATE TABLE tbl_labels_new (label_id INTEGER PRIMARY KEY, creator_id INTEGER DEFAULT NULL, updated_by INTEGER DEFAULT NULL, name TEXT DEFAULT NULL, description TEXT DEFAULT NULL, created_at TEXT DEFAULT NULL, updated_at TEXT DEFAULT NULL, post_count INTEGER DEFAULT NULL, visibility_status TEXT DEFAULT NULL, is_active INTEGER DEFAULT NULL, usage_frequency INTEGER DEFAULT NULL, parent_label_id INTEGER DEFAULT NULL, FOREIGN KEY (creator_id) REFERENCES tbl_users(user_id), FOREIGN KEY (updated_by) REFERENCES tbl_users(user_id), FOREIGN KEY (parent_label_id) REFERENCES tbl_labels(label_id)); INSERT INTO tbl_labels_new (label_id, creator_id, updated_by, name, description, created_at, updated_at, post_count, visibility_status, is_active, usage_frequency, parent_label_id) SELECT label_id, creator_id, updated_by, name, description, created_at, updated_at, post_count, visibility_status, is_active, usage_frequency, parent_label_id FROM tbl_labels; DROP TABLE tbl_labels; ALTER TABLE tbl_labels_new RENAME TO tbl_labels; COMMIT;"
       ]
     },
     "tags": [
@@ -75,7 +88,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -86,6 +100,9 @@
       ],
       "sqlserver": [
         "EXEC sp_rename 'tbl_posts.content', 'post_content', 'COLUMN';"
+      ],
+      "sqlite": [
+        "ALTER TABLE tbl_posts RENAME COLUMN content TO post_content;"
       ]
     },
     "eval_query": {
@@ -96,6 +113,9 @@
         "SELECT post_content FROM tbl_posts;"
       ],
       "sqlserver": [
+        "SELECT post_content FROM tbl_posts;"
+      ],
+      "sqlite": [
         "SELECT post_content FROM tbl_posts;"
       ]
     },
@@ -108,6 +128,9 @@
       ],
       "sqlserver": [
         "EXEC sp_rename 'tbl_posts.post_content', 'content', 'COLUMN';"
+      ],
+      "sqlite": [
+        "ALTER TABLE tbl_posts RENAME COLUMN post_content TO content;"
       ]
     },
     "cleanup_sql": {
@@ -119,6 +142,9 @@
       ],
       "sqlserver": [
         "EXEC sp_rename 'tbl_posts.post_content', 'content', 'COLUMN';"
+      ],
+      "sqlite": [
+        "ALTER TABLE tbl_posts RENAME COLUMN post_content TO content;"
       ]
     },
     "tags": [
@@ -142,7 +168,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -153,6 +180,9 @@
       ],
       "sqlserver": [
         "ALTER TABLE tbl_tags ADD access_level_enum VARCHAR(10) CONSTRAINT chk_access_level CHECK (access_level_enum IN ('Public', 'Private', 'Restricted'));"
+      ],
+      "sqlite":[
+        "ALTER TABLE tbl_tags ADD COLUMN access_level_enum TEXT CHECK (access_level_enum IN ('Public', 'Private', 'Restricted'));"
       ]
     },
     "eval_query": {
@@ -164,6 +194,9 @@
       ],
       "sqlserver": [
         "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'tbl_tags' AND COLUMN_NAME = 'access_level_enum';"
+      ],
+      "sqlite": [
+        "SELECT COUNT(*) FROM PRAGMA_TABLE_INFO('tbl_tags') WHERE name = 'access_level_enum';"
       ]
     },
     "setup_sql": {
@@ -175,6 +208,9 @@
       ],
       "sqlserver": [
         "ALTER TABLE tbl_tags DROP CONSTRAINT chk_access_level, COLUMN access_level_enum;"
+      ],
+      "sqlite": [
+        "BEGIN TRANSACTION; CREATE TABLE tbl_tags_new (tag_id INTEGER NOT NULL PRIMARY KEY, creator_id INTEGER DEFAULT NULL, category_id INTEGER DEFAULT NULL, name TEXT DEFAULT NULL, description TEXT DEFAULT NULL, created_at TIMESTAMP DEFAULT NULL, updated_at TIMESTAMP DEFAULT NULL, slug TEXT DEFAULT NULL, count INTEGER DEFAULT NULL, visibility BOOLEAN DEFAULT NULL, active BOOLEAN DEFAULT NULL, parent_tag INTEGER DEFAULT NULL, status_id INTEGER DEFAULT NULL, access_level INTEGER DEFAULT NULL, is_approved BOOLEAN DEFAULT NULL, metadata JSON DEFAULT NULL, is_edited BOOLEAN DEFAULT NULL, FOREIGN KEY (creator_id) REFERENCES tbl_users(user_id), FOREIGN KEY (category_id) REFERENCES tbl_categories(category_id)); INSERT INTO tbl_tags_new (tag_id, creator_id, category_id, name, description, created_at, updated_at, slug, count, visibility, active, parent_tag, status_id, access_level, is_approved, metadata, is_edited) SELECT tag_id, creator_id, category_id, name, description, created_at, updated_at, slug, count, visibility, active, parent_tag, status_id, access_level, is_approved, metadata, is_edited FROM tbl_tags; DROP TABLE tbl_tags; ALTER TABLE tbl_tags_new RENAME TO tbl_tags; COMMIT;"
       ]
     },
     "cleanup_sql": {
@@ -186,6 +222,9 @@
       ],
       "sqlserver": [
         "ALTER TABLE tbl_tags DROP CONSTRAINT chk_access_level, COLUMN access_level_enum;"
+      ],
+      "sqlite":[
+        "BEGIN TRANSACTION; CREATE TABLE tbl_tags_new (tag_id INTEGER NOT NULL PRIMARY KEY, creator_id INTEGER DEFAULT NULL, category_id INTEGER DEFAULT NULL, name TEXT DEFAULT NULL, description TEXT DEFAULT NULL, created_at TIMESTAMP DEFAULT NULL, updated_at TIMESTAMP DEFAULT NULL, slug TEXT DEFAULT NULL, count INTEGER DEFAULT NULL, visibility BOOLEAN DEFAULT NULL, active BOOLEAN DEFAULT NULL, parent_tag INTEGER DEFAULT NULL, status_id INTEGER DEFAULT NULL, access_level INTEGER DEFAULT NULL, is_approved BOOLEAN DEFAULT NULL, metadata JSON DEFAULT NULL, is_edited BOOLEAN DEFAULT NULL, FOREIGN KEY (creator_id) REFERENCES tbl_users(user_id), FOREIGN KEY (category_id) REFERENCES tbl_categories(category_id)); INSERT INTO tbl_tags_new (tag_id, creator_id, category_id, name, description, created_at, updated_at, slug, count, visibility, active, parent_tag, status_id, access_level, is_approved, metadata, is_edited) SELECT tag_id, creator_id, category_id, name, description, created_at, updated_at, slug, count, visibility, active, parent_tag, status_id, access_level, is_approved, metadata, is_edited FROM tbl_tags; DROP TABLE tbl_tags; ALTER TABLE tbl_tags_new RENAME TO tbl_tags; COMMIT;"
       ]
     },
     "tags": [
@@ -210,7 +249,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -221,6 +261,9 @@
       ],
       "sqlserver": [
         "ALTER TABLE tbl_users ADD full_name AS CONCAT(first_name, ' ', last_name) PERSISTED;"
+      ],
+      "sqlite": [
+        "ALTER TABLE tbl_users ADD COLUMN full_name TEXT GENERATED ALWAYS AS (first_name || ' ' || last_name) VIRTUAL;"
       ]
     },
     "eval_query": {
@@ -232,6 +275,9 @@
       ],
       "sqlserver": [
         "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'tbl_users' AND COLUMN_NAME = 'full_name';"
+      ],
+      "sqlite": [
+        "SELECT COUNT(*) FROM pragma_table_info('tbl_users') WHERE name = 'full_name';"
       ]
     },
     "setup_sql": {
@@ -243,6 +289,9 @@
       ],
       "sqlserver": [
         "IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'tbl_users' AND COLUMN_NAME = 'full_name') ALTER TABLE tbl_users DROP COLUMN full_name;"
+      ],
+      "sqlite": [
+        "BEGIN TRANSACTION; CREATE TABLE tbl_users_new (user_id INTEGER PRIMARY KEY, first_name TEXT, last_name TEXT, username TEXT, password_hash TEXT, social_media_links TEXT, contact_info TEXT, avatar_url TEXT, bio TEXT, website TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, notification_preferences TEXT, role_id INTEGER, last_login TIMESTAMP, active INTEGER); INSERT INTO tbl_users_new (user_id, first_name, last_name, username, password_hash, social_media_links, contact_info, avatar_url, bio, website, created_at, updated_at, notification_preferences, role_id, last_login, active) SELECT user_id, first_name, last_name, username, password_hash, social_media_links, contact_info, avatar_url, bio, website, created_at, updated_at, notification_preferences, role_id, last_login, active FROM tbl_users; DROP TABLE tbl_users; ALTER TABLE tbl_users_new RENAME TO tbl_users; COMMIT;"
       ]
     },
     "cleanup_sql": {
@@ -254,6 +303,9 @@
       ],
       "sqlserver": [
         "IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'tbl_users' AND COLUMN_NAME = 'full_name') ALTER TABLE tbl_users DROP COLUMN full_name;"
+      ],
+      "sqlite": [
+        "BEGIN TRANSACTION; CREATE TABLE tbl_users_new (user_id INTEGER PRIMARY KEY, first_name TEXT, last_name TEXT, username TEXT, password_hash TEXT, social_media_links TEXT, contact_info TEXT, avatar_url TEXT, bio TEXT, website TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, notification_preferences TEXT, role_id INTEGER, last_login TIMESTAMP, active INTEGER); INSERT INTO tbl_users_new (user_id, first_name, last_name, username, password_hash, social_media_links, contact_info, avatar_url, bio, website, created_at, updated_at, notification_preferences, role_id, last_login, active) SELECT user_id, first_name, last_name, username, password_hash, social_media_links, contact_info, avatar_url, bio, website, created_at, updated_at, notification_preferences, role_id, last_login, active FROM tbl_users; DROP TABLE tbl_users; ALTER TABLE tbl_users_new RENAME TO tbl_users; COMMIT;"
       ]
     },
     "tags": [

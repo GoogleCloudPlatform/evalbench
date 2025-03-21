@@ -1,0 +1,3 @@
+database_name: db_blog
+db: sqlite
+max_executions_per_minute: 180

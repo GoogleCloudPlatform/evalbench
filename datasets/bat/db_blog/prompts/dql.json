@@ -7,7 +7,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -18,6 +19,9 @@
       ],
       "sqlserver": [
         "SELECT COUNT(DISTINCT u.user_id) AS num_bloggers FROM tbl_users u INNER JOIN tbl_posts p ON u.user_id = p.user_id WHERE p.created_at >= CAST('2024-01-01' AS DATE) AND p.created_at <= CAST('2024-12-31' AS DATE) AND JSON_VALUE(u.social_media_links, '$.twitter') IS NOT NULL;"
+      ],
+      "sqlite": [
+        "SELECT COUNT(DISTINCT u.user_id) AS num_bloggers FROM tbl_users u INNER JOIN tbl_posts p ON u.user_id = p.user_id WHERE p.created_at BETWEEN DATE('2024-01-01') AND DATE('2024-12-31') AND json_extract(u.social_media_links, '$.twitter') IS NOT NULL;"
       ]
     },
     "eval_query": {
@@ -28,6 +32,9 @@
         null
       ],
       "sqlserver": [
+        null
+      ],
+      "sqlite": [
         null
       ]
     },
@@ -57,7 +64,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -67,6 +75,9 @@
         "SELECT u.user_id, p.post_id, COUNT(c.comment_id) comment_count FROM tbl_users u INNER JOIN tbl_posts p ON u.user_id = p.user_id LEFT JOIN tbl_comments c ON p.post_id = c.post_id GROUP BY u.user_id, p.post_id;"
       ],
       "sqlserver": [
+        "SELECT u.user_id, p.post_id, COUNT(c.comment_id) AS comment_count FROM tbl_users u INNER JOIN tbl_posts p ON u.user_id = p.user_id LEFT JOIN tbl_comments c ON p.post_id = c.post_id GROUP BY u.user_id, p.post_id;"
+      ],
+      "sqlite": [
         "SELECT u.user_id, p.post_id, COUNT(c.comment_id) AS comment_count FROM tbl_users u INNER JOIN tbl_posts p ON u.user_id = p.user_id LEFT JOIN tbl_comments c ON p.post_id = c.post_id GROUP BY u.user_id, p.post_id;"
       ]
     },
@@ -78,6 +89,9 @@
         null
       ],
       "sqlserver": [
+        null
+      ],
+      "sqlite": [
         null
       ]
     },
@@ -108,7 +122,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -118,6 +133,9 @@
         "SELECT u.user_id FROM tbl_users u LEFT JOIN tbl_posts p ON u.user_id = p.user_id WHERE p.post_id IS NULL;"
       ],
       "sqlserver": [
+        "SELECT u.user_id FROM tbl_users u LEFT JOIN tbl_posts p ON u.user_id = p.user_id WHERE p.post_id IS NULL;"
+      ],
+      "sqlite": [
         "SELECT u.user_id FROM tbl_users u LEFT JOIN tbl_posts p ON u.user_id = p.user_id WHERE p.post_id IS NULL;"
       ]
     },
@@ -129,6 +147,9 @@
         null
       ],
       "sqlserver": [
+        null
+      ],
+      "sqlite": [
         null
       ]
     },
@@ -155,7 +176,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -166,6 +188,9 @@
       ],
       "sqlserver": [
         "SELECT TOP 5 p.post_id, p.likes_count AS total_likes FROM tbl_posts p INNER JOIN tbl_categories c ON p.category_id = c.category_id AND p.user_id = c.created_by ORDER BY total_likes DESC;"
+      ],
+      "sqlite": [
+        "SELECT p.post_id, p.likes_count AS total_likes FROM tbl_posts p INNER JOIN tbl_categories c ON p.category_id = c.category_id AND p.user_id = c.created_by ORDER BY total_likes DESC LIMIT 5;"
       ]
     },
     "eval_query": {
@@ -176,6 +201,9 @@
         null
       ],
       "sqlserver": [
+        null
+      ],
+      "sqlite": [
         null
       ]
     },
@@ -202,7 +230,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -212,6 +241,9 @@
         "SELECT tbl_users.user_id, COUNT(tbl_followers.follower_id) AS follower_count FROM tbl_users LEFT JOIN tbl_followers ON tbl_users.user_id = tbl_followers.following_id GROUP BY tbl_users.user_id;"
       ],
       "sqlserver": [
+        "SELECT tbl_users.user_id, COUNT(tbl_followers.follower_id) AS follower_count FROM tbl_users LEFT JOIN tbl_followers ON tbl_users.user_id = tbl_followers.following_id GROUP BY tbl_users.user_id;"
+      ],
+      "sqlite": [
         "SELECT tbl_users.user_id, COUNT(tbl_followers.follower_id) AS follower_count FROM tbl_users LEFT JOIN tbl_followers ON tbl_users.user_id = tbl_followers.following_id GROUP BY tbl_users.user_id;"
       ]
     },
@@ -223,6 +255,9 @@
         null
       ],
       "sqlserver": [
+        null
+      ],
+      "sqlite": [
         null
       ]
     },
@@ -251,7 +286,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -261,6 +297,9 @@
         "SELECT p.post_id, r.report_reason FROM tbl_posts p INNER JOIN tbl_reports r ON p.post_id = r.post_id WHERE r.is_resolved = FALSE;"
       ],
       "sqlserver": [
+        "SELECT p.post_id, r.report_reason FROM tbl_posts p INNER JOIN tbl_reports r ON p.post_id = r.post_id WHERE r.is_resolved = 0;"
+      ],
+      "sqlite": [
         "SELECT p.post_id, r.report_reason FROM tbl_posts p INNER JOIN tbl_reports r ON p.post_id = r.post_id WHERE r.is_resolved = 0;"
       ]
     },
@@ -272,6 +311,9 @@
         null
       ],
       "sqlserver": [
+        null
+      ],
+      "sqlite": [
         null
       ]
     },
@@ -298,7 +340,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -309,6 +352,9 @@
       ],
       "sqlserver": [
         "WITH rc AS (SELECT report_reason, COUNT(*) AS report_count, AVG(DATEDIFF(MINUTE, report_timestamp, resolution_timestamp)) AS avg_resolution_time FROM tbl_reports GROUP BY report_reason) SELECT report_reason, report_count, avg_resolution_time FROM rc WHERE report_count = (SELECT MAX(report_count) FROM rc);"
+      ],
+      "sqlite": [
+        "WITH rc AS (SELECT report_reason, COUNT(*) AS report_count, AVG((julianday(resolution_timestamp) - julianday(report_timestamp)) * 1440) AS avg_resolution_time FROM tbl_reports GROUP BY report_reason) SELECT report_reason, report_count, avg_resolution_time FROM rc WHERE report_count = (SELECT MAX(report_count) FROM rc);"
       ]
     },
     "eval_query": {
@@ -319,6 +365,9 @@
         null
       ],
       "sqlserver": [
+        null
+      ],
+      "sqlite": [
         null
       ]
     },
@@ -347,7 +396,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -358,6 +408,9 @@
       ],
       "sqlserver": [
         "SELECT FORMAT(p.created_at, 'yyyy-MM-dd') AS created_at, c.name, AVG(post_count) AS average_posts FROM ( SELECT CAST(created_at AS DATE) AS created_at, category_id, COUNT(post_id) AS post_count FROM tbl_posts GROUP BY CAST(created_at AS DATE), category_id ) p INNER JOIN tbl_categories c ON p.category_id = c.category_id GROUP BY p.created_at, c.name ORDER BY created_at, name ASC;"
+      ],
+      "sqlite": [
+        "SELECT strftime('%Y-%m-%d', p.created_at) AS created_at, c.name, AVG(post_count) AS average_posts FROM (SELECT DATE(created_at) AS created_at, category_id, COUNT(post_id) AS post_count FROM tbl_posts GROUP BY created_at, category_id) p INNER JOIN tbl_categories c ON p.category_id = c.category_id GROUP BY p.created_at, c.name ORDER BY created_at, name ASC;"
       ]
     },
     "eval_query": {
@@ -368,6 +421,9 @@
         null
       ],
       "sqlserver": [
+        null
+      ],
+      "sqlite": [
         null
       ]
     },
@@ -397,7 +453,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -408,6 +465,9 @@
       ],
       "sqlserver": [
         "SELECT COUNT(CASE WHEN activity_type = 'login' AND activity_status = 'success' THEN 1 END) AS successful_logins, COUNT(CASE WHEN activity_type = 'login' THEN 1 END) AS total_logins, (COUNT(CASE WHEN activity_type = 'login' AND activity_status = 'success' THEN 1 END) * 100.0 / NULLIF(COUNT(CASE WHEN activity_type = 'login' THEN 1 END), 0)) AS success_percentage FROM tbl_user_activity WHERE activity_type = 'login';"
+      ],
+      "sqlite": [
+        "SELECT COUNT(CASE WHEN activity_type = 'login' AND activity_status = 'success' THEN 1 END) AS successful_logins, COUNT(CASE WHEN activity_type = 'login' THEN 1 END) AS total_logins, (COUNT(CASE WHEN activity_type = 'login' AND activity_status = 'success' THEN 1 END) * 100.0 / COUNT(CASE WHEN activity_type = 'login' THEN 1 END)) AS success_percentage FROM tbl_user_activity WHERE activity_type = 'login';"
       ]
     },
     "eval_query": {
@@ -418,6 +478,9 @@
         null
       ],
       "sqlserver": [
+        null
+      ],
+      "sqlite": [
         null
       ]
     },
@@ -446,17 +509,21 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
         "SELECT EXTRACT(HOUR FROM activity_timestamp) AS active_hour, COUNT(*) AS activity_count FROM tbl_user_activity GROUP BY active_hour ORDER BY activity_count DESC LIMIT 1;"
       ],
       "mysql": [
-        "SELECT EXTRACT(HOUR FROM activity_timestamp) AS active_hour, COUNT(*) AS activity_count FROM tbl_user_activity GROUP BY active_hour ORDER BY activity_count DESC LIMIT 1;"
+        "SELECT EXTRACT(HOUR FROM activity_timestamp) AS active_hour, COUNT(*) AS activity_count FROM tbl_user_activity GROUP BY active_hour ORDER BY activity_count DESC"
       ],
       "sqlserver": [
         "SELECT TOP 1 DATEPART(HOUR, activity_timestamp) AS active_hour, COUNT(*) AS activity_count FROM tbl_user_activity GROUP BY DATEPART(HOUR, activity_timestamp) ORDER BY activity_count DESC;"
+      ],
+      "sqlite": [
+        "SELECT strftime('%H', activity_timestamp) AS active_hour, COUNT(*) AS activity_count FROM tbl_user_activity GROUP BY active_hour ORDER BY activity_count DESC LIMIT 1;"
       ]
     },
     "eval_query": {
@@ -467,6 +534,9 @@
         null
       ],
       "sqlserver": [
+        null
+      ],
+      "sqlite": [
         null
       ]
     },
@@ -498,7 +568,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -509,6 +580,9 @@
       ],
       "sqlserver": [
         "SELECT * FROM tbl_attachments WHERE JSON_VALUE(tags_file, '$[0]') = 'database' AND CAST(JSON_VALUE(access_permissions, '$.read_only') AS bit) = 1;"
+      ],
+      "sqlite": [
+        "SELECT * FROM tbl_attachments WHERE json_extract(tags_file, '$[0]') = 'database' AND json_extract(access_permissions, '$.read_only') = true;"
       ]
     },
     "eval_query": {
@@ -519,6 +593,9 @@
         null
       ],
       "sqlserver": [
+        null
+      ],
+      "sqlite": [
         null
       ]
     },
@@ -547,7 +624,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -558,6 +636,9 @@
       ],
       "sqlserver": [
         "SELECT m1.uploader_id, u.username, m1.url FROM tbl_media m1 INNER JOIN ( SELECT uploader_id, MAX(upload_date) AS max_upload_date FROM tbl_media GROUP BY uploader_id ) m2 ON m1.uploader_id = m2.uploader_id AND m1.upload_date = m2.max_upload_date INNER JOIN tbl_users u ON m1.uploader_id = u.user_id;"
+      ],
+      "sqlite": [
+        "SELECT m1.uploader_id, u.username, m1.url FROM tbl_media m1 INNER JOIN (SELECT uploader_id, MAX(upload_date) AS max_upload_date FROM tbl_media GROUP BY uploader_id) m2 ON m1.uploader_id = m2.uploader_id AND m1.upload_date = m2.max_upload_date INNER JOIN tbl_users u ON m1.uploader_id = u.user_id;"
       ]
     },
     "eval_query": {
@@ -568,6 +649,9 @@
         null
       ],
       "sqlserver": [
+        null
+      ],
+      "sqlite": [
         null
       ]
     },
@@ -595,7 +679,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -606,6 +691,9 @@
       ],
       "sqlserver": [
         "SELECT * FROM tbl_posts WHERE EXISTS (SELECT 1 FROM OPENJSON(tags) WHERE value = 'programming') AND EXISTS (SELECT 1 FROM OPENJSON(tags) WHERE value = 'database');"
+      ],
+      "sqlite": [
+        "SELECT * FROM tbl_posts WHERE EXISTS (SELECT 1 FROM json_each(tags) WHERE value IN ('programming', 'database'));"
       ]
     },
     "eval_query": {
@@ -616,6 +704,9 @@
         null
       ],
       "sqlserver": [
+        null
+      ],
+      "sqlite": [
         null
       ]
     },
@@ -643,7 +734,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -654,6 +746,9 @@
       ],
       "sqlserver": [
         "SELECT SUM(likes_count) FROM tbl_comments WHERE comment_id IN (SELECT reported_comment_id FROM tbl_reports WHERE is_resolved = 0 AND user_id IN (SELECT following_id FROM tbl_followers GROUP BY following_id HAVING COUNT(follower_id) > 4) AND post_id IN (SELECT post_id FROM tbl_posts_tags INNER JOIN tbl_tags ON tbl_posts_tags.tag_id = tbl_tags.tag_id WHERE name = 'Programming'))"
+      ],
+      "sqlite": [
+        "SELECT SUM(likes_count) FROM tbl_comments WHERE comment_id IN (SELECT reported_comment_id FROM tbl_reports WHERE is_resolved = 0 AND user_id IN (SELECT following_id FROM tbl_followers GROUP BY following_id HAVING COUNT(follower_id) > 4) AND post_id IN (SELECT post_id FROM tbl_posts_tags INNER JOIN tbl_tags ON tbl_posts_tags.tag_id = tbl_tags.tag_id WHERE name = 'Programming'));"
       ]
     },
     "eval_query": {
@@ -664,6 +759,9 @@
         null
       ],
       "sqlserver": [
+        null
+      ],
+      "sqlite": [
         null
       ]
     },
@@ -694,7 +792,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -705,6 +804,9 @@
       ],
       "sqlserver": [
         "WITH conversations AS (SELECT conversation_id, DATEDIFF(SECOND, MIN(sending_time), MAX(sending_time)) AS conv_length FROM tbl_private_messages WHERE conversation_id IS NOT NULL GROUP BY conversation_id HAVING SUM(CASE WHEN is_read = 1 THEN 1 ELSE 0 END) = 0) SELECT pm.conversation_id, CAST(sending_time AS DATE) AS sending_date, COUNT(*) FROM tbl_private_messages pm INNER JOIN conversations c ON pm.conversation_id = c.conversation_id WHERE c.conv_length > 86400 GROUP BY pm.conversation_id, CAST(sending_time AS DATE);"
+      ],
+      "sqlite": [
+        "WITH conversations AS (SELECT conversation_id, (julianday(MAX(sending_time)) - julianday(MIN(sending_time))) * 86400 AS conv_length FROM tbl_private_messages WHERE conversation_id IS NOT NULL GROUP BY conversation_id HAVING SUM(CASE WHEN is_read THEN 1 ELSE 0 END) = 0) SELECT pm.conversation_id, DATE(pm.sending_time), COUNT(*) FROM tbl_private_messages pm INNER JOIN conversations c ON pm.conversation_id = c.conversation_id WHERE c.conv_length > 86400 GROUP BY pm.conversation_id, DATE(pm.sending_time);"
       ]
     },
     "eval_query": {
@@ -715,6 +817,9 @@
         null
       ],
       "sqlserver": [
+        null
+      ],
+      "sqlite": [
         null
       ]
     },
@@ -746,7 +851,8 @@
     "dialects": [
       "postgres",
       "mysql",
-      "sqlserver"
+      "sqlserver",
+      "sqlite"
     ],
     "golden_sql": {
       "postgres": [
@@ -757,6 +863,9 @@
       ],
       "sqlserver": [
         "WITH users_exclusive AS (SELECT user_id FROM tbl_user_activity GROUP BY user_id HAVING COUNT(DISTINCT browser) = 1), users_browsers AS (SELECT user_id, browser FROM tbl_user_activity WHERE user_id IN (SELECT user_id FROM users_exclusive)) SELECT browser, AVG(LEN(content)) FROM tbl_comments c INNER JOIN users_browsers u ON c.user_id = u.user_id GROUP BY browser;"
+      ],
+      "sqlite": [
+        "WITH users_exclusive AS (SELECT user_id FROM tbl_user_activity GROUP BY user_id HAVING COUNT(DISTINCT browser) = 1), users_browsers AS (SELECT user_id, browser FROM tbl_user_activity WHERE user_id IN (SELECT user_id FROM users_exclusive)) SELECT browser, AVG(LENGTH(content)) FROM tbl_comments c INNER JOIN users_browsers u ON c.user_id = u.user_id GROUP BY browser;"
       ]
     },
     "eval_query": {
@@ -767,6 +876,9 @@
         null
       ],
       "sqlserver": [
+        null
+      ],
+      "sqlite": [
         null
       ]
     },

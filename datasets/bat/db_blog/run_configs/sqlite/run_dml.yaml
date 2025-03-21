@@ -1,0 +1,43 @@
+############################################################
+### Dataset / Eval Items
+############################################################
+# The JSON list of prompts / golden SQLs and eval attributes for the run
+dataset_config: datasets/bat/db_blog/prompts/dml.json
+### Database Info
+# The YAML config for the database connection information
+database_config: datasets/bat/db_blog/db_configs/sqlite_db_config.yaml
+# The name of the database on the DB Instance
+database_name: db_blog
+# The dialect that the dataset_config will be filtered by. Only one can be
+# specified at a time (per run). See above for list of supported Dialects
+dialect: sqlite
+# The name of the product (sql, alloydb, spanner, etc.)
+product_name: sql
+#
+#
+############################################################
+### Prompt and Generation Modules
+############################################################
+# The YAML config for the model to be used for generation.
+model_config: datasets/bat/db_blog/model_configs/gemini_1.0_pro_model.yaml
+# The prompt generator module id for prompt generation.
+prompt_generator: 'SQLite_DBSchemaGenerator'
+#
+#
+############################################################
+### Optional - Setup / Teardown related configs (Required for testing DDL)
+############################################################
+# Used for setup / teardown, the directory path to the sql files used for setting up
+# / tearing down a database instance. This is required for running DDL
+setup_scripts_directory: datasets/bat/db_blog/setup/sqlite
+# The paths to the CSV data files used for table inserts at setup time.
+data_directory: datasets/bat/db_blog/setup/data
+#
+#
+############################################################
+### Scorer Related Configs - See /scorers directory for each scorer.
+############################################################
+scorers:
+  exact_match:
+    use_eval_sql: true
+  returned_sql: null

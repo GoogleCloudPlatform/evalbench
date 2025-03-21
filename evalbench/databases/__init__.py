@@ -2,6 +2,7 @@ from .postgres import PGDB
 from .alloydb import AlloyDB
 from .mysql import MySQLDB
 from .sqlserver import SQLServerDB
+from .sqlite import SQLiteDB
 from .db import DB
 
 
@@ -14,4 +15,6 @@ def get_database(db_config) -> DB:
         return MySQLDB(db_config)
     if db_config["db"] == "sqlserver":
         return SQLServerDB(db_config)
+    if db_config["db"] == "sqlite":
+        return SQLiteDB(db_config)
     raise ValueError("DB Type not Supported")
