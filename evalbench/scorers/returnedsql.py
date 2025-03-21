@@ -4,7 +4,7 @@ ReturnedSQL
 This comparison stragtegy checks if the generated sql query has any non-comment lines.
 It assigns a score of 100 if there are non-comment lines, otherwise a score of 0.
 
-It checks for both single line comments (start with --) and multiline comments (start with /*, end with */)
+It checks for single line comments (start with -- and #) and multiline comments (start with /*, end with */)
 
 Runtime Options: None
 """
@@ -44,9 +44,11 @@ class ReturnedSQL(comparator.Comparator):
         if generated_query == "":
             return 100, None
 
+        generated_query = re.sub(r'/\*.*?\*/', '', generated_query, flags=re.DOTALL)
+
         query_lines = [line.strip() for line in generated_query.splitlines()]
         has_non_comment_line = any(
-            line and (not line.startswith("--") and not line.startswith("/*")) for line in query_lines
+            line and (not line.startswith("--") and not line.startswith("#")) for line in query_lines
         )
 
         score = 100 if has_non_comment_line else 0
