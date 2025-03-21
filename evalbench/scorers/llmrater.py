@@ -1,8 +1,24 @@
 """
-Currently the LLM Rater compares the golden execution results with the
-generated sql execution results. It returns a score of 100 for concrete
-positive cases, where either there is a Mismatch of Columns names or Extra Relevant
-Columns in Generated SQL exists.
+LLMRater
+In this comparison strategy, an LLM compares the golden execution results with the generated sql execution results. 
+It returns a score between 0 and 10, with a score of 100 for concrete positive cases, 
+where either there is a mismatch of columns names or extra relevant columns in Generated SQL exists.
+
+Evaluation rules given to LLM:
+    1. Assume OUTPUT #1 is the gold standard and is ALWAYS correct.
+    2. The order of columns in OUTPUT #2 does not matter.
+    3. Allow slight variations due to differences in rounding or precision, for calculated values.
+        Otherwise ensure exact matches for numbers, dates, timestamps, measurements, and metrics
+        between the two outputs.
+    4. The mapped column names might differ, do not make any assumptions based on them.
+
+Run Configuration Options:
+    1. gcp_project_id: Required
+        - A valid GCP project ID which will be used for querying the LLM
+    2. gcp_project_location: Required
+        - A valid region from where the vertexAI resources will be utilized
+    3. model: Required
+        - An LLM model to use for evaluation. e.g. gemini-1.5-pro-002
 """
 
 from typing import Tuple
@@ -15,22 +31,21 @@ from vertexai.preview.generative_models import GenerationConfig, GenerativeModel
 from scorers import comparator
 from .util import rate_limited_execute, make_hashable, with_cache_execute
 from databases.util import get_cache_client
-import redis
 
 
 class LLMRater(comparator.Comparator):
-    """LLMRater.
+    """
+    LLMRater class implements the Comparator base class.
 
     Attributes:
-      name:
+        1. name: Name of the comparator. Set to "vertexmatcher"
+        2. config: Scorer config defined in the run config yaml file
+        3. gcp_project_id: ID of the GCP project ID from where the resources will be utilized
+        4. gcp_project_location: A valid region for vertexAI resources
+        5. model: The LLM model to use
     """
 
     def __init__(self, config: dict):
-        """Constructor.
-
-        Args:
-            config: Configuration dictionary.
-        """
         self.name = "llmrater"
         self.config = config
         vertexai.init(
