@@ -2,15 +2,23 @@ from abc import ABC, abstractmethod
 from typing import Any, Optional, Tuple, List
 from threading import Semaphore
 from util.config import generate_key
-
-from .util import get_cache_client, DatabaseSchema, Table, Column
+from .util import get_cache_client, get_db_secret, DatabaseSchema, Table, Column
 
 
 class DB(ABC):
 
     def __init__(self, db_config):
+        self.db_path = db_config["database_path"]
         self.db_name = db_config["database_name"]
         self.db_type = db_config["db"]
+        self.username = db_config.get("user_name") or ""
+        if "password" in db_config and db_config["password"]:
+            self.password = db_config["password"]
+        elif "secret_manager_path" in db_config and db_config["secret_manager_path"]:
+            self.password = get_db_secret(db_config["secret_manager_path"])
+        else:
+            # no password
+            self.password = None
 
         # Setup the concurrency requirements
         self.execs_per_minute = db_config["max_executions_per_minute"]

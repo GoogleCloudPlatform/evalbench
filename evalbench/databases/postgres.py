@@ -48,10 +48,10 @@ class PGDB(DB):
 
         def get_conn():
             conn = self.connector.connect(
-                f"{db_config['project_id']}:{db_config['region']}:{db_config['instance_name']}",
+                self.db_path,
                 "pg8000",
-                user=db_config["user_name"],
-                password=get_db_secret(db_config["password"]),
+                user=self.username,
+                password=self.password,
                 db=self.db_name,
             )
             return conn

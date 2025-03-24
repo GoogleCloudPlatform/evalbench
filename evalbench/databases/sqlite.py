@@ -28,9 +28,6 @@ class SQLiteDB(DB):
         super().__init__(db_config)
 
         def get_conn():
-            self.db_path = db_config["database_name"]
-            if not self.db_path.endswith(".db"):
-                self.db_path += ".db"
             conn = sqlite3.connect(self.db_path)
             conn.autocommit = False
             return conn
@@ -79,7 +76,7 @@ class SQLiteDB(DB):
             return self._execute(query, eval_query, rollback)
         return with_cache_execute(
             query,
-            self.db_path,
+            self.db_name,
             self._execute,
             self.cache_client,
         )

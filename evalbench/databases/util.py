@@ -36,14 +36,16 @@ class DatabaseSchema:
     views: list[View] = field(default_factory=list)
 
 
-def is_db_secret_path(secret: str) -> bool:
+def _is_db_secret_path(secret: str) -> bool:
     pattern = r"^projects/[^/]+/secrets/[^/]+/versions/\d+$"
     return bool(re.match(pattern, secret))
 
 
 def get_db_secret(secret):
-    if not is_db_secret_path(secret):
-        return secret
+    if not _is_db_secret_path(secret):
+        raise ValueError(
+            "secret manager path not parsable. Could not recover password for DB."
+        )
     secret_path = secret
     # Create a client
     client = secretmanager_v1.SecretManagerServiceClient()

@@ -54,10 +54,10 @@ class SQLServerDB(DB):
 
         def get_conn():
             conn = self.connector.connect(
-                f"{db_config['project_id']}:{db_config['region']}:{db_config['instance_name']}",
+                self.db_path,
                 "pytds",
-                user=db_config["user_name"],
-                password=get_db_secret(db_config["password"]),
+                user=self.username,
+                password=self.password,
                 db=self.db_name,
             )
             return conn
@@ -269,7 +269,7 @@ class SQLServerDB(DB):
         cursor = None
         try:
             raw_conn = self.engine.raw_connection()
-            raw_conn.connection.autocommit = True
+            raw_conn.connection.autocommit = True # type: ignore
             cursor = raw_conn.cursor()
             cursor.execute(query)
 
