@@ -110,7 +110,7 @@ reporting:
   csv:
     output_directory: 'results'
   bigquery:
-    gcp_project_id: cloud-db-nl2sql
+    gcp_project_id: my_cool_gcp_project
 ```
 
 ---

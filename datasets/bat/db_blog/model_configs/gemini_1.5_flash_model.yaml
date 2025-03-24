@@ -1,5 +1,5 @@
 generator: gcp_vertex_gemini
-gcp_project_id: cloud-db-nl2sql
+gcp_project_id: <your-project-id>
 gcp_region: us-central1
 vertex_model: gemini-1.5-flash-002
 base_prompt: ""
