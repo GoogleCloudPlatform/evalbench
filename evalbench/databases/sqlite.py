@@ -6,11 +6,10 @@ import sqlite3
 import os
 from .db import DB
 from .util import (
-    rate_limited_execute,
     with_cache_execute,
-    DBResourceExhaustedError,
     DatabaseSchema,
 )
+from util.rate_limit import rate_limit, ResourceExhaustedError
 from typing import Any, List, Optional, Tuple
 
 DROP_TABLE_SQL = "DROP TABLE {TABLE};"
@@ -119,12 +118,12 @@ class SQLiteDB(DB):
             except Exception as e:
                 error = str(e)
                 if "database is locked" in error:
-                    raise DBResourceExhaustedError("SQLite Database is locked, retry later") from e
+                    raise ResourceExhaustedError("SQLite Database is locked, retry later") from e
                 elif "disk I/O error" in error:
-                    raise DBResourceExhaustedError("Disk I/O error occurred, check storage") from e
+                    raise ResourceExhaustedError("Disk I/O error occurred, check storage") from e
             return result, eval_result, error
 
-        return rate_limited_execute(
+        return rate_limit(
             (query, eval_query, rollback),
             _run_execute,
             self.execs_per_minute,

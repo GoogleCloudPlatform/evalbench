@@ -1,5 +1,4 @@
 import vertexai
-import logging
 
 from vertexai.generative_models._generative_models import (
     GenerativeModel,
@@ -24,7 +23,7 @@ class GeminiGenerator(QueryGenerator):
         self.model = GenerativeModel(self.vertex_model)
         self.base_prompt = self.base_prompt
 
-    def generate(self, prompt):
+    def generate_internal(self, prompt):
         response = self.model.generate_content(
             self.base_prompt + prompt,
             generation_config=self.generation_config,

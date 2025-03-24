@@ -1,4 +1,3 @@
-from sqlalchemy.pool import NullPool
 import sqlalchemy
 from sqlalchemy import text, MetaData
 import logging
@@ -6,11 +5,10 @@ from .db import DB
 from google.cloud.sql.connector import Connector
 from .util import (
     get_db_secret,
-    rate_limited_execute,
     with_cache_execute,
-    DBResourceExhaustedError,
     DatabaseSchema,
 )
+from util.rate_limit import rate_limit, ResourceExhaustedError
 from typing import Any, List, Optional, Tuple
 
 DROP_ALL_TABLES_QUERY = """
@@ -150,10 +148,10 @@ class MySQLDB(DB):
             except Exception as e:
                 error = str(e)
                 if "57P03" in error:
-                    raise DBResourceExhaustedError("DB Exhausted") from e
+                    raise ResourceExhaustedError("DB Exhausted") from e
             return result, eval_result, error
 
-        return rate_limited_execute(
+        return rate_limit(
             (query, eval_query, rollback),
             _run_execute,
             self.execs_per_minute,

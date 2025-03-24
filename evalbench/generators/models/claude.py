@@ -18,7 +18,7 @@ class ClaudeGenerator(QueryGenerator):
 
         self.client = AnthropicVertex(region=self.location, project_id=self.project_id)
 
-    def generate(self, prompt):
+    def generate_internal(self, prompt):
 
         try:
             response = self.client.messages.create(
