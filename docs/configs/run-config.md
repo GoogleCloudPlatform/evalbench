@@ -23,7 +23,7 @@ This section sets up the configurations for the model and prompt generator used 
 | **Key**            | **Required** | **Description**                                                                                                                                                           |
 | ------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `model_config`     | Yes          | Path to the YAML configuration file for the model that will be used for SQL generation. Please see [model-config documentation](/docs/configs/model-config.md) for additional information on model_config configurations.                                                                                   |
-| `prompt_generator` | Yes          | Identifier for the prompt generator module (e.g., `'MySQL_DBSchemaGenerator'`), which is responsible for generating the necessary prompts for SQL generation. Please see and edit [generators](/usr/local/google/home/mebadi/evalbench/evalbench/generators/prompts/__init__.py) for additional prompts.          |
+| `prompt_generator` | Yes          | Identifier for the prompt generator module (e.g., `'MySQL_DBSchemaGenerator'`), which is responsible for generating the necessary prompts for SQL generation. Please see and edit [generators](/evalbench/generators/prompts/__init__.py) for additional prompts.          |
 
 ---
 
@@ -112,7 +112,3 @@ reporting:
   bigquery:
     gcp_project_id: my_cool_gcp_project
 ```
-
----
-
-This configuration file is modular and flexible, allowing you to tailor your NL2SQL evaluation setup by simply adjusting the relevant keys. It supports multiple database dialects, different scoring strategies, and diverse reporting options to suit various testing and evaluation scenarios.

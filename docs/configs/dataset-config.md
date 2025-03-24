@@ -39,7 +39,7 @@ Below is an excerpt from the JSON file illustrating one evaluation item:
 ```json
 {
   "id": 43,
-  "nl_prompt": "Update the labels table to include a json field called comments_description.",
+  "nl_prompt": "Update the first name to Joe for user joesmith@google.com",
   "query_type": "ddl",
   "database": "db_blog",
   "dialects": [
@@ -50,47 +50,42 @@ Below is an excerpt from the JSON file illustrating one evaluation item:
   ],
   "golden_sql": {
     "postgres": [
-      "ALTER TABLE tbl_labels ADD COLUMN comments_description JSON;"
+      "UPDATE users SET first_name = 'Joe' WHERE email = 'joesmith@google.com';"
     ],
     "mysql": [
-      "ALTER TABLE tbl_labels ADD COLUMN comments_description JSON;"
+      "UPDATE users SET first_name = 'Joe' WHERE email = 'joesmith@google.com';"
     ],
     "sqlserver": [
-      "ALTER TABLE tbl_labels ADD comments_description NVARCHAR(MAX);"
+      "UPDATE users SET first_name = 'Joe' WHERE email = 'joesmith@google.com';"
     ],
     "sqlite": [
-      "ALTER TABLE tbl_labels ADD COLUMN comments_description TEXT CHECK (json_valid(comments_description));"
+      "UPDATE users SET first_name = 'Joe' WHERE email = 'joesmith@google.com';"
     ]
   },
   "eval_query": {
     "postgres": [
-      "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='tbl_labels' AND column_name='comments_description' AND data_type = 'json'"
+      "SELECT first_name FROM users WHERE email = 'joesmith@google.com';"
     ],
     "mysql": [
-      "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='tbl_labels' AND column_name='comments_description' AND data_type = 'json'"
+      "SELECT first_name FROM users WHERE email = 'joesmith@google.com';"
     ],
     "sqlserver": [
-      "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'tbl_labels' AND COLUMN_NAME = 'comments_description' AND DATA_TYPE = 'nvarchar';"
+      "SELECT first_name FROM users WHERE email = 'joesmith@google.com';"
     ],
     "sqlite": [
-      "SELECT COUNT(*) FROM tbl_labels WHERE json_valid(comments_description);"
+      "SELECT first_name FROM users WHERE email = 'joesmith@google.com';"
     ]
   },
   "tags": [
-    "DDL",
+    "DQL",
     "difficulty: simple",
-    "ALTER",
-    "ADD_COLUMN",
-    "JSON"
+    "UPDATE",
   ],
   "other": {
-    "author": "Per",
+    "author": "Gemini",
+    "include-in-monthly-eval-report": True
   }
 }
 ```
 
 > **Note:** In this example, the `other` field is used to store additional metadata that can be customized as needed for reporting and further analysis.
-
----
-
-This JSON file is essential for organizing and executing evaluation tests across multiple database dialects in the NL2SQL project. By clearly defining the natural language prompts, expected SQL outputs, and supporting SQL commands for setup and cleanup, it enables systematic validation of SQL generation and database schema modifications.

@@ -57,5 +57,3 @@ gcp_project_id: my_cool_gcp_project
 gcp_region: us-east5
 vertex_model: gemini-2.0-pro-exp-02-05
 ```
-
-This configuration sets up the NL2SQL generation model using Vertex AI with specific GCP project settings, model version, token limits, and additional optional parameters for controlling execution rate and retry attempts. For other generators, simply adjust or omit the GCP specific settings as required.
