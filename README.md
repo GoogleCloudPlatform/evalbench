@@ -37,7 +37,7 @@ pip install -r requirements.txt
 
 ### 4. Configure GCP Authentication (For Vertex AI | Gemini Examples)
 
-If gCloud is not installed already, follow the steps in [gCloud installation guide](https://cloud.google.com/sdk/docs/install#installation_instructions).
+If gcloud is not installed already, follow the steps in [gcloud installation guide](https://cloud.google.com/sdk/docs/install#installation_instructions).
 
 Then, authenticate using the Google Cloud CLI:
 
