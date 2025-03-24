@@ -11,8 +11,8 @@ from .generator import QueryGenerator
 class GeminiGenerator(QueryGenerator):
     """Generator queries using Vertex model."""
 
-    def __init__(self, core_db, querygenerator_config):
-        super().__init__(core_db, querygenerator_config)
+    def __init__(self, querygenerator_config):
+        super().__init__(querygenerator_config)
         self.name = "gemini"
         self.project_id = querygenerator_config["project_id"]
         self.location = querygenerator_config["location"]
@@ -31,5 +31,7 @@ class GeminiGenerator(QueryGenerator):
         )
         if isinstance(response, GenerationResponse):
             r = response.text
-            r = r.replace("```sql", "")  # required for gemini_1.0_pro, gemini_2.0_flash, gemini_2.0_pro
+            r = r.replace(
+                "```sql", ""
+            )  # required for gemini_1.0_pro, gemini_2.0_flash, gemini_2.0_pro
         return r

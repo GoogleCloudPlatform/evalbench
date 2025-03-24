@@ -7,8 +7,8 @@ from .generator import QueryGenerator
 class ClaudeGenerator(QueryGenerator):
     """Generate queries using the Anthropic Claude model via Vertex AI."""
 
-    def __init__(self, core_db, querygenerator_config):
-        super().__init__(core_db, querygenerator_config)
+    def __init__(self, querygenerator_config):
+        super().__init__(querygenerator_config)
         self.name = "claude"
         self.project_id = querygenerator_config["project_id"]
         self.location = querygenerator_config["location"]
@@ -30,7 +30,7 @@ class ClaudeGenerator(QueryGenerator):
                     }
                 ],
                 max_tokens=self.max_tokens,
-                temperature=0
+                temperature=0,
             )
 
             r = response.content[0].text if response.content else ""

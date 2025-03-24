@@ -22,14 +22,13 @@ Run Configuration Options:
 """
 
 from typing import Tuple
+from generators.models import get_generator
 from scorers import exactmatcher
-from threading import Semaphore
 import logging
-import vertexai
-from vertexai.preview.generative_models import GenerationConfig, GenerativeModel
+from util.config import load_yaml_config
 
 from scorers import comparator
-from .util import rate_limited_execute, make_hashable, with_cache_execute
+from .util import make_hashable, with_cache_execute
 from databases.util import get_cache_client
 
 
@@ -47,18 +46,12 @@ class LLMRater(comparator.Comparator):
 
     def __init__(self, config: dict):
         self.name = "llmrater"
-        self.config = config
-        vertexai.init(
-            project=self.config["gcp_project_id"],
-            location=self.config["gcp_project_location"],
-        )
-        self.generation_config = GenerationConfig(temperature=0)
-        self.model = GenerativeModel(self.config["model"])
-        self.execs_per_minute = self.config.get("max_executions_per_minute", 60)
-        self.semaphore = Semaphore(self.execs_per_minute)
-        self.max_attempts = 4
-        self.exact_match_checker = exactmatcher.ExactMatcher(None)
+        self.exact_match_checker = exactmatcher.ExactMatcher({})
         self.cache_client = get_cache_client(config)
+        self.model_config = config.get("model_config") or ""
+        if not self.model_config:
+            raise ValueError("model_config is required for LLM Rater")
+        self.model = get_generator(load_yaml_config(self.model_config))
 
     def _is_exact_match(
         self,
@@ -88,15 +81,9 @@ class LLMRater(comparator.Comparator):
         return score == 100
 
     def _inference_without_caching(self, prompt):
-        response = rate_limited_execute(
-            prompt=prompt,
-            generation_config=self.generation_config,
-            execution_method=self.model.generate_content,
-            semaphore=self.semaphore,
-            execs_per_minute=self.execs_per_minute,
-            max_attempts=self.max_attempts,
-        ).text
-        return response
+        if self.model is None:
+            raise RuntimeError("Model not initialized")
+        return self.model.generate(prompt)
 
     @staticmethod
     def take_n_uniques(output_list: list, n: int) -> list:
@@ -216,19 +203,12 @@ class LLMRater(comparator.Comparator):
         if self.cache_client:
             response = with_cache_execute(
                 prompt,
-                self.config["model"],
+                self.model_config,
                 self._inference_without_caching,
                 self.cache_client,
             )
         else:
-            response = rate_limited_execute(
-                prompt=prompt,
-                generation_config=self.generation_config,
-                execution_method=self.model.generate_content,
-                semaphore=self.semaphore,
-                execs_per_minute=self.execs_per_minute,
-                max_attempts=self.max_attempts,
-            ).text
+            response = self._inference_without_caching(prompt)
 
         logging.debug("\n --------- llm_rater_output:   --------- \n %s ", response)
         score = (

@@ -15,7 +15,7 @@ def load_session_configs(session):
 
 def create_eval_instances(config, db_config, model_config):
     core_db = databases.get_database(db_config)
-    model_generator = models.get_generator(core_db, model_config)
+    model_generator = models.get_generator(model_config)
     prompt_generator = prompts.get_generator(core_db, config)
     return core_db, model_generator, prompt_generator
 

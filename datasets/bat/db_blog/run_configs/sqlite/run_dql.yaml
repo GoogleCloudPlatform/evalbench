@@ -40,8 +40,6 @@ data_directory: datasets/bat/db_blog/setup/data
 scorers:
   exact_match: null
   llmrater:
-    gcp_project_id: cloud-db-nl2sql
-    gcp_project_location: us-central1
-    model: gemini-1.5-pro-002
+    model_config: datasets/bat/db_blog/model_configs/gemini_1.5-pro-002_model.yaml
   returned_sql: null
   set_match: null

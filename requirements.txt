@@ -6,6 +6,7 @@ sqlalchemy-pytds
 google-cloud-aiplatform
 google-cloud-secret-manager
 pandas
+pandas-gbq
 pymysql
 sqlalchemy
 pyaml_env
