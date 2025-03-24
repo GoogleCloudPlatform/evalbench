@@ -29,7 +29,6 @@ class SQLiteDB(DB):
 
         def get_conn():
             conn = sqlite3.connect(self.db_path)
-            conn.autocommit = False
             return conn
 
         def get_engine_args():
