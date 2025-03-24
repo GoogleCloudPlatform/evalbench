@@ -12,8 +12,8 @@ The database structure is defined by the following table schemas
 
 Please generate a SQLite SQL query for the following question following the rules:
 - Output the query only without any explanation.
-- Wrap the final generated query in 
-```sql 
+- Wrap the final generated query in
+```sql
 QUERY HERE
 ```
 - Always use quotes around the table and column names.
