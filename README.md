@@ -4,7 +4,7 @@ EvalBench is a flexible framework designed to measure the quality of generative 
 
 ---
 
-## Getting Started &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/GoogleCloudPlatform/evalbench/docs/examples/sqlite_example.ipynb)
+## Getting Started &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/GoogleCloudPlatform/evalbench/blob/main/docs/examples/sqlite_example.ipynb)
 
 Follow the steps below to run EvalBench on your local VM.
 > *Note*: Evalbench requires python 3.10 or higher.
