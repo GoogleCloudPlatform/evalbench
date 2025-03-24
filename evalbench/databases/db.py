@@ -10,7 +10,7 @@ class DB(ABC):
     def __init__(self, db_config):
         self.db_path = db_config["database_path"]
         self.db_name = db_config["database_name"]
-        self.db_type = db_config["db"]
+        self.db_type = db_config["db_type"]
         self.username = db_config.get("user_name") or ""
         if "password" in db_config and db_config["password"]:
             self.password = db_config["password"]

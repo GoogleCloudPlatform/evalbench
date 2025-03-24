@@ -6,12 +6,12 @@ from .db import DB
 
 
 def get_database(db_config) -> DB:
-    if db_config["db"] == "postgres":
+    if db_config["db_type"] == "postgres":
         return PGDB(db_config)
-    if db_config["db"] == "mysql":
+    if db_config["db_type"] == "mysql":
         return MySQLDB(db_config)
-    if db_config["db"] == "sqlserver":
+    if db_config["db_type"] == "sqlserver":
         return SQLServerDB(db_config)
-    if db_config["db"] == "sqlite":
+    if db_config["db_type"] == "sqlite":
         return SQLiteDB(db_config)
     raise ValueError("DB Type not Supported")

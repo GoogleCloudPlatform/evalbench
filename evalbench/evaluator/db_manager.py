@@ -19,7 +19,7 @@ def _prepare_db_queue_for_dql(core_db: DB, db_config, setup_config, num_dbs):
     db_queue = Queue[DB]()
     dql_db_config = deepcopy(db_config)
     if setup_config:
-        setup_scripts, data = _get_setup_values(setup_config)
+        setup_scripts, data = _get_setup_values(setup_config, db_config.get("db_type"))
         core_db.set_setup_instructions(setup_scripts, data)
         core_db.resetup_database(False, True)
         dql_db_config["user_name"] = core_db.get_dql_user()
@@ -35,7 +35,7 @@ def _prepare_db_queue_for_dml(core_db: DB, db_config, setup_config, num_dbs):
     db_queue = Queue[DB]()
     dml_db_config = deepcopy(db_config)
     if setup_config:
-        setup_scripts, data = _get_setup_values(setup_config)
+        setup_scripts, data = _get_setup_values(setup_config, db_config.get("db_type"))
         core_db.set_setup_instructions(setup_scripts, data)
         core_db.resetup_database(False, True)
         dml_db_config["user_name"] = core_db.get_dml_user()
@@ -51,7 +51,7 @@ def _prepare_db_queue_for_ddl(core_db: DB, db_config, setup_config, num_dbs):
     db_queue = Queue[DB]()
     if not setup_config:
         raise ValueError("No Setup Config was provided for DDL")
-    setup_scripts, _ = _get_setup_values(setup_config)
+    setup_scripts, _ = _get_setup_values(setup_config, db_config.get("db_type"))
     tmp_dbs = core_db.create_tmp_databases(db_config, num_dbs)
     for db_name in tmp_dbs:
         tmp_ddl_db_config = deepcopy(db_config)
@@ -63,7 +63,7 @@ def _prepare_db_queue_for_ddl(core_db: DB, db_config, setup_config, num_dbs):
     return db_queue
 
 
-def _get_setup_values(setup_config):
-    setup_scripts = load_setup_scripts(setup_config["setup_scripts_directory"])
+def _get_setup_values(setup_config, db_type: str):
+    setup_scripts = load_setup_scripts(setup_config["setup_directory"] + "/" + db_type)
     data = load_db_data_from_csvs(setup_config["data_directory"])
     return setup_scripts, data

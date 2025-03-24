@@ -1,11 +1,4 @@
 ############################################################
-### General Eval Related Configs
-############################################################
-# GCP Project name that the Eval is running on
-project_name: cloud-db-nl2sql
-#
-#
-############################################################
 ### Dataset / Eval Items
 ############################################################
 # The JSON list of prompts / golden SQLs and eval attributes for the run
@@ -13,13 +6,9 @@ dataset_config: datasets/bat/db_blog/prompts/dml.json
 ### Database Info
 # The YAML config for the database connection information
 database_config: datasets/bat/db_blog/db_configs/pg_db_config.yaml
-# The name of the database on the DB Instance
-database_name: db_blog
 # The dialect that the dataset_config will be filtered by. Only one can be
 # specified at a time (per run). See above for list of supported Dialects
 dialect: postgres
-# The name of the product (sql, alloydb, spanner, etc.)
-product_name: sql
 #
 #
 ############################################################
@@ -36,9 +25,7 @@ prompt_generator: 'PG_DBSchemaGenerator'
 ############################################################
 # Used for setup / teardown, the directory path to the sql files used for setting up
 # / tearing down a database instance. This is required for running DDL
-setup_scripts_directory: datasets/bat/db_blog/setup/postgres
-# The paths to the CSV data files used for table inserts at setup time.
-data_directory: datasets/bat/db_blog/setup/data
+setup_directory: datasets/bat/db_blog/setup
 #
 #
 ############################################################
