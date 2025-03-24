@@ -45,6 +45,5 @@ data_directory: datasets/bat/db_blog/setup/data
 ### Scorer Related Configs - See /scorers directory for each scorer.
 ############################################################
 scorers:
-  exact_match:
-    use_eval_sql: true
+  exact_match: null
   returned_sql: null

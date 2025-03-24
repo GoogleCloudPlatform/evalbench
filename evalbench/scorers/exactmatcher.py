@@ -4,12 +4,6 @@ ExactMatcher
 It is a simple comparison strategy which checks if expected and generated results are exactly the same.
 
 Note: Since this is a list comparison, ordering of the results matter here.
-
-Run Configuration Options:
-    1. use_eval_sql: Optional
-        - Allowed values: True, False
-        - Default value: False
-        - When use_eval_sql is set to True, it compares the results of eval queries which are used to verify DDL and DML queries
 """
 
 from typing import Tuple
@@ -46,10 +40,11 @@ class ExactMatcher(comparator.Comparator):
         """compare function implements the comparison logic for ExactMatcher comparator."""
 
         if golden_error or generated_error:
-            return 0, None
-        if self.config and "use_eval_sql" in self.config:
+            return 0.0, "Golden or generated query had an error."
+        # if eval_query result is present, use eval_query to compare rather than execution
+        if golden_eval_result:
             score = 100 if golden_eval_result == generated_eval_result else 0
-            return score, None
+            return score, "Used eval_query to score."
         else:
             score = 100 if golden_execution_result == generated_execution_result else 0
-            return score, None
+            return score, ""
