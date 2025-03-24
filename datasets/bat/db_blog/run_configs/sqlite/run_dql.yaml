@@ -15,7 +15,7 @@ dialect: sqlite
 ### Prompt and Generation Modules
 ############################################################
 # The YAML config for the model to be used for generation.
-model_config: datasets/bat/db_blog/model_configs/gemini_1.0_pro_model.yaml
+model_config: datasets/bat/db_blog/model_configs/gemini_2.0_pro_model.yaml
 # The prompt generator module id for prompt generation.
 prompt_generator: 'SQLite_DBSchemaGenerator'
 #
@@ -43,7 +43,5 @@ scorers:
 ### Reporting Related Configs
 ############################################################
 reporting:
-  bigquery:
-    gcp_project_id: cloud-db-nl2sql
   csv:
     output_directory: 'results'
