@@ -8,13 +8,14 @@ STORETYPE = Enum("StoreType", ["CONFIGS", "EVALS", "SCORES", "SUMMARY"])
 
 class Reporter(ABC):
     def __init__(self, reporting_config, job_id, run_time):
-         self.config = reporting_config
-         self.job_id = job_id
-         self.run_time = run_time
+        self.config = reporting_config
+        self.job_id = job_id
+        self.run_time = run_time
 
     @abstractmethod
     def store(self, results, type: STORETYPE):
         pass
+
 
 def get_dataframe(results):
     results_df = pd.DataFrame.from_dict(results, dtype="string")

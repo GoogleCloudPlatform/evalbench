@@ -137,7 +137,14 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         job_id, run_time, results_tf, scores_tf = evaluator.process()
         reporters = get_reporters(config.get("reporting"), job_id, run_time)
         _process_results(
-            reporters, job_id, run_time, results_tf, scores_tf, config, model_config, db_config
+            reporters,
+            job_id,
+            run_time,
+            results_tf,
+            scores_tf,
+            config,
+            model_config,
+            db_config,
         )
         core_db.clean_tmp_creations()
         core_db.close_connections()

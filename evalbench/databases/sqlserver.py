@@ -205,7 +205,9 @@ class SQLServerDB(DB):
             logging.info(f"Could not delete database: {error}")
 
     def drop_all_tables(self):
-        _, error = self._execute_autocommit(DROP_ALL_TABLES_QUERY.format(DATABASE=self.db_name))
+        _, error = self._execute_autocommit(
+            DROP_ALL_TABLES_QUERY.format(DATABASE=self.db_name)
+        )
         if error:
             raise RuntimeError(error)
 
@@ -219,12 +221,16 @@ class SQLServerDB(DB):
                 formatted_values = []
                 for value in row:
                     if str(value).lower() in ["true", "false"]:
-                        formatted_values.append("1" if str(value).lower() == "true" else "0")
+                        formatted_values.append(
+                            "1" if str(value).lower() == "true" else "0"
+                        )
                     else:
                         formatted_values.append(str(value))
 
                 inline_values = ", ".join(formatted_values)
-                insertion_statements.append(f"INSERT INTO dbo.{table_name} VALUES ({inline_values});")
+                insertion_statements.append(
+                    f"INSERT INTO dbo.{table_name} VALUES ({inline_values});"
+                )
 
         try:
             self.batch_execute(insertion_statements)
@@ -269,7 +275,7 @@ class SQLServerDB(DB):
         cursor = None
         try:
             raw_conn = self.engine.raw_connection()
-            raw_conn.connection.autocommit = True # type: ignore
+            raw_conn.connection.autocommit = True  # type: ignore
             cursor = raw_conn.cursor()
             cursor.execute(query)
 

@@ -55,7 +55,7 @@ class RecallMatcher(Comparator):
                 4. orig_generated_size: no. of generated results before removing duplicates
                 5. dedup_golden_size: no. of expected results after removing duplicates
                 6. dedup_generated_size: no. of generated results after removing duplicates
-       """
+        """
 
         # Filter out None values (assuming they shouldn't be considered)
         golden_results = (
@@ -82,8 +82,12 @@ class RecallMatcher(Comparator):
             recall = 1
         else:
             # Calculate precision and recall
-            recall = correct_predictions / len(generated_results) if generated_results else 0
-            precision = correct_predictions / len(golden_results) if golden_results else 0
+            recall = (
+                correct_predictions / len(generated_results) if generated_results else 0
+            )
+            precision = (
+                correct_predictions / len(golden_results) if golden_results else 0
+            )
 
         full_result = {
             "precision": precision,

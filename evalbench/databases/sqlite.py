@@ -46,7 +46,9 @@ class SQLiteDB(DB):
         try:
             self.engine.dispose()
         except Exception as e:
-            logging.warning("Failed to close connections. This may result in idle unused connections.")
+            logging.warning(
+                "Failed to close connections. This may result in idle unused connections."
+            )
 
     #####################################################
     #####################################################
@@ -115,9 +117,13 @@ class SQLiteDB(DB):
             except Exception as e:
                 error = str(e)
                 if "database is locked" in error:
-                    raise ResourceExhaustedError("SQLite Database is locked, retry later") from e
+                    raise ResourceExhaustedError(
+                        "SQLite Database is locked, retry later"
+                    ) from e
                 elif "disk I/O error" in error:
-                    raise ResourceExhaustedError("Disk I/O error occurred, check storage") from e
+                    raise ResourceExhaustedError(
+                        "Disk I/O error occurred, check storage"
+                    ) from e
             return result, eval_result, error
 
         return rate_limit(
@@ -157,7 +163,9 @@ class SQLiteDB(DB):
     ) -> list[str]:
         create_statements = []
         for table in schema.tables:
-            columns = ", ".join([f"{column.name} {column.type}" for column in table.columns])
+            columns = ", ".join(
+                [f"{column.name} {column.type}" for column in table.columns]
+            )
             create_statements.append(f"CREATE TABLE {table.name} ({columns});")
         return create_statements
 
@@ -168,7 +176,7 @@ class SQLiteDB(DB):
             else:
                 db_path = database_name
 
-            open(db_path, 'a').close()
+            open(db_path, "a").close()
         except Exception as error:
             raise RuntimeError(f"Could not create database: {error}")
         self.tmp_dbs.append(db_path)
@@ -185,10 +193,12 @@ class SQLiteDB(DB):
     def drop_all_tables(self):
         try:
             result = self.execute(GET_TABLES_SQL)
-            tables = [table['name'] for table in result[0]]
+            tables = [table["name"] for table in result[0]]
 
             if tables:
-                drop_statements = [DROP_TABLE_SQL.format(TABLE=table) for table in tables]
+                drop_statements = [
+                    DROP_TABLE_SQL.format(TABLE=table) for table in tables
+                ]
                 self.batch_execute(drop_statements)
 
         except Exception as error:

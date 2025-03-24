@@ -38,7 +38,7 @@ class MySQLDBSchemaGenerator(PromptGenerator):
 
     def setup(self):
         self.schema = self.db.get_ddl_from_db()
-    
+
     def generate(self, prompt):
         return MYSQL_PROMPT_TEMPLATE_WITH_RULES.format(
             SCHEMA=self.schema, USER_PROMPT=prompt

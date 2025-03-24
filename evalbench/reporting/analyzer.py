@@ -71,9 +71,23 @@ def analyze_result(scores, experiment_config: dict[str, str]):
     summary_scores.append(summary)
     summary_scores_df = pd.DataFrame.from_dict(summary_scores)
     df[
-        ["generated_error", "comparator", "comparison_error", "generated_sql", "job_id", "id"]
+        [
+            "generated_error",
+            "comparator",
+            "comparison_error",
+            "generated_sql",
+            "job_id",
+            "id",
+        ]
     ] = df[
-        ["generated_error", "comparator", "comparison_error", "generated_sql", "job_id", "id"]
+        [
+            "generated_error",
+            "comparator",
+            "comparison_error",
+            "generated_sql",
+            "job_id",
+            "id",
+        ]
     ].astype(
         "string"
     )
