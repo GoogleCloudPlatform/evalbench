@@ -3,11 +3,11 @@
 from collections.abc import Sequence
 from absl import app
 from absl import flags
+from reporting import get_reporters
 from util.config import load_yaml_config, config_to_df
 from dataset.dataset import load_json, load_dataset_from_json, flatten_dataset
 from evaluator.evaluator import Evaluator
 import reporting.report as report
-import reporting.bqstore as bqstore
 import reporting.analyzer as analyzer
 import logging
 from util.config import set_session_configs
@@ -16,28 +16,11 @@ import os
 
 logging.getLogger().setLevel(logging.INFO)
 
-CSV_OUTPUT = "csv"
-BIG_QUERY_OUTPUT = "big_query"
-
 _EXPERIMENT_CONFIG = flags.DEFINE_string(
     "experiment_config",
     "configs/experiment_config.yaml",
     "Path to the eval execution configuration file.",
 )
-
-_OUTPUT_TYPE = flags.DEFINE_string(
-    "output_type",
-    BIG_QUERY_OUTPUT,
-    "Specifies the output type: 'csv' for a CSV file, 'big_query' to store results in BigQuery",
-)
-
-
-def store_data(output_type, data_df, csv_file_name, bigquery_store_type, job_id):
-    if output_type == CSV_OUTPUT:
-        logging.info(f"Storing {csv_file_name}")
-        data_df.to_csv(f"{csv_file_name}_{job_id}.csv", index=False)
-    else:
-        report.store(data_df, bigquery_store_type)
 
 
 def main(argv: Sequence[str]):
@@ -49,6 +32,7 @@ def main(argv: Sequence[str]):
         if parsed_config == "":
             logging.error("No Eval Config Found.")
             return
+
         set_session_configs(session, parsed_config)
         # Load the configs
         config, db_config, model_config, setup_config = load_session_configs(session)
@@ -73,25 +57,24 @@ def main(argv: Sequence[str]):
         core_db.clean_tmp_creations()
         core_db.close_connections()
 
-        # Store the results
-        output_type = _OUTPUT_TYPE.value
+        # Create Dataframes for reporting
+        reporters = get_reporters(parsed_config.get("reporting"), job_id, run_time)
         config_df = config_to_df(job_id, run_time, config, model_config, db_config)
-        store_data(output_type, config_df, "configs", bqstore.STORETYPE.CONFIGS, job_id)
-
         results = load_json(results_tf)
         results_df = report.get_dataframe(results)
         report.quick_summary(results_df)
-        store_data(output_type, results_df, "results", bqstore.STORETYPE.EVALS, job_id)
-
         scores = load_json(scores_tf)
         scores_df, summary_scores_df = analyzer.analyze_result(scores, config)
         summary_scores_df["job_id"] = job_id
         summary_scores_df["run_time"] = run_time
 
-        store_data(output_type, scores_df, "scores", bqstore.STORETYPE.SCORES, job_id)
-        store_data(
-            output_type, summary_scores_df, "summary", bqstore.STORETYPE.SUMMARY, job_id
-        )
+        # Store the reports in specified outputs
+        for reporter in reporters:
+            reporter.store(config_df, report.STORETYPE.CONFIGS)
+            reporter.store(results_df, report.STORETYPE.EVALS)
+            reporter.store(scores_df, report.STORETYPE.SCORES)
+            reporter.store(summary_scores_df, report.STORETYPE.SUMMARY)
+
         print(f"Finished Job ID {job_id}")
         return os._exit(0)
     except Exception as e:

@@ -7,5 +7,5 @@ class NOOPGenerator(QueryGenerator):
         super().__init__(querygenerator_config)
         self.name = "noop"
 
-    def generate(self, prompt):
+    def generate_internal(self, prompt):
         return ""

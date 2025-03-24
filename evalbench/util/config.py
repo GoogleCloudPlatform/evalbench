@@ -113,6 +113,7 @@ def set_session_configs(session, experiment_config: dict):
         session["db_config"] = load_yaml_config(experiment_config["database_config"])
     if "model_config" in experiment_config and experiment_config["model_config"]:
         session["model_config"] = load_yaml_config(experiment_config["model_config"])
+    session["setup_config"] = {}
     if "setup_directory" in experiment_config and experiment_config["setup_directory"]:
         session["setup_config"]["setup_directory"] = experiment_config[
             "setup_directory"

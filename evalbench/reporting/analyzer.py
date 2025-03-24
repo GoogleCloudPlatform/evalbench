@@ -11,7 +11,7 @@ def analyze_one_metric(
     metric_score: int,
     execution: bool = False,
     num_scorers: int = 1,
-) -> int:
+) -> dict:
     """Analyze one metric from dataframe with flexibility."""
     original_df_size = int(len(df) / num_scorers)
     df = df[df["generated_sql"].notna()]

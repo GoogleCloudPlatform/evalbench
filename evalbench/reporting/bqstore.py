@@ -1,17 +1,8 @@
 from google.cloud import bigquery
-
 import logging
-from enum import Enum
+from reporting.report import Reporter, STORETYPE
 
-STORETYPE = Enum("StoreType", ["CONFIGS", "EVALS", "SCORES", "SUMMARY"])
 _CHUNK_SIZE = 250
-
-project_id = "cloud-db-nl2sql"
-dataset_id = "{}.evalbench".format(project_id)
-configs_table = "{}.configs".format(dataset_id)
-results_table = "{}.results".format(dataset_id)
-scores_table = "{}.scores".format(dataset_id)
-summary_table = "{}.summary".format(dataset_id)
 
 
 def _split_dataframe(df, chunk_size):
@@ -32,34 +23,45 @@ def _split_dataframe(df, chunk_size):
         yield df[start:end]
 
 
-def store(df, STORETYPE):
-    # Construct a BigQuery client object.
-    client = bigquery.Client()
-    # Construct a full Dataset object to send to the API.
-    dataset = bigquery.Dataset(dataset_id)
-    dataset.location = "US"
-    dataset = client.create_dataset(dataset, exists_ok=True, timeout=30)
-    logging.info(
-        "Created dataset {}.{} for {}".format(
-            client.project, dataset.dataset_id, STORETYPE
-        )
-    )
-    job_config = bigquery.LoadJobConfig()
-    job_config.schema_update_options = [
-        bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION,
-        bigquery.SchemaUpdateOption.ALLOW_FIELD_RELAXATION,
-    ]
-    if STORETYPE == STORETYPE.CONFIGS:
-        table = configs_table
-    elif STORETYPE == STORETYPE.EVALS:
-        table = results_table
-    elif STORETYPE == STORETYPE.SCORES:
-        table = scores_table
-    elif STORETYPE == STORETYPE.SUMMARY:
-        table = summary_table
+class BigQueryReporter(Reporter):
+    def __init__(self, reporting_config, job_id, run_time):
+        super().__init__(reporting_config, job_id, run_time)
+        self.project_id = reporting_config.get("gcp_project_id")
+        self.location = reporting_config.get("dataset_location") or "US"
+        self.dataset_id = "{}.evalbench".format(self.project_id)
+        self.configs_table = "{}.configs".format(self.dataset_id)
+        self.results_table = "{}.results".format(self.dataset_id)
+        self.scores_table = "{}.scores".format(self.dataset_id)
+        self.summary_table = "{}.summary".format(self.dataset_id)
 
-    # Chunk this to avoid BQ OOM
-    job_config.write_disposition = bigquery.job.WriteDisposition.WRITE_APPEND
-    for chunk in _split_dataframe(df, _CHUNK_SIZE):
-        job = client.load_table_from_dataframe(chunk, table, job_config=job_config)
-        job.result()  # Wait for the job to complete.
+    def store(self, results, type: STORETYPE):
+        # Construct a BigQuery client object.
+        client = bigquery.Client()
+        # Construct a full Dataset object to send to the API.
+        dataset = bigquery.Dataset(self.dataset_id)
+        dataset.location = self.location
+        dataset = client.create_dataset(dataset, exists_ok=True, timeout=30)
+        logging.info(
+            "Created dataset {}.{} for {}".format(
+                client.project, dataset.dataset_id, type
+            )
+        )
+        job_config = bigquery.LoadJobConfig()
+        job_config.schema_update_options = [
+            bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION,
+            bigquery.SchemaUpdateOption.ALLOW_FIELD_RELAXATION,
+        ]
+        if type == STORETYPE.CONFIGS:
+            table = self.configs_table
+        elif type == STORETYPE.EVALS:
+            table = self.results_table
+        elif type == STORETYPE.SCORES:
+            table = self.scores_table
+        elif type == STORETYPE.SUMMARY:
+            table = self.summary_table
+
+        # Chunk this to avoid BQ OOM
+        job_config.write_disposition = bigquery.job.WriteDisposition.WRITE_APPEND  # type: ignore
+        for chunk in _split_dataframe(results, _CHUNK_SIZE):
+            job = client.load_table_from_dataframe(chunk, table, job_config=job_config)
+            job.result()  # Wait for the job to complete.

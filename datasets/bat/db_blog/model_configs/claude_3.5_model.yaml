@@ -1,6 +1,6 @@
-generator: claude
-project_id: cloud-db-nl2sql
-location: us-east5
+generator: gcp_vertex_claude
+gcp_project_id: cloud-db-nl2sql
+gcp_region: us-east5
 vertex_model: claude-3-5-sonnet-v2@20241022
 base_prompt: ""
 max_tokens: 1024

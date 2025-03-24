@@ -37,3 +37,13 @@ scorers:
     model_config: datasets/bat/db_blog/model_configs/gemini_1.5-pro-002_model.yaml
   returned_sql: null
   set_match: null
+#
+#
+############################################################
+### Reporting Related Configs
+############################################################
+reporting:
+  bigquery:
+    gcp_project_id: cloud-db-nl2sql
+  csv:
+    output_directory: 'results'

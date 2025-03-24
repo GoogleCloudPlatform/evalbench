@@ -12,14 +12,14 @@ class GeminiGenerator(QueryGenerator):
 
     def __init__(self, querygenerator_config):
         super().__init__(querygenerator_config)
-        self.name = "gemini"
-        self.project_id = querygenerator_config["project_id"]
-        self.location = querygenerator_config["location"]
+        self.name = "gcp_vertex_gemini"
+        self.project_id = querygenerator_config["gcp_project_id"]
+        self.region = querygenerator_config["gcp_region"]
         self.vertex_model = querygenerator_config["vertex_model"]
         self.base_prompt = querygenerator_config["base_prompt"]
         self.generation_config = None
 
-        vertexai.init(project=self.project_id, location=self.location)
+        vertexai.init(project=self.project_id, location=self.region)
         self.model = GenerativeModel(self.vertex_model)
         self.base_prompt = self.base_prompt
 

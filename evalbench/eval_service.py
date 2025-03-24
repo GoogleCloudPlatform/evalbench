@@ -11,7 +11,7 @@ import grpc
 import pathlib
 from dataset.dataset import load_json
 import reporting.report as report
-import reporting.bqstore as bqstore
+from reporting import get_reporters
 import reporting.analyzer as analyzer
 from util.config import update_google3_relative_paths, set_session_configs, config_to_df
 from util import get_SessionManager
@@ -135,8 +135,9 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         evaluator.evaluate(dataset)
 
         job_id, run_time, results_tf, scores_tf = evaluator.process()
+        reporters = get_reporters(config.get("reporting"), job_id, run_time)
         _process_results(
-            job_id, run_time, results_tf, scores_tf, config, model_config, db_config
+            reporters, job_id, run_time, results_tf, scores_tf, config, model_config, db_config
         )
         core_db.clean_tmp_creations()
         core_db.close_connections()
@@ -145,7 +146,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
 
 
 def _process_results(
-    job_id, run_time, results_tf, scores_tf, config, model_config, db_config
+    reporters, job_id, run_time, results_tf, scores_tf, config, model_config, db_config
 ):
     config_df = config_to_df(
         job_id,
@@ -154,8 +155,6 @@ def _process_results(
         model_config,
         db_config,
     )
-    report.store(config_df, bqstore.STORETYPE.CONFIGS)
-
     results = load_json(results_tf)
     results_df = report.get_dataframe(results)
     if results_df.empty:
@@ -164,14 +163,17 @@ def _process_results(
         )
         return eval_response_pb2.EvalResponse(response=f"{job_id}")
     report.quick_summary(results_df)
-    report.store(results_df, bqstore.STORETYPE.EVALS)
-
     scores = load_json(scores_tf)
     scores_df, summary_scores_df = analyzer.analyze_result(scores, config)
     summary_scores_df["job_id"] = job_id
     summary_scores_df["run_time"] = run_time
-    report.store(scores_df, bqstore.STORETYPE.SCORES)
-    report.store(summary_scores_df, bqstore.STORETYPE.SUMMARY)
+
+    # Store the reports in specified outputs
+    for reporter in reporters:
+        reporter.store(config_df, report.STORETYPE.CONFIGS)
+        reporter.store(results_df, report.STORETYPE.EVALS)
+        reporter.store(scores_df, report.STORETYPE.SCORES)
+        reporter.store(summary_scores_df, report.STORETYPE.SUMMARY)
 
     # k8s emptyDir /tmp does not auto cleanup, so we explicitly delete
     pathlib.Path(results_tf).unlink()

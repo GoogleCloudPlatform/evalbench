@@ -1,7 +1,20 @@
+from enum import Enum
 import pandas as pd
-import reporting.bqstore as bq
 import logging
+from abc import ABC, abstractmethod
 
+STORETYPE = Enum("StoreType", ["CONFIGS", "EVALS", "SCORES", "SUMMARY"])
+
+
+class Reporter(ABC):
+    def __init__(self, reporting_config, job_id, run_time):
+         self.config = reporting_config
+         self.job_id = job_id
+         self.run_time = run_time
+
+    @abstractmethod
+    def store(self, results, type: STORETYPE):
+        pass
 
 def get_dataframe(results):
     results_df = pd.DataFrame.from_dict(results, dtype="string")
@@ -19,8 +32,3 @@ def quick_summary(results_df):
     logging.info("SQLGen Errors: %d.", len(results_df[sql_generator_error_df]))
     logging.info("SQLExec Gen Errors: %d.", len(results_df[generated_error_df]))
     logging.info("Golden Errors: %d.", len(results_df[golden_error_df]))
-
-
-def store(results, storetype):
-    bq.store(results, storetype)
-    return

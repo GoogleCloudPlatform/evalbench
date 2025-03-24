@@ -9,14 +9,14 @@ class ClaudeGenerator(QueryGenerator):
 
     def __init__(self, querygenerator_config):
         super().__init__(querygenerator_config)
-        self.name = "claude"
-        self.project_id = querygenerator_config["project_id"]
-        self.location = querygenerator_config["location"]
+        self.name = "gcp_vertex_claude"
+        self.project_id = querygenerator_config["gcp_project_id"]
+        self.region = querygenerator_config["gcp_region"]
         self.model_id = querygenerator_config["vertex_model"]
         self.base_prompt = querygenerator_config["base_prompt"]
         self.max_tokens = querygenerator_config["max_tokens"]
 
-        self.client = AnthropicVertex(region=self.location, project_id=self.project_id)
+        self.client = AnthropicVertex(region=self.region, project_id=self.project_id)
 
     def generate_internal(self, prompt):
 

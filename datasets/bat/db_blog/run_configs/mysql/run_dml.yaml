@@ -34,3 +34,13 @@ setup_directory: datasets/bat/db_blog/setup
 scorers:
   exact_match: null
   returned_sql: null
+#
+#
+############################################################
+### Reporting Related Configs
+############################################################
+reporting:
+  bigquery:
+    gcp_project_id: cloud-db-nl2sql
+  csv:
+    output_directory: 'results'
