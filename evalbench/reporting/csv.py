@@ -10,17 +10,17 @@ class CsvReporter(Reporter):
     def store(self, results, type: STORETYPE):
         if type == STORETYPE.CONFIGS:
             file_path = (
-                f"{self.config.get("output_directory")}/{self.job_id}/configs.csv"
+                f"{self.config.get('output_directory')}/{self.job_id}/configs.csv"
             )
         elif type == STORETYPE.EVALS:
-            file_path = f"{self.config.get("output_directory")}/{self.job_id}/evals.csv"
+            file_path = f"{self.config.get('output_directory')}/{self.job_id}/evals.csv"
         elif type == STORETYPE.SCORES:
             file_path = (
-                f"{self.config.get("output_directory")}/{self.job_id}/scores.csv"
+                f"{self.config.get('output_directory')}/{self.job_id}/scores.csv"
             )
         elif type == STORETYPE.SUMMARY:
             file_path = (
-                f"{self.config.get("output_directory")}/{self.job_id}/summary.csv"
+                f"{self.config.get('output_directory')}/{self.job_id}/summary.csv"
             )
 
         file_name = os.path.basename(file_path)
