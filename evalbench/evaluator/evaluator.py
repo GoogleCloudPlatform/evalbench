@@ -76,6 +76,7 @@ class Evaluator:
         self.genrunner = mprunner.MPRunner(self.sqlgen_runners)
         self.sqlrunner = mprunner.MPRunner(self.sqlexec_runners)
         self.scoringrunner = mprunner.MPRunner(self.scoring_runners)
+        self.prompt_generator.setup()
 
         prompt_i = 0
         gen_i = 0

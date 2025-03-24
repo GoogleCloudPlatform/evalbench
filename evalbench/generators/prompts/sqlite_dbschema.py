@@ -45,7 +45,10 @@ class SQLiteDBSchemaGenerator(PromptGenerator):
 
     def __init__(self, db: DB, promptgenerator_config):
         super().__init__(db, promptgenerator_config)
-        self.schema = db.get_ddl_from_db()
+        self.db = db
+
+    def setup(self):
+        self.schema = self.db.get_ddl_from_db()
 
     def generate(self, prompt):
         return SQLITE_PROMPT_TEMPLATE_WITH_RULES.format(
