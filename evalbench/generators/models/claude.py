@@ -1,6 +1,6 @@
 import logging
 from anthropic import AnthropicVertex
-
+from util.gcp import get_gcp_project, get_gcp_region
 from .generator import QueryGenerator
 
 
@@ -10,8 +10,8 @@ class ClaudeGenerator(QueryGenerator):
     def __init__(self, querygenerator_config):
         super().__init__(querygenerator_config)
         self.name = "gcp_vertex_claude"
-        self.project_id = querygenerator_config["gcp_project_id"]
-        self.region = querygenerator_config["gcp_region"]
+        self.project_id = get_gcp_project(querygenerator_config.get("gcp_project_id"))
+        self.region = get_gcp_region(querygenerator_config.get("gcp_region"))
         self.model_id = querygenerator_config["vertex_model"]
         self.base_prompt = querygenerator_config["base_prompt"]
         self.max_tokens = querygenerator_config["max_tokens"]

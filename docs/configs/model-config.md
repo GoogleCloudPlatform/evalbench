@@ -22,13 +22,14 @@ These settings are passed to all generators, regardless of the specific engine u
 
 These settings are **required only** for generators that utilize Google Cloud Vertex AI, such as `gcp_vertex_claude` and `gcp_vertex_gemini`. They are not needed for other generators.
 
-| **Key**           | **Required for**                           | **Default Value**              | **Description**                                                                                                                                                                           |
+| **Key**           | **Required**                           | **Default Value**              | **Description**                                                                                                                                                                           |
 | ----------------- | ------------------------------------------ | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gcp_project_id`  | `gcp_vertex_claude`, `gcp_vertex_gemini`   | ''                             | The Google Cloud Project ID that hosts your Vertex AI resources.                                                                                                                                                                                |
-| `gcp_region`      | `gcp_vertex_claude`, `gcp_vertex_gemini`   | ''                             | The Google Cloud region where the Vertex AI service is deployed.                                                                                                                                                                                 |
-| `vertex_model`    | `gcp_vertex_claude`, `gcp_vertex_gemini`   | ''  | The identifier for the specific model deployed on Vertex AI, including version or timestamp details.                                                                                                                                                                                  |
+| `vertex_model`    | Required for `gcp_vertex_claude`, `gcp_vertex_gemini`   | ''  | The identifier for the specific model deployed on Vertex AI, including version or timestamp details.                                                                                                                                                                                  |
+| `gcp_project_id`  | **Required*** for `gcp_vertex_claude`, `gcp_vertex_gemini`   | ''                             | The Google Cloud Project ID that hosts your Vertex AI resources.                                                                                                                                                                                |
+| `gcp_region`      | **Required*** for `gcp_vertex_claude`, `gcp_vertex_gemini`   | ''                             | The Google Cloud region where the Vertex AI service is deployed.                                                                                                                                                                                 |
 
 ---
+> Required*, you can globally set your GCP project_id and gcp_region using the environment variables `EVAL_GCP_PROJECT_ID` and `EVAL_GCP_PROJECT_REGION`. 
 
 ## Important Notes
 

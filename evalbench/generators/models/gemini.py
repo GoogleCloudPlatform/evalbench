@@ -1,5 +1,5 @@
 import vertexai
-
+from util.gcp import get_gcp_project, get_gcp_region
 from vertexai.generative_models._generative_models import (
     GenerativeModel,
     GenerationResponse,
@@ -13,8 +13,8 @@ class GeminiGenerator(QueryGenerator):
     def __init__(self, querygenerator_config):
         super().__init__(querygenerator_config)
         self.name = "gcp_vertex_gemini"
-        self.project_id = querygenerator_config["gcp_project_id"]
-        self.region = querygenerator_config["gcp_region"]
+        self.project_id = get_gcp_project(querygenerator_config.get("gcp_project_id"))
+        self.region = get_gcp_region(querygenerator_config.get("gcp_region"))
         self.vertex_model = querygenerator_config["vertex_model"]
         self.base_prompt = querygenerator_config["base_prompt"]
         self.generation_config = None

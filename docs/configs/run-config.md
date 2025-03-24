@@ -67,6 +67,7 @@ This section specifies how and where the evaluation results will be reported, su
 | `bigquery` | Optional     | Configuration for reporting to Google BigQuery. <br>**Subkey:** `gcp_project_id` specifies the Google Cloud Project ID for BigQuery integration (e.g., `my_cool_gcp_project`). |
 
 ---
+> bigquery project_id: You can globally set your GCP project_id using the environment variables `EVAL_GCP_PROJECT_ID` or identify it separately.
 
 ## Example Configuration Snippet
 

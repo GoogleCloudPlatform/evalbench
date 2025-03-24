@@ -47,14 +47,18 @@ gcloud auth application-default login
 
 This step sets up the necessary credentials for accessing Vertex AI resources on your GCP project.
 
+We can globally set our gcp_project_id using
+
+```bash
+export EVAL_GCP_PROJECT_ID=your_project_id_here
+export EVAL_GCP_PROJECT_REGION=your_region_here
+```
+
 ### 5. Set Your Evaluation Configuration
 
 For a quick start, let's run NL2SQL on some sqlite DQL queries.
 
-1. First, read through [sqlite/run_dql.yaml](/datasets/bat/db_blog/run_configs/sqlite/run_dql.yaml) and see the configuration settings. In this case, we are using gemini_2.0_pro_model for SQL generation and gemini_1.5-pro-002_model.yaml for scoring.
-1. Let's update both of these model configs to use your GCP project.
-   - Replace `<your-project-id>` in [gemini_1.5-pro-002_model.yaml](/datasets/bat/db_blog/model_configs/gemini_1.5-pro-002_model.yaml)
-   - Replace `<your-project-id>` in [gemini_2.0_pro_model.yaml](/datasets/bat/db_blog/model_configs/gemini_2.0_pro_model.yaml)
+1. First, read through [sqlite/run_dql.yaml](/datasets/bat/db_blog/run_configs/sqlite/run_dql.yaml) and see the configuration settings we will be running.
 
 Now, configure your evaluation by setting the `EVAL_CONFIG` environment variable. For example, to run a configuration using the `db_blog` dataset on SQLite:
 

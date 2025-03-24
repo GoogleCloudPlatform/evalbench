@@ -1,6 +1,4 @@
 generator: gcp_vertex_claude
-gcp_project_id: <your-project-id>
-gcp_region: us-east5
 vertex_model: claude-3-5-sonnet-v2@20241022
 base_prompt: ""
 max_tokens: 1024

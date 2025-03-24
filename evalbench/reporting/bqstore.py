@@ -1,6 +1,7 @@
 from google.cloud import bigquery
 import logging
 from reporting.report import Reporter, STORETYPE
+from util.gcp import get_gcp_project
 
 _CHUNK_SIZE = 250
 
@@ -26,7 +27,7 @@ def _split_dataframe(df, chunk_size):
 class BigQueryReporter(Reporter):
     def __init__(self, reporting_config, job_id, run_time):
         super().__init__(reporting_config, job_id, run_time)
-        self.project_id = reporting_config.get("gcp_project_id")
+        self.project_id = get_gcp_project(reporting_config.get("gcp_project_id"))
         self.location = reporting_config.get("dataset_location") or "US"
         self.dataset_id = "{}.evalbench".format(self.project_id)
         self.configs_table = "{}.configs".format(self.dataset_id)

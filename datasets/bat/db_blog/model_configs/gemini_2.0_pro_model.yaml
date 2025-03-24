@@ -1,5 +1,4 @@
 generator: gcp_vertex_gemini
-gcp_project_id: <your-project-id>
-gcp_region: us-central1
 vertex_model: gemini-2.0-pro-exp-02-05
 base_prompt: ""
+execs_per_minute: 10
