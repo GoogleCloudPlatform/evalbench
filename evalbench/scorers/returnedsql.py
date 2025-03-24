@@ -11,6 +11,7 @@ Runtime Options: None
 
 from scorers import comparator
 from typing import Tuple
+import re
 
 
 class ReturnedSQL(comparator.Comparator):
@@ -42,14 +43,15 @@ class ReturnedSQL(comparator.Comparator):
         """compare function implements the SQL finding logic for ReturnedSQL comparator."""
 
         if generated_query == "":
-            return 100, None
+            return 0, ""
 
-        generated_query = re.sub(r'/\*.*?\*/', '', generated_query, flags=re.DOTALL)
+        generated_query = re.sub(r"/\*.*?\*/", "", generated_query, flags=re.DOTALL)
 
         query_lines = [line.strip() for line in generated_query.splitlines()]
         has_non_comment_line = any(
-            line and (not line.startswith("--") and not line.startswith("#")) for line in query_lines
+            line and (not line.startswith("--") and not line.startswith("#"))
+            for line in query_lines
         )
 
         score = 100 if has_non_comment_line else 0
-        return score, None
+        return score, ""
