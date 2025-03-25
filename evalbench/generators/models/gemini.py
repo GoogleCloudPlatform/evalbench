@@ -16,7 +16,7 @@ class GeminiGenerator(QueryGenerator):
         self.project_id = get_gcp_project(querygenerator_config.get("gcp_project_id"))
         self.region = get_gcp_region(querygenerator_config.get("gcp_region"))
         self.vertex_model = querygenerator_config["vertex_model"]
-        self.base_prompt = querygenerator_config["base_prompt"]
+        self.base_prompt = querygenerator_config.get("base_prompt") or ""
         self.generation_config = None
 
         vertexai.init(project=self.project_id, location=self.region)
