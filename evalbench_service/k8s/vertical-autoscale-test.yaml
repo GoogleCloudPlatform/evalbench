@@ -20,4 +20,5 @@ spec:
         minAllowed:
           memory: 32Gi
           cpu: "2.2"
-        maxAllowed: {}
+        maxAllowed:
+          memory: 122Gi
