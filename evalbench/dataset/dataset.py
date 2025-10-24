@@ -45,6 +45,7 @@ def load_bird_interact_dataset(json_file_path, config):
     }
     dataset_dir = config["dataset_directory"]
     max_turn = config.get("max_turn", 6)
+    num_evals_to_run = config.get("num_evals_to_run", 0)
 
     with open(json_file_path, "r") as f:
         for line in f:
@@ -60,7 +61,9 @@ def load_bird_interact_dataset(json_file_path, config):
             selected_database = item["selected_database"]
             item["turn"] = 0
             item["schema"] = load_schema(dataset_dir, selected_database)
-            item["knowledge"] = load_knowledge(dataset_dir, selected_database)
+            item["knowledge"] = load_knowledge(
+                dataset_dir, selected_database, item["knowledge_ambiguity"]
+            )
             min_turn = len(item["user_query_ambiguity"]["critical_ambiguity"]) + len(
                 item["knowledge_ambiguity"]
             )
@@ -78,6 +81,12 @@ def load_bird_interact_dataset(json_file_path, config):
                 payload=item,
             )
             input_items[eval_input.query_type].append(eval_input)
+            if (
+                num_evals_to_run > 0
+                and len(input_items[eval_input.query_type]) == num_evals_to_run
+            ):
+                break
+
     return input_items
 
 

@@ -17,6 +17,7 @@ class SessionManager:
         self.ttl = 3600
         logging.debug("Starting reaper...")
         reaper = Thread(target=self.reaper, args=[])
+        reaper.daemon = True
         reaper.start()
 
     def set_ttl(self, ttl):
