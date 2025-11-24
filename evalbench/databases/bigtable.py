@@ -65,7 +65,7 @@ class BigtableDB(DB):
                 query=query, instance_id=self.instance.instance_id
             )
             for row in execute_query_iterator:
-                result.append(row)
+                result.append(dict(row.fields))
         except Exception as e:
             error = str(e)
 
