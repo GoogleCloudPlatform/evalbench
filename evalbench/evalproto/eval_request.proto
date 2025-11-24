@@ -25,12 +25,26 @@ message EvalInputRequest {
   map<string, DialectBasedSQLStatements> setup_sql = 8;
   map<string, DialectBasedSQLStatements> cleanup_sql = 9;
   repeated string tags = 10;
-  map<string, string> other = 11; 
+  map<string, string> other = 11;
   string sql_generator_error = 12;
   float sql_generator_time = 13;
   string generated_sql = 14;
   string job_id = 15;
   string trace_id = 16;
+  // Explanation of the SQL query generated.
+  string explanation = 17;
+
+  // Detailed information and enriched output about the SQL generation.
+  // This is populated based on the `SqlGenerationConfig` in the request.
+  SqlGenerationDetails sql_generation_details = 18;
+}
+
+// Contains detailed, structured information beyond the single SQL string.
+message SqlGenerationDetails {
+  // A list of questions for the user to help clarify an ambiguous initial
+  // query. Populated only if generate_disambiguating_questions is enabled
+  // in the request and ambiguity is detected.
+  repeated string disambiguating_questions = 1;
 }
 
 message UserAction {
@@ -55,7 +69,7 @@ message EvalCodeInputRequest {
   string generated_code = 8;
   google.protobuf.Duration dbcodegen_time = 9;
   string dbcodegen_error = 10;
-  string job_id = 11; 
+  string job_id = 11;
   string golden_code = 12;
   string build_command = 13;
 }
@@ -67,7 +81,7 @@ message EvalInteractInputRequest {
   string database = 4;
   repeated string dialects = 5;
   repeated string tags = 6;
-  string payload = 7; 
+  string payload = 7;
   string job_id = 8;
   string trace_id = 9;
 }

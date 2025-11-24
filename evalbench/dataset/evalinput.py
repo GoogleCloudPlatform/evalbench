@@ -28,6 +28,8 @@ class EvalInputRequest:
         generated_sql: str = "",
         job_id: str = "",
         trace_id: str = "",
+        explanation: str = "",
+        sql_generation_details: str = "",
     ):
         """Initializes an EvalInputRequest object with all required fields.
 
@@ -49,6 +51,8 @@ class EvalInputRequest:
         self.generated_sql = generated_sql
         self.job_id = job_id
         self.trace_id = trace_id
+        self.explanation = explanation
+        self.sql_generation_details = sql_generation_details
 
     if PROTO_IMPORTED:
 
@@ -74,6 +78,8 @@ class EvalInputRequest:
                 generated_sql=request.get("generatedSql") or "",
                 job_id=request.get("jobId") or "",
                 trace_id=request.get("traceId") or "",
+                explanation=request.get("explanation") or "",
+                sql_generation_details=request.get("sqlGenerationDetails") or [],
             )
 
         def to_proto(self):  # type: ignore

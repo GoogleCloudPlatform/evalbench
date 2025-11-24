@@ -29,7 +29,13 @@ async def _serve():
         SessionManagerInterceptor("SessionManagerInterceptor"),
     ]
 
-    server = grpc.aio.server(interceptors=interceptors)
+    server = grpc.aio.server(
+        interceptors=interceptors,
+        options=[
+            ("grpc.max_send_message_length", -1),
+            ("grpc.max_receive_message_length", -1),
+        ],
+    )
     servicer = EvalServicer()
     eval_service_pb2_grpc.add_EvalServiceServicer_to_server(servicer, server)
     if _LOCALHOST.value:

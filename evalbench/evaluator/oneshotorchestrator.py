@@ -80,7 +80,7 @@ class OneShotOrchestrator(Orchestrator):
                     for dialect in sub_datasets:
                         db_configs = self.db_configs.get(dialect)
                         if not db_configs:
-                            logging.info(
+                            logging.debug(
                                 f"Skipping queries for {dialect} as no applicable db_config"
                                 + " was found."
                             )
