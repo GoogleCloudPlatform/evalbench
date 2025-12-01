@@ -1,0 +1,44 @@
+############################################################
+### Dataset / Eval Items
+############################################################
+# The JSON list of prompts / golden SQLs and eval attributes for the run
+dataset_config: datasets/bat/prompts.json
+### Database Info
+# List of paths to the YAML files that provide the database connection details
+database_configs:
+ - datasets/bat/db_configs/mongodb.yaml
+# The dialects that the dataset_config will be filtered by.
+dialects:
+ - mongodb
+query_types:
+ - dql
+#
+#
+############################################################
+### Prompt and Generation Modules
+############################################################
+# The YAML config for the model to be used for generation.
+model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+# The prompt generator module id for prompt generation.
+prompt_generator: 'SQLGenBasePromptGenerator'
+#
+#
+############################################################
+### Optional - Setup / Teardown related configs
+############################################################
+setup_directory: datasets/bat/setup
+#
+#
+############################################################
+### Scorer Related Configs
+############################################################
+scorers:
+  exact_match: null
+#
+#
+############################################################
+### Reporting Related Configs
+############################################################
+reporting:
+  csv:
+    output_directory: 'results'
