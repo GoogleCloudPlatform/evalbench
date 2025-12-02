@@ -6,18 +6,21 @@ from .util import DatabaseSchema
 import pymongo
 from pymongo import MongoClient
 
+
 class MongoDB(DB):
     def __init__(self, db_config):
         super().__init__(db_config)
-        
+
         # Connection string support
         self.connection_string = db_config.get("connection_string")
-        
+
         # Handle DB name mismatch: replace underscores with hyphens
         if "_" in self.db_name:
             self.db_name = self.db_name.replace("_", "-")
 
-        self.client = MongoClient(self.connection_string, tlsAllowInvalidCertificates=True)
+        self.client = MongoClient(
+            self.connection_string, tlsAllowInvalidCertificates=True
+        )
         self.db = self.client[self.db_name]
 
     def close_connections(self):
@@ -36,7 +39,7 @@ class MongoDB(DB):
     ) -> Tuple[Any, Any, Any]:
         if query.strip() == "":
             return None, None, None
-            
+
         return self._execute(query, eval_query)
 
     def _execute_query(self, query_str: str) -> Tuple[List, Optional[str]]:
@@ -45,38 +48,38 @@ class MongoDB(DB):
             # Format: {"collection": "name", "operation": "find", "args": {...}}
             # OR simplified: {"find": "collection", "filter": {...}}
             # Let's support a flexible JSON format.
-            
+
             query_obj = json.loads(query_str)
-            
+
             # Basic support for 'find', 'aggregate', 'count_documents', 'dropCollection'
             # We can expand this based on needs.
-            
+
             # Example 1: {"find": "users", "filter": {"age": {"$gt": 20}}}
             if "find" in query_obj:
                 collection_name = query_obj["find"]
                 filter_doc = query_obj.get("filter", {})
                 projection = query_obj.get("projection")
                 limit = query_obj.get("limit", 0)
-                
+
                 cursor = self.db[collection_name].find(filter_doc, projection)
                 if limit > 0:
                     cursor = cursor.limit(limit)
-                
+
                 return list(cursor), None
-                
+
             # Example 2: {"aggregate": "users", "pipeline": [...]}
             elif "aggregate" in query_obj:
                 collection_name = query_obj["aggregate"]
                 pipeline = query_obj.get("pipeline", [])
-                
+
                 cursor = self.db[collection_name].aggregate(pipeline)
                 return list(cursor), None
-                
+
             # Example 3: {"count": "users", "filter": {...}}
             elif "count" in query_obj:
                 collection_name = query_obj["count"]
                 filter_doc = query_obj.get("filter", {})
-                
+
                 count = self.db[collection_name].count_documents(filter_doc)
                 return [{"count": count}], None
 
@@ -89,7 +92,7 @@ class MongoDB(DB):
                     # Fallback to use delete_many to delete all documents.
                     self.db[collection_name].delete_many({})
                 return [], None
-            
+
             # Fallback: return error for unknown format.
             else:
                 return [], f"Unsupported query format: {query_str}"
@@ -106,14 +109,14 @@ class MongoDB(DB):
         result, error = self._execute_query(query)
         if error:
             return None, None, error
-            
+
         # Execute eval query if present
         eval_result = None
         if eval_query:
             eval_result, eval_error = self._execute_query(eval_query)
             if eval_error:
                 return result, None, eval_error
-                
+
         return result, eval_result, None
 
     def get_metadata(self) -> dict:
@@ -131,7 +134,7 @@ class MongoDB(DB):
                         # Map Python types to string representations
                         col_type = type(value).__name__
                         columns.append({"name": key, "type": col_type})
-                
+
                 db_metadata[name] = columns
         except Exception as e:
             logging.error(f"Failed to get metadata: {e}")
@@ -190,7 +193,7 @@ class MongoDB(DB):
 
             headers = []
             start_index = 0
-            
+
             # Determine headers: use schema if available, else first row
             if collection_name in schema_mapping:
                 headers = schema_mapping[collection_name]
@@ -202,23 +205,30 @@ class MongoDB(DB):
                 start_index = 1
 
             documents = []
-            
+
             # Iterate over the rows
             for row in rows[start_index:]:
                 if len(row) != len(headers):
-                    logging.warning(f"Row length mismatch in {collection_name}: expected {len(headers)}, got {len(row)}")
+                    logging.warning(
+                        f"Row length mismatch in {collection_name}: expected {len(headers)}, got {len(row)}"
+                    )
                     continue
-                    
+
                 doc = {}
                 for i, header in enumerate(headers):
                     if i < len(row):
-                         val = row[i]
-                         # Strip single quotes if the value is wrapped in them (common in some CSV exports)
-                         if isinstance(val, str) and len(val) >= 2 and val.startswith("'") and val.endswith("'"):
-                             val = val[1:-1]
-                         doc[header] = val
+                        val = row[i]
+                        # Strip single quotes if the value is wrapped in them (common in some CSV exports)
+                        if (
+                            isinstance(val, str)
+                            and len(val) >= 2
+                            and val.startswith("'")
+                            and val.endswith("'")
+                        ):
+                            val = val[1:-1]
+                        doc[header] = val
                 documents.append(doc)
-            
+
             if documents:
                 self.db[collection_name].insert_many(documents)
 
