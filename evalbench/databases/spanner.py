@@ -19,10 +19,13 @@ from typing import Any, List, Optional, Tuple
 class SpannerDB(DB):
     def __init__(self, db_config):
         super().__init__(db_config)
-        # Prod
-        # self.spanner_api_endpoint = "spanner.googleapis.com"
-        # Staging
-        self.spanner_api_endpoint = "staging-wrenchworks.sandbox.googleapis.com:443"
+        if "deployment" in db_config and db_config["deployment"] == "staging":
+            # Prod
+            self.spanner_api_endpoint = "staging-wrenchworks.sandbox.googleapis.com:443"
+        else:
+            # Staging
+            self.spanner_api_endpoint = "spanner.googleapis.com"
+
         # native Cloud Spanner API setup
         client = spanner.Client(
             project=db_config["gcp_project_id"],
