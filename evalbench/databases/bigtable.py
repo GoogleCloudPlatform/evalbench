@@ -2,8 +2,10 @@ import logging
 from unittest import result
 from .db import DB
 from google.cloud import bigtable
-from google.cloud.bigtable import row_filters
-from google.cloud.bigtable.row import DirectRow
+from google.cloud.bigtable.data.execute_query import (
+    ExecuteQueryIterator,
+    QueryResultRow,
+)
 from .util import (
     get_db_secret,
     with_cache_execute,
@@ -61,11 +63,15 @@ class BigtableDB(DB):
         error = None
         result: List = []
         try:
-            execute_query_iterator = self.data_client.execute_query(
-                query=query, instance_id=self.instance.instance_id
+            execute_query_iterator: ExecuteQueryIterator = (
+                self.data_client.execute_query(
+                    query=query, instance_id=self.instance.instance_id
+                )
             )
+
+            row: QueryResultRow
             for row in execute_query_iterator:
-                result.append(row)
+                result.append(dict(row.fields))
         except Exception as e:
             error = str(e)
 
