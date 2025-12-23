@@ -64,7 +64,6 @@ class LogicalViewBuilder:
             print(f"Logical view {self.logical_view_id} deletion exception: {e}")
 
     def build(self):
-
         logical_view = LogicalView()
         logical_view.name = self.name()
         logical_view.query = self.query()
