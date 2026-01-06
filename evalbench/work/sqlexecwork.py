@@ -77,9 +77,12 @@ class SQLExecWork(Work):
         eval_result = None
         error = None
         if query_type == "dql":
-            result, _, error = self.db.execute(
-                sqlparse.split(query)[0], use_cache=True, rollback=True
-            )
+            try:
+                result, _, error = self.db.execute(
+                    sqlparse.split(query)[0], use_cache=True, rollback=True
+                )
+            except Exception as e:
+                error = str(e)
         elif query_type == "dml":
             # self.db.execute(self.eval_result["setup_sql"])
             result, eval_result, error = self.db.execute(
