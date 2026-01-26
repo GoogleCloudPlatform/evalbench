@@ -48,9 +48,30 @@ def load_setup_scripts(setup_scripts_directory_path: str):
     setup = _load_setup_sql(
         os.path.join(setup_scripts_directory_path, "setup.sql"),
     )
-    post_setup = _load_setup_sql(
-        os.path.join(setup_scripts_directory_path, "post_setup.sql"),
-    )
+    # Check for setup.json and append it if exists
+    setup_json_path = os.path.join(setup_scripts_directory_path, "setup.json")
+    if os.path.exists(setup_json_path):
+        with open(setup_json_path, "r") as f:
+            setup.append(f.read())
+
+    # Check for post_setup.json
+    post_setup_json_path = os.path.join(setup_scripts_directory_path, "post_setup.json")
+    if os.path.exists(post_setup_json_path):
+        import json
+        with open(post_setup_json_path, "r") as f:
+            # Load as list of dicts, then convert back to strings for batch_execute
+            try:
+                data = json.load(f)
+                if isinstance(data, list):
+                    post_setup = [json.dumps(item) for item in data]
+                else:
+                    post_setup = []
+            except Exception:
+                post_setup = []
+    else:
+        post_setup = _load_setup_sql(
+            os.path.join(setup_scripts_directory_path, "post_setup.sql"),
+        )
     return (pre_setup, setup, post_setup)
 
 

@@ -70,25 +70,19 @@ def analyze_result(scores, experiment_config: dict[str, str]):
 
     summary_scores.append(summary)
     summary_scores_df = pd.DataFrame.from_dict(summary_scores)
-    df[
-        [
-            "generated_error",
-            "comparator",
-            "comparison_error",
-            "generated_sql",
-            "job_id",
-            "id",
-        ]
-    ] = df[
-        [
-            "generated_error",
-            "comparator",
-            "comparison_error",
-            "generated_sql",
-            "job_id",
-            "id",
-        ]
-    ].astype(
-        "string"
-    )
+
+    existing_cols = [
+        "generated_error",
+        "comparator",
+        "comparison_error",
+        "generated_sql",
+        "job_id",
+        "id",
+    ]
+    # Filter to only existing columns before casting
+    existing_cols = [col for col in existing_cols if col in df.columns]
+
+    if existing_cols:
+        df[existing_cols] = df[existing_cols].astype("string")
+
     return df, summary_scores_df

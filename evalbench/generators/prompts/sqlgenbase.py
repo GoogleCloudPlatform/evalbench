@@ -156,12 +156,42 @@ Here is the natural language question for generating SQL:
 {USER_PROMPT}
 """
 
+MONGODB_PROMPT_TEMPLATE_WITH_RULES = """You are a MongoDB expert.
+
+The database structure is defined by the following collection schemas:
+
+**************************
+{SCHEMA}
+**************************
+
+Please generate a MongoDB query (in JSON format) for the following question following these rules:
+- Output the query as a valid JSON string only without any explanation.
+- The JSON should be in one of the following formats:
+  - Find: {{"find": "collection_name", "filter": {{...}}, "projection": {{...}}}}
+  - Aggregate: {{"aggregate": "collection_name", "pipeline": [...]}}
+  - Count: {{"count": "collection_name", "filter": {{...}}}}
+- Do not use markdown code blocks around the outputted query.
+
+MongoDB generation rules:
+- Use standard MongoDB operators (e.g., $match, $group, $lookup, $project).
+- Ensure the JSON is valid and executable by pymongo.
+- Only use collections and fields from the provided schema.
+
+Think step by step about generating a correct MongoDB query!
+
+**************************
+
+Here is the natural language question for generating MongoDB query:
+{USER_PROMPT}
+"""
+
 _PROMPTS_BY_DIALECT = {
     "sqlite": SQLITE_PROMPT_TEMPLATE_WITH_RULES,
     "postgres": PG_PROMPT_TEMPLATE_WITH_RULES,
     "mysql": MYSQL_PROMPT_TEMPLATE_WITH_RULES,
     "sqlserver": SQLSERVER_PROMPT_TEMPLATE_WITH_RULES,
     "bigquery": BIGQUERY_PROMPT_TEMPLATE_WITH_RULES,
+    "mongodb": MONGODB_PROMPT_TEMPLATE_WITH_RULES,
 }
 
 

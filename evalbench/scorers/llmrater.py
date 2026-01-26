@@ -26,6 +26,45 @@ from scorers import comparator
 from .util import make_hashable, with_cache_execute
 from databases.util import get_cache_client
 
+ERROR_CATEGORIZATION_PROMPT = """
+You are an expert SQL evaluator. Your task is to analyze a "Generated SQL" query against a "Golden SQL" (ground truth) query and their respective execution results.
+
+### Input Data
+**NL Prompt:** {nl_prompt}
+**Golden SQL:** {golden_sql}
+**Golden Result:** {golden_execution_result}
+**Generated SQL:** {generated_sql}
+**Generated Result:** {generated_execution_result}
+
+### Task
+Compare the queries and results to identify specific errors in the Generated SQL. If the Generated SQL is functionally equivalent to the Golden SQL (even if syntax differs), mark it as correct.
+
+### Error Taxonomy
+If errors exist, categorize them using ONLY the following tags:
+
+1. [EntityError] - Wrong table or entity was used.
+2. [ValueLinkingError] - Wrong literal value (string/number) was used.
+3. [ColumnLinkingError] - Wrong column was selected or used in a condition.
+4. [OrderingError] - Sorting order (ASC/DESC) or column is incorrect.
+5. [InstructionError] - Failed to follow specific constraints in the prompt (e.g., "return top 5").
+6. [IntentError] - Misinterpreted the user's fundamental request.
+7. [DataTypesError] - Incorrect handling of data types (e.g., casting, dates).
+8. [CountingError] - Aggregation or counting logic is flawed.
+9. [FilterError] - Correct columns used, but wrong logical operator or filter condition.
+10. [LogicError] - Fundamental logic flaw not covered by other categories (e.g., wrong join type).
+11. [OtherError] - Any other error not covered by the above categories.
+
+### Output Format
+Provide your response in the following format:
+
+**Reasoning:**
+<Analyze the differences between the queries and results here>
+
+**Tags & Explanations:**
+<Tag 1>: <One-line explanation of the specific error>
+<Tag 2>: <One-line explanation of the specific error>
+"""
+
 
 class LLMRater(comparator.Comparator):
     """
@@ -208,4 +247,25 @@ class LLMRater(comparator.Comparator):
             if ("INFORMATION_MATCHES" in response or "EXTRA_INFORMATION" in response)
             else 0
         )
+
+        if score == 0:
+            prompt = ERROR_CATEGORIZATION_PROMPT.format(
+                nl_prompt=nl_prompt,
+                golden_sql=golden_query,
+                golden_execution_result=golden_execution_result,
+                generated_sql=generated_query,
+                generated_execution_result=generated_execution_result,
+            )
+            if self.cache_client:
+                error_categorization_response = with_cache_execute(
+                    prompt,
+                    self.model_config,
+                    self._inference_without_caching,
+                    self.cache_client,
+                )
+            else:
+                error_categorization_response = self._inference_without_caching(prompt)
+
+            response += "\nError analysis:\n\n" + error_categorization_response
+
         return score, response

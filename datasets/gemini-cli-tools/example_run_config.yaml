@@ -1,0 +1,23 @@
+############################################################
+### Dataset / Eval Items
+############################################################
+dataset_config: datasets/gemini-cli-tools/gemini-cli.evalset.json
+dataset_format: gemini-cli-format
+setup_directory: datasets/gemini-cli-tools/setup
+
+# Orchestrator Configuration
+orchestrator: geminicli
+model_config: datasets/model_configs/gemini_cli_model.yaml
+
+############################################################
+### Scorer Related Configs
+############################################################
+scorers:
+  trajectory_matcher: {}
+
+############################################################
+### Reporting Related Configs
+############################################################
+reporting:
+  csv:
+    output_directory: 'results'
