@@ -1,0 +1,62 @@
+[
+  {
+    "dropCollection": "tbl_attachments"
+  },
+  {
+    "dropCollection": "tbl_categories"
+  },
+  {
+    "dropCollection": "tbl_categories_hierarchy"
+  },
+  {
+    "dropCollection": "tbl_comments"
+  },
+  {
+    "dropCollection": "tbl_country"
+  },
+  {
+    "dropCollection": "tbl_followers"
+  },
+  {
+    "dropCollection": "tbl_labels"
+  },
+  {
+    "dropCollection": "tbl_media"
+  },
+  {
+    "dropCollection": "tbl_notifications"
+  },
+  {
+    "dropCollection": "tbl_posts"
+  },
+  {
+    "dropCollection": "tbl_posts_tags"
+  },
+  {
+    "dropCollection": "tbl_private_messages"
+  },
+  {
+    "dropCollection": "tbl_reactions"
+  },
+  {
+    "dropCollection": "tbl_reports"
+  },
+  {
+    "dropCollection": "tbl_status"
+  },
+  {
+    "dropCollection": "tbl_tags"
+  },
+  {
+    "dropCollection": "tbl_tags_hierarchy"
+  },
+  {
+    "dropCollection": "tbl_user_activity"
+  },
+  {
+    "dropCollection": "tbl_user_roles"
+  },
+  {
+    "dropCollection": "tbl_users"
+  }
+]

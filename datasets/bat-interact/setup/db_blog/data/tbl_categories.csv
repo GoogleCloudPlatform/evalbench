@@ -1,0 +1,10 @@
+1,1,1,'Programming','Category related to programming','2024-02-26 05:00:00','2024-02-26 05:00:00',NULL,'programming','programming.jpg',50,true,false
+2,2,2,'Marketing','Category related to marketing','2024-02-25 10:15:00','2024-02-25 10:15:00',NULL,'marketing','marketing.jpg',30,true,false
+3,1,1,'Technology','Category related to technology','2024-02-26 05:30:00','2024-02-26 05:30:00',NULL,'technology','technology.jpg',20,true,false
+4,2,2,'Health','Category related to health','2024-02-25 11:00:00','2024-02-25 11:00:00',NULL,'health','health.jpg',40,true,false
+5,1,1,'Science','Category related to science','2024-02-26 06:45:00','2024-02-26 06:45:00',NULL,'science','science.jpg',25,true,false
+6,2,2,'Art','Category related to art','2024-02-25 12:30:00','2024-02-25 12:30:00',NULL,'art','art.jpg',15,true,false
+7,1,1,'Business','Category related to business','2024-02-26 08:15:00','2024-02-26 08:15:00',NULL,'business','business.jpg',35,true,false
+8,2,2,'Travel','Category related to travel','2024-02-25 14:00:00','2024-02-25 14:00:00',NULL,'travel','travel.jpg',10,true,false
+9,1,1,'Entertainment','Category related to entertainment','2024-02-26 08:45:00','2024-02-26 08:45:00',NULL,'entertainment','entertainment.jpg',45,true,false
+10,2,2,'Sports','Category related to sports','2024-02-25 14:30:00','2024-02-25 14:30:00',NULL,'sports','sports.jpg',5,true,false

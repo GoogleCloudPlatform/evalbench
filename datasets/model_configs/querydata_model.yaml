@@ -1,0 +1,8 @@
+generator: querydata
+execs_per_minute: 5
+adkapi_server_url: "http://127.0.0.1:8000"
+agent_id: "dataagent"
+base_prompt: ""
+location: "us-central1"
+project_id: "cloud-db-nl2sql"
+agent_engine_id: "2153764058417856512"

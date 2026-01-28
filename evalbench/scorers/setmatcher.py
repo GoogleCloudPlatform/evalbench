@@ -42,18 +42,21 @@ class SetMatcher(comparator.Comparator):
         if golden_error or generated_error:
             return 0, None
         else:
-            # Current results are a list of Dict. Converting to Tuple for set comparison
-            golden_execution_result_tuple = [
-                tuple(d.values()) for d in golden_execution_result
-            ]
-            generated_execution_result_tuple = [
-                tuple(d.values()) for d in generated_execution_result
-            ]
-            score = (
-                100
-                if set(golden_execution_result_tuple)
-                == set(generated_execution_result_tuple)
-                else 0
-            )
+            try:
+                # Current results are a list of Dict. Converting to Tuple for set comparison
+                golden_execution_result_tuple = [
+                    tuple(d.values()) for d in golden_execution_result
+                ]
+                generated_execution_result_tuple = [
+                    tuple(d.values()) for d in generated_execution_result
+                ]
+                score = (
+                    100
+                    if set(golden_execution_result_tuple)
+                    == set(generated_execution_result_tuple)
+                    else 0
+                )
+            except Exception as e:
+                return 0, str(e)
 
             return score, None

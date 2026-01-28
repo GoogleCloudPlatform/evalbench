@@ -28,4 +28,7 @@ sqlparse
 redis
 anthropic[vertex]
 sqlglot
-pystack
+pymongo
+mongomock
+rich
+google-adk

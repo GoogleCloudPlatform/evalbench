@@ -9,7 +9,8 @@
         "mysql",
         "sqlserver",
         "sqlite",
-        "bigquery"
+        "bigquery",
+        "mongodb"
       ],
       "golden_sql": {
         "postgres": [
@@ -26,6 +27,9 @@
         ],
         "bigquery": [
           "SELECT COUNT(DISTINCT u.user_id) AS num_bloggers FROM {{dataset}}.tbl_users u INNER JOIN {{dataset}}.tbl_posts p ON u.user_id = p.user_id WHERE p.created_at BETWEEN DATE('2024-01-01') AND DATE('2024-12-31') AND JSON_EXTRACT_SCALAR(u.social_media_links, '$.twitter') IS NOT NULL;"
+        ],
+        "mongodb": [
+          "{\"aggregate\": \"tbl_posts\", \"pipeline\": [{\"$match\": {\"created_at\": {\"$gte\": \"2024-01-01\", \"$lte\": \"2024-12-31\"}}}, {\"$lookup\": {\"from\": \"tbl_users\", \"localField\": \"user_id\", \"foreignField\": \"user_id\", \"as\": \"user\"}}, {\"$unwind\": \"$user\"}, {\"$match\": {\"user.social_media_links.twitter\": {\"$exists\": true}}}, {\"$group\": {\"_id\": null, \"num_bloggers\": {\"$addToSet\": \"$user.user_id\"}}}, {\"$project\": {\"_id\": 0, \"num_bloggers\": {\"$size\": \"$num_bloggers\"}}}]}"
         ]
       },
       "eval_query": {
@@ -42,6 +46,9 @@
           null
         ],
         "bigquery": [
+          null
+        ],
+        "mongodb": [
           null
         ]
       },
@@ -73,7 +80,8 @@
         "mysql",
         "sqlserver",
         "sqlite",
-        "bigquery"
+        "bigquery",
+        "mongodb"
       ],
       "golden_sql": {
         "postgres": [
@@ -90,6 +98,9 @@
         ],
         "bigquery": [
           "SELECT u.user_id, p.post_id, COUNT(c.comment_id) AS comment_count FROM `{{dataset}}.tbl_users` AS u INNER JOIN `{{dataset}}.tbl_posts` AS p ON u.user_id = p.user_id LEFT JOIN `{{dataset}}.tbl_comments` AS c ON p.post_id = c.post_id GROUP BY u.user_id, p.post_id;"
+        ],
+        "mongodb": [
+          "{\"aggregate\": \"tbl_users\", \"pipeline\": [{\"$lookup\": {\"from\": \"tbl_posts\", \"localField\": \"user_id\", \"foreignField\": \"user_id\", \"as\": \"posts\"}}, {\"$unwind\": \"$posts\"}, {\"$lookup\": {\"from\": \"tbl_comments\", \"localField\": \"posts.post_id\", \"foreignField\": \"post_id\", \"as\": \"comments\"}}, {\"$project\": {\"user_id\": 1, \"post_id\": \"$posts.post_id\", \"comment_count\": {\"$size\": \"$comments\"}, \"_id\": 0}}]}"
         ]
       },
       "eval_query": {
@@ -106,6 +117,9 @@
           null
         ],
         "bigquery": [
+          null
+        ],
+        "mongodb": [
           null
         ]
       },
@@ -138,7 +152,8 @@
         "mysql",
         "sqlserver",
         "sqlite",
-        "bigquery"
+        "bigquery",
+        "mongodb"
       ],
       "golden_sql": {
         "postgres": [
@@ -155,6 +170,9 @@
         ],
         "bigquery": [
           "SELECT u.user_id FROM `{{dataset}}.tbl_users` AS u LEFT JOIN `{{dataset}}.tbl_posts` AS p ON u.user_id = p.user_id WHERE p.post_id IS NULL;"
+        ],
+        "mongodb": [
+          "{\"aggregate\": \"tbl_users\", \"pipeline\": [{\"$lookup\": {\"from\": \"tbl_posts\", \"localField\": \"user_id\", \"foreignField\": \"user_id\", \"as\": \"posts\"}}, {\"$match\": {\"posts\": {\"$size\": 0}}}, {\"$project\": {\"user_id\": 1, \"_id\": 0}}]}"
         ]
       },
       "eval_query": {
@@ -171,6 +189,9 @@
           null
         ],
         "bigquery": [
+          null
+        ],
+        "mongodb": [
           null
         ]
       },
@@ -199,7 +220,8 @@
         "mysql",
         "sqlserver",
         "sqlite",
-        "bigquery"
+        "bigquery",
+        "mongodb"
       ],
       "golden_sql": {
         "postgres": [
@@ -216,6 +238,9 @@
         ],
         "bigquery": [
           "SELECT p.post_id, p.likes_count AS total_likes FROM `{{dataset}}.tbl_posts` AS p INNER JOIN `{{dataset}}.tbl_categories` AS c ON p.category_id = c.category_id AND p.user_id = c.created_by ORDER BY total_likes DESC LIMIT 5;"
+        ],
+        "mongodb": [
+          "{\"aggregate\": \"tbl_posts\", \"pipeline\": [{\"$lookup\": {\"from\": \"tbl_categories\", \"localField\": \"category_id\", \"foreignField\": \"category_id\", \"as\": \"category\"}}, {\"$unwind\": \"$category\"}, {\"$match\": {\"$expr\": {\"$eq\": [\"$user_id\", \"$category.created_by\"]}}}, {\"$sort\": {\"likes_count\": -1}}, {\"$limit\": 5}, {\"$project\": {\"post_id\": 1, \"total_likes\": \"$likes_count\", \"_id\": 0}}]}"
         ]
       },
       "eval_query": {
@@ -232,6 +257,9 @@
           null
         ],
         "bigquery": [
+          null
+        ],
+        "mongodb": [
           null
         ]
       },
@@ -260,7 +288,8 @@
         "mysql",
         "sqlserver",
         "sqlite",
-        "bigquery"
+        "bigquery",
+        "mongodb"
       ],
       "golden_sql": {
         "postgres": [
@@ -277,6 +306,9 @@
         ],
         "bigquery": [
           "SELECT u.user_id, COUNT(f.follower_id) AS follower_count FROM `{{dataset}}.tbl_users` AS u LEFT JOIN `{{dataset}}.tbl_followers` AS f ON u.user_id = f.following_id GROUP BY u.user_id;"
+        ],
+        "mongodb": [
+          "{\"aggregate\": \"tbl_users\", \"pipeline\": [{\"$lookup\": {\"from\": \"tbl_followers\", \"localField\": \"user_id\", \"foreignField\": \"following_id\", \"as\": \"followers\"}}, {\"$project\": {\"user_id\": 1, \"follower_count\": {\"$size\": \"$followers\"}, \"_id\": 0}}]}"
         ]
       },
       "eval_query": {
@@ -293,6 +325,9 @@
           null
         ],
         "bigquery": [
+          null
+        ],
+        "mongodb": [
           null
         ]
       },
@@ -323,7 +358,8 @@
         "mysql",
         "sqlserver",
         "sqlite",
-        "bigquery"
+        "bigquery",
+        "mongodb"
       ],
       "golden_sql": {
         "postgres": [
@@ -340,6 +376,9 @@
         ],
         "bigquery": [
           "SELECT p.post_id, r.report_reason FROM `{{dataset}}.tbl_posts` p INNER JOIN `{{dataset}}.tbl_reports` r ON p.post_id = r.post_id WHERE r.is_resolved = FALSE;"
+        ],
+        "mongodb": [
+          "{\"aggregate\": \"tbl_posts\", \"pipeline\": [{\"$lookup\": {\"from\": \"tbl_reports\", \"localField\": \"post_id\", \"foreignField\": \"post_id\", \"as\": \"report\"}}, {\"$unwind\": \"$report\"}, {\"$match\": {\"report.is_resolved\": false}}, {\"$project\": {\"post_id\": 1, \"report_reason\": \"$report.report_reason\", \"_id\": 0}}]}"
         ]
       },
       "eval_query": {
@@ -356,6 +395,9 @@
           null
         ],
         "bigquery": [
+          null
+        ],
+        "mongodb": [
           null
         ]
       },
@@ -384,7 +426,8 @@
         "mysql",
         "sqlserver",
         "sqlite",
-        "bigquery"
+        "bigquery",
+        "mongodb"
       ],
       "golden_sql": {
         "postgres": [
@@ -401,6 +444,9 @@
         ],
         "bigquery": [
           "WITH rc AS (SELECT report_reason, COUNT(*) AS report_count, AVG(TIMESTAMP_DIFF(resolution_timestamp, report_timestamp, MINUTE)) AS avg_resolution_time FROM `{{dataset}}.tbl_reports` GROUP BY report_reason) SELECT report_reason, report_count, avg_resolution_time FROM rc WHERE report_count = (SELECT MAX(report_count) FROM rc);"
+        ],
+        "mongodb": [
+          "{\"aggregate\": \"tbl_reports\", \"pipeline\": [{\"$addFields\": {\"resolution_duration_minutes\": {\"$cond\": [{\"$and\": [{\"$ne\": [\"$resolution_timestamp\", null]}, {\"$ne\": [\"$resolution_timestamp\", \"\"]}]}, {\"$divide\": [{\"$subtract\": [{\"$toDate\": \"$resolution_timestamp\"}, {\"$toDate\": \"$report_timestamp\"}]}, 60000]}, null]}}}, {\"$group\": {\"_id\": \"$report_reason\", \"report_count\": {\"$sum\": 1}, \"avg_resolution_time\": {\"$avg\": \"$resolution_duration_minutes\"}}}, {\"$group\": {\"_id\": null, \"max_count\": {\"$max\": \"$report_count\"}, \"docs\": {\"$push\": \"$$ROOT\"}}}, {\"$unwind\": \"$docs\"}, {\"$match\": {\"$expr\": {\"$eq\": [\"$docs.report_count\", \"$max_count\"]}}}, {\"$project\": {\"report_reason\": \"$docs._id\", \"report_count\": \"$docs.report_count\", \"avg_resolution_time\": \"$docs.avg_resolution_time\", \"_id\": 0}}]}"
         ]
       },
       "eval_query": {
@@ -417,6 +463,9 @@
           null
         ],
         "bigquery": [
+          null
+        ],
+        "mongodb": [
           null
         ]
       },
@@ -447,7 +496,8 @@
         "mysql",
         "sqlserver",
         "sqlite",
-        "bigquery"
+        "bigquery",
+        "mongodb"
       ],
       "golden_sql": {
         "postgres": [
@@ -464,6 +514,9 @@
         ],
         "bigquery": [
           "SELECT FORMAT_TIMESTAMP('%F', p.created_at) AS created_at, c.name, AVG(post_count) AS average_posts FROM (SELECT DATE_TRUNC(created_at, DAY) AS created_at, category_id, COUNT(post_id) AS post_count FROM `{{dataset}}.tbl_posts` GROUP BY created_at, category_id) p INNER JOIN `{{dataset}}.tbl_categories` c ON p.category_id = c.category_id GROUP BY p.created_at, c.name ORDER BY created_at, name ASC;"
+        ],
+        "mongodb": [
+          "{\"aggregate\": \"tbl_posts\", \"pipeline\": [{\"$group\": {\"_id\": {\"created_at\": {\"$dateToString\": {\"format\": \"%Y-%m-%d\", \"date\": {\"$toDate\": \"$created_at\"}}}, \"category_id\": \"$category_id\"}, \"post_count\": {\"$sum\": 1}}}, {\"$lookup\": {\"from\": \"tbl_categories\", \"localField\": \"_id.category_id\", \"foreignField\": \"category_id\", \"as\": \"category\"}}, {\"$unwind\": \"$category\"}, {\"$project\": {\"created_at\": \"$_id.created_at\", \"name\": \"$category.name\", \"average_posts\": \"$post_count\", \"_id\": 0}}, {\"$sort\": {\"created_at\": 1, \"name\": 1}}]}"
         ]
       },
       "eval_query": {
@@ -480,6 +533,9 @@
           null
         ],
         "bigquery": [
+          null
+        ],
+        "mongodb": [
           null
         ]
       },
@@ -511,7 +567,8 @@
         "mysql",
         "sqlserver",
         "sqlite",
-        "bigquery"
+        "bigquery",
+        "mongodb"
       ],
       "golden_sql": {
         "postgres": [
@@ -528,6 +585,9 @@
         ],
         "bigquery": [
           "SELECT COUNT(CASE WHEN activity_type = 'login' AND activity_status = 'success' THEN 1 END) AS successful_logins, COUNT(CASE WHEN activity_type = 'login' THEN 1 END) AS total_logins, (COUNT(CASE WHEN activity_type = 'login' AND activity_status = 'success' THEN 1 END) / COUNT(CASE WHEN activity_type = 'login' THEN 1 END)) * 100 AS success_percentage FROM `{{dataset}}.tbl_user_activity` WHERE activity_type = 'login';"
+        ],
+        "mongodb": [
+          "{\"aggregate\": \"tbl_user_activity\", \"pipeline\": [{\"$match\": {\"activity_type\": \"login\"}}, {\"$group\": {\"_id\": null, \"successful_logins\": {\"$sum\": {\"$cond\": [{\"$eq\": [\"$activity_status\", \"success\"]}, 1, 0]}}, \"total_logins\": {\"$sum\": 1}}}, {\"$project\": {\"successful_logins\": 1, \"total_logins\": 1, \"success_percentage\": {\"$multiply\": [{\"$divide\": [\"$successful_logins\", \"$total_logins\"]}, 100]}, \"_id\": 0}}]}"
         ]
       },
       "eval_query": {
@@ -544,6 +604,9 @@
           null
         ],
         "bigquery": [
+          null
+        ],
+        "mongodb": [
           null
         ]
       },
@@ -574,7 +637,8 @@
         "mysql",
         "sqlserver",
         "sqlite",
-        "bigquery"
+        "bigquery",
+        "mongodb"
       ],
       "golden_sql": {
         "postgres": [
@@ -591,6 +655,9 @@
         ],
         "bigquery": [
           "SELECT EXTRACT(HOUR FROM activity_timestamp) AS active_hour, COUNT(*) AS activity_count FROM `{{dataset}}.tbl_user_activity` GROUP BY active_hour ORDER BY activity_count DESC LIMIT 1;"
+        ],
+        "mongodb": [
+          "{\"aggregate\": \"tbl_user_activity\", \"pipeline\": [{\"$group\": {\"_id\": {\"$hour\": {\"$toDate\": \"$activity_timestamp\"}}, \"activity_count\": {\"$sum\": 1}}}, {\"$sort\": {\"activity_count\": -1}}, {\"$limit\": 1}, {\"$project\": {\"active_hour\": \"$_id\", \"activity_count\": 1, \"_id\": 0}}]}"
         ]
       },
       "eval_query": {
@@ -607,6 +674,9 @@
           null
         ],
         "bigquery": [
+          null
+        ],
+        "mongodb": [
           null
         ]
       },
@@ -640,7 +710,8 @@
         "mysql",
         "sqlserver",
         "sqlite",
-        "bigquery"
+        "bigquery",
+        "mongodb"
       ],
       "golden_sql": {
         "postgres": [
@@ -657,6 +728,9 @@
         ],
         "bigquery": [
           "SELECT * FROM `{{dataset}}.tbl_attachments` WHERE 'database' IN UNNEST(JSON_VALUE_ARRAY(tags_file)) AND CAST(JSON_VALUE(access_permissions, '$.read_only') AS BOOL);"
+        ],
+        "mongodb": [
+          "{\"aggregate\": \"tbl_attachments\", \"pipeline\": [{\"$match\": {\"tags_file\": \"database\", \"access_permissions.read_only\": true}}]}"
         ]
       },
       "eval_query": {
@@ -673,6 +747,9 @@
           null
         ],
         "bigquery": [
+          null
+        ],
+        "mongodb": [
           null
         ]
       },
@@ -703,7 +780,8 @@
         "mysql",
         "sqlserver",
         "sqlite",
-        "bigquery"
+        "bigquery",
+        "mongodb"
       ],
       "golden_sql": {
         "postgres": [
@@ -720,6 +798,9 @@
         ],
         "bigquery": [
           "SELECT m1.uploader_id, u.username, m1.url FROM `{{dataset}}.tbl_media` m1 INNER JOIN (SELECT uploader_id, MAX(upload_date) AS max_upload_date FROM `{{dataset}}.tbl_media` GROUP BY uploader_id) m2 ON m1.uploader_id = m2.uploader_id AND m1.upload_date = m2.max_upload_date INNER JOIN `{{dataset}}.tbl_users` u ON m1.uploader_id = u.user_id;"
+        ],
+        "mongodb": [
+          "{\"aggregate\": \"tbl_media\", \"pipeline\": [{\"$sort\": {\"upload_date\": -1}}, {\"$group\": {\"_id\": \"$uploader_id\", \"latest_media\": {\"$first\": \"$$ROOT\"}}}, {\"$lookup\": {\"from\": \"tbl_users\", \"localField\": \"_id\", \"foreignField\": \"user_id\", \"as\": \"user\"}}, {\"$unwind\": \"$user\"}, {\"$project\": {\"uploader_id\": \"$_id\", \"username\": \"$user.username\", \"url\": \"$latest_media.url\", \"_id\": 0}}]}"
         ]
       },
       "eval_query": {
@@ -736,6 +817,9 @@
           null
         ],
         "bigquery": [
+          null
+        ],
+        "mongodb": [
           null
         ]
       },
@@ -765,7 +849,8 @@
         "mysql",
         "sqlserver",
         "sqlite",
-        "bigquery"
+        "bigquery",
+        "mongodb"
       ],
       "golden_sql": {
         "postgres": [
@@ -782,6 +867,9 @@
         ],
         "bigquery": [
           "SELECT * FROM `{{dataset}}.tbl_posts` WHERE EXISTS (SELECT tag FROM UNNEST(JSON_VALUE_ARRAY(tags)) AS tag WHERE tag IN ('programming', 'database'));"
+        ],
+        "mongodb": [
+          "{\"aggregate\": \"tbl_posts\", \"pipeline\": [{\"$match\": {\"tags\": {\"$all\": [\"programming\", \"database\"]}}}]}"
         ]
       },
       "eval_query": {
@@ -798,6 +886,9 @@
           null
         ],
         "bigquery": [
+          null
+        ],
+        "mongodb": [
           null
         ]
       },
@@ -827,7 +918,8 @@
         "mysql",
         "sqlserver",
         "sqlite",
-        "bigquery"
+        "bigquery",
+        "mongodb"
       ],
       "golden_sql": {
         "postgres": [
@@ -844,6 +936,9 @@
         ],
         "bigquery": [
           "SELECT SUM(likes_count) AS total_likes FROM `{{dataset}}.tbl_comments` WHERE comment_id IN (SELECT reported_comment_id FROM `{{dataset}}.tbl_reports` WHERE is_resolved = FALSE AND user_id IN (SELECT following_id FROM `{{dataset}}.tbl_followers` GROUP BY following_id HAVING COUNT(follower_id) > 4) AND post_id IN (SELECT pt.post_id FROM `{{dataset}}.tbl_posts_tags` AS pt INNER JOIN `{{dataset}}.tbl_tags` AS t ON pt.tag_id = t.tag_id WHERE t.name = 'Programming'))"
+        ],
+        "mongodb": [
+          "{\"aggregate\": \"tbl_reports\", \"pipeline\": [{\"$match\": {\"is_resolved\": false}}, {\"$lookup\": {\"from\": \"tbl_followers\", \"localField\": \"user_id\", \"foreignField\": \"following_id\", \"as\": \"followers\"}}, {\"$match\": {\"$expr\": {\"$gt\": [{\"$size\": \"$followers\"}, 4]}}}, {\"$lookup\": {\"from\": \"tbl_posts\", \"localField\": \"post_id\", \"foreignField\": \"post_id\", \"as\": \"post\"}}, {\"$unwind\": \"$post\"}, {\"$match\": {\"post.tags\": \"Programming\"}}, {\"$lookup\": {\"from\": \"tbl_comments\", \"localField\": \"reported_comment_id\", \"foreignField\": \"comment_id\", \"as\": \"comment\"}}, {\"$unwind\": \"$comment\"}, {\"$group\": {\"_id\": null, \"total_likes\": {\"$sum\": \"$comment.likes_count\"}}}, {\"$project\": {\"total_likes\": 1, \"_id\": 0}}]}"
         ]
       },
       "eval_query": {
@@ -860,6 +955,9 @@
           null
         ],
         "bigquery": [
+          null
+        ],
+        "mongodb": [
           null
         ]
       },
@@ -892,7 +990,8 @@
         "mysql",
         "sqlserver",
         "sqlite",
-        "bigquery"
+        "bigquery",
+        "mongodb"
       ],
       "golden_sql": {
         "postgres": [
@@ -909,6 +1008,9 @@
         ],
         "bigquery": [
           "WITH conversations AS (SELECT conversation_id, TIMESTAMP_DIFF(MAX(sending_time), MIN(sending_time), SECOND) AS conv_length FROM `{{dataset}}.tbl_private_messages` WHERE conversation_id IS NOT NULL GROUP BY conversation_id HAVING SUM(CASE WHEN is_read THEN 1 ELSE 0 END) = 0) SELECT pm.conversation_id, DATE(pm.sending_time), COUNT(*) FROM `{{dataset}}.tbl_private_messages` pm INNER JOIN conversations c ON pm.conversation_id = c.conversation_id WHERE c.conv_length > 86400 GROUP BY pm.conversation_id, DATE(pm.sending_time);"
+        ],
+        "mongodb": [
+          "{\"aggregate\": \"tbl_private_messages\", \"pipeline\": [{\"$match\": {\"conversation_id\": {\"$ne\": null}}}, {\"$group\": {\"_id\": \"$conversation_id\", \"min_time\": {\"$min\": {\"$toDate\": \"$sending_time\"}}, \"max_time\": {\"$max\": {\"$toDate\": \"$sending_time\"}}, \"read_count\": {\"$sum\": {\"$cond\": [\"$is_read\", 1, 0]}}, \"messages\": {\"$push\": \"$$ROOT\"}}}, {\"$match\": {\"read_count\": 0, \"$expr\": {\"$gt\": [{\"$subtract\": [\"$max_time\", \"$min_time\"]}, 86400000]}}}, {\"$unwind\": \"$messages\"}, {\"$group\": {\"_id\": {\"conversation_id\": \"$_id\", \"day\": {\"$dateToString\": {\"format\": \"%Y-%m-%d\", \"date\": {\"$toDate\": \"$messages.sending_time\"}}}}, \"count\": {\"$sum\": 1}}}, {\"$project\": {\"conversation_id\": \"$_id.conversation_id\", \"date\": \"$_id.day\", \"count\": 1, \"_id\": 0}}]}"
         ]
       },
       "eval_query": {
@@ -925,6 +1027,9 @@
           null
         ],
         "bigquery": [
+          null
+        ],
+        "mongodb": [
           null
         ]
       },
@@ -958,7 +1063,8 @@
         "mysql",
         "sqlserver",
         "sqlite",
-        "bigquery"
+        "bigquery",
+        "mongodb"
       ],
       "golden_sql": {
         "postgres": [
@@ -975,6 +1081,9 @@
         ],
         "bigquery": [
           "WITH users_exclusive AS (SELECT user_id FROM `{{dataset}}.tbl_user_activity` GROUP BY user_id HAVING COUNT(DISTINCT browser) = 1), users_browsers AS (SELECT user_id, browser FROM `{{dataset}}.tbl_user_activity` WHERE user_id IN (SELECT user_id FROM users_exclusive)) SELECT browser, AVG(LENGTH(content)) FROM `{{dataset}}.tbl_comments` c INNER JOIN users_browsers u ON c.user_id = u.user_id GROUP BY browser;"
+        ],
+        "mongodb": [
+          "{\"aggregate\": \"tbl_user_activity\", \"pipeline\": [{\"$group\": {\"_id\": \"$user_id\", \"browsers\": {\"$addToSet\": \"$browser\"}}}, {\"$match\": {\"browsers\": {\"$size\": 1}}}, {\"$project\": {\"user_id\": \"$_id\", \"browser\": {\"$arrayElemAt\": [\"$browsers\", 0]}}}, {\"$lookup\": {\"from\": \"tbl_comments\", \"localField\": \"user_id\", \"foreignField\": \"user_id\", \"as\": \"comments\"}}, {\"$unwind\": \"$comments\"}, {\"$group\": {\"_id\": \"$browser\", \"avg_length\": {\"$avg\": {\"$strLenCP\": \"$comments.content\"}}}}, {\"$project\": {\"browser\": \"$_id\", \"avg_length\": 1, \"_id\": 0}}]}"
         ]
       },
       "eval_query": {
@@ -991,6 +1100,9 @@
           null
         ],
         "bigquery": [
+          null
+        ],
+        "mongodb": [
           null
         ]
       },

@@ -8,6 +8,7 @@ from .bigtable import BigtableDB
 from .alloydb import AlloyDB
 from .alloydb_omni import AlloyDBOmni
 from .spanner import SpannerDB
+from .mongodb import MongoDB
 
 
 def get_database(db_config, db_name) -> DB:
@@ -35,4 +36,6 @@ def get_database(db_config, db_name) -> DB:
         return AlloyDBOmni(db_config)
     if db_config["db_type"] == "bigtable":
         return BigtableDB(db_config)
+    if db_config["db_type"] == "mongodb":
+        return MongoDB(db_config)
     raise ValueError("DB Type not Supported")

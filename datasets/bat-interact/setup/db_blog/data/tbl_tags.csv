@@ -1,0 +1,10 @@
+1,1,1,'Database','Tag related to databases','2024-02-26 05:15:00','2024-02-26 05:15:00','database',20,true,true,NULL,1,1,true,NULL,false
+2,2,2,'Marketing','Tag related to marketing','2024-02-25 10:45:00','2024-02-25 10:45:00','marketing',15,true,true,NULL,1,1,true,NULL,false
+3,1,1,'Programming','Tag related to programming','2024-02-24 09:00:00','2024-02-24 09:00:00','programming',18,true,true,NULL,1,1,true,NULL,false
+4,2,2,'Social Media','Tag related to social media','2024-02-23 07:15:00','2024-02-23 07:15:00','social-media',12,true,true,NULL,1,1,true,NULL,false
+5,1,1,'Web Development','Tag related to web development','2024-02-22 05:00:00','2024-02-22 05:00:00','web-development',25,true,true,NULL,1,1,true,NULL,false
+6,2,2,'SEO','Tag related to search engine optimization','2024-02-21 02:45:00','2024-02-21 02:45:00','seo',10,true,true,NULL,1,1,true,NULL,false
+7,1,1,'Cloud Computing','Tag related to cloud computing','2024-02-20 01:00:00','2024-02-20 01:00:00','cloud-computing',22,true,true,NULL,1,1,true,NULL,false
+8,2,2,'Content Marketing','Tag related to content marketing','2024-02-18 23:15:00','2024-02-18 23:15:00','content-marketing',17,true,true,NULL,1,1,true,NULL,false
+9,1,1,'E-commerce','Tag related to e-commerce','2024-02-17 21:00:00','2024-02-17 21:00:00','e-commerce',30,true,true,NULL,1,1,true,NULL,false
+10,2,2,'Email Marketing','Tag related to email marketing','2024-02-16 18:45:00','2024-02-16 18:45:00','email-marketing',14,true,true,NULL,1,1,true,NULL,false

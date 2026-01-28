@@ -46,6 +46,7 @@ shell:
 		-v ~/.config/gcloud:/root/.config/gcloud \
 		-v ~/.gitconfig:/root/.gitconfig \
 		-v ~/.gitcookies:/root/.gitcookies \
+		-v $(PWD)/requirements.txt:/evalbench/requirements.txt \
 		-v $(PWD)/evalbench:/evalbench/evalbench \
 		-e GOOGLE_CLOUD_PROJECT=cloud-db-nl2sql \
 		-e OPTION=--localhost \

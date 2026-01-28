@@ -3,10 +3,10 @@ from dataset import evalinput
 
 def load_session_configs(session):
     return (
-        session["config"],
-        session["db_configs"],
-        session["model_config"],
-        session["setup_config"],
+        session["config"] if "config" in session else None,
+        session["db_configs"] if "db_configs" in session else None,
+        session["model_config"] if "model_config" in session else None,
+        session["setup_config"] if "setup_config" in session else None,
     )
 
 

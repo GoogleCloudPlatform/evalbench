@@ -1,0 +1,12 @@
+1,1,2,'Hello Jane','Just wanted to say hi!','2024-02-26 07:00:00',true,false,false,false,false,NULL,2,NULL,'sent',NULL,'2024-02-26 07:00:00',NULL
+2,2,1,'Hi John','Hi John! How are you?','2024-02-25 11:30:00',false,false,false,false,false,NULL,1,NULL,'received',NULL,'2024-02-25 11:30:00',NULL
+3,1,2,'Meeting Tomorrow','Let''s discuss our project tomorrow.','2024-02-26 10:15:00',false,false,false,false,false,NULL,NULL,3,'draft',NULL,NULL,"'{""additional_info"": ""meeting""}'"
+4,2,1,'Re: Meeting Tomorrow',"'Sure, what time works for you?'",'2024-02-26 10:30:00',false,false,false,false,false,NULL,3,3,'draft',NULL,NULL,"'{""additional_info"": ""meeting""}'"
+5,1,3,'Regarding Project Update','Need your feedback on the latest project update.','2024-02-27 04:00:00',false,false,false,false,false,NULL,NULL,1,'sent',NULL,NULL,"'{""additional_info"": ""project_update""}'"
+6,3,1,'Re: Regarding Project Update',"'Sure, I''ll take a look and provide feedback.'",'2024-02-27 04:45:00',false,false,false,false,false,NULL,NULL,2,'received',NULL,NULL,"'{""additional_info"": ""project_update""}'"
+7,2,3,'Invitation to Webinar','Join our upcoming webinar on the latest industry trends.','2024-02-27 08:30:00',true,false,false,false,false,NULL,NULL,1,'sent',NULL,'2024-02-27 08:30:00',"'{""additional_info"": ""webinar_invitation""}'"
+8,3,2,'Re: Invitation to Webinar','Thanks for the invite! I''ll be there.','2024-02-27 09:00:00',false,false,false,false,false,NULL,NULL,2,'received',NULL,NULL,"'{""additional_info"": ""webinar_invitation""}'"
+9,1,4,'Important Update','Please check your email for an important update.','2024-02-28 02:30:00',true,false,false,false,false,NULL,NULL,1,'sent',NULL,'2024-02-28 02:30:00',"'{""additional_info"": ""important_update""}'"
+10,4,1,'Re: Important Update',"'Got it, thanks for the heads up!'",'2024-02-28 03:30:00',false,false,false,false,false,NULL,NULL,2,'received',NULL,NULL,"'{""additional_info"": ""important_update""}'"
+11,1,5,'Weekend Plans','Any plans for the weekend?','2024-02-28 10:30:00',true,false,false,false,false,NULL,NULL,1,'sent',NULL,'2024-02-28 10:30:00',"'{""additional_info"": ""weekend_plans""}'"
+12,5,1,'Re: Weekend Plans',"'Not sure yet, but let''s catch up!'",'2024-02-28 11:00:00',false,false,false,false,false,NULL,NULL,2,'received',NULL,NULL,"'{""additional_info"": ""weekend_plans""}'"

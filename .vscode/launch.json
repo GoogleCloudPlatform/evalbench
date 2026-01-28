@@ -9,25 +9,64 @@
       "type": "debugpy",
       "cwd": "${workspaceFolder}",
       "env": {
-        "PYTHONPATH": "./evalbench:./evalbench/evalproto"
+        "PYTHONPATH": "${workspaceFolder}/evalbench:${workspaceFolder}/evalbench/evalproto"
       },
       "args": [
         "--localhost",
       ],
       "request": "launch",
-      "program": "evalbench/eval_server.py",
+      "program": "${workspaceFolder}/evalbench/eval_server.py",
       "console": "integratedTerminal"
     },
     {
       "name": "Client",
       "type": "debugpy",
       "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
       "env": {
-        "PYTHONPATH": "./evalbench:./evalbench/evalproto"
+        "PYTHONPATH": "${workspaceFolder}/evalbench:${workspaceFolder}/evalbench/evalproto"
       },
       "request": "launch",
-      "program": "evalbench/client/eval_client.py",
-      "args": ["--insecure"],
+      "program": "${workspaceFolder}/evalbench/client/eval_client.py",
+      "args": [
+        "--insecure"
+      ],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Run bat-interact",
+      "type": "debugpy",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/evalbench:${workspaceFolder}/evalbench/evalproto",
+        "EVAL_GCP_PROJECT_ID": "cloud-db-nl2sql",
+        "EVAL_GCP_PROJECT_REGION": "us-central1"
+      },
+      "request": "launch",
+      "program": "${workspaceFolder}/evalbench/evalbench.py",
+      "args": [
+        "--experiment_config",
+        "${workspaceFolder}/datasets/bat-interact/example_run_config.yaml"
+      ],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Run bat",
+      "type": "debugpy",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/evalbench:${workspaceFolder}/evalbench/evalproto",
+        "EVAL_GCP_PROJECT_ID": "cloud-db-nl2sql",
+        "EVAL_GCP_PROJECT_REGION": "us-central1"
+      },
+      "request": "launch",
+      "program": "${workspaceFolder}/evalbench/evalbench.py",
+      "args": [
+        "--experiment_config",
+        "${workspaceFolder}/datasets/bat/example_run_config.yaml"
+      ],
       "console": "integratedTerminal"
     }
   ]
