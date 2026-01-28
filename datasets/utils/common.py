@@ -23,7 +23,6 @@ class TableOp(str, Enum):
 class LogicalViewType(str, Enum):
     TYPED = "TYPED"
     UNTYPED = "UNTYPED"
-    NO_ACTION = "NO_ACTION"
 
 
 class LogicalViewBuilder:
@@ -83,7 +82,9 @@ class TypedLogicalViewBuilder(LogicalViewBuilder):
     def query(self):
         query_string = "SELECT "
         for col_name in self.columns.keys():
-            sanitized_col_name = "".join([c for c in col_name if c.isalnum()])
+            sanitized_col_name = "".join(
+                [c for c in col_name if c.isalnum() or c == "_"]
+            )
             cast_col = f'CAST({DEFAULT_COLUMN_FAMILY}["{col_name}"] AS STRING)'
             col_type = self.columns[col_name]
             if col_type and col_type.upper() in (
@@ -143,23 +144,12 @@ class BigtableTableBuilder:
         self.table.column_family(DEFAULT_COLUMN_FAMILY).create()
         print(f"Created Bigtable table: {self.backing_table_id}")
 
-    def rebuild(self):
-        try:
-            self.delete()
-        except Exception as e:
-            print(f"Table {self.backing_table_id} deletion exception: {e}")
-        try:
-            self.create()
-        except AlreadyExists:
-            print("Table already exists:", self.backing_table_id)
-        self.test_connection()
-
     def test_connection(self):
         if not self.table.exists():
 
             raise NotFound(f"Table {self.backing_table_id} does not exist.")
 
-    def insert_rows(self, rows):
+    def insert_rows(self, rows: list):
         mutations_batcher: MutationsBatcher = self.table.mutations_batcher()
         print("Inserting", len(rows), "rows.")
         row_count = 0
@@ -185,7 +175,7 @@ class BigtableTableBuilder:
                 print("Inserted ", row_count, "rows.")
         mutations_batcher.flush()
 
-    def insert_rows_if_empty(self, rows):
+    def insert_rows_if_empty(self, rows: list):
         # Check if the table is empty
         partial_row_data: PartialRowsData = self.table.read_rows()
         partial_row_data.consume_all(max_loops=1)
@@ -193,3 +183,29 @@ class BigtableTableBuilder:
             self.insert_rows(rows)
         else:
             print("Table is not empty, skipping row insertion.")
+
+
+def build_bigtable_resources(
+    bt_table: BigtableTableBuilder, logical_view: LogicalViewBuilder, table_op: TableOp
+):
+    if table_op == TableOp.REBUILD:
+        logical_view.delete()
+        try:
+            bt_table.delete()
+        except Exception as e:
+            print(f"Table {bt_table.backing_table_id} deletion exception: {e}")
+        try:
+            bt_table.create()
+        except AlreadyExists:
+            print("Table already exists:", bt_table.backing_table_id)
+        # sanity check to ensure that the table is created
+        bt_table.test_connection()
+        logical_view.build()
+    elif table_op == TableOp.DELETE_ONLY:
+        logical_view.delete()
+        try:
+            bt_table.delete()
+        except NotFound:
+            print(f"Table {bt_table.backing_table_id} not found, skipping deletion.")
+    elif table_op == TableOp.NO_ACTION:
+        print("TableOp is NO_ACTION. No operations will be performed.")

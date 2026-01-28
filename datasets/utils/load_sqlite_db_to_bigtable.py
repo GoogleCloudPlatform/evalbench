@@ -18,14 +18,13 @@ from abc import ABC, abstractmethod
 from enum import Enum
 
 from common import (
-    DEFAULT_COLUMN_FAMILY,
-    bigtable_table_id,
     TableOp,
     LogicalViewType,
     LogicalViewBuilder,
     TypedLogicalViewBuilder,
     UntypedLogicalViewBuilder,
     BigtableTableBuilder,
+    build_bigtable_resources,
 )
 
 
@@ -138,8 +137,8 @@ if __name__ == "__main__":
         "--view_op",
         type=str,
         choices=[e.value for e in LogicalViewType],
-        default=LogicalViewType.NO_ACTION.value,
-        help="Choose a view operation, defaults to doing nothing.",
+        default=LogicalViewType.TYPED.value,
+        help="Choose a view type.",
     )
 
     args = parser.parse_args()
@@ -209,36 +208,23 @@ if __name__ == "__main__":
                     from_table=bt_table.backing_table_id,
                     columns={col_name: col_type for col_name, col_type in cols},
                 )
+
+                # logical view has the same name as the sqlite table
                 view_builder: LogicalViewBuilder
-                if args.view_op == LogicalViewType.TYPED:
-                    # logical view has the same name as the sqlite table
-                    logical_view_id = tbl
-                    view_builder = TypedLogicalViewBuilder(
-                        **logical_view_builder_args, logical_view_id=logical_view_id
-                    )
-                elif args.view_op == LogicalViewType.UNTYPED:
+                if args.view_op == LogicalViewType.UNTYPED:
                     logical_view_id = tbl + "-untyped"
                     view_builder = UntypedLogicalViewBuilder(
                         **logical_view_builder_args, logical_view_id=logical_view_id
                     )
-                else:
-                    # no-op for NO_ACTION
-                    print("No view action taken for table: ", tbl)
+                else:  # args.view_op == LogicalViewType.TYPED
+                    logical_view_id = tbl
+                    view_builder = TypedLogicalViewBuilder(
+                        **logical_view_builder_args, logical_view_id=logical_view_id
+                    )
 
-                # gcp operations
-                if args.table_op == TableOp.DELETE_ONLY:
-                    view_builder.delete()
-                    bt_table.delete()
-                elif args.table_op == TableOp.REBUILD:
-                    # delete and rebuild table and view
-                    view_builder.delete()
-                    bt_table.rebuild()
-                    view_builder.build()
-                    # get and insert rows
-                    rows = get_rows_from_sqlite(cur, tbl, limit=args.limit)
-                    print(f"Fetched {len(rows)} rows from sqlite table", tbl)
-                    bt_table.insert_rows_if_empty(rows)
-                    print("Inserted rows into Bigtable.")
-                else:
-                    # no-op for NO_ACTION
-                    print("No action taken for table: ", tbl)
+                build_bigtable_resources(bt_table, view_builder, args.table_op)
+
+                rows = get_rows_from_sqlite(cur, tbl, limit=args.limit)
+                print(f"Fetched {len(rows)} rows from sqlite table", tbl)
+                bt_table.insert_rows_if_empty(rows)
+                print("Inserted rows into Bigtable.")
