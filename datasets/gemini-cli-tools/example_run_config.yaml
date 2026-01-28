@@ -8,6 +8,7 @@ setup_directory: datasets/gemini-cli-tools/setup
 # Orchestrator Configuration
 orchestrator: geminicli
 model_config: datasets/model_configs/gemini_cli_model.yaml
+simulated_user_model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
 
 ############################################################
 ### Scorer Related Configs

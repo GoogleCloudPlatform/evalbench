@@ -8,6 +8,11 @@ from generators.models.gemini_cli import GeminiCliGenerator
 from util.config import load_yaml_config
 from mp import mprunner
 from work.agentgenwork import AgentGenWork
+from evaluator.simulateduser import SimulatedUser
+from work.agentscorework import AgentScoreWork
+import json
+import subprocess
+from typing import Dict
 
 
 class AgentEvaluator:
@@ -68,7 +73,14 @@ class AgentEvaluator:
         }
 
         for item in dataset:
-            work = AgentGenWork(self.generator, self.agent_version, item, job_id=job_id, metadata=metadata)
+            simulated_user = SimulatedUser(self.config)
+            work = AgentGenWork(
+                processor=self.process_scenario,
+                eval_result=item,
+                job_id=job_id,
+                metadata=metadata,
+                simulated_user=simulated_user
+            )
             self.agentrunner.execute_work(work)
 
         for future in concurrent.futures.as_completed(self.agentrunner.futures):
@@ -80,3 +92,117 @@ class AgentEvaluator:
                 scoring_results.extend(item.scoring_results)
 
         return eval_outputs, scoring_results
+
+    def process_scenario(
+        self,
+        scenario: Dict[str, Any],
+        eval_result: Any,
+        job_id: str,
+        metadata: Dict[str, Any],
+        simulated_user: Any = None
+    ):
+        """Processes a single scenario."""
+        current_prompt = scenario["starting_prompt"]
+        env = scenario.get("env", {})
+        max_turns = scenario.get("max_turns", 1)
+        conversation_plan = scenario.get("conversation_plan", "")
+        conversation_history = []
+        accumulated_tools = []
+        last_result = None
+
+        for turn in range(max_turns):
+            logging.info(f"Turn {turn + 1}/{max_turns} - Prompt: {current_prompt}")
+
+            if isinstance(self.generator, GeminiCliGenerator):
+                cli_cmd = self.generator.create_command(
+                    cli=self.agent_version,
+                    prompt=current_prompt,
+                    env=env,
+                    resume=(turn > 0)
+                )
+                result = self.generator.safe_generate(cli_cmd)
+            else:
+                result = self.generator.generate(current_prompt)
+
+            last_result = result
+
+            self._log_cli_result(turn, max_turns, result)
+
+            tools = []
+            if isinstance(self.generator, GeminiCliGenerator):
+                tools = self.generator.extract_tools(result.stdout)
+            accumulated_tools.extend(tools)
+
+            conversation_history.append({
+                "user": current_prompt,
+                "agent": result.stdout
+            })
+
+            if turn < max_turns - 1:
+                if simulated_user:
+                    next_response = simulated_user.get_next_response(
+                        conversation_plan,
+                        conversation_history,
+                        result.stdout
+                    )
+                    if "TERMINATE" in next_response:
+                        logging.info("Simulated user terminated conversation.")
+                        break
+                    current_prompt = next_response
+                else:
+                    break
+
+        if last_result:
+            self._finalize_scenario(
+                scenario,
+                last_result,
+                conversation_history,
+                accumulated_tools,
+                eval_result,
+                job_id,
+                metadata
+            )
+
+    def _log_cli_result(self, turn: int, max_turns: int, result: subprocess.CompletedProcess):
+        logging.info(f"Turn {turn + 1}/{max_turns} - Gemini CLI exit code: {result.returncode}")
+        logging.info(f"Turn {turn + 1}/{max_turns} - Gemini CLI stdout: {result.stdout}")
+        logging.info(f"Turn {turn + 1}/{max_turns} - Gemini CLI stderr: {result.stderr}")
+
+    def _finalize_scenario(
+        self,
+        scenario: Dict[str, Any],
+        last_result: subprocess.CompletedProcess,
+        conversation_history: List[Dict[str, str]],
+        accumulated_tools: List[str],
+        eval_result: Any,
+        job_id: str,
+        metadata: Dict[str, Any]
+    ):
+        """Finalizes the scenario by scoring and appending results."""
+        # Prepare intermediate eval_output with all necessary data for scoring
+        eval_output_data = {
+            "eval_id": scenario["id"],
+            "stdout": last_result.stdout,
+            "stderr": last_result.stderr,
+            "returncode": last_result.returncode,
+            "prompt_generator_error": None,
+            "generated_error": None,
+            "sql_generator_error": None,
+            "golden_error": None,
+            "generated_sql": "skipped",
+            "prompt": scenario["starting_prompt"],
+            "conversation_history": json.dumps(conversation_history, indent=2),
+            "scenario": scenario,
+            "accumulated_tools": accumulated_tools,
+            "job_id": job_id,
+            "metadata": metadata
+        }
+
+        score_work = AgentScoreWork(
+            config=metadata,
+            eval_output=eval_output_data,
+            scoring_results=eval_result.scoring_results
+        )
+        score_work.run()
+
+        eval_result.agent_results.append(eval_output_data)

@@ -8,12 +8,15 @@ from dataset.evalinput import EvalInputRequest
 from dataset.evalinteractinput import EvalInteractInputRequest
 from dataset.evalgeminicliinput import EvalGeminiCliRequest
 from itertools import chain
+import os
 
 
 def load_schema(dataset_dir: str, selected_database: str):
+    schema = ""
     schema_path = f"{dataset_dir}/{selected_database}/{selected_database}_schema.txt"
-    with open(schema_path, "r", encoding="utf-8") as f:
-        schema = f.read()
+    if os.path.exists(schema_path):
+        with open(schema_path, "r", encoding="utf-8") as f:
+            schema = f.read()
     return schema
 
 
@@ -26,11 +29,12 @@ def load_knowledge(
     for knowledge_amb_i in knowledge_ambiguity:
         exclude_ids.append(knowledge_amb_i["deleted_knowledge"])
 
-    with open(external_kg_path, "r", encoding="utf-8") as f:
-        for line in f:
-            if not line.strip():
-                continue
-            obj = json.loads(line)
+    if os.path.exists(external_kg_path):
+        with open(external_kg_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                obj = json.loads(line)
             if obj.get("id") not in exclude_ids:
                 external_kg_list.append(json.dumps(obj))
 
@@ -128,7 +132,8 @@ def load_dataset_from_json(json_file_path, config):
         config["orchestrator"] = "oneshot"
         input_items = load_dataset_from_bird_format(all_items, config)
     elif dataset_format == "bird-interact-format":
-        config["orchestrator"] = "interact"
+        if "orchestrator" not in config:
+            config["orchestrator"] = "interact"
         input_items = all_items
     elif dataset_format == "gemini-cli-format":
         config["orchestrator"] = "geminicli"

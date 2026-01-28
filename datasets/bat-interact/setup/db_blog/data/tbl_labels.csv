@@ -1,0 +1,10 @@
+1,1,NULL,'Technology','Label for technology-related content','2024-02-26 05:15:00','2024-02-26 05:15:00',15,'public',true,10,NULL
+2,2,NULL,'Social Media','Label for social media discussions','2024-02-25 10:45:00','2024-02-25 10:45:00',8,'public',true,5,NULL
+3,1,NULL,'Science','Label for scientific topics','2024-02-26 06:00:00','2024-02-26 06:00:00',12,'public',true,8,NULL
+4,2,NULL,'Fitness','Label for fitness and health-related content','2024-02-25 13:15:00','2024-02-25 13:15:00',5,'public',true,3,NULL
+5,1,NULL,'Travel','Label for travel experiences and tips','2024-02-26 07:30:00','2024-02-26 07:30:00',20,'public',true,15,NULL
+6,2,NULL,'Food','Label for food and cooking discussions','2024-02-25 15:00:00','2024-02-25 15:00:00',10,'public',true,6,NULL
+7,1,NULL,'Business','Label for business and entrepreneurship topics','2024-02-26 08:45:00','2024-02-26 08:45:00',18,'public',true,12,NULL
+8,2,NULL,'Fashion','Label for fashion trends and style','2024-02-25 16:30:00','2024-02-25 16:30:00',7,'public',true,4,NULL
+9,1,NULL,'Art','Label for art and creative expressions','2024-02-26 10:00:00','2024-02-26 10:00:00',14,'public',true,9,NULL
+10,2,NULL,'Environment','Label for environmental issues and sustainability','2024-02-25 18:15:00','2024-02-25 18:15:00',6,'public',true,2,NULL

@@ -80,3 +80,37 @@ class GeminiCliGenerator(QueryGenerator):
             command,
             env=env,
         )
+
+    def parse_response(self, stdout: str) -> dict:
+        """Parses the JSON output from Gemini CLI."""
+        try:
+            return json.loads(stdout)
+        except json.JSONDecodeError:
+            return {}
+
+    def extract_tools(self, stdout: str) -> list[str]:
+        """Extracts the list of tools used from the CLI output."""
+        output_json = self.parse_response(stdout)
+        if (
+            "stats" in output_json
+            and "tools" in output_json["stats"]
+            and "byName" in output_json["stats"]["tools"]
+        ):
+            return list(output_json["stats"]["tools"]["byName"].keys())
+        return []
+
+    def safe_generate(self, cli_cmd: CLICommand) -> subprocess.CompletedProcess:
+        """Runs the generation and handles empty responses."""
+        result = self.generate(cli_cmd)
+        if isinstance(result, str) and not result:
+            return subprocess.CompletedProcess(
+                args=[cli_cmd.cli],
+                returncode=1,
+                stdout="",
+                stderr="Error: Generator returned empty response (possibly resource exhausted).",
+            )
+        return result
+
+    def create_command(self, cli: str, prompt: str, env: dict = None, resume: bool = False) -> CLICommand:
+        """Creates a CLICommand object."""
+        return CLICommand(cli=cli, prompt=prompt, env=env, resume=resume)

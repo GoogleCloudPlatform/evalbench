@@ -27,6 +27,14 @@ def get_dataframe(results):
 
 
 def quick_summary(results_df):
+    if "prompt_generator_error" not in results_df:
+        results_df["prompt_generator_error"] = None
+    if "generated_error" not in results_df:
+        results_df["generated_error"] = None
+    if "sql_generator_error" not in results_df:
+        results_df["sql_generator_error"] = None
+    if "golden_error" not in results_df:
+        results_df["golden_error"] = None
     prompt_generator_error_df = results_df["prompt_generator_error"].notnull()
     generated_error_df = results_df["generated_error"].notnull()
     sql_generator_error_df = results_df["sql_generator_error"].notnull()

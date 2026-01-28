@@ -28,7 +28,6 @@ def rate_limit(
             result = execution_method(*query)
             break
         except ResourceExhaustedError as e:
-            logging.info(e)
             # exponentially backoff starting at 5 seconds
             time.sleep(5 * (2 ** (attempt)))
             attempt += 1

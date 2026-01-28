@@ -1,0 +1,60 @@
+############################################################
+### Dataset / Eval Items
+############################################################
+# The JSON list of prompts / golden SQLs and eval attributes for the run
+dataset_directory: datasets/bat-interact
+dataset_config: datasets/bat-interact/prompts.jsonl
+### Database Info
+# List of paths to the YAML files that provide the database connection details
+database_configs:
+ - datasets/bat-interact/db_configs/alloydb.yaml
+# The dialects that the dataset_config will be filtered by. If not provided, 
+# all dialects found in the dataset_config json file will be used.
+dialects:
+ - postgresql
+query_types:
+ - dql
+dataset_format: bird-interact-format
+orchestrator: 'dataagent'
+#
+#
+############################################################
+### Prompt and Generation Modules
+############################################################
+# The YAML config for the model to be used for generation.
+model_config: datasets/model_configs/querydata_model.yaml
+vuser_model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+
+# The prompt generator module id for prompt generation.
+prompt_generator: 'NOOPGenerator'
+#
+#
+############################################################
+### Optional - Setup / Teardown related configs (Required for testing DDL)
+############################################################
+# Used for setup / teardown, the directory path to the sql files used for setting up
+# / tearing down a database instance. This is required for running DDL
+setup_directory: datasets/bat-interact/setup
+#
+#
+############################################################
+### Scorer Related Configs - See /scorers directory for each scorer.
+############################################################
+scorers:
+  exact_match: null
+  llmrater:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  returned_sql: null
+  set_match: null
+  executable_sql: null
+#
+#
+############################################################
+### Reporting Related Configs
+############################################################
+reporting:
+  csv:
+    output_directory: 'results'
+  bigquery:
+    gcp_project_id: cloud-db-nl2sql
+  truncate_execution_outputs: 250

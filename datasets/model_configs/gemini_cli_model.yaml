@@ -1,2 +1,2 @@
-gemini_cli_version: "@google/gemini-cli@0.23.0"
+gemini_cli_version: "@google/gemini-cli@0.25.1"
 generator: gemini_cli

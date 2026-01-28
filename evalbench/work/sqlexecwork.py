@@ -6,6 +6,7 @@ from work import Work
 from util.sanitizer import sanitize_sql
 from queue import Queue
 import sqlparse
+import traceback
 
 
 class SQLExecWork(Work):
@@ -46,17 +47,26 @@ class SQLExecWork(Work):
             query_type = self.eval_result["query_type"]
             eval_query = self._get_eval_query()
             sanitized_generated_sql = self._sanitize_sql()
+            preprocess_sql = self._get_preprocess_sql_query()
             golden_sql = self._get_golden_sql()
 
             if sanitized_generated_sql:
                 generated_result, generated_eval_result, generated_error = (
                     self._evaluate_execution_results(
-                        sanitized_generated_sql, eval_query, query_type, is_golden=False
+                        sanitized_generated_sql,
+                        preprocess_sql,
+                        eval_query,
+                        query_type,
+                        is_golden=False,
                     )
                 )
             golden_result, golden_eval_result, golden_error = (
                 self._evaluate_execution_results(
-                    golden_sql, eval_query, query_type, is_golden=True
+                    golden_sql,
+                    preprocess_sql,
+                    eval_query,
+                    query_type,
+                    is_golden=True,
                 )
             )
 
@@ -71,11 +81,16 @@ class SQLExecWork(Work):
         return self.eval_result
 
     def _evaluate_execution_results(
-        self, query, eval_query, query_type, is_golden=False
+        self, query, preprocess_sql, eval_query, query_type, is_golden=False
     ):
         result = None
         eval_result = None
         error = None
+        if preprocess_sql and not is_golden:
+            try:
+                self.db.execute(preprocess_sql)
+            except Exception as preprocess_error:
+                traceback.print_exc()
         if query_type == "dql":
             try:
                 result, _, error = self.db.execute(
@@ -130,5 +145,14 @@ class SQLExecWork(Work):
     def _get_eval_query(self):
         if self.eval_result["eval_query"] and len(self.eval_result["eval_query"]) > 0:
             return self.eval_result["eval_query"][0]
+        else:
+            return None
+
+    def _get_preprocess_sql_query(self):
+        if "preprocess_sql" in self.eval_result:
+            if len(self.eval_result["preprocess_sql"]) > 0:
+                return "".join(self.eval_result["preprocess_sql"])
+            else:
+                return None
         else:
             return None
