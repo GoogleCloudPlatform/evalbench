@@ -2,7 +2,17 @@
 steps:
 - name: 'gcr.io/cloud-builders/docker'
   args: ['build', '-t', 'us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:$COMMIT_SHA', '-f', 'evalbench_service/Dockerfile', '.']
+- name: 'us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:$COMMIT_SHA'
+  args: ['evalbench/run.sh']
+  env:
+  - 'EVAL_GCP_PROJECT_ID=${_VAR_PROJECT}'
+  - 'EVAL_GCP_PROJECT_REGION=${_VAR_REGION}'
+  - 'EVAL_CONFIG=${_VAR_EVAL_CONFIG}'
 images:
 - 'us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:$COMMIT_SHA'
+substitutions:
+  _VAR_PROJECT: "cloud-db-nl2sql"
+  _VAR_REGION: "us-central1"
+  _VAR_EVAL_CONFIG: "datasets/bat/example_run_config.yaml"
 options:
   defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET

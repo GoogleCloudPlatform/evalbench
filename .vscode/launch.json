@@ -22,14 +22,17 @@
       "name": "Client",
       "type": "debugpy",
       "cwd": "${workspaceFolder}",
-      "python": "${workspaceFolder}/.venv/bin/python",
+      "python": "${workspaceFolder}/venv/bin/python",
       "env": {
         "PYTHONPATH": "${workspaceFolder}/evalbench:${workspaceFolder}/evalbench/evalproto"
       },
       "request": "launch",
       "program": "${workspaceFolder}/evalbench/client/eval_client.py",
       "args": [
-        "--insecure"
+        "--endpoint",
+        "local",
+        "--experiment",
+        "${workspaceFolder}/datasets/bat/example_run_config.yaml"
       ],
       "console": "integratedTerminal"
     },

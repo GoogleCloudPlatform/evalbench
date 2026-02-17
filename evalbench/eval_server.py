@@ -11,6 +11,7 @@ import util
 from eval_service import EvalServicer
 from eval_service import SessionManagerInterceptor
 from evalproto import eval_service_pb2_grpc
+import os
 
 _LOCALHOST = flags.DEFINE_bool(
     "localhost",
@@ -19,6 +20,8 @@ _LOCALHOST = flags.DEFINE_bool(
     " for local testing.",
 )
 
+CLOUD_RUN = os.getenv("CLOUD_RUN", False)
+PORT = os.getenv("PORT", 50051)
 _cleanup_coroutines = []
 
 
@@ -32,16 +35,16 @@ async def _serve():
     server = grpc.aio.server(interceptors=interceptors)
     servicer = EvalServicer()
     eval_service_pb2_grpc.add_EvalServiceServicer_to_server(servicer, server)
-    if _LOCALHOST.value:
+    if _LOCALHOST.value or CLOUD_RUN:
         # --localhost is for testing purpose. Use insecure_server_credentials()
         # because local creds does not work between a client running on the host
         # and a server running inside a container on the same host.
         logging.info("Using localhost server insecure credentials per flag")
-        server.add_insecure_port("[::]:50051")
+        server.add_insecure_port("[::]:%s" % PORT)
     else:
         logging.info("Using ALTS server credentials")
         creds = grpc.alts_server_credentials()
-        server.add_secure_port("[::]:50051", creds)
+        server.add_secure_port("[::]:%s" % PORT, creds)
     await server.start()
     logging.info("Server started")
 
