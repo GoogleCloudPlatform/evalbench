@@ -155,7 +155,7 @@ def load_dataset_from_bird_format(dataset: Sequence[dict], config):
     dataset_str = str(dataset_config).split("/")[-1].replace(".json", "")
     dialects = config["dialects"]
     query_type = "dql"
-    for item in dataset:
+    for i, item in enumerate(dataset):
         # Add "ifs" to handle situations when some keys do not in(or in different format of) the BIRD evaluation dataset
         if "question_id" not in item and "id" in item:
             item["question_id"] = item["id"]
@@ -163,19 +163,40 @@ def load_dataset_from_bird_format(dataset: Sequence[dict], config):
             item["question"] = item["other"]["question"]
         if "evidence" not in item and "other" in item:
             item["evidence"] = item["other"]["evidence"]
-        if "question" not in item and "other" in item:
-            item["question"] = item["other"]["question"]
         if "db_id" not in item:
             item["db_id"] = dataset_str
-        if "SQL" not in item:
-            if dialects[0] in item["golden_sql"]:
-                item["SQL"] = item["golden_sql"][dialects[0]]
-            else:
-                item["SQL"] = ""
+            
+        # Map BIRD dialects to EvalBench dialects in the golden_sql dict
+        bird_golden = item.get("golden_sql", {})
+        eb_golden = {}
+        # standard mappings
+        for d in ["postgres", "mysql", "sqlite"]:
+            if d in bird_golden:
+                eb_golden[d] = bird_golden[d]
+        
+        # Spanner GSQL -> googlesql
+        if "googlesql" in bird_golden:
+            eb_golden["spanner_gsql"] = bird_golden["googlesql"]
+        elif "sqlite" in bird_golden: # Fallback to sqlite if others missing
+            eb_golden["spanner_gsql"] = bird_golden["sqlite"]
+
+        # Spanner PG -> postgres
+        if "postgres" in bird_golden:
+            eb_golden["spanner_pg"] = bird_golden["postgres"]
+        elif "sqlite" in bird_golden:
+            eb_golden["spanner_pg"] = bird_golden["sqlite"]
+
+        # filter input.dialects to only those we have golden SQL for
+        config_dialects = config.get("dialects", [])
+        input_dialects = [d for d in config_dialects if d in eb_golden]
+        
+        if i == 0:
+             print(f"DEBUG BIRD: id={item['question_id']} bird_dialects={list(bird_golden.keys())} config_dialects={config_dialects} -> input_dialects={input_dialects}")
+
         if "difficulty" not in item and "tags" in item:
             item["difficulty"] = item["tags"]
 
-        if item["SQL"]:
+        if input_dialects:
             eval_input = EvalInputRequest(
                 id=item["question_id"],
                 nl_prompt="".join([item["question"], item["evidence"]]).replace(
@@ -183,8 +204,8 @@ def load_dataset_from_bird_format(dataset: Sequence[dict], config):
                 ),
                 query_type=query_type,
                 database=item["db_id"],
-                dialects=config["dialects"],
-                golden_sql=item["SQL"],
+                dialects=input_dialects,
+                golden_sql=eb_golden,
                 eval_query="",
                 setup_sql="",
                 cleanup_sql="",
