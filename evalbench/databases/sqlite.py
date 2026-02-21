@@ -184,8 +184,30 @@ class SQLiteDB(DB):
 
     def create_tmp_database(self, database_name: str):
         try:
-            db_path = self._get_connection_path(self.db_path, database_name)
-            open(db_path, "a").close()
+            target_path = self._get_connection_path(self.db_path, database_name)
+            
+            # Attempt to find source DB.
+            # Strategy 1: Use self.db_name (config)
+            source_candidates = [self.db_name]
+            
+            # Strategy 2: Infer from temp name (e.g. 'thrombosis_prediction_GUID' -> 'thrombosis_prediction')
+            # BIRD DB names can have underscores, so we split from right.
+            if "_" in database_name:
+                parts = database_name.rsplit("_", 1) # Split only last part (GUID)
+                source_candidates.append(parts[0])
+            
+            copied = False
+            for src_name in source_candidates:
+                source_path = self._get_connection_path(self.db_path, src_name)
+                if os.path.exists(source_path) and os.path.getsize(source_path) > 0:
+                    import shutil
+                    shutil.copy2(source_path, target_path)
+                    copied = True
+                    break
+            
+            if not copied:
+                open(target_path, "a").close()
+                
         except Exception as error:
             raise RuntimeError(f"Could not create database: {error}")
         self.tmp_dbs.append(database_name)
