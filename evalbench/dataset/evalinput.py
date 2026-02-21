@@ -173,5 +173,5 @@ def breakdown_datasets(total_dataset: list[EvalInputRequest]):
             datasets[dialect][input.database][input.query_type].append(
                 input.copy_for_dialect(dialect)
             )
-        total_dataset_len += 1
+            total_dataset_len += 1
     return datasets, total_dataset_len, total_db_len
