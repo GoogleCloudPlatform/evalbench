@@ -84,9 +84,28 @@ def analyze_result(scores, experiment_config: dict[str, str]):
             
     scorers = experiment_config["scorers"]
     num_scorers = len(scorers)
+    llm_metrics_list = [
+        "goal_completion",
+        "behavioral_metrics",
+        "parameter_analysis",
+    ]
+
     for metric_name in scorers:
         metric_name = metric_name.strip()
         metric_score = 100
+
+        if metric_name in llm_metrics_list:
+            metric_df = df[df["comparator"] == metric_name]
+            for _, row in metric_df.iterrows():
+                logging.info(f"\n--- {metric_name} Analysis ---")
+                if pd.notna(row.get("comparison_logs")):
+                    logging.info(f"{row['comparison_logs']}")
+                elif pd.notna(row.get("comparison_error")):
+                    logging.info(f"Error: {row['comparison_error']}")
+                else:
+                    logging.info("No analysis provided.")
+            continue
+
         summary = analyze_one_metric(
             df=df,
             metric_name=metric_name,
