@@ -12,14 +12,8 @@ def analyze_one_metric(
     num_scorers: int = 1,
 ) -> dict:
     """Analyze one metric from dataframe with flexibility."""
+    num_scorers = max(1, num_scorers)
     original_df_size = int(len(df) / num_scorers)
-    if original_df_size == 0:
-        return {
-            "metric_name": metric_name,
-            "metric_score": 0.0,
-            "correct_results_count": 0,
-            "total_results_count": 0,
-        }
     
     df = df[df["generated_sql"].notna()]
     if execution:
@@ -65,9 +59,10 @@ def analyze_one_metric(
 
         correct_results_count = len(df[df["score"] == metric_score])
 
+    percentage = (correct_results_count / original_df_size * 100) if original_df_size > 0 else 0.0
     logging.info(
         f"{metric_name}: \t{correct_results_count}/{original_df_size} = "
-        f"{round(correct_results_count / original_df_size * 100, 2)}%"
+        f"{round(percentage, 2)}%"
     )
     return {
         "metric_name": metric_name,
