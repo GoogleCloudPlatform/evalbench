@@ -11,16 +11,16 @@ def analyze_one_metric(
     execution: bool = False,
     num_scorers: int = 1,
 ) -> dict:
+    """Analyze one metric from dataframe with flexibility."""
     original_df_size = int(len(df) / num_scorers)
-
-    if "generated_sql" not in df.columns:
+    if original_df_size == 0:
         return {
             "metric_name": metric_name,
-            "metric_score": metric_score,
+            "metric_score": 0.0,
             "correct_results_count": 0,
-            "total_results_count": max(0, original_df_size),
+            "total_results_count": 0,
         }
-
+    
     df = df[df["generated_sql"].notna()]
     if execution:
         if "returned_sql" in df["comparator"].values:
@@ -64,13 +64,10 @@ def analyze_one_metric(
             }
 
         correct_results_count = len(df[df["score"] == metric_score])
-    if original_df_size > 0:
-        pct = round(correct_results_count / original_df_size * 100, 2)
-    else:
-        pct = 0.0
 
     logging.info(
-        f"{metric_name}: \t{correct_results_count}/{original_df_size} = {pct}%"
+        f"{metric_name}: \t{correct_results_count}/{original_df_size} = "
+        f"{round(correct_results_count / original_df_size * 100, 2)}%"
     )
     return {
         "metric_name": metric_name,
@@ -84,33 +81,17 @@ def analyze_result(scores, experiment_config: dict[str, str]):
     """Analyze accuracy result from dataframe."""
     summary_scores = []
     df = pd.DataFrame.from_dict(scores)
-    if df.empty:
-        return df, pd.DataFrame()
-
+    
+    # Ensure expected columns exist to avoid KeyErrors
+    for col in ["generated_sql", "generated_error", "comparator", "score", "id"]:
+        if col not in df.columns:
+            df[col] = None
+            
     scorers = experiment_config["scorers"]
     num_scorers = len(scorers)
-    llm_metrics_list = [
-        "goal_completion",
-        "behavioral_metrics",
-        "parameter_analysis",
-    ]
-
     for metric_name in scorers:
         metric_name = metric_name.strip()
         metric_score = 100
-
-        if metric_name in llm_metrics_list:
-            metric_df = df[df["comparator"] == metric_name]
-            for _, row in metric_df.iterrows():
-                logging.info(f"\\n--- {metric_name} Analysis ---")
-                if pd.notna(row.get("comparison_logs")):
-                    logging.info(f"{row['comparison_logs']}")
-                elif pd.notna(row.get("comparison_error")):
-                    logging.info(f"Error: {row['comparison_error']}")
-                else:
-                    logging.info("No analysis provided.")
-            continue
-
         summary = analyze_one_metric(
             df=df,
             metric_name=metric_name,

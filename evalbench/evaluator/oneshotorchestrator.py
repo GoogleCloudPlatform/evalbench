@@ -130,13 +130,23 @@ class OneShotOrchestrator(Orchestrator):
         total_eval_outputs = []
         total_scoring_results = []
 
+        # Map database name if config provides mappings
+        actual_db_name = database
+        db_name_mappings = self.config.get("db_name_mappings", {})
+        db_name_overrides = self.config.get("db_name_overrides", {})
+        
+        if dialect in db_name_overrides and database in db_name_overrides[dialect]:
+            actual_db_name = db_name_overrides[dialect][database]
+        elif dialect in db_name_mappings:
+            actual_db_name = db_name_mappings[dialect].format(db_id=database)
+
         try:
             # Setup the core connection just once (for all query types in database)
-            core_db = databases.get_database(db_config, database)
+            core_db = databases.get_database(db_config, actual_db_name)
         except Exception as e:
             skip_database(sub_datasets[dialect][database], progress_reporting, None)
             logging.error(
-                f"Could not connect to database {database} on {dialect}; due to {e}"
+                f"Could not connect to database {actual_db_name} (from {database}) on {dialect}; due to {e}"
             )
             return [], []
 
@@ -154,7 +164,7 @@ class OneShotOrchestrator(Orchestrator):
             try:
                 db_queue = build_db_queue(
                     core_db,
-                    database,
+                    actual_db_name,
                     db_config,
                     self.setup_config,
                     query_type,
