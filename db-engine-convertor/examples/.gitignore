@@ -1,0 +1,13 @@
+# Example migration outputs (generated data)
+1_sqlite_to_pg/
+2_sqlite_to_mysql/
+3_sqlite_to_spanner/
+4_pg_to_mysql/
+5_pg_to_spanner/
+6_pg_to_bq/
+7_bq_to_pg/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
