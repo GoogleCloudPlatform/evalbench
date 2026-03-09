@@ -14,7 +14,8 @@ class GeminiGenerator(QueryGenerator):
     def __init__(self, querygenerator_config):
         super().__init__(querygenerator_config)
         self.name = "gcp_vertex_gemini"
-        self.project_id = get_gcp_project(querygenerator_config.get("gcp_project_id"))
+        self.project_id = get_gcp_project(
+            querygenerator_config.get("gcp_project_id"))
         self.region = get_gcp_region(querygenerator_config.get("gcp_region"))
         self.vertex_model = querygenerator_config["vertex_model"]
         self.base_prompt = querygenerator_config.get("base_prompt") or ""

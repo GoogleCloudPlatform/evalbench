@@ -58,7 +58,8 @@ class InteractOrchestrator(Orchestrator):
         colab_progress_report = None
 
         with Manager() as manager:
-            sub_datasets, total_dataset_len, total_db_len = breakdown_datasets(dataset)
+            sub_datasets, total_dataset_len, total_db_len = breakdown_datasets(
+                dataset)
             logging.info(
                 f"sub_datasets: {len(sub_datasets)}, Total dataset length: {total_dataset_len}, total db length: {total_db_len}. Starting evaluation..."
             )
@@ -75,7 +76,8 @@ class InteractOrchestrator(Orchestrator):
                         manager, total_dataset_len, total_db_len
                     )
 
-                global_models = {"registered_models": {}, "lock": threading.Lock()}
+                global_models = {"registered_models": {},
+                                 "lock": threading.Lock()}
 
                 with concurrent.futures.ThreadPoolExecutor(
                     max_workers=self.eval_runners
@@ -88,7 +90,8 @@ class InteractOrchestrator(Orchestrator):
                                 f"Skipping queries for {dialect} as no applicable db_config"
                                 + " was found."
                             )
-                            skip_dialect(sub_datasets[dialect], progress_reporting)
+                            skip_dialect(
+                                sub_datasets[dialect], progress_reporting)
                             continue
                         for db_config in db_configs:
                             for database in sub_datasets[dialect]:
@@ -138,7 +141,8 @@ class InteractOrchestrator(Orchestrator):
             # Setup the core connection just once (for all query types in database)
             core_db = databases.get_database(db_config, database)
         except Exception as e:
-            skip_database(sub_datasets[dialect][database], progress_reporting, None)
+            skip_database(sub_datasets[dialect]
+                          [database], progress_reporting, None)
             logging.error(
                 f"Could not connect to database {database} on {dialect}; due to {e}"
             )
@@ -156,7 +160,8 @@ class InteractOrchestrator(Orchestrator):
             sub_dataset_len = len(sub_dataset)
             db_queue = None
             try:
-                logging.info(f"Setting up {query_type} queries for {database}...")
+                logging.info(
+                    f"Setting up {query_type} queries for {database}...")
                 db_queue = build_db_queue(
                     core_db,
                     database,
@@ -206,7 +211,8 @@ class InteractOrchestrator(Orchestrator):
 
     def process(self):
         with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:
-            json.dump(self.total_eval_outputs, f, sort_keys=True, indent=4, default=str)
+            json.dump(self.total_eval_outputs, f,
+                      sort_keys=True, indent=4, default=str)
             results_tf = f.name
         with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:
             json.dump(

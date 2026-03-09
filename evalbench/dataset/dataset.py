@@ -144,13 +144,15 @@ def load_dataset_from_json(json_file_path, config):
         raise ValueError("Dataset not in any of the recognised formats")
 
     if dataset_format not in ["gemini-cli-format", "bird-interact-format"]:
-        totalEntries = sum(len(input_items.get(q, [])) for q in ["dql", "dml", "ddl"])
+        totalEntries = sum(len(input_items.get(q, []))
+                           for q in ["dql", "dml", "ddl"])
         logging.info(f"Converted {totalEntries} entries to EvalInput.")
     return input_items
 
 
 def load_dataset_from_bird_format(dataset: Sequence[dict], config):
-    input_items: dict[str, list[EvalInputRequest]] = {"dql": [], "dml": [], "ddl": []}
+    input_items: dict[str, list[EvalInputRequest]] = {
+        "dql": [], "dml": [], "ddl": []}
     dataset_config = config["dataset_config"]
     dataset_str = str(dataset_config).split("/")[-1].replace(".json", "")
     dialects = config["dialects"]
@@ -196,7 +198,8 @@ def load_dataset_from_bird_format(dataset: Sequence[dict], config):
 
 
 def load_dataset(dataset: Sequence[dict], config):
-    input_items: dict[str, list[EvalInputRequest]] = {"dql": [], "dml": [], "ddl": []}
+    input_items: dict[str, list[EvalInputRequest]] = {
+        "dql": [], "dml": [], "ddl": []}
     for item in dataset:
         if not _item_meets_config_filters(item, config):
             continue
@@ -205,7 +208,8 @@ def load_dataset(dataset: Sequence[dict], config):
             nl_prompt=item["nl_prompt"],
             query_type=item["query_type"].lower(),
             database=item["database"],
-            dialects=_union_dialects(item["dialects"], config.get("dialects", [])),
+            dialects=_union_dialects(
+                item["dialects"], config.get("dialects", [])),
             golden_sql=item["golden_sql"],
             eval_query=item["eval_query"],
             setup_sql=item["setup_sql"],

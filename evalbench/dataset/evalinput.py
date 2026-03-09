@@ -103,13 +103,17 @@ class EvalInputRequest:
         def _set_dialect_based_sql(self, dialect_based_sql):
             if not isinstance(dialect_based_sql, dict):
                 return None
-            response: dict[str, eval_request_pb2.DialectBasedSQLStatements] = {}  # type: ignore
+            # type: ignore
+            response: dict[str,
+                           eval_request_pb2.DialectBasedSQLStatements] = {}
             for dialect, sql_statements in dialect_based_sql.items():
-                response[dialect] = eval_request_pb2.DialectBasedSQLStatements()  # type: ignore
+                # type: ignore
+                response[dialect] = eval_request_pb2.DialectBasedSQLStatements()
                 if isinstance(sql_statements, list):
                     for sql_statement in sql_statements:
                         if isinstance(sql_statement, str):
-                            response[dialect].sql_statements.append(sql_statement)
+                            response[dialect].sql_statements.append(
+                                sql_statement)
             return response
 
     else:

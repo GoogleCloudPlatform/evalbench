@@ -107,7 +107,8 @@ def breakdown_datasets(total_dataset: list[EvalInteractInputRequest]):
     """
     total_dataset_len = 0
     total_db_len = 0
-    datasets: dict[str, dict[str, dict[str, list[EvalInteractInputRequest]]]] = {}
+    datasets: dict[str,
+                   dict[str, dict[str, list[EvalInteractInputRequest]]]] = {}
     for input in total_dataset:
         for dialect in input.dialects:
             if dialect not in datasets:
@@ -116,6 +117,7 @@ def breakdown_datasets(total_dataset: list[EvalInteractInputRequest]):
                 datasets[dialect][input.database] = {}
             if input.query_type not in datasets[dialect][input.database]:
                 datasets[dialect][input.database][input.query_type] = []
-            datasets[dialect][input.database][input.query_type].append(input.copy())
+            datasets[dialect][input.database][input.query_type].append(
+                input.copy())
         total_dataset_len += 1
     return datasets, total_dataset_len, total_db_len

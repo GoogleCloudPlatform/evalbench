@@ -48,12 +48,12 @@ class MySQLDB(DB):
 
     def __init__(self, db_config):
         super().__init__(db_config)
-        
+
         # Auto-deduce use_cloud_sql: format is PROJECT:REGION:INSTANCE (2 colons)
         self.use_cloud_sql = db_config.get("use_cloud_sql")
         if self.use_cloud_sql is None:
             self.use_cloud_sql = (self.db_path.count(":") == 2)
-            
+
         self.connector = Connector() if self.use_cloud_sql else None
 
         def get_conn():
@@ -74,7 +74,7 @@ class MySQLDB(DB):
                     parts = self.db_path.split(":")
                     host = parts[0]
                     port = int(parts[1])
-                
+
                 return pymysql.connect(
                     host=host,
                     port=port,
@@ -89,7 +89,7 @@ class MySQLDB(DB):
                 "connect_args": {},
             }
             url = ""
-            
+
             if self.use_cloud_sql:
                 args["creator"] = get_conn
                 # Cloud SQL needs explicit command_timeout and multi_statements
@@ -100,10 +100,10 @@ class MySQLDB(DB):
                 # Standard local connection via URL
                 # SQLAlchemy parses this URL and loads the driver internally
                 args["connect_args"]["connect_timeout"] = 60
-                
+
                 password_part = f":{self.password}" if self.password else ""
                 url = f"mysql+pymysql://{self.username}{password_part}@{self.db_path}/{self.db_name}"
-                
+
                 password_part = f":{self.password}" if self.password else ""
                 url = f"mysql+pymysql://{self.username}{password_part}@{self.db_path}/{self.db_name}"
 
@@ -188,7 +188,8 @@ class MySQLDB(DB):
                         result = self._execute_queries(connection, query)
 
                         if eval_query:
-                            eval_result = self._execute_queries(connection, eval_query)
+                            eval_result = self._execute_queries(
+                                connection, eval_query)
 
                         if batch_commands and len(batch_commands) > 0:
                             for command in batch_commands:
@@ -226,7 +227,8 @@ class MySQLDB(DB):
                 for table in metadata.tables.values():
                     columns = []
                     for column in table.columns:
-                        columns.append({"name": column.name, "type": str(column.type)})
+                        columns.append(
+                            {"name": column.name, "type": str(column.type)})
                     db_metadata[table.name] = columns
         except Exception:
             pass
@@ -248,7 +250,8 @@ class MySQLDB(DB):
             columns = ", ".join(
                 [f"{column.name} {column.type}" for column in table.columns]
             )
-            create_statements.append(f"CREATE TABLE `{table.name}` ({columns});")
+            create_statements.append(
+                f"CREATE TABLE `{table.name}` ({columns});")
         return create_statements
 
     def create_tmp_database(self, database_name: str):

@@ -29,5 +29,6 @@ class CsvReporter(Reporter):
 
         results.to_csv(file_path, index=False)
         logging.info(
-            "Created csv {} for {} in directory {}".format(file_name, type, directory)
+            "Created csv {} for {} in directory {}".format(
+                file_name, type, directory)
         )

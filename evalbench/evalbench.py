@@ -46,7 +46,8 @@ def eval(experiment_config: str):
 
         set_session_configs(session, parsed_config)
         # Load the configs
-        config, db_configs, model_config, setup_config = load_session_configs(session)
+        config, db_configs, model_config, setup_config = load_session_configs(
+            session)
         logging.info("Loaded Configurations in %s", experiment_config)
 
         # Load the dataset
@@ -62,13 +63,16 @@ def eval(experiment_config: str):
 
         # Create Dataframes for reporting
         if results_tf is not None and scores_tf is not None:
-            reporters = get_reporters(parsed_config.get("reporting"), job_id, run_time)
-            config_df = config_to_df(job_id, run_time, config, model_config, db_configs)
+            reporters = get_reporters(
+                parsed_config.get("reporting"), job_id, run_time)
+            config_df = config_to_df(
+                job_id, run_time, config, model_config, db_configs)
             results = load_json(results_tf)
             results_df = report.get_dataframe(results)
             report.quick_summary(results_df)
             scores = load_json(scores_tf)
-            scores_df, summary_scores_df = analyzer.analyze_result(scores, config)
+            scores_df, summary_scores_df = analyzer.analyze_result(
+                scores, config)
             summary_scores_df["job_id"] = job_id
             summary_scores_df["run_time"] = run_time
         else:

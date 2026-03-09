@@ -110,7 +110,8 @@ class InteractEvaluator:
             if next_step == InteractionType.LLM_QUESTION_PROMPT:
                 eval_output["payload"]["turn"] = eval_output["payload"]["turn"] + 1
                 eval_output["step_type"] = next_step
-                work = promptgenwork.SQLPromptGenWork(prompt_generator, eval_output)
+                work = promptgenwork.SQLPromptGenWork(
+                    prompt_generator, eval_output)
                 eval_output = work.run()
 
             if next_step == InteractionType.LLM_SQLGEN:
@@ -155,7 +156,8 @@ class InteractEvaluator:
             next_step = InteractionType.LLM_SQLGEN
 
         elif current_step == InteractionType.LLM_SQLGEN:
-            extracted_response, terminate_flag = check_response(eval_output["payload"])
+            extracted_response, terminate_flag = check_response(
+                eval_output["payload"])
             if not terminate_flag:
                 next_step = InteractionType.DISAMBIGUATE
             else:

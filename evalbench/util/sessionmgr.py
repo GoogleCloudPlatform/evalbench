@@ -56,7 +56,8 @@ class SessionManager:
             logging.info(f"Session {session_id} already exists.")
             return self.sessions[session_id]
         logging.info(f"Create session {session_id}.")
-        self.sessions[session_id] = {"create_ts": time.time(), "session_id": session_id}
+        self.sessions[session_id] = {
+            "create_ts": time.time(), "session_id": session_id}
         return self.sessions[session_id]
 
     def get_sessions(self):

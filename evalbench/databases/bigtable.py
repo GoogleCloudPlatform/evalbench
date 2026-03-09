@@ -114,7 +114,8 @@ class BigtableDB(DB):
                     {"name": cf, "type": COLUMN_FAMILY_TYPE} for cf in column_families
                 ]
             except Exception:
-                logging.error(f"Failed to get metadata for table {table.table_id}")
+                logging.error(
+                    f"Failed to get metadata for table {table.table_id}")
         return db_metadata
 
     def generate_ddl(

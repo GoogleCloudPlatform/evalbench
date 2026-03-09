@@ -14,7 +14,7 @@ def analyze_one_metric(
     """Analyze one metric from dataframe with flexibility."""
     num_scorers = max(1, num_scorers)
     original_df_size = int(len(df) / num_scorers)
-    
+
     df = df[df["generated_sql"].notna()]
     if execution:
         if "returned_sql" in df["comparator"].values:
@@ -59,7 +59,8 @@ def analyze_one_metric(
 
         correct_results_count = len(df[df["score"] == metric_score])
 
-    percentage = (correct_results_count / original_df_size * 100) if original_df_size > 0 else 0.0
+    percentage = (correct_results_count / original_df_size *
+                  100) if original_df_size > 0 else 0.0
     logging.info(
         f"{metric_name}: \t{correct_results_count}/{original_df_size} = "
         f"{round(percentage, 2)}%"
@@ -76,12 +77,12 @@ def analyze_result(scores, experiment_config: dict[str, str]):
     """Analyze accuracy result from dataframe."""
     summary_scores = []
     df = pd.DataFrame.from_dict(scores)
-    
+
     # Ensure expected columns exist to avoid KeyErrors
     for col in ["generated_sql", "generated_error", "comparator", "score", "id"]:
         if col not in df.columns:
             df[col] = None
-            
+
     scorers = experiment_config["scorers"]
     num_scorers = len(scorers)
     llm_metrics_list = [

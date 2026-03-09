@@ -12,7 +12,7 @@ from .util import (
     with_cache_execute,
     DatabaseSchema,
 )
-from evalbench.util.rate_limit import rate_limit, ResourceExhaustedError
+from util.rate_limit import rate_limit, ResourceExhaustedError
 from typing import Any, List, Optional, Tuple
 
 
@@ -57,16 +57,19 @@ class SpannerDB(DB):
         if not commands:
             return
         import logging
-        logging.info(f"Executing batch of {len(commands)} statements in Spanner...")
+        logging.info(
+            f"Executing batch of {len(commands)} statements in Spanner...")
         try:
             op = self.database.update_ddl(commands)
             op.result(timeout=600)
         except Exception as e:
-            logging.warning(f"update_ddl failed, trying individual execution: {e}")
+            logging.warning(
+                f"update_ddl failed, trying individual execution: {e}")
             for stmt in commands:
                 _, _, error = self.execute(stmt)
                 if error:
-                    raise RuntimeError(f"Error in batch statement: {stmt}\nError: {error}")
+                    raise RuntimeError(
+                        f"Error in batch statement: {stmt}\nError: {error}")
 
     def execute(
         self,

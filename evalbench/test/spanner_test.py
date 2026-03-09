@@ -1,7 +1,7 @@
 import pytest
 
-from evalbench.databases import get_database
-from evalbench.util import get_SessionManager
+from databases import get_database
+from util import get_SessionManager
 
 
 @pytest.fixture(scope="session")

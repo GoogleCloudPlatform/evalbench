@@ -68,7 +68,8 @@ class InteractSystemGenerator(PromptGenerator):
             response_prev = item[f"prediction_turn_{turn_i - 1}"]
             response_user_prev = item[f"user_answer_{turn_i - 1}"]
             if max_turn >= turn_i:
-                sys_response, terminate_flag = extract_system_response(response_prev)
+                sys_response, terminate_flag = extract_system_response(
+                    response_prev)
                 if terminate_flag:
                     item["Terminate_flg"] = True
                 user_response = extract_user_response(response_user_prev)

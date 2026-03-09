@@ -41,7 +41,8 @@ class QueryData(QueryGenerator):
                     md = Markdown(part["text"])
                     Console().print(md)
                 elif "functionCall" in part:
-                    md = Markdown(f"Function Call: {part['functionCall']['name']}")
+                    md = Markdown(
+                        f"Function Call: {part['functionCall']['name']}")
                     Console().print(md)
                     md = Markdown(
                         f"Function Args: {part['functionCall']['args']['prompt']}"
@@ -51,7 +52,8 @@ class QueryData(QueryGenerator):
                     Console().print(
                         f"Function Response: {part['functionResponse']['name']}"
                     )
-                    pprint(json.loads(part["functionResponse"]["response"]["result"]))
+                    pprint(json.loads(
+                        part["functionResponse"]["response"]["result"]))
                 else:
                     md = Markdown(part)
                     Console().print(md)
@@ -99,7 +101,8 @@ class QueryData(QueryGenerator):
         instance_id = item["instance_id"]
         try:
             if "session_id" not in item:
-                session = self.session_mgr.create_session("dataagent", "evalbench_user")
+                session = self.session_mgr.create_session(
+                    "dataagent", "evalbench_user")
                 session_id = session.id
                 item["session_id"] = session_id
             else:
@@ -112,7 +115,8 @@ class QueryData(QueryGenerator):
                 "newMessage": {"role": "user", "parts": [{"text": item["prompt"]}]},
             }
 
-            response = requests.post(self.adkapi_server_url + "/run", json=payload)
+            response = requests.post(
+                self.adkapi_server_url + "/run", json=payload)
             response.raise_for_status()
             # self.session_mgr.delete_session("dataagent", "evalbench_user", session_id)
         except requests.exceptions.HTTPError as e:

@@ -1,6 +1,6 @@
 import mongomock
-from evalbench.util import get_SessionManager
-from evalbench.databases import get_database
+from util import get_SessionManager
+from databases import get_database
 import pytest
 import json
 import sys
@@ -25,7 +25,7 @@ def client():
 
     # Directly use mongomock.MongoClient instead of patching
     # This avoids issues with where MongoClient is imported
-    from evalbench.databases import mongodb
+    from databases import mongodb
 
     # Create a mock client
     mock_client = mongomock.MongoClient("mongodb://mock-host:27017")

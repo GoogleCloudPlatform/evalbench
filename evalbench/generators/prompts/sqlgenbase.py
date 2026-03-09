@@ -196,7 +196,7 @@ The database structure is defined by the following table schemas:
 Please generate a GoogleSQL query for Cloud Spanner for the following question following these rules:
 - Output the query only without any explanation.
 - Do not use markdown code blocks around the outputted query.
-- Use backticks (`) around table and column names if they contain spaces or special characters, but avoid unnecessary quoting. 
+- Use backticks (`) around table and column names if they contain spaces or special characters, but avoid unnecessary quoting.
 - Spanner GoogleSQL does NOT support double quotes for identifiers.
 
 SQL generation rules:
@@ -250,7 +250,7 @@ class SQLGenBasePromptGenerator(PromptGenerator):
     def __init__(self, db: DB, promptgenerator_config):
         super().__init__(db, promptgenerator_config)
         self.db = db
-        
+
         # Dialect-aware prompt selection for Spanner
         if db.db_type == "spanner":
             dialect = db.config.get("dialect", "").lower()
