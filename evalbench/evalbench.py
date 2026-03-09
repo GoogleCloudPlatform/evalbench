@@ -26,12 +26,18 @@ logging.getLogger().setLevel(logging.INFO)
 
 _EXPERIMENT_CONFIG = flags.DEFINE_string(
     "experiment_config",
-    "configs/experiment_config.yaml",
+    None,
     "Path to the eval execution configuration file.",
 )
 
+_SUITE_CONFIG = flags.DEFINE_string(
+    "suite_config",
+    None,
+    "Path to a suite configuration file to run multiple experiments.",
+)
 
-def eval(experiment_config: str):
+
+def run_evalbench(experiment_config: str) -> bool:
     try:
         logging.info("EvalBench v1.0.0")
         logging.getLogger("google_genai.models").setLevel(logging.WARNING)
@@ -90,16 +96,63 @@ def eval(experiment_config: str):
             reporter.print_dashboard_links()
 
         print(f"Finished Job ID {job_id}")
+        return True
     except Exception as e:
         logging.exception(e)
-    finally:
-        if _IN_COLAB:
-            return sys.exit(0)
-        return os._exit(0)
+        return False
 
 
 def main(argv: Sequence[str]):
-    eval(experiment_config=_EXPERIMENT_CONFIG.value)
+    if _SUITE_CONFIG.value:
+        suite_config_path = _SUITE_CONFIG.value
+        import yaml
+        with open(suite_config_path, 'r') as f:
+            suite_conf = yaml.safe_load(f)
+        
+        runs = suite_conf.get("runs", [])
+        if not runs:
+            logging.error("No runs defined in suite config.")
+            sys.exit(1)
+            
+        logging.info(f"Starting EvalBench Suite: {suite_conf.get('name', 'Unnamed Suite')}")
+        logging.info(f"Total runs scheduled: {len(runs)}")
+        
+        results = []
+        for i, run in enumerate(runs):
+            run_name = run.get("name", f"Run {i+1}")
+            config_path = run.get("config_path")
+            
+            if not config_path:
+                logging.error(f"Run '{run_name}' is missing 'config_path'. Skipping.")
+                results.append((run_name, False))
+                continue
+                
+            logging.info(f"\n{'='*50}\nExecuting Suite Run {i+1}/{len(runs)}: {run_name}\nConfig: {config_path}\n{'='*50}")
+            
+            success = run_evalbench(config_path)
+            results.append((run_name, success))
+            
+        logging.info(f"\n{'='*50}\nSuite Execution Summary:\n{'='*50}")
+        all_passed = True
+        for name, success in results:
+            status = "SUCCESS" if success else "FAILED"
+            logging.info(f"  - {name}: {status}")
+            if not success:
+                all_passed = False
+                
+        if not all_passed:
+            logging.error("Some runs in the suite failed.")
+            if _IN_COLAB:
+                return sys.exit(1)
+            return os._exit(1)
+    else:
+        # Fallback to default or provided experiment_config
+        config_path = _EXPERIMENT_CONFIG.value or "configs/experiment_config.yaml"
+        run_evalbench(experiment_config=config_path)
+
+    if _IN_COLAB:
+        return sys.exit(0)
+    return os._exit(0)
 
 
 if __name__ == "__main__":
