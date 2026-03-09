@@ -165,6 +165,11 @@ def load_dataset_from_bird_format(dataset: Sequence[dict], config):
             item["evidence"] = item["other"]["evidence"]
         if "db_id" not in item:
             item["db_id"] = dataset_str
+        if "SQL" not in item:
+            if dialects[0] in item["golden_sql"]:
+                item["SQL"] = item["golden_sql"][dialects[0]]
+            else:
+                item["SQL"] = ""
             
         # Map BIRD dialects to EvalBench dialects in the golden_sql dict
         bird_golden = item.get("golden_sql", {})
@@ -175,13 +180,17 @@ def load_dataset_from_bird_format(dataset: Sequence[dict], config):
                 eb_golden[d] = bird_golden[d]
         
         # Spanner GSQL -> googlesql
-        if "googlesql" in bird_golden:
+        if "spanner_gsql" in bird_golden:
+            eb_golden["spanner_gsql"] = bird_golden["spanner_gsql"]
+        elif "googlesql" in bird_golden:
             eb_golden["spanner_gsql"] = bird_golden["googlesql"]
         elif "sqlite" in bird_golden: # Fallback to sqlite if others missing
             eb_golden["spanner_gsql"] = bird_golden["sqlite"]
 
         # Spanner PG -> postgres
-        if "postgres" in bird_golden:
+        if "spanner_pg" in bird_golden:
+            eb_golden["spanner_pg"] = bird_golden["spanner_pg"]
+        elif "postgres" in bird_golden:
             eb_golden["spanner_pg"] = bird_golden["postgres"]
         elif "sqlite" in bird_golden:
             eb_golden["spanner_pg"] = bird_golden["sqlite"]
