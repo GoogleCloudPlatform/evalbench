@@ -1,7 +1,7 @@
 import pytest
 
-from databases import get_database
-from util import get_SessionManager
+from evalbench.databases import get_database
+from evalbench.util import get_SessionManager
 
 
 @pytest.fixture(scope="session")
@@ -34,7 +34,7 @@ class TestSpanner:
     @pytest.mark.filterwarnings("ignore::DeprecationWarning")
     def test_create_table(self, client):
         create_table = "CREATE TABLE `ut` (main INT64) PRIMARY KEY (main)"
-        client.execute(create_table)
+        client.batch_execute([create_table])
 
     @pytest.mark.filterwarnings("ignore::DeprecationWarning")
     def test_get_metadata(self, client):
@@ -44,4 +44,4 @@ class TestSpanner:
     @pytest.mark.filterwarnings("ignore::DeprecationWarning")
     def test_drop_table(self, client):
         create_table = "DROP TABLE `ut`"
-        client.execute(create_table)
+        client.batch_execute([create_table])

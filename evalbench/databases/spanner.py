@@ -12,7 +12,7 @@ from .util import (
     with_cache_execute,
     DatabaseSchema,
 )
-from util.rate_limit import rate_limit, ResourceExhaustedError
+from evalbench.util.rate_limit import rate_limit, ResourceExhaustedError
 from typing import Any, List, Optional, Tuple
 
 
@@ -54,9 +54,19 @@ class SpannerDB(DB):
             )
 
     def batch_execute(self, commands: list[str]):
-        _, _, error = self.execute("\n".join(commands))
-        if error:
-            raise RuntimeError(f"{error}")
+        if not commands:
+            return
+        import logging
+        logging.info(f"Executing batch of {len(commands)} statements in Spanner...")
+        try:
+            op = self.database.update_ddl(commands)
+            op.result(timeout=600)
+        except Exception as e:
+            logging.warning(f"update_ddl failed, trying individual execution: {e}")
+            for stmt in commands:
+                _, _, error = self.execute(stmt)
+                if error:
+                    raise RuntimeError(f"Error in batch statement: {stmt}\nError: {error}")
 
     def execute(
         self,
@@ -92,10 +102,12 @@ class SpannerDB(DB):
                             result.extend(r._asdict() for r in rows)
 
                         if eval_query:
-                            eval_resultset = connection.execute(text(eval_query))
+                            eval_resultset = connection.execute(
+                                text(eval_query))
                             if eval_resultset.returns_rows:
                                 eval_rows = eval_resultset.fetchall()
-                                eval_result.extend(r._asdict() for r in eval_rows)
+                                eval_result.extend(r._asdict()
+                                                   for r in eval_rows)
 
                         if rollback:
                             transaction.rollback()
@@ -125,7 +137,8 @@ class SpannerDB(DB):
             for table in metadata_reflected_all.tables.values():
                 columns = []
                 for column in table.columns:
-                    columns.append({"name": column.name, "type": str(column.type)})
+                    columns.append(
+                        {"name": column.name, "type": str(column.type)})
                 db_metadata[table.name] = columns
         except Exception:
             logging.error(f"Failed to get metadata")
@@ -140,7 +153,8 @@ class SpannerDB(DB):
             columns = ", ".join(
                 [f"{column.name} {column.type}" for column in table.columns]
             )
-            create_statements.append(f"CREATE TABLE public.{table.name} ({columns});")
+            create_statements.append(
+                f"CREATE TABLE public.{table.name} ({columns});")
         return create_statements
 
     def create_tmp_database(self, database_name: str):
