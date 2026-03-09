@@ -26,6 +26,14 @@ def proto_to_dataclass(proto_schema: schema_pb2.DatabaseSchema) -> DatabaseSchem
         schema.views.append(view)
     return schema
 
+def _load_schema_from_directory(setup_directory: str, db_name: str) -> DatabaseSchema:
+    schema_path = os.path.join(setup_directory, db_name, "schema.textproto")
+    if os.path.exists(schema_path):
+        proto = schema_pb2.DatabaseSchema()
+        load_textproto(schema_path, proto)
+        return proto_to_dataclass(proto)
+    return None
+
 def instantiate_schemas(config_path: str):
     config = load_yaml_config(config_path)
     
@@ -60,12 +68,9 @@ def instantiate_schemas(config_path: str):
                 continue
             
             # Check for textproto overlay
-            schema_path = os.path.join(setup_config["setup_directory"], db_name, "schema.textproto")
-            if os.path.exists(schema_path):
-                print(f"  Found textproto schema at {schema_path}")
-                proto = schema_pb2.DatabaseSchema()
-                load_textproto(schema_path, proto)
-                dataclass_schema = proto_to_dataclass(proto)
+            dataclass_schema = _load_schema_from_directory(setup_config["setup_directory"], db_name)
+            if dataclass_schema:
+                print(f"  Found textproto schema for {db_name}")
                 # Ensure the textproto overrides or replaces setup_scripts[1] (which is setup.sql)
                 ddl_statements = core_db.generate_ddl(dataclass_schema)
                 setup_scripts = (setup_scripts[0], ddl_statements, setup_scripts[2])
