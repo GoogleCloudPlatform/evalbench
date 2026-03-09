@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package evalbench.schema;
+
+message Column {
+  string name = 1;
+  string type = 2;
+  bool is_primary_key = 3;
+}
+
+message Table {
+  string name = 1;
+  repeated Column columns = 2;
+}
+
+message View {
+  string name = 1;
+  repeated Column columns = 2;
+}
+
+message DatabaseSchema {
+  string name = 1;
+  repeated Table tables = 2;
+  repeated View views = 3;
+}
