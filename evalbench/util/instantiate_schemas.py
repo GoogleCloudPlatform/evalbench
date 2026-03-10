@@ -44,7 +44,7 @@ def parse_textproto_to_dataclass(filepath: str, db_name: str) -> DatabaseSchema:
                 is_pk = "NOT NULL" in current_col_type.upper() # basic heuristic
                 # Clean up type if needed
                 cleaned_type = current_col_type.replace("NOT NULL", "").strip()
-                current_table.columns.append(Column(name=current_col_name, type=cleaned_type, is_primary_key=is_pk))
+                current_table.columns.append(Column(name=current_col_name, type=cleaned_type, is_nullable=not is_pk))
             in_columns = False
 
     if current_table and current_table.name:

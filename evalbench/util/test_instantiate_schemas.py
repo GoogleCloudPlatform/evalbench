@@ -1,23 +1,49 @@
 import unittest
-from unittest.mock import patch, MagicMock
-from evalbench.util.instantiate_schemas import proto_to_dataclass
-from evalbench.evalproto import schema_pb2
+from evalbench.util.instantiate_schemas import parse_textproto_to_dataclass
 
 class TestInstantiateSchemas(unittest.TestCase):
-    def test_proto_to_dataclass(self):
-        proto = schema_pb2.DatabaseSchema(name="test_db")
-        t = proto.tables.add(name="users")
-        t.columns.add(name="id", type="INT", is_primary_key=True)
-        t.columns.add(name="name", type="VARCHAR")
+    def test_parse_textproto_to_dataclass(self):
+        # Create a dummy textproto content
+        content = """
+tables: {
+  table: "users"
+  columns: {
+    column: "id"
+    data_type: "INT64 NOT NULL"
+  }
+  columns: {
+    column: "name"
+    data_type: "STRING(MAX)"
+  }
+}
+tables: {
+  table: "posts"
+  columns: {
+    column: "post_id"
+    data_type: "INT64"
+  }
+}
+"""
+        import tempfile
+        import os
+        with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+            f.write(content)
+            temp_path = f.name
         
-        schema = proto_to_dataclass(proto)
-        self.assertEqual(schema.name, "test_db")
-        self.assertEqual(len(schema.tables), 1)
-        self.assertEqual(schema.tables[0].name, "users")
-        self.assertEqual(schema.tables[0].columns[0].name, "id")
-        self.assertEqual(schema.tables[0].columns[0].type, "INT")
-        self.assertTrue(schema.tables[0].columns[0].is_primary_key)
-        self.assertEqual(schema.tables[0].columns[1].name, "name")
+        try:
+            schema = parse_textproto_to_dataclass(temp_path, "test_db")
+            self.assertIsNotNone(schema)
+            self.assertEqual(len(schema.tables), 2)
+            self.assertEqual(schema.tables[0].name, "users")
+            self.assertEqual(len(schema.tables[0].columns), 2)
+            self.assertEqual(schema.tables[0].columns[0].name, "id")
+            self.assertEqual(schema.tables[0].columns[0].type, "INT64")
+            self.assertFalse(schema.tables[0].columns[0].is_nullable)
+            self.assertEqual(schema.tables[1].name, "posts")
+            self.assertTrue(schema.tables[1].columns[0].is_nullable)
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
 if __name__ == "__main__":
     unittest.main()
