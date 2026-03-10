@@ -14,6 +14,7 @@ from util.config import set_session_configs
 from util.service import load_session_configs
 import os
 import sys
+import yaml
 
 try:
     import google.colab  # type: ignore
@@ -104,7 +105,6 @@ def eval(experiment_config: str):
 
 
 def run_suite(suite_config_path: str) -> bool:
-    import yaml
     with open(suite_config_path, 'r') as f:
         suite_conf = yaml.safe_load(f)
     
