@@ -1,12 +1,12 @@
 """
-Utility script to instantiate database schemas for an EvalBench experiment natively.
+Utility script to setup databases (schema and data) for an EvalBench experiment natively.
 
 This script parses a standard EvalBench experiment_config YAML file (the same file
 you would pass to evalbench.py), extracts the database requirements and setup paths,
 and automatically creates and sets up the schemas in the target engines.
 
 Example usage:
-  python3 evalbench/util/instantiate_schemas.py --experiment_config datasets/bird/example_run_config.yaml
+  python3 evalbench/util/setup_databases.py --experiment_config datasets/bird/example_run_config.yaml
 """
 
 
@@ -23,7 +23,7 @@ from evalbench.dataset.dataset import load_dataset_from_json, flatten_dataset
 from evalbench.databases import get_database
 from evalbench.evaluator.db_manager import _get_setup_values
 
-def instantiate_schemas(config_path: str):
+def setup_databases(config_path: str):
     config = load_yaml_config(config_path)
     
     # Load dataset to figure out what DBs are needed
@@ -33,7 +33,7 @@ def instantiate_schemas(config_path: str):
     # Get unique databases (db_ids) needed for this experiment
     unique_db_names = set(item.database for item in dataset)
     
-    print(f"Instantiating schemas for: {unique_db_names}")
+    print(f"Setting up databases for: {unique_db_names}")
     
     for db_config_path in config.get("database_configs", []):
         db_config = load_yaml_config(db_config_path)
@@ -75,7 +75,7 @@ _EXPERIMENT_CONFIG = flags.DEFINE_string(
 def main(argv):
     if len(argv) > 1:
         raise app.UsageError("Too many command-line arguments.")
-    instantiate_schemas(_EXPERIMENT_CONFIG.value)
+    setup_databases(_EXPERIMENT_CONFIG.value)
 
 if __name__ == "__main__":
     app.run(main)

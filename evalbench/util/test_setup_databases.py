@@ -1,14 +1,14 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from evalbench.util.instantiate_schemas import instantiate_schemas
+from evalbench.util.setup_databases import setup_databases
 import os
 
-class TestInstantiateSchemas(unittest.TestCase):
-    @patch('evalbench.util.instantiate_schemas.get_database')
-    @patch('evalbench.util.instantiate_schemas.load_yaml_config')
-    @patch('evalbench.util.instantiate_schemas.load_dataset_from_json')
-    @patch('evalbench.util.instantiate_schemas._get_setup_values')
-    def test_instantiate_schemas_standard(self, mock_get_setup_values, mock_load_dataset, mock_load_yaml, mock_get_db):
+class TestSetupDatabases(unittest.TestCase):
+    @patch('evalbench.util.setup_databases.get_database')
+    @patch('evalbench.util.setup_databases.load_yaml_config')
+    @patch('evalbench.util.setup_databases.load_dataset_from_json')
+    @patch('evalbench.util.setup_databases._get_setup_values')
+    def test_setup_databases_standard(self, mock_get_setup_values, mock_load_dataset, mock_load_yaml, mock_get_db):
         mock_load_yaml.side_effect = [
             {"dataset_config": "fake_ds.json", "database_configs": ["fake_db_config.yaml"], "setup_directory": "/tmp/setup"},
             {"db_type": "postgres"}
@@ -23,7 +23,7 @@ class TestInstantiateSchemas(unittest.TestCase):
         
         mock_get_setup_values.return_value = (["pre"], ["setup"], ["post"]), {"table1": ["data"]}
         
-        instantiate_schemas("dummy_config.yaml")
+        setup_databases("dummy_config.yaml")
         
         mock_db.ensure_database_exists.assert_called_once_with("test_db")
         mock_db.set_setup_instructions.assert_called_once_with((["pre"], ["setup"], ["post"]), {"table1": ["data"]})
