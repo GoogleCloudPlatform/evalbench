@@ -92,10 +92,12 @@ class SpannerDB(DB):
                             result.extend(r._asdict() for r in rows)
 
                         if eval_query:
-                            eval_resultset = connection.execute(text(eval_query))
+                            eval_resultset = connection.execute(
+                                text(eval_query))
                             if eval_resultset.returns_rows:
                                 eval_rows = eval_resultset.fetchall()
-                                eval_result.extend(r._asdict() for r in eval_rows)
+                                eval_result.extend(r._asdict()
+                                                   for r in eval_rows)
 
                         if rollback:
                             transaction.rollback()
@@ -125,7 +127,8 @@ class SpannerDB(DB):
             for table in metadata_reflected_all.tables.values():
                 columns = []
                 for column in table.columns:
-                    columns.append({"name": column.name, "type": str(column.type)})
+                    columns.append(
+                        {"name": column.name, "type": str(column.type)})
                 db_metadata[table.name] = columns
         except Exception:
             logging.error(f"Failed to get metadata")
@@ -140,7 +143,8 @@ class SpannerDB(DB):
             columns = ", ".join(
                 [f"{column.name} {column.type}" for column in table.columns]
             )
-            create_statements.append(f"CREATE TABLE public.{table.name} ({columns});")
+            create_statements.append(
+                f"CREATE TABLE public.{table.name} ({columns});")
         return create_statements
 
     def create_tmp_database(self, database_name: str):
@@ -158,11 +162,12 @@ class SpannerDB(DB):
             database = instance.database(database_name)
             try:
                 op = database.create()
-                op.result() # Wait for completion
+                op.result()  # Wait for completion
             except exceptions.AlreadyExists:
                 pass
             except Exception as e:
-                raise RuntimeError(f"Failed to create Spanner DB {database_name}: {e}") from e
+                raise RuntimeError(
+                    f"Failed to create Spanner DB {database_name}: {e}") from e
 
     def drop_all_tables(self):
         _, _, error = self.execute(DROP_ALL_TABLES_QUERY)
