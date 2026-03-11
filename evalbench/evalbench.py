@@ -38,6 +38,7 @@ _SUITE_CONFIG = flags.DEFINE_string(
     "Path to a suite configuration file to run multiple experiments.",
 )
 
+
 def eval(experiment_config: str):
     try:
         logging.info("EvalBench v1.0.0")
@@ -53,7 +54,8 @@ def eval(experiment_config: str):
 
         set_session_configs(session, parsed_config)
         # Load the configs
-        config, db_configs, model_config, setup_config = load_session_configs(session)
+        config, db_configs, model_config, setup_config = load_session_configs(
+            session)
         logging.info("Loaded Configurations in %s", experiment_config)
 
         # Load the dataset
@@ -69,13 +71,16 @@ def eval(experiment_config: str):
 
         # Create Dataframes for reporting
         if results_tf is not None and scores_tf is not None:
-            reporters = get_reporters(parsed_config.get("reporting"), job_id, run_time)
-            config_df = config_to_df(job_id, run_time, config, model_config, db_configs)
+            reporters = get_reporters(
+                parsed_config.get("reporting"), job_id, run_time)
+            config_df = config_to_df(
+                job_id, run_time, config, model_config, db_configs)
             results = load_json(results_tf)
             results_df = report.get_dataframe(results)
             report.quick_summary(results_df)
             scores = load_json(scores_tf)
-            scores_df, summary_scores_df = analyzer.analyze_result(scores, config)
+            scores_df, summary_scores_df = analyzer.analyze_result(
+                scores, config)
             summary_scores_df["job_id"] = job_id
             summary_scores_df["run_time"] = run_time
         else:
@@ -103,52 +108,55 @@ def eval(experiment_config: str):
         return False
 
 
-
 def run_suite(suite_config_path: str) -> bool:
     with open(suite_config_path, 'r') as f:
         suite_conf = yaml.safe_load(f)
-    
+
     runs = suite_conf.get("runs", [])
     if not runs:
         logging.error("No runs defined in suite config.")
         return False
-        
-    logging.info(f"Starting EvalBench Suite: {suite_conf.get('name', 'Unnamed Suite')}")
+
+    logging.info(
+        f"Starting EvalBench Suite: {suite_conf.get('name', 'Unnamed Suite')}")
     logging.info(f"Total runs scheduled: {len(runs)}")
-    
+
     results = []
     for i, run in enumerate(runs):
-        run_name = run.get("name", f"Run {i+1}")
+        run_name = run.get("name", f"Run {i + 1}")
         config_path = run.get("config_path")
-        
+
         if not config_path:
-            logging.error(f"Run '{run_name}' is missing 'config_path'. Skipping.")
+            logging.error(
+                f"Run '{run_name}' is missing 'config_path'. Skipping.")
             results.append((run_name, False))
             continue
-            
-        logging.info(f"\n{'='*50}\nExecuting Suite Run {i+1}/{len(runs)}: {run_name}\nConfig: {config_path}\n{'='*50}")
-        
+
+        logging.info(
+            f"\n{'=' * 50}\nExecuting Suite Run {i + 1}/{len(runs)}: {run_name}\nConfig: {config_path}\n{'=' * 50}")
+
         success = eval(config_path)
         results.append((run_name, success))
-        
-    logging.info(f"\n{'='*50}\nSuite Execution Summary:\n{'='*50}")
+
+    logging.info(f"\n{'=' * 50}\nSuite Execution Summary:\n{'=' * 50}")
     all_passed = True
     for name, success in results:
         status = "SUCCESS" if success else "FAILED"
         logging.info(f"  - {name}: {status}")
         if not success:
             all_passed = False
-            
+
     if not all_passed:
         logging.error("Some runs in the suite failed.")
     return all_passed
+
 
 def main(argv: Sequence[str]):
     if _SUITE_CONFIG.value:
         success = run_suite(_SUITE_CONFIG.value)
     else:
         success = eval(experiment_config=_EXPERIMENT_CONFIG.value)
-        
+
     exit_code = 0 if success else 1
     if _IN_COLAB:
         return sys.exit(exit_code)
