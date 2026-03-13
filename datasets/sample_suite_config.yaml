@@ -1,0 +1,23 @@
+# Sample Multi-Run Suite Configuration for EvalBench
+# Run this suite using: python3 evalbench/evalbench.py --suite_config datasets/sample_suite_config.yaml
+
+name: "Full Evaluation Suite - Standard Benchmarks"
+
+runs:
+  - name: "Air Travel Evaluation"
+    config_path: "datasets/air_travel/full_eval_config.yaml"
+
+  - name: "BAT (Basic Analytics Task) Evaluation"
+    config_path: "datasets/bat/full_eval_config.yaml"
+
+  - name: "BIRD Multi-Engine Evaluation"
+    config_path: "datasets/bird/full_eval_multi_engine.yaml"
+
+  - name: "BIAS (Credit) Evaluation"
+    config_path: "datasets/bias/eval_credit.yaml"
+
+  - name: "BIAS (HR) Evaluation"
+    config_path: "datasets/bias/eval_hr.yaml"
+
+  - name: "BIAS (Medical) Evaluation"
+    config_path: "datasets/bias/eval_medical.yaml"
