@@ -41,14 +41,18 @@ async def run_server(args):
 
     @app.call_tool()
     async def call_tool(name: str, arguments: dict) -> list[TextContent]:
-        if not any(t.name == name for t in tools):
+        tool_config = next((t for t in server_config if t["name"] == name), None)
+        if not tool_config:
             raise ValueError(f"Tool {name} not found")
 
-        result = {
-            "status": "success",
-            "tool": name,
-            "args": arguments
-        }
+        if "response" in tool_config:
+            result = tool_config["response"]
+        else:
+            result = {
+                "status": "success",
+                "tool": name,
+                "args": arguments
+            }
         return [
             TextContent(
                 type="text",

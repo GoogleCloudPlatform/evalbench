@@ -185,6 +185,55 @@ Here is the natural language question for generating MongoDB query:
 {USER_PROMPT}
 """
 
+SPANNER_GSQL_PROMPT_TEMPLATE_WITH_RULES = """You are a Cloud Spanner GoogleSQL expert.
+
+The database structure is defined by the following table schemas:
+
+**************************
+{SCHEMA}
+**************************
+
+Please generate a GoogleSQL query for Cloud Spanner for the following question following these rules:
+- Output the query only without any explanation.
+- Do not use markdown code blocks around the outputted query.
+- Use backticks (`) around table and column names if they contain spaces or special characters, but avoid unnecessary quoting.
+- Spanner GoogleSQL does NOT support double quotes for identifiers.
+
+SQL generation rules:
+- Use aliases for tables to avoid ambiguity.
+- Ensure that you are selecting the correct columns based on the provided schema.
+
+Think step by step about generating a correct GoogleSQL query!
+
+**************************
+
+Here is the natural language question for generating SQL:
+{USER_PROMPT}"""
+
+SPANNER_PG_PROMPT_TEMPLATE_WITH_RULES = """You are a Cloud Spanner PostgreSQL expert.
+
+The database structure is defined by the following table schemas:
+
+**************************
+{SCHEMA}
+**************************
+
+Please generate a PostgreSQL query for Cloud Spanner for the following question following these rules:
+- Output the query only without any explanation.
+- Do not use markdown code blocks around the outputted query.
+- Always use quotes around table and column names.
+
+SQL generation rules:
+- Use aliases for tables to avoid ambiguity.
+- Ensure that you are selecting the correct columns based on the provided schema.
+
+Think step by step about generating a correct PostgreSQL query!
+
+**************************
+
+Here is the natural language question for generating SQL:
+{USER_PROMPT}"""
+
 _PROMPTS_BY_DIALECT = {
     "sqlite": SQLITE_PROMPT_TEMPLATE_WITH_RULES,
     "postgres": PG_PROMPT_TEMPLATE_WITH_RULES,
@@ -192,6 +241,8 @@ _PROMPTS_BY_DIALECT = {
     "sqlserver": SQLSERVER_PROMPT_TEMPLATE_WITH_RULES,
     "bigquery": BIGQUERY_PROMPT_TEMPLATE_WITH_RULES,
     "mongodb": MONGODB_PROMPT_TEMPLATE_WITH_RULES,
+    "spanner_pg": SPANNER_PG_PROMPT_TEMPLATE_WITH_RULES,
+    "spanner_gsql": SPANNER_GSQL_PROMPT_TEMPLATE_WITH_RULES,
 }
 
 
@@ -199,7 +250,16 @@ class SQLGenBasePromptGenerator(PromptGenerator):
     def __init__(self, db: DB, promptgenerator_config):
         super().__init__(db, promptgenerator_config)
         self.db = db
-        self.base_prompt = _PROMPTS_BY_DIALECT[db.db_type]
+
+        # Dialect-aware prompt selection for Spanner
+        if db.db_type == "spanner":
+            dialect = db.config.get("dialect", "").lower()
+            if "pg" in dialect or "postgres" in dialect:
+                self.base_prompt = SPANNER_PG_PROMPT_TEMPLATE_WITH_RULES
+            else:
+                self.base_prompt = SPANNER_GSQL_PROMPT_TEMPLATE_WITH_RULES
+        else:
+            self.base_prompt = _PROMPTS_BY_DIALECT[db.db_type]
 
     def setup(self):
         self.schema = self.db.get_ddl_from_db()

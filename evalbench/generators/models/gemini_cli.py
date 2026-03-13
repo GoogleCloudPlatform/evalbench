@@ -63,6 +63,9 @@ class GeminiCliGenerator(QueryGenerator):
         # Setup MCP Servers
         mcp_servers_config = self.setup_config.get("mcp_servers", {})
         self._setup_mcp_servers(mcp_servers_config, gemini_settings_path)
+        if "fake_mcp_servers" in self.setup_config:
+            self._setup_mcp_servers(
+                self.setup_config["fake_mcp_servers"], gemini_settings_path, verify_tools=False)
 
         self._setup_npm_auth()
 
@@ -204,7 +207,7 @@ class GeminiCliGenerator(QueryGenerator):
                     except Exception as e:
                         logging.error(f"Failed to execute skill action '{action}': {e}")
 
-    def _setup_mcp_servers(self, mcp_servers_config: dict, settings_path: str):
+    def _setup_mcp_servers(self, mcp_servers_config: dict, settings_path: str, verify_tools: bool = True):
         """Configures MCP servers in the settings file and verifies connectivity."""
         current_settings = {}
         if os.path.exists(settings_path):
@@ -229,11 +232,12 @@ class GeminiCliGenerator(QueryGenerator):
         with open(settings_path, 'w') as f:
             json.dump(current_settings, f, indent=2)
 
-        for server_name, config in mcp_servers_config.items():
-            logging.info(f"Verifying MCP server: {server_name}")
-            if not self._verify_mcp_server(server_name, settings_path):
-                raise RuntimeError(
-                    f"MCP Server '{server_name}' failed verification. Please check the configuration and ensure the server is running correctly.")
+        if verify_tools:
+            for server_name, config in mcp_servers_config.items():
+                logging.info(f"Verifying MCP server: {server_name}")
+                if not self._verify_mcp_server(server_name, settings_path):
+                    raise RuntimeError(
+                        f"MCP Server '{server_name}' failed verification. Please check the configuration and ensure the server is running correctly.")
 
     def _verify_mcp_server(self, server_name: str, settings_path: str) -> bool:
         """Verifies an MCP server by asking the Gemini model CLI what tools it has loaded."""
