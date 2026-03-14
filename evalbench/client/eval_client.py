@@ -44,7 +44,8 @@ class EvalbenchClient:
 
             # 4. Composite Credentials
             # Combine the SSL channel with the token-based call credentials
-            composite_creds = grpc.composite_channel_credentials(channel_creds, call_creds)
+            composite_creds = grpc.composite_channel_credentials(
+                channel_creds, call_creds)
             self.channel = grpc.aio.secure_channel(address, composite_creds)
 
         self.stub = eval_service_pb2_grpc.EvalServiceStub(self.channel)

@@ -96,7 +96,8 @@ class TrajectoryMatcher(comparator.Comparator):
             max_len = max(len(expected), len(actual))
 
             # Normalize to 0-100 score
-            normalized_score = max(0.0, 1.0 - (distance / max_len)) if max_len > 0 else 1.0
+            normalized_score = max(
+                0.0, 1.0 - (distance / max_len)) if max_len > 0 else 1.0
             score = normalized_score * 100.0
             explanation = f"Sequence Alignment Score: {score:.2f} (Distance: {distance}, Max Length: {max_len}). Expected: {expected}, Actual: {actual}"
 

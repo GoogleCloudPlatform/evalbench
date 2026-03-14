@@ -47,31 +47,61 @@ class PGDB(DB):
     def __init__(self, db_config):
         super().__init__(db_config)
 
+        # Auto-deduce use_cloud_sql: format is PROJECT:REGION:INSTANCE (2 colons)
+        self.use_cloud_sql = db_config.get("use_cloud_sql")
+        if self.use_cloud_sql is None:
+            self.use_cloud_sql = (self.db_path.count(":") == 2)
+
+        # Normalize password for drivers that dislike None
+        effective_password = self.password if self.password is not None else ""
+
         def get_conn():
+            # Only used for Cloud SQL Connector path
             conn = CONNECTOR.connect(
                 self.db_path,
                 "pg8000",
                 user=self.username,
-                password=self.password,
+                password=effective_password,
                 db=self.db_name,
             )
             return conn
 
-        def get_engine_args():
-            common_args = {
-                "creator": get_conn,
-                "connect_args": {"command_timeout": 60},
+        def get_engine_config():
+            """Returns (db_url, engine_args)"""
+            args = {
+                "connect_args": {},
             }
-            if "is_tmp_db" in db_config:
-                common_args["poolclass"] = NullPool
-            else:
-                common_args["pool_size"] = 50
-                common_args["pool_recycle"] = 300
-            return common_args
+            url = ""
 
-        self.engine = sqlalchemy.create_engine(
-            "postgresql+pg8000://", **get_engine_args()
-        )
+            if self.use_cloud_sql:
+                args["creator"] = get_conn
+                args["connect_args"]["command_timeout"] = 60
+                url = "postgresql+pg8000://"
+            else:
+                # Standard local connection via URL
+                args["connect_args"]["timeout"] = 60
+                pass_str = effective_password if effective_password is not None else ""
+
+                # Check for local UNIX socket
+                import os
+                socket_path = "/var/run/postgresql/.s.PGSQL.5432"
+                if self.db_path == "localhost" and os.path.exists(socket_path):
+                    args["connect_args"]["unix_sock"] = socket_path
+                    # Use a slash-only URL so SQLAlchemy doesn't force a TCP host
+                    url = f"postgresql+pg8000://{self.username}:{pass_str}@/{self.db_name}"
+                else:
+                    url = f"postgresql+pg8000://{self.username}:{pass_str}@{self.db_path}/{self.db_name}"
+
+            if "is_tmp_db" in db_config:
+                args["poolclass"] = NullPool
+            else:
+                args["pool_size"] = 50
+                args["pool_recycle"] = 300
+
+            return url, args
+
+        db_url, engine_args = get_engine_config()
+        self.engine = sqlalchemy.create_engine(db_url, **engine_args)
 
     def close_connections(self):
         try:
@@ -126,10 +156,12 @@ class PGDB(DB):
                             result.extend(r._asdict() for r in rows)
 
                         if eval_query:
-                            eval_resultset = connection.execute(text(eval_query))
+                            eval_resultset = connection.execute(
+                                text(eval_query))
                             if eval_resultset.returns_rows:
                                 eval_rows = eval_resultset.fetchall()
-                                eval_result.extend(r._asdict() for r in eval_rows)
+                                eval_result.extend(r._asdict()
+                                                   for r in eval_rows)
 
                         if rollback:
                             transaction.rollback()
@@ -163,7 +195,8 @@ class PGDB(DB):
                 for table in metadata.tables.values():
                     columns = []
                     for column in table.columns:
-                        columns.append({"name": column.name, "type": str(column.type)})
+                        columns.append(
+                            {"name": column.name, "type": str(column.type)})
                     db_metadata[table.name] = columns
         except Exception:
             pass
@@ -185,11 +218,13 @@ class PGDB(DB):
             columns = ", ".join(
                 [f"{column.name} {column.type}" for column in table.columns]
             )
-            create_statements.append(f"CREATE TABLE public.{table.name} ({columns});")
+            create_statements.append(
+                f"CREATE TABLE public.{table.name} ({columns});")
         return create_statements
 
     def create_tmp_database(self, database_name: str):
-        _, error = self._execute_auto_commit(f"CREATE DATABASE {database_name};")
+        _, error = self._execute_auto_commit(
+            f"CREATE DATABASE {database_name};")
         if error:
             raise RuntimeError(f"Could not create database: {error}")
         self.tmp_dbs.append(database_name)

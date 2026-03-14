@@ -161,7 +161,8 @@ class GeminiCliGenerator(QueryGenerator):
                 fake_skill_path = os.path.join(self.skills_dir, skill_name)
 
                 if not os.path.exists(real_skill_path):
-                    logging.warning(f"Requested skill '{skill_name}' not found at {real_skill_path}.")
+                    logging.warning(
+                        f"Requested skill '{skill_name}' not found at {real_skill_path}.")
                     continue
 
                 logging.info(f"Syncing skill: {skill_name}")
@@ -180,22 +181,28 @@ class GeminiCliGenerator(QueryGenerator):
                 cmd = None
                 if action == "link" and path:
                     logging.info(f"Linking skill from path: {path}")
-                    cmd = ["npm", "exec", "--yes", self.gemini_cli_version, "--", "skills", "link", path, "--consent"]
+                    cmd = ["npm", "exec", "--yes", self.gemini_cli_version,
+                           "--", "skills", "link", path, "--consent"]
                 elif action == "install" and (path or name):
                     target = path if path else name
                     logging.info(f"Installing skill: {target}")
-                    cmd = ["npm", "exec", "--yes", self.gemini_cli_version, "--", "skills", "install", target, "--consent"]
+                    cmd = ["npm", "exec", "--yes", self.gemini_cli_version,
+                           "--", "skills", "install", target, "--consent"]
                 elif action == "enable" and name:
                     logging.info(f"Enabling skill: {name}")
-                    cmd = ["npm", "exec", "--yes", self.gemini_cli_version, "--", "skills", "enable", name]
+                    cmd = ["npm", "exec", "--yes", self.gemini_cli_version,
+                           "--", "skills", "enable", name]
                 elif action == "disable" and name:
                     logging.info(f"Disabling skill: {name}")
-                    cmd = ["npm", "exec", "--yes", self.gemini_cli_version, "--", "skills", "disable", name]
+                    cmd = ["npm", "exec", "--yes", self.gemini_cli_version,
+                           "--", "skills", "disable", name]
                 elif action == "uninstall" and name:
                     logging.info(f"Uninstalling skill: {name}")
-                    cmd = ["npm", "exec", "--yes", self.gemini_cli_version, "--", "skills", "uninstall", name]
+                    cmd = ["npm", "exec", "--yes", self.gemini_cli_version,
+                           "--", "skills", "uninstall", name]
                 else:
-                    logging.warning(f"Unsupported or malformed skill config: {skill_config}")
+                    logging.warning(
+                        f"Unsupported or malformed skill config: {skill_config}")
 
                 if cmd:
                     try:
@@ -203,9 +210,11 @@ class GeminiCliGenerator(QueryGenerator):
                             cmd, check=False, capture_output=True, text=True, env=setup_env
                         )
                         if result.returncode != 0:
-                            logging.error(f"Failed to execute skill action '{action}'. Output: {result.stdout}, Error: {result.stderr}")
+                            logging.error(
+                                f"Failed to execute skill action '{action}'. Output: {result.stdout}, Error: {result.stderr}")
                     except Exception as e:
-                        logging.error(f"Failed to execute skill action '{action}': {e}")
+                        logging.error(
+                            f"Failed to execute skill action '{action}': {e}")
 
     def _setup_mcp_servers(self, mcp_servers_config: dict, settings_path: str, verify_tools: bool = True):
         """Configures MCP servers in the settings file and verifies connectivity."""
@@ -223,7 +232,8 @@ class GeminiCliGenerator(QueryGenerator):
         existing_servers = list(current_settings["mcpServers"].keys())
         for server in existing_servers:
             if server not in mcp_servers_config:
-                logging.info(f"Removing stale MCP server configuration: {server}")
+                logging.info(
+                    f"Removing stale MCP server configuration: {server}")
                 del current_settings["mcpServers"][server]
 
         for server_name, config in mcp_servers_config.items():
@@ -257,7 +267,8 @@ class GeminiCliGenerator(QueryGenerator):
 
         cmd.extend(["--allowed-mcp-server-names", server_name])
 
-        logging.info(f"Running gemini cli to verify loaded tools for MCP server: {server_name}")
+        logging.info(
+            f"Running gemini cli to verify loaded tools for MCP server: {server_name}")
 
         try:
             result = subprocess.run(
@@ -270,7 +281,8 @@ class GeminiCliGenerator(QueryGenerator):
             )
 
             if result.returncode != 0:
-                logging.error(f"MCP server '{server_name}' failed verification. CLI Error:\n{result.stderr}")
+                logging.error(
+                    f"MCP server '{server_name}' failed verification. CLI Error:\n{result.stderr}")
                 return False
 
             stdout = result.stdout.strip()
@@ -300,22 +312,28 @@ class GeminiCliGenerator(QueryGenerator):
                                 "activate_skill", "save_memory", "google_web_search", "write_todos",
                                 "delegate_to_agent", "grep_search", "codebase_investigator", "cli_help"
                             }
-                            mcp_tools = [t for t in tools if t not in built_in_tools]
+                            mcp_tools = [
+                                t for t in tools if t not in built_in_tools]
 
                             if len(mcp_tools) > 0:
-                                logging.info(f"MCP server '{server_name}' successfully loaded {len(mcp_tools)} tools: {mcp_tools}")
+                                logging.info(
+                                    f"MCP server '{server_name}' successfully loaded {len(mcp_tools)} tools: {mcp_tools}")
                                 return True
                             else:
-                                logging.error(f"MCP server '{server_name}' returned 0 non-builtin tools. The server might be unreachable or lacks tools.")
+                                logging.error(
+                                    f"MCP server '{server_name}' returned 0 non-builtin tools. The server might be unreachable or lacks tools.")
                                 return False
             except Exception as e:
-                logging.debug(f"Failed to parse tools from MCP server {server_name}: {e}")
+                logging.debug(
+                    f"Failed to parse tools from MCP server {server_name}: {e}")
 
-            logging.error(f"MCP server '{server_name}' didn't return a clear JSON array. Output: {stdout}")
+            logging.error(
+                f"MCP server '{server_name}' didn't return a clear JSON array. Output: {stdout}")
             return False
 
         except subprocess.TimeoutExpired:
-            logging.error(f"Verification of MCP server {server_name} timed out.")
+            logging.error(
+                f"Verification of MCP server {server_name} timed out.")
             return False
         except Exception as e:
             logging.error(f"Failed to verify MCP server {server_name}: {e}")
@@ -664,7 +682,8 @@ class GeminiCliGenerator(QueryGenerator):
                             try:
                                 t1 = dateutil.parser.isoparse(tu["timestamp"])
                                 t2 = dateutil.parser.isoparse(tr["timestamp"])
-                                duration = int((t2 - t1).total_seconds() * 1000)
+                                duration = int(
+                                    (t2 - t1).total_seconds() * 1000)
                             except Exception as e:
                                 logging.debug(
                                     "Failed to parse tool timestamps for duration calculation: "

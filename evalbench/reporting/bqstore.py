@@ -31,7 +31,8 @@ def _split_dataframe(df, chunk_size):
     num_chunks = len(df) // chunk_size + (len(df) % chunk_size > 0)
     for i in range(num_chunks):
         start = i * chunk_size
-        end = (i + 1) * chunk_size  # Py/Pandas slicing handles not going out of bound
+        # Py/Pandas slicing handles not going out of bound
+        end = (i + 1) * chunk_size
         yield df[start:end]
 
 
@@ -39,7 +40,8 @@ class BigQueryReporter(Reporter):
     def __init__(self, reporting_config, job_id, run_time):
         super().__init__(reporting_config, job_id, run_time)
         reporting_config = reporting_config or {}
-        self.project_id = get_gcp_project(reporting_config.get("gcp_project_id"))
+        self.project_id = get_gcp_project(
+            reporting_config.get("gcp_project_id"))
         self.location = reporting_config.get("dataset_location") or "US"
         self.client = bigquery.Client(project=self.project_id)
         self.dataset_id = "{}.evalbench".format(self.project_id)
@@ -51,7 +53,8 @@ class BigQueryReporter(Reporter):
     def store(self, results, type: STORETYPE):
         dataset = bigquery.Dataset(self.dataset_id)
         dataset.location = self.location
-        dataset = self.client.create_dataset(dataset, exists_ok=True, timeout=30)
+        dataset = self.client.create_dataset(
+            dataset, exists_ok=True, timeout=30)
         logging.info(
             "Created dataset {}.{} for {}".format(
                 self.client.project, dataset.dataset_id, type
@@ -99,4 +102,5 @@ class BigQueryReporter(Reporter):
             html_link = f'The evaluation report is now available on this <a href="{report_link}">Dashboard!</a>'
             display(HTML(html_link))  # type: ignore
         else:
-            print(f"Results available at:\n\033[1;34m{report_link}\033[0m\n---\n")
+            print(
+                f"Results available at:\n\033[1;34m{report_link}\033[0m\n---\n")

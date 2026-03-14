@@ -29,9 +29,11 @@ class SimulatedUser:
                     global_models, model_config_path, None
                 )
             except Exception as e:
-                logging.warning(f"Failed to load simulated user model from {model_config_path}: {e}")
+                logging.warning(
+                    f"Failed to load simulated user model from {model_config_path}: {e}")
         else:
-            logging.warning("No 'simulated_user_model_config' provided. SimulatedUser will not be able to generate responses.")
+            logging.warning(
+                "No 'simulated_user_model_config' provided. SimulatedUser will not be able to generate responses.")
 
     def get_next_response(self, conversation_plan: str, history: list, last_agent_reply: str) -> str:
         if not self.model_generator:

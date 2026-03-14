@@ -58,7 +58,8 @@ class OneShotOrchestrator(Orchestrator):
         colab_progress_report = None
 
         with Manager() as manager:
-            sub_datasets, total_dataset_len, total_db_len = breakdown_datasets(dataset)
+            sub_datasets, total_dataset_len, total_db_len = breakdown_datasets(
+                dataset)
             try:
                 if self.report_progress:
                     (
@@ -71,7 +72,8 @@ class OneShotOrchestrator(Orchestrator):
                         manager, total_dataset_len, total_db_len
                     )
 
-                global_models = {"registered_models": {}, "lock": threading.Lock()}
+                global_models = {"registered_models": {},
+                                 "lock": threading.Lock()}
 
                 with concurrent.futures.ThreadPoolExecutor(
                     max_workers=self.eval_runners
@@ -84,7 +86,8 @@ class OneShotOrchestrator(Orchestrator):
                                 f"Skipping queries for {dialect} as no applicable db_config"
                                 + " was found."
                             )
-                            skip_dialect(sub_datasets[dialect], progress_reporting)
+                            skip_dialect(
+                                sub_datasets[dialect], progress_reporting)
                             continue
                         for db_config in db_configs:
                             for database in sub_datasets[dialect]:
@@ -130,13 +133,24 @@ class OneShotOrchestrator(Orchestrator):
         total_eval_outputs = []
         total_scoring_results = []
 
+        # Map database name if config provides mappings
+        actual_db_name = database
+        db_name_mappings = self.config.get("db_name_mappings", {})
+        db_name_overrides = self.config.get("db_name_overrides", {})
+
+        if dialect in db_name_overrides and database in db_name_overrides[dialect]:
+            actual_db_name = db_name_overrides[dialect][database]
+        elif dialect in db_name_mappings:
+            actual_db_name = db_name_mappings[dialect].format(db_id=database)
+
         try:
             # Setup the core connection just once (for all query types in database)
-            core_db = databases.get_database(db_config, database)
+            core_db = databases.get_database(db_config, actual_db_name)
         except Exception as e:
-            skip_database(sub_datasets[dialect][database], progress_reporting, None)
+            skip_database(sub_datasets[dialect]
+                          [database], progress_reporting, None)
             logging.error(
-                f"Could not connect to database {database} on {dialect}; due to {e}"
+                f"Could not connect to database {actual_db_name} (from {database}) on {dialect}; due to {e}"
             )
             return [], []
 
@@ -154,7 +168,7 @@ class OneShotOrchestrator(Orchestrator):
             try:
                 db_queue = build_db_queue(
                     core_db,
-                    database,
+                    actual_db_name,
                     db_config,
                     self.setup_config,
                     query_type,
@@ -200,7 +214,8 @@ class OneShotOrchestrator(Orchestrator):
 
     def process(self):
         with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:
-            json.dump(self.total_eval_outputs, f, sort_keys=True, indent=4, default=str)
+            json.dump(self.total_eval_outputs, f,
+                      sort_keys=True, indent=4, default=str)
             results_tf = f.name
         with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:
             json.dump(

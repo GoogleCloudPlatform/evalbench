@@ -91,7 +91,8 @@ class DB(ABC):
         self.dql_user = "tmp_dql_user_" + generate_key()
         self.dml_user = "tmp_dml_user_" + generate_key()
         self.tmp_user_password = generate_key()
-        self.create_tmp_users(self.dql_user, self.dml_user, self.tmp_user_password)
+        self.create_tmp_users(self.dql_user, self.dml_user,
+                              self.tmp_user_password)
         self.tmp_users.extend([self.dql_user, self.dml_user])
 
     def delete_tmp_users(self, users) -> None:

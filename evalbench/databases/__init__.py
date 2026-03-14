@@ -16,7 +16,8 @@ def get_database(db_config, db_name) -> DB:
     #   - It will override the provided default database_name
     #   - This is useful as the default db may be "postgres" or a default only used for setup
     if db_name:
-        db_config["database_name"] = db_name
+        suffix = db_config.get("db_name_suffix", "")
+        db_config["database_name"] = f"{db_name}{suffix}"
 
     if db_config["db_type"] == "postgres":
         return PGDB(db_config)

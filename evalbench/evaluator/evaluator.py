@@ -60,7 +60,8 @@ class Evaluator:
             eval_output = EvalOutput(eval_input)
             eval_output["job_id"] = job_id
             eval_output["run_time"] = run_time
-            work = promptgenwork.SQLPromptGenWork(prompt_generator, eval_output)
+            work = promptgenwork.SQLPromptGenWork(
+                prompt_generator, eval_output)
             self.promptrunner.execute_work(work)
 
         for future in concurrent.futures.as_completed(self.promptrunner.futures):

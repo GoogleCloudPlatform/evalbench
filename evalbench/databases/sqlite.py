@@ -43,7 +43,8 @@ class SQLiteDB(DB):
                 "poolclass": NullPool,
             }
 
-        self.engine = sqlalchemy.create_engine("sqlite:///", **get_engine_args())
+        self.engine = sqlalchemy.create_engine(
+            "sqlite:///", **get_engine_args())
 
     def close_connections(self):
         try:
@@ -113,7 +114,8 @@ class SQLiteDB(DB):
                         result = self._execute_queries(connection, query)
 
                         if eval_query:
-                            eval_result = self._execute_queries(connection, eval_query)
+                            eval_result = self._execute_queries(
+                                connection, eval_query)
 
                         if batch_commands and len(batch_commands) > 0:
                             for command in batch_commands:
@@ -157,7 +159,8 @@ class SQLiteDB(DB):
                 for table in metadata.tables.values():
                     columns = []
                     for column in table.columns:
-                        columns.append({"name": column.name, "type": str(column.type)})
+                        columns.append(
+                            {"name": column.name, "type": str(column.type)})
                     db_metadata[table.name] = columns
         except Exception:
             pass
@@ -184,8 +187,32 @@ class SQLiteDB(DB):
 
     def create_tmp_database(self, database_name: str):
         try:
-            db_path = self._get_connection_path(self.db_path, database_name)
-            open(db_path, "a").close()
+            target_path = self._get_connection_path(
+                self.db_path, database_name)
+
+            # Attempt to find source DB.
+            # Strategy 1: Use self.db_name (config)
+            source_candidates = [self.db_name]
+
+            # Strategy 2: Infer from temp name (e.g. 'thrombosis_prediction_GUID' -> 'thrombosis_prediction')
+            # BIRD DB names can have underscores, so we split from right.
+            if "_" in database_name:
+                # Split only last part (GUID)
+                parts = database_name.rsplit("_", 1)
+                source_candidates.append(parts[0])
+
+            copied = False
+            for src_name in source_candidates:
+                source_path = self._get_connection_path(self.db_path, src_name)
+                if os.path.exists(source_path) and os.path.getsize(source_path) > 0:
+                    import shutil
+                    shutil.copy2(source_path, target_path)
+                    copied = True
+                    break
+
+            if not copied:
+                open(target_path, "a").close()
+
         except Exception as error:
             raise RuntimeError(f"Could not create database: {error}")
         self.tmp_dbs.append(database_name)
