@@ -37,11 +37,13 @@ def compare(
     if "exact_match" in scorers:
         comparators.append(exactmatcher.ExactMatcher(scorers["exact_match"]))
     if "recall_match" in scorers:
-        comparators.append(recallmatcher.RecallMatcher(scorers["recall_match"]))
+        comparators.append(
+            recallmatcher.RecallMatcher(scorers["recall_match"]))
     if "set_match" in scorers:
         comparators.append(setmatcher.SetMatcher(scorers["set_match"]))
     if "llmrater" in scorers:
-        comparators.append(llmrater.LLMRater(scorers["llmrater"], global_models))
+        comparators.append(llmrater.LLMRater(
+            scorers["llmrater"], global_models))
     if "regexp_matcher" in scorers:
         comparators.append(
             generatedqueryregexpmatcher.GeneratedQueryRegexpMatcher(

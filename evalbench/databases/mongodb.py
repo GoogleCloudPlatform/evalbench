@@ -149,7 +149,8 @@ class MongoDB(DB):
         for table in schema.tables:
             ddl.append(f"Collection: {table.name}")
             if table.columns:
-                col_descs = [f"{col.name} ({col.type})" for col in table.columns]
+                col_descs = [
+                    f"{col.name} ({col.type})" for col in table.columns]
                 ddl.append(f"  Fields: {', '.join(col_descs)}")
         return ddl
 

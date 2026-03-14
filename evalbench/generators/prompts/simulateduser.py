@@ -37,7 +37,8 @@ class SimulatedUserPromptGenerator(PromptGenerator):
         for turn in history_list:
             history_str += f"User: {turn['user']}\nAgent: {turn['agent']}\n"
 
-        prompt = self.prompt_template.replace("[[conversation_plan]]", str(plan))
+        prompt = self.prompt_template.replace(
+            "[[conversation_plan]]", str(plan))
         prompt = prompt.replace("[[history]]", history_str)
         prompt = prompt.replace("[[last_agent_reply]]", str(last_reply))
 

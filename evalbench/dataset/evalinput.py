@@ -103,13 +103,17 @@ class EvalInputRequest:
         def _set_dialect_based_sql(self, dialect_based_sql):
             if not isinstance(dialect_based_sql, dict):
                 return None
-            response: dict[str, eval_request_pb2.DialectBasedSQLStatements] = {}  # type: ignore
+            # type: ignore
+            response: dict[str,
+                           eval_request_pb2.DialectBasedSQLStatements] = {}
             for dialect, sql_statements in dialect_based_sql.items():
-                response[dialect] = eval_request_pb2.DialectBasedSQLStatements()  # type: ignore
+                # type: ignore
+                response[dialect] = eval_request_pb2.DialectBasedSQLStatements()
                 if isinstance(sql_statements, list):
                     for sql_statement in sql_statements:
                         if isinstance(sql_statement, str):
-                            response[dialect].sql_statements.append(sql_statement)
+                            response[dialect].sql_statements.append(
+                                sql_statement)
             return response
 
     else:
@@ -173,5 +177,5 @@ def breakdown_datasets(total_dataset: list[EvalInputRequest]):
             datasets[dialect][input.database][input.query_type].append(
                 input.copy_for_dialect(dialect)
             )
-        total_dataset_len += 1
+            total_dataset_len += 1
     return datasets, total_dataset_len, total_db_len

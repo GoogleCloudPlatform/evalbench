@@ -59,7 +59,8 @@ def sign_jwt(target_sa: str, resource_url: str) -> str:
     source_credentials, project_id = google.auth.default()
 
     # Initialize IAM credentials client with source credentials
-    iam_client = iam_credentials_v1.IAMCredentialsClient(credentials=source_credentials)
+    iam_client = iam_credentials_v1.IAMCredentialsClient(
+        credentials=source_credentials)
 
     # Generate the service account resource name.
     # Project should always be "-".

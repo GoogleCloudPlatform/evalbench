@@ -74,7 +74,8 @@ class RecallMatcher(Comparator):
         dedup_golden_size = len(golden_results_set)
         dedup_generated_size = len(generated_results_set)
 
-        common_results_set = golden_results_set.intersection(generated_results_set)
+        common_results_set = golden_results_set.intersection(
+            generated_results_set)
         correct_predictions = len(common_results_set)
 
         if golden_results == generated_results:
@@ -83,10 +84,12 @@ class RecallMatcher(Comparator):
         else:
             # Calculate precision and recall
             recall = (
-                correct_predictions / len(generated_results) if generated_results else 0
+                correct_predictions /
+                len(generated_results) if generated_results else 0
             )
             precision = (
-                correct_predictions / len(golden_results) if golden_results else 0
+                correct_predictions /
+                len(golden_results) if golden_results else 0
             )
 
         full_result = {

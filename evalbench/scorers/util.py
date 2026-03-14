@@ -41,7 +41,8 @@ def with_cache_execute(
     try:
         response = execution_method(prompt)
     except Exception as e:
-        logging.error(f"Execution method failed for prompt: {prompt} with error: {e}")
+        logging.error(
+            f"Execution method failed for prompt: {prompt} with error: {e}")
         return None
 
     # Attempt to cache the result

@@ -92,6 +92,9 @@ class SpannerDB(DB):
         def _run_execute(query, eval_query=None, rollback=False):
             result, eval_result, error = [], [], None
             try:
+                # Spanner snapshots are read-only and don't need rollback.
+                # If rollback=True, we might want to ensure no side effects,
+                # but snapshot() is safe.
                 with self.database.snapshot() as snapshot:
                     res = snapshot.execute_sql(query)
                     rows = list(res)

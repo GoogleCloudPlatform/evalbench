@@ -2,6 +2,7 @@ import sqlalchemy
 import sqlparse
 from sqlalchemy import text, MetaData
 from sqlalchemy.engine.base import Connection
+import pymysql
 import logging
 from .db import DB
 from google.cloud.sql.connector import Connector
@@ -47,37 +48,81 @@ class MySQLDB(DB):
 
     def __init__(self, db_config):
         super().__init__(db_config)
-        self.connector = Connector()
+
+        # Auto-deduce use_cloud_sql: format is PROJECT:REGION:INSTANCE (2 colons)
+        self.use_cloud_sql = db_config.get("use_cloud_sql")
+        if self.use_cloud_sql is None:
+            self.use_cloud_sql = (self.db_path.count(":") == 2)
+
+        self.connector = Connector() if self.use_cloud_sql else None
 
         def get_conn():
-            conn = self.connector.connect(
-                self.db_path,
-                "pymysql",
-                user=self.username,
-                password=self.password,
-                db=self.db_name,
-            )
-            return conn
-
-        def get_engine_args():
-            common_args = {
-                "creator": get_conn,
-                "connect_args": {"command_timeout": 60, "multi_statements": True},
-            }
-            if "is_tmp_db" in db_config:
-                common_args["pool_size"] = 1
-                common_args["pool_recycle"] = 300
+            """Callable for sqlalchemy 'creator' parameter."""
+            if self.use_cloud_sql:
+                return self.connector.connect(
+                    self.db_path,
+                    "pymysql",
+                    user=self.username,
+                    password=self.password,
+                    db=self.db_name,
+                )
             else:
-                common_args["pool_size"] = 50
-                common_args["pool_recycle"] = 300
-            return common_args
+                # Local/Direct connection
+                host = self.db_path
+                port = 3306
+                if ":" in self.db_path:
+                    parts = self.db_path.split(":")
+                    host = parts[0]
+                    port = int(parts[1])
 
-        self.engine = sqlalchemy.create_engine("mysql+pymysql://", **get_engine_args())
+                return pymysql.connect(
+                    host=host,
+                    port=port,
+                    user=self.username,
+                    password=self.password or "",
+                    database=self.db_name
+                )
+
+        def get_engine_config():
+            """Returns (db_url, engine_args)"""
+            args = {
+                "connect_args": {},
+            }
+            url = ""
+
+            if self.use_cloud_sql:
+                args["creator"] = get_conn
+                # Cloud SQL needs explicit command_timeout and multi_statements
+                args["connect_args"]["command_timeout"] = 60
+                args["connect_args"]["multi_statements"] = True
+                url = "mysql+pymysql://"
+            else:
+                # Standard local connection via URL
+                # SQLAlchemy parses this URL and loads the driver internally
+                args["connect_args"]["connect_timeout"] = 60
+
+                password_part = f":{self.password}" if self.password else ""
+                url = f"mysql+pymysql://{self.username}{password_part}@{self.db_path}/{self.db_name}"
+
+                password_part = f":{self.password}" if self.password else ""
+                url = f"mysql+pymysql://{self.username}{password_part}@{self.db_path}/{self.db_name}"
+
+            if "is_tmp_db" in db_config:
+                args["pool_size"] = 1
+                args["pool_recycle"] = 300
+            else:
+                args["pool_size"] = 50
+                args["pool_recycle"] = 300
+            return url, args
+
+        db_url, engine_args = get_engine_config()
+        self.engine = sqlalchemy.create_engine(db_url, **engine_args)
 
     def close_connections(self):
         try:
             self.engine.dispose()
-            self.connector.close()
+            if self.connector:
+                self.connector.close()
         except Exception:
             logging.warning(
                 f"Failed to close connections. This may result in idle unused connections."
@@ -143,7 +188,8 @@ class MySQLDB(DB):
                         result = self._execute_queries(connection, query)
 
                         if eval_query:
-                            eval_result = self._execute_queries(connection, eval_query)
+                            eval_result = self._execute_queries(
+                                connection, eval_query)
 
                         if batch_commands and len(batch_commands) > 0:
                             for command in batch_commands:
@@ -181,7 +227,8 @@ class MySQLDB(DB):
                 for table in metadata.tables.values():
                     columns = []
                     for column in table.columns:
-                        columns.append({"name": column.name, "type": str(column.type)})
+                        columns.append(
+                            {"name": column.name, "type": str(column.type)})
                     db_metadata[table.name] = columns
         except Exception:
             pass
@@ -203,7 +250,8 @@ class MySQLDB(DB):
             columns = ", ".join(
                 [f"{column.name} {column.type}" for column in table.columns]
             )
-            create_statements.append(f"CREATE TABLE `{table.name}` ({columns});")
+            create_statements.append(
+                f"CREATE TABLE `{table.name}` ({columns});")
         return create_statements
 
     def create_tmp_database(self, database_name: str):

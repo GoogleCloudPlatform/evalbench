@@ -46,6 +46,7 @@ class TestSessionManager:
         assert session_count == 1
         time.sleep(
             10
-        )  # TODO: to mock out time.time instead() see: https://pypi.org/project/freezegun/ maybe
+            # TODO: to mock out time.time instead() see: https://pypi.org/project/freezegun/ maybe
+        )
         session_count = len(manager.get_sessions())
         assert session_count == 0

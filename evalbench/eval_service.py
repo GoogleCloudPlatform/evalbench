@@ -46,9 +46,11 @@ class SessionManagerInterceptor(grpc.aio.ServerInterceptor):
         ],
         handler_call_details: grpc.HandlerCallDetails,
     ) -> grpc.RpcMethodHandler:
-        _metadata = dict(handler_call_details.invocation_metadata)  # type: ignore
+        # type: ignore
+        _metadata = dict(handler_call_details.invocation_metadata)
         if rpc_id_var.get() == "default":
-            _metadata = dict(handler_call_details.invocation_metadata)  # type: ignore
+            # type: ignore
+            _metadata = dict(handler_call_details.invocation_metadata)
             rpc_id_var.set(self.decorate(_metadata["client-rpc-id"]))
             SESSIONMANAGER.create_session(rpc_id_var.get())
         else:
@@ -87,9 +89,11 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
     ) -> eval_response_pb2.EvalResponse:
         experiment_config = yaml.safe_load(request.yaml_config.decode("utf-8"))
         session = SESSIONMANAGER.get_session(rpc_id_var.get())
-        SESSIONMANAGER.write_resource_files(rpc_id_var.get(), request.resources)
+        SESSIONMANAGER.write_resource_files(
+            rpc_id_var.get(), request.resources)
         resource_map = {r.address: r.address for r in request.resources}
-        update_google3_relative_paths(experiment_config, rpc_id_var.get(), resource_map)
+        update_google3_relative_paths(
+            experiment_config, rpc_id_var.get(), resource_map)
         set_session_configs(session, experiment_config)
         return eval_response_pb2.EvalResponse(response=f"ack")
 
@@ -102,7 +106,8 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         logging.info("Retrieving Evals for: %s.", rpc_id_var.get())
         experiment_config = session["config"]
         dataset_config_json = experiment_config["dataset_config"]
-        dataset = load_dataset_from_json(dataset_config_json, experiment_config)
+        dataset = load_dataset_from_json(
+            dataset_config_json, experiment_config)
         for _, eval_inputs in dataset.items():
             for eval_input in eval_inputs:
                 eval_input_request = eval_input.to_proto()
@@ -114,7 +119,8 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         context: grpc.ServicerContext,
     ) -> eval_response_pb2.EvalResponse:
         session = SESSIONMANAGER.get_session(rpc_id_var.get())
-        config, db_configs, model_config, setup_config = load_session_configs(session)
+        config, db_configs, model_config, setup_config = load_session_configs(
+            session)
         dataset = await get_dataset_from_request(request_iterator)
 
         evaluator = get_orchestrator(

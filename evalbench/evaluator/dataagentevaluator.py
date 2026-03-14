@@ -140,7 +140,8 @@ class DataAgentEvaluator:
                 turn = eval_output["payload"]["turn"]
                 eval_output[f"user_turn_{turn}"] = eval_output["payload"]["prompt"]
                 eval_output["step_type"] = InteractionType.LLM_QUESTION_PROMPT
-                work = promptgenwork.SQLPromptGenWork(prompt_generator, eval_output)
+                work = promptgenwork.SQLPromptGenWork(
+                    prompt_generator, eval_output)
                 eval_output = work.run()
                 if eval_output["prompt_generator_error"] is None:
                     record_successful_prompt_gen(progress_reporting)
@@ -169,7 +170,8 @@ class DataAgentEvaluator:
 
             if next_step == InteractionType.DISAMBIGUATE:
                 eval_output["step_type"] = InteractionType.VUSER_ENCODE
-                work = dataagentvuserwork.DataAgentVUserWork(self.vuser, eval_output)
+                work = dataagentvuserwork.DataAgentVUserWork(
+                    self.vuser, eval_output)
                 eval_output = work.run()
                 if eval_output["vuser_error"] is None:
                     eval_output["payload"]["prompt"] = eval_output["generated"]
