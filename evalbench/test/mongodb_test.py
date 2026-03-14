@@ -51,8 +51,9 @@ class TestMongoDB:
         # Insert data
         data = {
             "users": [
-                json.dumps({"name": "Alice", "age": 30}),
-                json.dumps({"name": "Bob", "age": 25}),
+                ["name", "age"],
+                ["Alice", 30],
+                ["Bob", 25],
             ]
         }
         client.insert_data(data)
