@@ -70,6 +70,7 @@ class SpannerDB(DB):
         self.instance_id = db_config["instance_id"]
         # Spanner database IDs cannot end with an underscore
         db_name = db_config["database_name"].rstrip("_")
+        client_kwargs["disable_builtin_metrics"] = True
         client = spanner.Client(**client_kwargs)
         self.spanner_instance = client.instance(self.instance_id)
         self.database = self.spanner_instance.database(db_name, database_dialect=self.dialect_enum)
@@ -300,6 +301,22 @@ class SpannerDB(DB):
         
         super().resetup_database(force=force, setup_users=setup_users)
 
+
+    def ensure_database_exists(self, database_name: str) -> None:
+        from google.cloud import spanner
+        from google.api_core import exceptions
+        with spanner.Client(disable_builtin_metrics=True) as spanner_client:
+            instance_id = self.db_path.split("/")[-1]
+            instance = spanner_client.instance(instance_id)
+            database = instance.database(database_name)
+            try:
+                op = database.create()
+                op.result()  # Wait for completion
+            except exceptions.AlreadyExists:
+                pass
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to create Spanner DB {database_name}: {e}") from e
 
     def drop_all_tables(self):
         self._ensure_pool_bound()
