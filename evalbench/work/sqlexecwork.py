@@ -25,6 +25,12 @@ class SQLExecWork(Work):
         self.db_queue = db_queue
 
     def run(self, work_config: Any = None) -> dict:
+        try:
+            return self._run_inner(work_config)
+        finally:
+            self.db_queue.put(self.db)
+
+    def _run_inner(self, work_config: Any = None) -> dict:
         """Runs the work item.
 
         Args:
@@ -77,7 +83,6 @@ class SQLExecWork(Work):
         self.eval_result["golden_eval_results"] = golden_eval_result
         self.eval_result["golden_error"] = golden_error
 
-        self.db_queue.put(self.db)
         return self.eval_result
 
     def _evaluate_execution_results(
@@ -112,7 +117,8 @@ class SQLExecWork(Work):
                 return (
                     None,
                     None,
-                    f"Was not able to run DDL due to setup_error {setup_error}",
+                    "Was not able to run DDL "
+                    f"due to setup_error {setup_error}",
                 )
             result, _, error = self.db.execute(query, use_cache=False)
             eval_result = self.db.get_metadata()
@@ -124,7 +130,9 @@ class SQLExecWork(Work):
             self.experiment_config["prompt_generator"] == "NOOPGenerator"
             and self.experiment_config["dialect"] != "googlesql"
         ):
-            self.eval_result["sanitized_sql"] = self.eval_result["generated_sql"]
+            self.eval_result["sanitized_sql"] = self.eval_result[
+                "generated_sql"
+            ]
         else:
             self.eval_result["sanitized_sql"] = sanitize_sql(
                 self.eval_result["generated_sql"]
@@ -143,7 +151,8 @@ class SQLExecWork(Work):
         return golden_sql
 
     def _get_eval_query(self):
-        if self.eval_result["eval_query"] and len(self.eval_result["eval_query"]) > 0:
+        if self.eval_result["eval_query"] and len(
+                self.eval_result["eval_query"]) > 0:
             return self.eval_result["eval_query"][0]
         else:
             return None
