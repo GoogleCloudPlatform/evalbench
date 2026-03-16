@@ -286,6 +286,22 @@ class SpannerDB(DB):
             raise RuntimeError(
                 f"Failed to create Spanner DB {database_name}: {e}") from e
 
+    def ensure_database_exists(self, database_name: str) -> None:
+        from google.cloud import spanner
+        from google.api_core import exceptions
+        with spanner.Client() as spanner_client:
+            instance_id = self.db_path.split("/")[-1]
+            instance = spanner_client.instance(instance_id)
+            database = instance.database(database_name)
+            try:
+                op = database.create()
+                op.result()  # Wait for completion
+            except exceptions.AlreadyExists:
+                pass
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to create Spanner DB {database_name}: {e}") from e
+
     def drop_all_tables(self):
         try:
             if not self.database.exists():

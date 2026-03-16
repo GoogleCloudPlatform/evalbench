@@ -227,6 +227,14 @@ class SQLiteDB(DB):
         except Exception as error:
             logging.error(f"Could not delete database: {error}")
 
+    def ensure_database_exists(self, database_name: str) -> None:
+        import sqlite3
+        import os
+        filename = f"{self.db_path}/{database_name}{self.extension}"
+        os.makedirs(self.db_path, exist_ok=True)
+        conn = sqlite3.connect(filename)
+        conn.close()
+
     def drop_all_tables(self):
         try:
             result = self.execute(GET_TABLES_SQL)

@@ -236,6 +236,27 @@ class PGDB(DB):
         if error:
             logging.info(f"Could not delete database: {error}")
 
+    def ensure_database_exists(self, database_name: str) -> None:
+        from google.cloud.sql.connector import Connector
+        import sqlalchemy
+        from sqlalchemy import text
+
+        connector = Connector()
+        try:
+            def get_conn():
+                return connector.connect(self.db_path, "pg8000", user=self.username, password=self.password, db="postgres")
+            engine = sqlalchemy.create_engine("postgresql+pg8000://", creator=get_conn, isolation_level="AUTOCOMMIT")
+            with engine.connect() as conn:
+                try:
+                    conn.execute(text(f"CREATE DATABASE {database_name};"))
+                except sqlalchemy.exc.ProgrammingError as e:
+                    if 'already exists' not in str(e):
+                        raise RuntimeError(f"Failed to create Postgres DB {database_name}: {e}") from e
+                except Exception as e:
+                    raise RuntimeError(f"Failed to connect and create Postgres DB {database_name}: {e}") from e
+        finally:
+            connector.close()
+
     def drop_all_tables(self):
         _, _, error = self.execute(DROP_ALL_TABLES_QUERY)
         if error:
