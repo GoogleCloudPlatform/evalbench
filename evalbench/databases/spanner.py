@@ -2,12 +2,14 @@ import logging
 import os
 import json
 import contextlib
+import time
+from decimal import Decimal
 from typing import Any, List, Optional, Tuple
 from dateutil.parser import parse as parse_date
 from datetime import timezone
 
+from google.api_core import exceptions
 from google.cloud import spanner
-from google.cloud import spanner_admin_database_v1
 from google.cloud.spanner_admin_database_v1.types import DatabaseDialect
 
 from .db import DB
@@ -255,53 +257,16 @@ class SpannerDB(DB):
         # Spanner database IDs cannot end with an underscore
         database_name = database_name.rstrip("_")
         logging.info(f"Creating temporary Spanner database: {database_name}...")
-        project_id = self.project_id
-        instance_id = self.instance_id
-
-        parent = f"projects/{project_id}/instances/{instance_id}"
-
-        # We need the admin client
-
-
-        admin_client = spanner_admin_database_v1.DatabaseAdminClient()
-
-        # Determine dialect
-        dialect_enum = self.dialect_enum
-
-        # Create statement
-        if dialect_enum == DatabaseDialect.POSTGRESQL:
-            create_statement = f'CREATE DATABASE "{database_name}"'
-        else:
-            create_statement = f"CREATE DATABASE `{database_name}`"
-
-        request = spanner_admin_database_v1.CreateDatabaseRequest(
-            parent=parent,
-            create_statement=create_statement,
-            database_dialect=dialect_enum
-        )
-
-        try:
-            operation = admin_client.create_database(request=request)
-            operation.result(timeout=600)
-            logging.info(f"Successfully created Spanner database {database_name}.")
-        except Exception as e:
-            logging.error(f"Failed to create temporary Spanner database {database_name}: {e}")
-            raise e
+        self.ensure_database_exists(database_name)
 
     def drop_tmp_database(self, database_name):
         database_name = database_name.rstrip("_")
         logging.info(f"Dropping temporary Spanner database: {database_name}...")
-        project_id = self.project_id
-        instance_id = self.instance_id
-
-        database_path = f"projects/{project_id}/instances/{instance_id}/databases/{database_name}"
-
-
-
-        admin_client = spanner_admin_database_v1.DatabaseAdminClient()
-
         try:
-            admin_client.drop_database(database=database_path)
+            spanner_client = spanner.Client(disable_builtin_metrics=True)
+            instance = spanner_client.instance(self.instance_id)
+            database = instance.database(database_name)
+            database.drop()
             logging.info(f"Successfully dropped Spanner database {database_name}.")
         except Exception as e:
             logging.warning(f"Failed to drop temporary Spanner database {database_name}: {e}")
@@ -317,7 +282,6 @@ class SpannerDB(DB):
                 logging.warning(f"Database {db_id} exists but has wrong dialect ({self.database.database_dialect} != {self.dialect_enum}). Dropping it.")
                 self.drop_tmp_database(db_id)
                 # Wait for drop to complete (drop is usually fast, but just in case)
-                import time
                 time.sleep(2)
 
         if not self.database.exists():
@@ -326,17 +290,16 @@ class SpannerDB(DB):
 
         super().resetup_database(force=force, setup_users=setup_users)
 
-
     def ensure_database_exists(self, database_name: str) -> None:
-        from google.cloud import spanner
-        from google.api_core import exceptions
         spanner_client = spanner.Client(disable_builtin_metrics=True)
         instance_id = self.instance_id
         instance = spanner_client.instance(instance_id)
-        database = instance.database(database_name)
+        # Create database with the configured dialect
+        database = instance.database(database_name, database_dialect=self.dialect_enum)
         try:
             op = database.create()
             op.result()  # Wait for completion
+            logging.info(f"Successfully created Spanner database {database_name}.")
         except exceptions.AlreadyExists:
             pass
         except Exception as e:
@@ -453,7 +416,6 @@ class SpannerDB(DB):
                     for idx in info["numeric_indices"]:
                         if idx < len(p_row) and p_row[idx]:
                             try:
-                                from decimal import Decimal
                                 p_row[idx] = Decimal(str(p_row[idx]))
                             except BaseException:
                                 pass
