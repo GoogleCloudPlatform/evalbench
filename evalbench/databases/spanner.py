@@ -15,7 +15,7 @@ if "SPANNER_DISABLE_BUILTIN_METRICS" not in os.environ:
     try:
         req = urllib.request.Request("http://metadata.google.internal/computeMetadata/v1/instance/id", headers={"Metadata-Flavor": "Google"})
         with urllib.request.urlopen(req, timeout=1) as response:
-            pass 
+            pass
     except Exception:
         os.environ["SPANNER_DISABLE_BUILTIN_METRICS"] = "true"
 
@@ -41,11 +41,12 @@ class SpannerDB(DB):
         self.config = db_config
         self.dialect = db_config.get("dialect", "spanner_gsql")
         self.db_type = "spanner"
-        self.engine = None 
-        
+        self.engine = None
+
         self.emulator_manager = None
-        self.use_managed_emulator = db_config.get("use_managed_emulator", False)
-        
+        self.use_managed_emulator = db_config.get(
+            "use_managed_emulator", False)
+
         raw_dialect = self.dialect.lower()
         logging.info(f"DEBUG: SpannerDB init for {db_config.get('database_name')} with self.dialect={self.dialect}")
         if "pg" in raw_dialect or "postgres" in raw_dialect:
@@ -59,12 +60,16 @@ class SpannerDB(DB):
         if self.use_managed_emulator:
             self.emulator_manager = SpannerEmulatorManager()
             self.emulator_manager.start()
-            client_kwargs.update(self.emulator_manager.get_client_config(db_config["gcp_project_id"]))
+            client_kwargs.update(self.emulator_manager.get_client_config(
+                db_config["gcp_project_id"]))
             self.emulator_manager.provision_database(
-                db_config["gcp_project_id"], db_config["instance_id"], db_config["database_name"], dialect=self.expected_dialect_str
-            )
+                db_config["gcp_project_id"],
+                db_config["instance_id"],
+                db_config["database_name"],
+                dialect=self.expected_dialect_str)
         elif not os.environ.get("SPANNER_EMULATOR_HOST"):
-            client_kwargs["client_options"] = {"api_endpoint": "spanner.googleapis.com"}
+            client_kwargs["client_options"] = {
+                "api_endpoint": "spanner.googleapis.com"}
 
         self.project_id = db_config["gcp_project_id"]
         self.instance_id = db_config["instance_id"]
@@ -92,10 +97,12 @@ class SpannerDB(DB):
                     raise e
 
     def close_connections(self):
-        if self.emulator_manager: self.emulator_manager.stop()
+        if self.emulator_manager:
+            self.emulator_manager.stop()
 
     def batch_execute(self, commands: list[str]):
-        if not commands: return
+        if not commands:
+            return
         self._ensure_pool_bound()
         logging.info(f"DEBUG: Executing batch in {self.database.database_id}. Object dialect: {self.database.database_dialect}")
         logging.info(f"DEBUG: Executing batch of {len(commands)} statements in Spanner {self.expected_dialect_str} for {self.database.database_id}")
@@ -105,7 +112,8 @@ class SpannerDB(DB):
             op = self.database.update_ddl(commands)
             op.result(timeout=600)
         except Exception as e:
-            logging.warning(f"update_ddl failed, trying individual execution: {e}")
+            logging.warning(
+                f"update_ddl failed, trying individual execution: {e}")
             for stmt in commands:
                 _, _, error = self.execute(stmt)
                 if error:
@@ -113,15 +121,17 @@ class SpannerDB(DB):
                     if "Duplicate name" in error or "already exists" in error:
                         logging.info(f"Ignoring duplicate error during fallback: {error}")
                     else:
-                        raise RuntimeError(f"Error in batch statement: {stmt}\nError: {error}")
+                        raise RuntimeError(
+                            f"Error in batch statement: {stmt}\nError: {error}")
 
     def execute(self, query, eval_query=None, use_cache=False, rollback=False):
-        if query.strip() == "": return None, None, None
-        
+        if query.strip() == "":
+            return None, None, None
+
         # Detect DDL
         upper_query = query.strip().upper()
         is_ddl = any(upper_query.startswith(prefix) for prefix in ["CREATE", "ALTER", "DROP", "RENAME"])
-        
+
         if is_ddl:
             self._ensure_pool_bound()
             logging.info(f"Executing DDL in Spanner: {query[:100]}...")
@@ -131,68 +141,89 @@ class SpannerDB(DB):
                 return [{"status": "success"}], None, None
             except Exception as e:
                 return None, None, str(e)
-                
+
         return self._execute(query, eval_query, rollback)
 
     def _execute(self, query, eval_query=None, rollback=False):
         self._ensure_pool_bound()
-        
+
         # Detect INFORMATION_SCHEMA queries which cannot be run in RW transactions
         if "information_schema" in query.lower():
             rollback = False
-            
-        is_dml = any(query.strip().upper().startswith(prefix) for prefix in ["INSERT", "UPDATE", "DELETE"])
+
+        is_dml = any(query.strip().upper().startswith(prefix)
+                     for prefix in ["INSERT", "UPDATE", "DELETE"])
 
         def _run_execute(query, eval_query=None, rollback=False):
             result, eval_result, error = [], [], None
-            
+
             if is_dml or rollback:
-                class RollbackException(Exception): pass
+                class RollbackException(Exception):
+                    pass
+
                 def _tx_logic(transaction):
                     nonlocal result, eval_result, error
                     try:
                         if is_dml:
-                            rows_affected = transaction.execute_update(query, timeout=15)
+                            rows_affected = transaction.execute_update(
+                                query, timeout=15)
                             result = [{"rows_affected": rows_affected}]
                         else:
                             res = transaction.execute_sql(query, timeout=15)
                             rows = list(res)
-                            fields = [f.name for f in res.fields] if res.fields else []
+                            fields = [
+                                f.name for f in res.fields] if res.fields else []
                             result = [dict(zip(fields, row)) for row in rows]
-                        
+
                         if eval_query:
-                            res_eval = transaction.execute_sql(eval_query, timeout=15)
+                            res_eval = transaction.execute_sql(
+                                eval_query, timeout=15)
                             rows_eval = list(res_eval)
-                            fields_eval = [f.name for f in res_eval.fields] if res_eval.fields else []
-                            eval_result = [dict(zip(fields_eval, row)) for row in rows_eval]
+                            fields_eval = [
+                                f.name for f in res_eval.fields] if res_eval.fields else []
+                            eval_result = [dict(zip(fields_eval, row))
+                                           for row in rows_eval]
                     except Exception as e:
                         error = str(e)
                     raise RollbackException()
-                
+
                 try:
                     self.database.run_in_transaction(_tx_logic)
-                except RollbackException: pass
+                except RollbackException:
+                    pass
                 except Exception as e:
-                    if not error: error = str(e)
+                    if not error:
+                        error = str(e)
             else:
                 try:
                     with self.database.snapshot() as snapshot:
                         res = snapshot.execute_sql(query, timeout=15)
                         rows = list(res)
-                        fields = [f.name for f in res.fields] if res.fields else []
+                        fields = [
+                            f.name for f in res.fields] if res.fields else []
                         result = [dict(zip(fields, row)) for row in rows]
-                        
+
                         if eval_query:
-                            res_eval = snapshot.execute_sql(eval_query, timeout=15)
+                            res_eval = snapshot.execute_sql(
+                                eval_query, timeout=15)
                             rows_eval = list(res_eval)
-                            fields_eval = [f.name for f in res_eval.fields] if res_eval.fields else []
-                            eval_result = [dict(zip(fields_eval, row)) for row in rows_eval]
+                            fields_eval = [
+                                f.name for f in res_eval.fields] if res_eval.fields else []
+                            eval_result = [dict(zip(fields_eval, row))
+                                           for row in rows_eval]
                 except Exception as e:
                     error = str(e)
             return result, eval_result, error
 
         try:
-            return rate_limit((query, eval_query, rollback), _run_execute, self.execs_per_minute, self.semaphore, self.max_attempts)
+            return rate_limit(
+                (query,
+                 eval_query,
+                 rollback),
+                _run_execute,
+                self.execs_per_minute,
+                self.semaphore,
+                self.max_attempts)
         except ResourceExhaustedError:
             return None, None, None
 
@@ -207,14 +238,21 @@ class SpannerDB(DB):
                 res = snapshot.execute_sql(query, timeout=15)
                 for row in res:
                     t_name, c_name, d_type = row[0], row[1], row[2]
-                    if t_name not in db_metadata: db_metadata[t_name] = []
-                    db_metadata[t_name].append({"name": c_name, "type": str(d_type)})
-            
+                    if t_name not in db_metadata:
+                        db_metadata[t_name] = []
+                    db_metadata[t_name].append(
+                        {"name": c_name, "type": str(d_type)})
+
             if db_metadata:
-                logging.info(f"Metadata extracted for {len(db_metadata)} tables in Spanner {self.expected_dialect_str}")
+                logging.info(
+                    f"Metadata extracted for {
+                        len(db_metadata)} tables in Spanner {
+                        self.expected_dialect_str}")
                 return db_metadata
             else:
-                logging.warning(f"No metadata found in Spanner {self.expected_dialect_str} information_schema for schema '{schema_name}'")
+                logging.warning(
+                    f"No metadata found in Spanner {
+                        self.expected_dialect_str} information_schema for schema '{schema_name}'")
         except Exception as e:
             logging.error(f"Native metadata inspection failed: {e}")
         return db_metadata
@@ -232,29 +270,29 @@ class SpannerDB(DB):
         logging.info(f"Creating temporary Spanner database: {database_name}...")
         project_id = self.project_id
         instance_id = self.instance_id
-        
+
         parent = f"projects/{project_id}/instances/{instance_id}"
-        
+
         # We need the admin client
 
 
         admin_client = spanner_admin_database_v1.DatabaseAdminClient()
-        
+
         # Determine dialect
         dialect_enum = self.dialect_enum
-        
+
         # Create statement
         if dialect_enum == DatabaseDialect.POSTGRESQL:
             create_statement = f'CREATE DATABASE "{database_name}"'
         else:
             create_statement = f"CREATE DATABASE `{database_name}`"
-            
+
         request = spanner_admin_database_v1.CreateDatabaseRequest(
             parent=parent,
             create_statement=create_statement,
             database_dialect=dialect_enum
         )
-        
+
         try:
             operation = admin_client.create_database(request=request)
             operation.result(timeout=600)
@@ -268,13 +306,13 @@ class SpannerDB(DB):
         logging.info(f"Dropping temporary Spanner database: {database_name}...")
         project_id = self.project_id
         instance_id = self.instance_id
-        
+
         database_path = f"projects/{project_id}/instances/{instance_id}/databases/{database_name}"
-        
+
 
 
         admin_client = spanner_admin_database_v1.DatabaseAdminClient()
-        
+
         try:
             admin_client.drop_database(database=database_path)
             logging.info(f"Successfully dropped Spanner database {database_name}.")
@@ -284,7 +322,7 @@ class SpannerDB(DB):
     def resetup_database(self, force=False, setup_users=False) -> None:
         # For Spanner, we need to ensure the database exists before we can resetup it
         db_id = self.database.database_id.rstrip("_")
-        
+
         if self.database.exists():
             # Verify the backend dialect matches what we expect
             self.database.reload()
@@ -294,11 +332,11 @@ class SpannerDB(DB):
                 # Wait for drop to complete (drop is usually fast, but just in case)
                 import time
                 time.sleep(2)
-        
+
         if not self.database.exists():
             logging.info(f"Database {db_id} does not exist. Creating it before setup...")
             self.create_tmp_database(db_id)
-        
+
         super().resetup_database(force=force, setup_users=setup_users)
 
 
@@ -329,22 +367,28 @@ class SpannerDB(DB):
                 schema_name = 'public' if self.expected_dialect_str == "POSTGRESQL" else ''
                 res = snapshot.execute_sql(f"SELECT table_name FROM information_schema.tables WHERE table_schema = '{schema_name}' AND table_type = 'BASE TABLE'", timeout=15)
                 table_names = [row[0] for row in res]
-                if not table_names: return
+                if not table_names:
+                    return
                 pending_tables = table_names
                 for _ in range(5):
-                    if not pending_tables: break
+                    if not pending_tables:
+                        break
                     next_pending = []
                     quote = '"' if self.expected_dialect_str == "POSTGRESQL" else '`'
                     for t in pending_tables:
                         try:
-                            op = self.database.update_ddl([f"DROP TABLE {quote}{t}{quote}"])
+                            op = self.database.update_ddl(
+                                [f"DROP TABLE {quote}{t}{quote}"])
                             op.result(timeout=60)
-                        except Exception: next_pending.append(t)
+                        except Exception:
+                            next_pending.append(t)
                     pending_tables = next_pending
-        except Exception: pass
+        except Exception:
+            pass
 
     def insert_data(self, data, setup=None):
-        if not data: return
+        if not data:
+            return
         self._ensure_pool_bound()
         try:
             table_info = {}
@@ -355,25 +399,44 @@ class SpannerDB(DB):
                 res = snapshot.execute_sql(query, timeout=15)
                 for row in res:
                     t_name, c_name, d_type = row[0], row[1], row[2]
-                    if t_name not in table_info: table_info[t_name] = {"columns": [], "json_indices": [], "timestamp_indices": [], "date_indices": [], "int_indices": [], "float_indices": [], "numeric_indices": [], "bool_indices": []}
+                    if t_name not in table_info:
+                        table_info[t_name] = {
+                            "columns": [],
+                            "json_indices": [],
+                            "timestamp_indices": [],
+                            "date_indices": [],
+                            "int_indices": [],
+                            "float_indices": [],
+                            "numeric_indices": [],
+                            "bool_indices": []}
                     idx = len(table_info[t_name]["columns"])
                     table_info[t_name]["columns"].append(c_name)
                     if d_type:
                         dt = d_type.lower()
-                        if "json" in dt: table_info[t_name]["json_indices"].append(idx)
-                        elif "timestamp" in dt: table_info[t_name]["timestamp_indices"].append(idx)
-                        elif "date" in dt: table_info[t_name]["date_indices"].append(idx)
-                        elif "int" in dt: table_info[t_name]["int_indices"].append(idx)
-                        elif "numeric" in dt: table_info[t_name]["numeric_indices"].append(idx)
-                        elif "float" in dt or "double" in dt: table_info[t_name]["float_indices"].append(idx)
-                        elif "bool" in dt: table_info[t_name]["bool_indices"].append(idx)
-            
+                        if "json" in dt:
+                            table_info[t_name]["json_indices"].append(idx)
+                        elif "timestamp" in dt:
+                            table_info[t_name]["timestamp_indices"].append(idx)
+                        elif "date" in dt:
+                            table_info[t_name]["date_indices"].append(idx)
+                        elif "int" in dt:
+                            table_info[t_name]["int_indices"].append(idx)
+                        elif "numeric" in dt:
+                            table_info[t_name]["numeric_indices"].append(idx)
+                        elif "float" in dt or "double" in dt:
+                            table_info[t_name]["float_indices"].append(idx)
+                        elif "bool" in dt:
+                            table_info[t_name]["bool_indices"].append(idx)
+
             for table_name, rows in data.items():
                 info = table_info.get(table_name)
                 if not info:
                     for k, v in table_info.items():
-                        if k.lower() == table_name.lower(): info = v; break
-                if not info: continue
+                        if k.lower() == table_name.lower():
+                            info = v
+                            break
+                if not info:
+                    continue
                 columns = info["columns"]
                 processed_rows = []
                 for row in rows:
@@ -382,23 +445,31 @@ class SpannerDB(DB):
                         v = p_row[i]
                         if isinstance(v, str):
                             vs = v.strip()
-                            if vs.startswith("'") and vs.endswith("'"): vs = vs[1:-1]
-                            if vs.lower() in ("", "null"): p_row[i] = None
-                            else: p_row[i] = vs
-                    for idx in info["int_indices"]: 
+                            if vs.startswith("'") and vs.endswith("'"):
+                                vs = vs[1:-1]
+                            if vs.lower() in ("", "null"):
+                                p_row[i] = None
+                            else:
+                                p_row[i] = vs
+                    for idx in info["int_indices"]:
                         if idx < len(p_row) and p_row[idx]:
-                            try: p_row[idx] = int(p_row[idx])
-                            except: pass
+                            try:
+                                p_row[idx] = int(p_row[idx])
+                            except BaseException:
+                                pass
                     for idx in info["float_indices"]:
                         if idx < len(p_row) and p_row[idx]:
-                            try: p_row[idx] = float(p_row[idx])
-                            except: pass
+                            try:
+                                p_row[idx] = float(p_row[idx])
+                            except BaseException:
+                                pass
                     for idx in info["numeric_indices"]:
                         if idx < len(p_row) and p_row[idx]:
                             try:
                                 from decimal import Decimal
                                 p_row[idx] = Decimal(str(p_row[idx]))
-                            except: pass
+                            except BaseException:
+                                pass
                     for idx in info["bool_indices"]:
                         if idx < len(p_row) and p_row[idx]:
                             bs = str(p_row[idx]).lower()
@@ -407,28 +478,38 @@ class SpannerDB(DB):
                         if idx < len(p_row) and p_row[idx]:
                             try:
                                 dt = parse_date(p_row[idx])
-                                if not dt.tzinfo: dt = dt.replace(tzinfo=timezone.utc)
+                                if not dt.tzinfo:
+                                    dt = dt.replace(tzinfo=timezone.utc)
                                 p_row[idx] = dt
-                            except: pass
+                            except BaseException:
+                                pass
                     for idx in info["date_indices"]:
                         if idx < len(p_row) and p_row[idx]:
-                            try: p_row[idx] = parse_date(p_row[idx]).date()
-                            except: pass
+                            try:
+                                p_row[idx] = parse_date(p_row[idx]).date()
+                            except BaseException:
+                                pass
                     for idx in info["json_indices"]:
                         if idx < len(p_row) and p_row[idx]:
                             try:
                                 parsed = json.loads(p_row[idx])
-                                p_row[idx] = json.dumps(parsed) if self.expected_dialect_str == "POSTGRESQL" else spanner.Json(parsed)
-                            except: pass
+                                p_row[idx] = json.dumps(
+                                    parsed) if self.expected_dialect_str == "POSTGRESQL" else spanner.Json(parsed)
+                            except BaseException:
+                                pass
                     processed_rows.append(p_row)
-                
+
                 batch_size = 500
                 for i in range(0, len(processed_rows), batch_size):
                     batch = processed_rows[i:i + batch_size]
                     with self.database.batch() as b:
-                        b.insert(table=table_name, columns=columns, values=batch)
+                        b.insert(table=table_name,
+                                 columns=columns, values=batch)
         except Exception as e:
             raise RuntimeError(f"Could not insert data into Spanner: {e}")
 
-    def create_tmp_users(self, dql_user, dml_user, tmp_password): pass
-    def delete_tmp_user(self, username): pass
+    def create_tmp_users(self, dql_user, dml_user, tmp_password):
+        pass
+
+    def delete_tmp_user(self, username):
+        pass
