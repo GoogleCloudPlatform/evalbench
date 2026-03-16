@@ -6,19 +6,6 @@ from typing import Any, List, Optional, Tuple
 from dateutil.parser import parse as parse_date
 from datetime import timezone
 
-import urllib.request
-import urllib.error
-
-# Disable Spanner built-in metrics if GCP metadata server (instance_id) is unreachable
-# to prevent gRPC 'InactiveRpcError' telemetry failures during batch evaluations.
-if "SPANNER_DISABLE_BUILTIN_METRICS" not in os.environ:
-    try:
-        req = urllib.request.Request("http://metadata.google.internal/computeMetadata/v1/instance/id", headers={"Metadata-Flavor": "Google"})
-        with urllib.request.urlopen(req, timeout=1) as response:
-            pass
-    except Exception:
-        os.environ["SPANNER_DISABLE_BUILTIN_METRICS"] = "true"
-
 from google.cloud import spanner
 from google.cloud import spanner_admin_database_v1
 from google.cloud.spanner_admin_database_v1.types import DatabaseDialect
@@ -48,7 +35,7 @@ class SpannerDB(DB):
             "use_managed_emulator", False)
 
         raw_dialect = self.dialect.lower()
-        logging.info(f"DEBUG: SpannerDB init for {db_config.get('database_name')} with self.dialect={self.dialect}")
+        logging.debug(f"SpannerDB init for {db_config.get('database_name')} with self.dialect={self.dialect}")
         if "pg" in raw_dialect or "postgres" in raw_dialect:
             self.dialect_enum = DatabaseDialect.POSTGRESQL
             self.expected_dialect_str = "POSTGRESQL"
@@ -104,10 +91,10 @@ class SpannerDB(DB):
         if not commands:
             return
         self._ensure_pool_bound()
-        logging.info(f"DEBUG: Executing batch in {self.database.database_id}. Object dialect: {self.database.database_dialect}")
-        logging.info(f"DEBUG: Executing batch of {len(commands)} statements in Spanner {self.expected_dialect_str} for {self.database.database_id}")
+        logging.debug(f"Executing batch in {self.database.database_id}. Object dialect: {self.database.database_dialect}")
+        logging.debug(f"Executing batch of {len(commands)} statements in Spanner {self.expected_dialect_str} for {self.database.database_id}")
         if commands:
-            logging.info(f"DEBUG: First statement: {commands[0][:100]}...")
+            logging.debug(f"First statement: {commands[0][:100]}...")
         try:
             op = self.database.update_ddl(commands)
             op.result(timeout=600)
@@ -343,18 +330,18 @@ class SpannerDB(DB):
     def ensure_database_exists(self, database_name: str) -> None:
         from google.cloud import spanner
         from google.api_core import exceptions
-        with spanner.Client(disable_builtin_metrics=True) as spanner_client:
-            instance_id = self.db_path.split("/")[-1]
-            instance = spanner_client.instance(instance_id)
-            database = instance.database(database_name)
-            try:
-                op = database.create()
-                op.result()  # Wait for completion
-            except exceptions.AlreadyExists:
-                pass
-            except Exception as e:
-                raise RuntimeError(
-                    f"Failed to create Spanner DB {database_name}: {e}") from e
+        spanner_client = spanner.Client(disable_builtin_metrics=True)
+        instance_id = self.instance_id
+        instance = spanner_client.instance(instance_id)
+        database = instance.database(database_name)
+        try:
+            op = database.create()
+            op.result()  # Wait for completion
+        except exceptions.AlreadyExists:
+            pass
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to create Spanner DB {database_name}: {e}") from e
 
     def drop_all_tables(self):
         self._ensure_pool_bound()
