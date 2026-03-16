@@ -35,6 +35,9 @@ class BigtableDB(DB):
             project=db_config["gcp_project_id"], admin=True
         )
 
+    def ensure_database_exists(self, database_name: str) -> None:
+        pass
+
     def close_connections(self):
         self.data_client.close()
         self.client.close()

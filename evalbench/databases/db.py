@@ -179,6 +179,17 @@ class DB(ABC):
         raise NotImplementedError("Subclasses must implement this method")
 
     @abstractmethod
+    def ensure_database_exists(self, database_name: str) -> None:
+        """
+        Ensures a permanent database exists, creating it if necessary.
+        * Connects using an administrative context if required to create the DB.
+
+        Args:
+            database_name (str): The name of the database.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    @abstractmethod
     def drop_all_tables(self) -> None:
         """
         Drops all tables in the database.
