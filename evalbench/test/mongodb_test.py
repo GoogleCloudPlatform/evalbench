@@ -5,6 +5,7 @@ import pytest
 import json
 import sys
 import os
+from evalbench.databases import mongodb
 
 sys.path.append(os.path.abspath(
     os.path.join(os.path.dirname(__file__), "../..")))
@@ -25,7 +26,6 @@ def client():
 
     # Directly use mongomock.MongoClient instead of patching
     # This avoids issues with where MongoClient is imported
-    from databases import mongodb
 
     # Create a mock client
     mock_client = mongomock.MongoClient("mongodb://mock-host:27017")
@@ -71,7 +71,8 @@ class TestMongoDB:
         """Tests aggregation query."""
         # Data already inserted in previous test (session scope fixture, but we might want to clean up)
         # For safety, let's insert again or assume persistence.
-        # mongomock is in-memory, so it persists for the session if not cleared.
+        # mongomock is in-memory, so it persists for the session if not
+        # cleared.
 
         query = json.dumps(
             {
