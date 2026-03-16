@@ -91,7 +91,8 @@ class DB(ABC):
         self.dql_user = "tmp_dql_user_" + generate_key()
         self.dml_user = "tmp_dml_user_" + generate_key()
         self.tmp_user_password = generate_key()
-        self.create_tmp_users(self.dql_user, self.dml_user, self.tmp_user_password)
+        self.create_tmp_users(self.dql_user, self.dml_user,
+                              self.tmp_user_password)
         self.tmp_users.extend([self.dql_user, self.dml_user])
 
     def delete_tmp_users(self, users) -> None:
@@ -174,6 +175,17 @@ class DB(ABC):
 
         Args:
             database_name (str): The name of the temporary database to drop.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    @abstractmethod
+    def ensure_database_exists(self, database_name: str) -> None:
+        """
+        Ensures a permanent database exists, creating it if necessary.
+        * Connects using an administrative context if required to create the DB.
+
+        Args:
+            database_name (str): The name of the database.
         """
         raise NotImplementedError("Subclasses must implement this method")
 

@@ -5,16 +5,15 @@ env:
   GOOGLE_CLOUD_LOCATION: "us-central1"
   GOOGLE_GENAI_USE_VERTEXAI: "true"
 setup:
-  mcp_servers:
+  fake_mcp_servers:
     "cloud-sql":
       command: "python"
       args:
-        - "-m"
-        - "evalbench.util.fake_mcp_server"
+        - "evalbench/util/fake_mcp_server.py"
         - "--server-name"
         - "cloud-sql"
         - "--config"
-        - "datasets/model_configs/gemini_cli_model.yaml"
+        - "datasets/model_configs/gemini_cli_fake_model.yaml"
 
 fake_mcp_tools:
   "cloud-sql":
@@ -39,6 +38,9 @@ fake_mcp_tools:
             type: string
             description: "The edition preset for the instance."
         required: ["project_id", "instance_name", "database_version", "password", "edition_preset"]
+      response:
+        status: "success"
+        message: "Instance created successfully"
     - name: get_instance
       description: "gets the details of a Cloud SQL instance."
       parameters:
@@ -51,3 +53,8 @@ fake_mcp_tools:
             type: string
             description: "The name of the Cloud SQL instance."
         required: ["project_id", "instance_name"]
+      response:
+        status: "failure"
+        error:
+          code: 404
+          message: "Instance not found or permission denied"

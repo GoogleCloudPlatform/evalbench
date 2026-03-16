@@ -30,5 +30,6 @@ class EvalAgentEngineSessionMgr:
 
     def list_sessions(self, app_name: str, user_id: str):
         return asyncio.run(
-            self.session_service.list_sessions(app_name=app_name, user_id=user_id)
+            self.session_service.list_sessions(
+                app_name=app_name, user_id=user_id)
         )

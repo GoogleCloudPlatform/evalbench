@@ -47,3 +47,8 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 include = ["evalbench*"]
+
+[tool.uv.workspace]
+members = [
+    "viewer",
+]

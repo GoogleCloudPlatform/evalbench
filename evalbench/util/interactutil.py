@@ -79,7 +79,8 @@ def extract_system_response(original_response):
     if "<" + sep_char + ">" in extracted_response:
         cut_idx_1 = extracted_response.find("<" + sep_char + ">")
         extracted_response = (
-            extracted_response[cut_idx_1:].replace("<" + sep_char + ">", "").strip()
+            extracted_response[cut_idx_1:].replace(
+                "<" + sep_char + ">", "").strip()
         )
 
     return extracted_response, terminate_flag
@@ -95,7 +96,8 @@ def extract_user_response(original_response):
 
     if "<s>" in extracted_response:
         cut_idx_1 = extracted_response.find("<s>")
-        extracted_response = extracted_response[cut_idx_1:].replace("<s>", "").strip()
+        extracted_response = extracted_response[cut_idx_1:].replace(
+            "<s>", "").strip()
     return extracted_response
 
 
@@ -112,8 +114,10 @@ def print_interact(item: dict):
     logging.info(f"Ambiguous User Query: {item['amb_user_query']}")
     for i in range(1, turns - 1):
         logging.info(f"Prediction[{i}]: {item[f'prediction_turn_{i}']}")
-        logging.info(f"User Encoded Answer[{i}]: {item[f'user_encoded_answer_{i}']}")
-        logging.info(f"User Decoded Answer[{i}]: {item[f'user_decoded_answer_{i}']}")
+        logging.info(
+            f"User Encoded Answer[{i}]: {item[f'user_encoded_answer_{i}']}")
+        logging.info(
+            f"User Decoded Answer[{i}]: {item[f'user_decoded_answer_{i}']}")
     logging.info(f"Results: {item[f'prediction_turn_{turns}']}")
 
 

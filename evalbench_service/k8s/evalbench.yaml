@@ -25,11 +25,11 @@ spec:
         name: evalbench-eval
         # go/gke-shipshape
         securityContext:
-          allowPrivilegeEscalation: false
+          allowPrivilegeEscalation: true
           capabilities:
             drop:
             - ALL
-          readOnlyRootFilesystem: true
+          readOnlyRootFilesystem: false
           runAsUser: 65532
           runAsGroup: 65532
           seccompProfile:

@@ -33,23 +33,30 @@ build-test:
 	$(CONTAINER_ENGINE) build  -t evalbench-test -f evalbench_service/Dockerfile .
 
 container:
-	$(CONTAINER_ENGINE) run --rm --net=host --name=evalbench_container \
+	$(CONTAINER_ENGINE) run --rm --name=evalbench_container \
+		$(if $(filter podman,$(CONTAINER_ENGINE)),--sysctl net.ipv6.conf.all.disable_ipv6=1) \
+		$(if $(filter docker,$(CONTAINER_ENGINE)),--net=host) \
 		-v ~/.config/gcloud:/root/.config/gcloud \
 		-e GOOGLE_CLOUD_PROJECT=cloud-db-nl2sql \
 		--cap-add=SYS_PTRACE	\
-		-e OPTION=--localhost \
-		-e TYPE=$(TYPE) evalbench:latest /evalbench/run_service.sh 
+		-e CLOUD_RUN=True \
+		-p 3000:3000 \
+		-p 50051:50051 \
+		-e TYPE=$(TYPE) evalbench:latest
 
 shell:
-	$(CONTAINER_ENGINE) run -ti --rm --net=host --name=evalbench_container \
-		--cap-add=SYS_PTRACE	\
+	$(CONTAINER_ENGINE) run -ti --rm --name=evalbench_container \
+		$(if $(filter podman,$(CONTAINER_ENGINE)),--sysctl net.ipv6.conf.all.disable_ipv6=1) \
+		$(if $(filter docker,$(CONTAINER_ENGINE)),--net=host) \
+		--cap-add=SYS_PTRACE \
 		-v ~/.config/gcloud:/root/.config/gcloud \
-		-v ~/.gitconfig:/root/.gitconfig \
-		-v ~/.gitcookies:/root/.gitcookies \
 		-v $(PWD)/requirements.txt:/evalbench/requirements.txt \
 		-v $(PWD)/evalbench:/evalbench/evalbench \
+		-v $(PWD)/viewer:/evalbench/viewer \
+		-p 3000:3000 \
+		-p 50051:50051 \
 		-e GOOGLE_CLOUD_PROJECT=cloud-db-nl2sql \
-		-e OPTION=--localhost \
+		-e CLOUD_RUN=True \
 		-e TYPE=$(TYPE) evalbench:latest bash
 
 push-test:

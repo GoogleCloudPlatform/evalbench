@@ -8,11 +8,14 @@
       "name": "Server",
       "type": "debugpy",
       "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/evalbench:${workspaceFolder}/evalbench/evalproto"
+        "PYTHONPATH": "${workspaceFolder}/evalbench:${workspaceFolder}/evalbench/evalproto",
+        "EVAL_GCP_PROJECT_ID": "cloud-db-nl2sql",
+        "EVAL_GCP_PROJECT_REGION": "us-central1"
       },
       "args": [
-        "--localhost",
+        "--localhost"
       ],
       "request": "launch",
       "program": "${workspaceFolder}/evalbench/eval_server.py",
@@ -22,7 +25,7 @@
       "name": "Client",
       "type": "debugpy",
       "cwd": "${workspaceFolder}",
-      "python": "${workspaceFolder}/venv/bin/python",
+      "python": "${workspaceFolder}/.venv/bin/python",
       "env": {
         "PYTHONPATH": "${workspaceFolder}/evalbench:${workspaceFolder}/evalbench/evalproto"
       },

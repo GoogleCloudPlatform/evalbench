@@ -11,15 +11,9 @@ def analyze_one_metric(
     execution: bool = False,
     num_scorers: int = 1,
 ) -> dict:
+    """Analyze one metric from dataframe with flexibility."""
+    num_scorers = max(1, num_scorers)
     original_df_size = int(len(df) / num_scorers)
-
-    if "generated_sql" not in df.columns:
-        return {
-            "metric_name": metric_name,
-            "metric_score": metric_score,
-            "correct_results_count": 0,
-            "total_results_count": max(0, original_df_size),
-        }
 
     df = df[df["generated_sql"].notna()]
     if execution:
@@ -64,13 +58,12 @@ def analyze_one_metric(
             }
 
         correct_results_count = len(df[df["score"] == metric_score])
-    if original_df_size > 0:
-        pct = round(correct_results_count / original_df_size * 100, 2)
-    else:
-        pct = 0.0
 
+    percentage = (correct_results_count / original_df_size *
+                  100) if original_df_size > 0 else 0.0
     logging.info(
-        f"{metric_name}: \t{correct_results_count}/{original_df_size} = {pct}%"
+        f"{metric_name}: \t{correct_results_count}/{original_df_size} = "
+        f"{round(percentage, 2)}%"
     )
     return {
         "metric_name": metric_name,
@@ -84,8 +77,11 @@ def analyze_result(scores, experiment_config: dict[str, str]):
     """Analyze accuracy result from dataframe."""
     summary_scores = []
     df = pd.DataFrame.from_dict(scores)
-    if df.empty:
-        return df, pd.DataFrame()
+
+    # Ensure expected columns exist to avoid KeyErrors
+    for col in ["generated_sql", "generated_error", "comparator", "score", "id"]:
+        if col not in df.columns:
+            df[col] = None
 
     scorers = experiment_config["scorers"]
     num_scorers = len(scorers)
@@ -102,7 +98,7 @@ def analyze_result(scores, experiment_config: dict[str, str]):
         if metric_name in llm_metrics_list:
             metric_df = df[df["comparator"] == metric_name]
             for _, row in metric_df.iterrows():
-                logging.info(f"\\n--- {metric_name} Analysis ---")
+                logging.info(f"\n--- {metric_name} Analysis ---")
                 if pd.notna(row.get("comparison_logs")):
                     logging.info(f"{row['comparison_logs']}")
                 elif pd.notna(row.get("comparison_error")):

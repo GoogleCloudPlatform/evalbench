@@ -1,13 +1,13 @@
+import mongomock
+from util import get_SessionManager
+from databases import get_database
 import pytest
 import json
 import sys
 import os
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-
-from evalbench.databases import get_database
-from evalbench.util import get_SessionManager
-import mongomock
+sys.path.append(os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "../..")))
 
 
 # Mocking the MongoClient to use mongomock
@@ -25,7 +25,7 @@ def client():
 
     # Directly use mongomock.MongoClient instead of patching
     # This avoids issues with where MongoClient is imported
-    from evalbench.databases import mongodb
+    from databases import mongodb
 
     # Create a mock client
     mock_client = mongomock.MongoClient("mongodb://mock-host:27017")
@@ -51,8 +51,9 @@ class TestMongoDB:
         # Insert data
         data = {
             "users": [
-                json.dumps({"name": "Alice", "age": 30}),
-                json.dumps({"name": "Bob", "age": 25}),
+                ["name", "age"],
+                ["Alice", 30],
+                ["Bob", 25],
             ]
         }
         client.insert_data(data)

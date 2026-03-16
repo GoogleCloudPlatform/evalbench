@@ -186,3 +186,5 @@ datasets/bird/db_connections/bird/student_club.sqlite
 datasets/bird/db_connections/bird/superhero.sqlite
 datasets/bird/db_connections/bird/thrombosis_prediction.sqlite
 datasets/bird/db_connections/bird/toxicology.sqlite
+evalbench/results/*
+evalbench/db_connections/bat/db_blog.db
