@@ -33,3 +33,5 @@ mongomock
 rich
 google-adk
 mcp
+pytest
+mock
