@@ -68,22 +68,6 @@ class SpannerDB(DB):
         client = spanner.Client(**client_kwargs)
         self.spanner_instance = client.instance(self.instance_id)
         self.database = self.spanner_instance.database(db_name, database_dialect=self.dialect_enum)
-        self.pool = spanner.FixedSizePool(size=4, default_timeout=10)
-        self._pool_bound = False
-
-    def _ensure_pool_bound(self):
-        if not self._pool_bound:
-            try:
-                logging.info(f"Binding pool for {self.database.database_id} with dialect {self.dialect_enum} ({self.expected_dialect_str})...")
-                self.pool.bind(self.database)
-                self._pool_bound = True
-            except Exception as e:
-                # If it's a 404, it might be because the DB doesn't exist yet
-                # We only re-throw if it's NOT a 404 or if we really need it now
-                if "404" in str(e) or "Database not found" in str(e):
-                    logging.warning(f"Could not bind pool for {self.database.database_id}: Database not found.")
-                else:
-                    raise e
 
     def close_connections(self):
         if self.emulator_manager:
@@ -92,7 +76,6 @@ class SpannerDB(DB):
     def batch_execute(self, commands: list[str]):
         if not commands:
             return
-        self._ensure_pool_bound()
         logging.debug(f"Executing batch in {self.database.database_id}. Object dialect: {self.database.database_dialect}")
         logging.debug(f"Executing batch of {len(commands)} statements in Spanner {self.expected_dialect_str} for {self.database.database_id}")
         if commands:
@@ -122,7 +105,6 @@ class SpannerDB(DB):
         is_ddl = any(upper_query.startswith(prefix) for prefix in ["CREATE", "ALTER", "DROP", "RENAME"])
 
         if is_ddl:
-            self._ensure_pool_bound()
             logging.info(f"Executing DDL in Spanner: {query[:100]}...")
             try:
                 op = self.database.update_ddl([query])
@@ -134,7 +116,6 @@ class SpannerDB(DB):
         return self._execute(query, eval_query, rollback)
 
     def _execute(self, query, eval_query=None, rollback=False):
-        self._ensure_pool_bound()
 
         # Detect INFORMATION_SCHEMA queries which cannot be run in RW transactions
         if "information_schema" in query.lower():
@@ -217,7 +198,6 @@ class SpannerDB(DB):
             return None, None, None
 
     def get_metadata(self):
-        self._ensure_pool_bound()
         db_metadata = {}
         try:
             schema_name = 'public' if self.expected_dialect_str == "POSTGRESQL" else ''
@@ -307,7 +287,6 @@ class SpannerDB(DB):
                 f"Failed to create Spanner DB {database_name}: {e}") from e
 
     def drop_all_tables(self):
-        self._ensure_pool_bound()
         try:
             if not self.database.exists():
                 logging.info(f"Database {self.database.database_id} does not exist. Skipping drop_all_tables.")
@@ -339,7 +318,6 @@ class SpannerDB(DB):
     def insert_data(self, data, setup=None):
         if not data:
             return
-        self._ensure_pool_bound()
         try:
             table_info = {}
             schema_name = 'public' if self.expected_dialect_str == "POSTGRESQL" else ''
