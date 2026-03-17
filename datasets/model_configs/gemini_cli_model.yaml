@@ -7,8 +7,14 @@ env:
 setup:
   mcp_servers:
     "cloud-sql":
-      args:
-        - "https://sqladmin.googleapis.com/mcp"
+      httpUrl: "https://sqladmin.googleapis.com/mcp"
+      authProviderType: google_credentials
+      oauth:
+        scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+      headers:
+        X-Goog-User-Project: astana-evaluation
+        
   # extensions:
   #   "https://github.com/gemini-cli-extensions/cloud-sql-postgresql":
   #     settings:

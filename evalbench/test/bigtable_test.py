@@ -50,7 +50,8 @@ class TestBigtable:
     def test_execute_query(self, client):
         """Tests executing queries with and without eval_query."""
         # Test without eval_query
-        result, eval_result, error = client.execute(query=f"SELECT * FROM {TABLE_ID} LIMIT 1")
+        result, eval_result, error = client.execute(
+            query=f"SELECT * FROM {TABLE_ID} LIMIT 1")
         assert error is None
         assert result is not None
         assert eval_result is None

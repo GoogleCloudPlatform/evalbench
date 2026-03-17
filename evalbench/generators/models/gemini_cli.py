@@ -28,9 +28,11 @@ class GeminiCliGenerator(QueryGenerator):
         self.fake_home = os.path.abspath(os.path.join('.venv', 'fake_home'))
         self.gemini_home = os.path.join(self.fake_home, '.gemini')
         self.extensions_dir = os.path.join(self.gemini_home, 'extensions')
+        self.skills_dir = os.path.join(self.gemini_home, 'skills')
 
         os.makedirs(self.fake_home, exist_ok=True)
         os.makedirs(self.extensions_dir, exist_ok=True)
+        os.makedirs(self.skills_dir, exist_ok=True)
 
         self.env = querygenerator_config.get("env", {})
         self.env['HOME'] = self.fake_home
@@ -59,15 +61,21 @@ class GeminiCliGenerator(QueryGenerator):
             os.makedirs(os.path.dirname(gemini_settings_path), exist_ok=True)
 
         # Setup MCP Servers
-        if "mcp_servers" in self.setup_config:
+        mcp_servers_config = self.setup_config.get("mcp_servers", {})
+        self._setup_mcp_servers(mcp_servers_config, gemini_settings_path)
+        if "fake_mcp_servers" in self.setup_config:
             self._setup_mcp_servers(
-                self.setup_config["mcp_servers"], gemini_settings_path)
+                self.setup_config["fake_mcp_servers"], gemini_settings_path, verify_tools=False)
 
         self._setup_npm_auth()
 
         # Install Extensions
         extensions_config = self.setup_config.get("extensions", {})
         self._install_extensions(extensions_config)
+
+        # Setup Skills
+        skills_config = self.setup_config.get("skills", [])
+        self._setup_skills(skills_config)
 
     def _setup_npm_auth(self):
         """Sets up NPM authentication for private registries in the FAKE HOME."""
@@ -136,8 +144,80 @@ class GeminiCliGenerator(QueryGenerator):
         logging.info(
             f"NPM authentication updated successfully at {npmrc_file}")
 
-    def _setup_mcp_servers(self, mcp_servers_config: dict, settings_path: str):
-        """Configures MCP servers in the settings file."""
+    def _setup_skills(self, skills: list):
+        """Sets up skills by copying them or performing specified actions."""
+        if not skills:
+            return
+
+        real_skills_dir = os.path.join(self.real_home, ".gemini", "skills")
+
+        setup_env = os.environ.copy()
+        setup_env.update(self.env)
+
+        for skill_config in skills:
+            if isinstance(skill_config, str):
+                skill_name = skill_config
+                real_skill_path = os.path.join(real_skills_dir, skill_name)
+                fake_skill_path = os.path.join(self.skills_dir, skill_name)
+
+                if not os.path.exists(real_skill_path):
+                    logging.warning(
+                        f"Requested skill '{skill_name}' not found at {real_skill_path}.")
+                    continue
+
+                logging.info(f"Syncing skill: {skill_name}")
+                if os.path.exists(fake_skill_path):
+                    shutil.rmtree(fake_skill_path)
+                try:
+                    shutil.copytree(real_skill_path, fake_skill_path)
+                except Exception as e:
+                    logging.error(f"Failed to copy skill {skill_name}: {e}")
+
+            elif isinstance(skill_config, dict):
+                action = skill_config.get("action")
+                path = skill_config.get("path")
+                name = skill_config.get("name")
+
+                cmd = None
+                if action == "link" and path:
+                    logging.info(f"Linking skill from path: {path}")
+                    cmd = ["npm", "exec", "--yes", self.gemini_cli_version,
+                           "--", "skills", "link", path, "--consent"]
+                elif action == "install" and (path or name):
+                    target = path if path else name
+                    logging.info(f"Installing skill: {target}")
+                    cmd = ["npm", "exec", "--yes", self.gemini_cli_version,
+                           "--", "skills", "install", target, "--consent"]
+                elif action == "enable" and name:
+                    logging.info(f"Enabling skill: {name}")
+                    cmd = ["npm", "exec", "--yes", self.gemini_cli_version,
+                           "--", "skills", "enable", name]
+                elif action == "disable" and name:
+                    logging.info(f"Disabling skill: {name}")
+                    cmd = ["npm", "exec", "--yes", self.gemini_cli_version,
+                           "--", "skills", "disable", name]
+                elif action == "uninstall" and name:
+                    logging.info(f"Uninstalling skill: {name}")
+                    cmd = ["npm", "exec", "--yes", self.gemini_cli_version,
+                           "--", "skills", "uninstall", name]
+                else:
+                    logging.warning(
+                        f"Unsupported or malformed skill config: {skill_config}")
+
+                if cmd:
+                    try:
+                        result = subprocess.run(
+                            cmd, check=False, capture_output=True, text=True, env=setup_env
+                        )
+                        if result.returncode != 0:
+                            logging.error(
+                                f"Failed to execute skill action '{action}'. Output: {result.stdout}, Error: {result.stderr}")
+                    except Exception as e:
+                        logging.error(
+                            f"Failed to execute skill action '{action}': {e}")
+
+    def _setup_mcp_servers(self, mcp_servers_config: dict, settings_path: str, verify_tools: bool = True):
+        """Configures MCP servers in the settings file and verifies connectivity."""
         current_settings = {}
         if os.path.exists(settings_path):
             try:
@@ -149,20 +229,115 @@ class GeminiCliGenerator(QueryGenerator):
         if "mcpServers" not in current_settings:
             current_settings["mcpServers"] = {}
 
-        # Merge/Overwrite configurations
+        existing_servers = list(current_settings["mcpServers"].keys())
+        for server in existing_servers:
+            if server not in mcp_servers_config:
+                logging.info(
+                    f"Removing stale MCP server configuration: {server}")
+                del current_settings["mcpServers"][server]
+
         for server_name, config in mcp_servers_config.items():
-            if "command" not in config:
-                package_name = config.get("package", server_name)
-
-                config["command"] = "npm"
-                args = config.get("args", [])
-
-                config["args"] = ["exec", "--yes", package_name, "--"] + args
-
             current_settings["mcpServers"][server_name] = config
 
         with open(settings_path, 'w') as f:
             json.dump(current_settings, f, indent=2)
+
+        if verify_tools:
+            for server_name, config in mcp_servers_config.items():
+                logging.info(f"Verifying MCP server: {server_name}")
+                if not self._verify_mcp_server(server_name, settings_path):
+                    raise RuntimeError(
+                        f"MCP Server '{server_name}' failed verification. Please check the configuration and ensure the server is running correctly.")
+
+    def _verify_mcp_server(self, server_name: str, settings_path: str) -> bool:
+        """Verifies an MCP server by asking the Gemini model CLI what tools it has loaded."""
+
+        verify_env = os.environ.copy()
+        verify_env.update(self.env)
+        verify_env["GEMINI_CLI_SYSTEM_SETTINGS_PATH"] = settings_path
+
+        prompt = "List the exact names of all tools provided to you. Return ONLY a JSON array of their names. Do not include markdown formatting or backticks."
+        cmd = [
+            "npm", "exec", "--yes", self.gemini_cli_version, "--",
+            "run", prompt, "--output-format", "json"
+        ]
+
+        if hasattr(self, "model") and isinstance(self.model, str):
+            cmd.extend(["--model", self.model])
+
+        cmd.extend(["--allowed-mcp-server-names", server_name])
+
+        logging.info(
+            f"Running gemini cli to verify loaded tools for MCP server: {server_name}")
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=verify_env,
+                timeout=120
+            )
+
+            if result.returncode != 0:
+                logging.error(
+                    f"MCP server '{server_name}' failed verification. CLI Error:\n{result.stderr}")
+                return False
+
+            stdout = result.stdout.strip()
+
+            try:
+                json_start = stdout.find('{')
+                json_end = stdout.rfind('}') + 1
+                if json_start >= 0 and json_end > json_start:
+                    envelope = json.loads(stdout[json_start:json_end])
+                    if "response" in envelope:
+                        response_text = envelope["response"].strip()
+
+                        if response_text.startswith('```'):
+                            lines = response_text.split('\n')
+                            if lines and lines[0].startswith('```'):
+                                lines = lines[1:]
+                            if lines and lines[-1].startswith('```'):
+                                lines = lines[:-1]
+                            response_text = '\n'.join(lines).strip()
+
+                        tools = json.loads(response_text)
+
+                        if isinstance(tools, list):
+                            # Filter out standard Gemini CLI built-in tools
+                            built_in_tools = {
+                                "list_directory", "read_file", "search_file_content", "glob",
+                                "activate_skill", "save_memory", "google_web_search", "write_todos",
+                                "delegate_to_agent", "grep_search", "codebase_investigator", "cli_help"
+                            }
+                            mcp_tools = [
+                                t for t in tools if t not in built_in_tools]
+
+                            if len(mcp_tools) > 0:
+                                logging.info(
+                                    f"MCP server '{server_name}' successfully loaded {len(mcp_tools)} tools: {mcp_tools}")
+                                return True
+                            else:
+                                logging.error(
+                                    f"MCP server '{server_name}' returned 0 non-builtin tools. The server might be unreachable or lacks tools.")
+                                return False
+            except Exception as e:
+                logging.debug(
+                    f"Failed to parse tools from MCP server {server_name}: {e}")
+
+            logging.error(
+                f"MCP server '{server_name}' didn't return a clear JSON array. Output: {stdout}")
+            return False
+
+        except subprocess.TimeoutExpired:
+            logging.error(
+                f"Verification of MCP server {server_name} timed out.")
+            return False
+        except Exception as e:
+            logging.error(f"Failed to verify MCP server {server_name}: {e}")
+            return False
 
     def _install_extensions(self, extensions: dict | list):
         """Installs/Syncs specified extensions using gemini-cli."""
@@ -340,6 +515,12 @@ class GeminiCliGenerator(QueryGenerator):
             result = subprocess.run(
                 command, capture_output=True, text=True, check=False, env=env
             )
+            # Filter out benign schema warnings from json decoder from stderr to reduce noise
+            if result.stderr:
+                result.stderr = "\n".join([
+                    line for line in result.stderr.splitlines()
+                    if 'unknown format "google-duration" ignored' not in line
+                ])
             return result
         except FileNotFoundError:
             return subprocess.CompletedProcess(command, 127, "", f"Error: Command not found: {command[0]}")
@@ -374,12 +555,150 @@ class GeminiCliGenerator(QueryGenerator):
 
         command.extend([
             "--output-format",
-            "json",
+            "stream-json",
             "--prompt",
             cli_cmd.prompt,
         ])
 
-        return self._execute_cli_command(command, env=env)
+        result = self._execute_cli_command(command, env=env)
+        if result.returncode == 0 and result.stdout:
+            result.stdout = self._parse_stream_json(result.stdout)
+
+        return result
+
+    def _parse_stream_json(self, stream_output: str) -> str:
+        import dateutil.parser
+
+        final_obj = {"session_id": "", "response": "", "stats": {}}
+        tool_uses = {}
+        tool_results = {}
+        model_name = "gemini-2.5-flash"
+
+        for line in stream_output.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+                t = event.get("type")
+                if t == "init":
+                    final_obj["session_id"] = event.get("session_id", "")
+                    model_name = event.get("model", model_name)
+                elif t == "message" and event.get("role") == "assistant":
+                    final_obj["response"] += event.get("content", "")
+                elif t == "tool_use":
+                    tool_id = event.get("tool_id")
+                    if tool_id:
+                        tool_uses[tool_id] = event
+                elif t == "tool_result":
+                    tool_id = event.get("tool_id")
+                    if tool_id:
+                        tool_results[tool_id] = event
+                elif t == "result":
+                    s = event.get("stats", {})
+                    total_duration = s.get("duration_ms", 0)
+
+                    models = {
+                        model_name: {
+                            "api": {
+                                "totalRequests": 1,
+                                "totalErrors": 0,
+                                "totalLatencyMs": total_duration
+                            },
+                            "tokens": {
+                                "input": s.get("input_tokens", 0),
+                                "prompt": s.get("input_tokens", 0),
+                                "candidates": s.get("output_tokens", 0),
+                                "total": s.get("total_tokens", 0),
+                                "cached": s.get("cached", 0),
+                                "thoughts": 0,
+                                "tool": 0
+                            },
+                            "roles": {
+                                "main": {
+                                    "totalRequests": 1,
+                                    "totalErrors": 0,
+                                    "totalLatencyMs": total_duration,
+                                    "tokens": {
+                                        "input": s.get("input_tokens", 0),
+                                        "prompt": s.get("input_tokens", 0),
+                                        "candidates": s.get("output_tokens", 0),
+                                        "total": s.get("total_tokens", 0),
+                                        "cached": s.get("cached", 0),
+                                        "thoughts": 0,
+                                        "tool": 0
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    final_obj["stats"]["models"] = models
+
+                    tools_stats = {
+                        "totalCalls": len(tool_uses),
+                        "totalSuccess": sum(1 for tr in tool_results.values() if tr.get("status") == "success"),
+                        "totalFail": sum(1 for tr in tool_results.values() if tr.get("status") != "success"),
+                        "totalDurationMs": 0,
+                        "decisions": {
+                            "accept": len(tool_uses),
+                            "reject": 0,
+                            "modify": 0,
+                            "auto_accept": len(tool_uses)
+                        },
+                        "byName": {}
+                    }
+
+                    for tid, tu in tool_uses.items():
+                        tname = tu.get("tool_name", "unknown")
+                        if tname not in tools_stats["byName"]:
+                            tools_stats["byName"][tname] = {
+                                "count": 0,
+                                "success": 0,
+                                "fail": 0,
+                                "durationMs": 0,
+                                "parameters": [],
+                                "decisions": {
+                                    "accept": 0,
+                                    "reject": 0,
+                                    "modify": 0,
+                                    "auto_accept": 0
+                                }
+                            }
+
+                        tstat = tools_stats["byName"][tname]
+                        tstat["count"] += 1
+                        tstat["parameters"].append(tu.get("parameters", {}))
+                        tstat["decisions"]["accept"] += 1
+                        tstat["decisions"]["auto_accept"] += 1
+
+                        tr = tool_results.get(tid)
+                        duration = 0
+                        if tr:
+                            if tr.get("status") == "success":
+                                tstat["success"] += 1
+                            else:
+                                tstat["fail"] += 1
+
+                            try:
+                                t1 = dateutil.parser.isoparse(tu["timestamp"])
+                                t2 = dateutil.parser.isoparse(tr["timestamp"])
+                                duration = int(
+                                    (t2 - t1).total_seconds() * 1000)
+                            except Exception as e:
+                                logging.debug(
+                                    "Failed to parse tool timestamps for duration calculation: "
+                                    f"tool_use_ts={tu.get('timestamp')!r}, "
+                                    f"tool_result_ts={tr.get('timestamp')!r}, error={e}"
+                                )
+
+                        tstat["durationMs"] += duration
+                        tools_stats["totalDurationMs"] += duration
+
+                    final_obj["stats"]["tools"] = tools_stats
+            except Exception as e:
+                logging.debug(f"Failed to parse stream JSON line: {e}")
+
+        return json.dumps(final_obj, indent=2)
 
     def parse_response(self, stdout: str) -> dict:
         if not stdout:

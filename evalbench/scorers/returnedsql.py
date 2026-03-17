@@ -45,7 +45,8 @@ class ReturnedSQL(comparator.Comparator):
         if generated_query == "":
             return 0, ""
 
-        generated_query = re.sub(r"/\*.*?\*/", "", generated_query, flags=re.DOTALL)
+        generated_query = re.sub(
+            r"/\*.*?\*/", "", generated_query, flags=re.DOTALL)
 
         query_lines = [line.strip() for line in generated_query.splitlines()]
         has_non_comment_line = any(

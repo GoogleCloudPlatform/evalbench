@@ -241,7 +241,8 @@ class LLMRater(comparator.Comparator):
         else:
             response = self._inference_without_caching(prompt)
 
-        logging.debug("\n --------- llm_rater_output:   --------- \n %s ", response)
+        logging.debug(
+            "\n --------- llm_rater_output:   --------- \n %s ", response)
         score = (
             100
             if ("INFORMATION_MATCHES" in response or "EXTRA_INFORMATION" in response)
@@ -264,7 +265,8 @@ class LLMRater(comparator.Comparator):
                     self.cache_client,
                 )
             else:
-                error_categorization_response = self._inference_without_caching(prompt)
+                error_categorization_response = self._inference_without_caching(
+                    prompt)
 
             response += "\nError analysis:\n\n" + error_categorization_response
 

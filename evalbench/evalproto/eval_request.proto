@@ -31,6 +31,7 @@ message EvalInputRequest {
   string generated_sql = 14;
   string job_id = 15;
   string trace_id = 16;
+  string payload = 17;
 }
 
 message UserAction {

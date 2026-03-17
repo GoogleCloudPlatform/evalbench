@@ -9,4 +9,9 @@ fi
 ulimit -n 4096
 
 export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
-python3 evalbench/evalbench.py   --experiment_config="$EVAL_CONFIG"
+
+if command -v uv &> /dev/null; then
+  uv run evalbench/evalbench.py --experiment_config="$EVAL_CONFIG"
+else
+  python evalbench/evalbench.py --experiment_config="$EVAL_CONFIG"
+fi

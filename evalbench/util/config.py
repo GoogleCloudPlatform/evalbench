@@ -48,10 +48,12 @@ def load_db_data_from_csvs(data_directory: str):
 def load_setup_scripts(setup_scripts_directory_path: str):
     current_directory = os.getcwd()
     pre_setup = _load_setup_sql(
-        os.path.join(current_directory, setup_scripts_directory_path, "pre_setup.sql"),
+        os.path.join(current_directory,
+                     setup_scripts_directory_path, "pre_setup.sql"),
     )
     setup = _load_setup_sql(
-        os.path.join(current_directory, setup_scripts_directory_path, "setup.sql"),
+        os.path.join(current_directory,
+                     setup_scripts_directory_path, "setup.sql"),
     )
     # Check for setup.json and append it if exists
     setup_json_path = os.path.join(
@@ -91,7 +93,8 @@ def _load_setup_sql(sql_file_path: str):
     try:
         with open(sql_file_path, "r") as file:
             sql_content = file.read()
-        sql_commands = [cmd.strip() for cmd in sql_content.split(";") if cmd.strip()]
+        sql_commands = [cmd.strip()
+                        for cmd in sql_content.split(";") if cmd.strip()]
         return sql_commands
     except Exception as e:
         return []
@@ -128,22 +131,69 @@ def config_to_df(
     return df
 
 
-def update_google3_relative_paths(experiment_config: dict, session_id: str):
+def df_to_config(df: pd.DataFrame) -> dict:
+    import ast
+
+    original_dict = {}
+
+    for _, row in df.iterrows():
+        key_path = row["config"]
+        value_str = row["value"]
+
+        try:
+            if pd.isna(value_str):
+                value = None
+            else:
+                value = ast.literal_eval(value_str)
+        except (ValueError, SyntaxError, TypeError):
+            value = value_str
+
+        keys = key_path.split(".")
+
+        current_level = original_dict
+        for key in keys[:-1]:
+            if key not in current_level:
+                current_level[key] = {}
+            current_level = current_level[key]
+
+        current_level[keys[-1]] = value
+
+    return original_dict
+
+
+def update_google3_relative_paths(
+    experiment_config: dict, session_id: str, resource_map: dict
+):
     if isinstance(experiment_config, dict):
         for key, value in experiment_config.items():
             if isinstance(value, dict):
-                update_google3_relative_paths(value, session_id)
+                update_google3_relative_paths(value, session_id, resource_map)
             elif isinstance(value, list):
                 values = []
                 for sub_value in value:
                     if isinstance(sub_value, str) and sub_value.startswith("google3/"):
-                        values.append(get_google3_relative_path(sub_value, session_id))
+                        values.append(get_google3_relative_path(
+                            sub_value, session_id))
+                    elif isinstance(sub_value, str) and sub_value in resource_map:
+                        values.append(
+                            os.path.join(
+                                SESSION_RESOURCES_PATH,
+                                session_id,
+                                resource_map[sub_value],
+                            )
+                        )
                     else:
                         values.append(sub_value)
                 experiment_config[key] = values
             elif isinstance(value, str) and value.startswith("google3/"):
                 experiment_config[key] = get_google3_relative_path(
                     experiment_config[key], session_id
+                )
+            elif isinstance(value, str) and value in resource_map:
+                experiment_config[key] = os.path.join(
+                    SESSION_RESOURCES_PATH,
+                    session_id,
+                    resource_map[value],
                 )
 
 
@@ -170,7 +220,8 @@ def set_session_configs(session, experiment_config: dict):
     else:
         session["db_configs"] = []
     if "model_config" in experiment_config and experiment_config["model_config"]:
-        session["model_config"] = load_yaml_config(experiment_config["model_config"])
+        session["model_config"] = load_yaml_config(
+            experiment_config["model_config"])
     session["setup_config"] = {}
     if "setup_directory" in experiment_config and experiment_config["setup_directory"]:
         session["setup_config"]["setup_directory"] = experiment_config[
