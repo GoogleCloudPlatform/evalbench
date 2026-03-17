@@ -2,10 +2,13 @@ import logging
 import os
 import json
 import contextlib
+import time
+from decimal import Decimal
 from typing import Any, List, Optional, Tuple
 from dateutil.parser import parse as parse_date
 from datetime import timezone
 
+from google.api_core import exceptions
 from google.cloud import spanner
 from google.cloud.spanner_admin_database_v1.types import DatabaseDialect
 
@@ -34,6 +37,7 @@ class SpannerDB(DB):
             "use_managed_emulator", False)
 
         raw_dialect = self.dialect.lower()
+        logging.debug(f"SpannerDB init for {db_config.get('database_name')} with self.dialect={self.dialect}")
         if "pg" in raw_dialect or "postgres" in raw_dialect:
             self.dialect_enum = DatabaseDialect.POSTGRESQL
             self.expected_dialect_str = "POSTGRESQL"
@@ -56,11 +60,14 @@ class SpannerDB(DB):
             client_kwargs["client_options"] = {
                 "api_endpoint": "spanner.googleapis.com"}
 
+        self.project_id = db_config["gcp_project_id"]
+        self.instance_id = db_config["instance_id"]
+        # Spanner database IDs cannot end with an underscore
+        db_name = db_config["database_name"].rstrip("_")
+        client_kwargs["disable_builtin_metrics"] = True
         client = spanner.Client(**client_kwargs)
-        spanner_instance = client.instance(db_config["instance_id"])
-        self.database = spanner_instance.database(db_config["database_name"])
-        self.pool = spanner.FixedSizePool(size=4, default_timeout=10)
-        self.pool.bind(self.database)
+        self.spanner_instance = client.instance(self.instance_id)
+        self.database = self.spanner_instance.database(db_name, database_dialect=self.dialect_enum)
 
     def close_connections(self):
         if self.emulator_manager:
@@ -69,8 +76,10 @@ class SpannerDB(DB):
     def batch_execute(self, commands: list[str]):
         if not commands:
             return
-        logging.info(
-            f"Executing batch of {len(commands)} statements in Spanner...")
+        logging.debug(f"Executing batch in {self.database.database_id}. Object dialect: {self.database.database_dialect}")
+        logging.debug(f"Executing batch of {len(commands)} statements in Spanner {self.expected_dialect_str} for {self.database.database_id}")
+        if commands:
+            logging.debug(f"First statement: {commands[0][:100]}...")
         try:
             op = self.database.update_ddl(commands)
             op.result(timeout=600)
@@ -80,36 +89,100 @@ class SpannerDB(DB):
             for stmt in commands:
                 _, _, error = self.execute(stmt)
                 if error:
-                    raise RuntimeError(
-                        f"Error in batch statement: {stmt}\nError: {error}")
+                    # Ignore 'already exists' / 'Duplicate name' errors during fallback
+                    if "Duplicate name" in error or "already exists" in error:
+                        logging.info(f"Ignoring duplicate error during fallback: {error}")
+                    else:
+                        raise RuntimeError(
+                            f"Error in batch statement: {stmt}\nError: {error}")
 
     def execute(self, query, eval_query=None, use_cache=False, rollback=False):
         if query.strip() == "":
             return None, None, None
+
+        # Detect DDL
+        upper_query = query.strip().upper()
+        is_ddl = any(upper_query.startswith(prefix) for prefix in ["CREATE", "ALTER", "DROP", "RENAME"])
+
+        if is_ddl:
+            logging.info(f"Executing DDL in Spanner: {query[:100]}...")
+            try:
+                op = self.database.update_ddl([query])
+                op.result(timeout=600)
+                return [{"status": "success"}], None, None
+            except Exception as e:
+                return None, None, str(e)
+
         return self._execute(query, eval_query, rollback)
 
     def _execute(self, query, eval_query=None, rollback=False):
+
+        # Detect INFORMATION_SCHEMA queries which cannot be run in RW transactions
+        if "information_schema" in query.lower():
+            rollback = False
+
+        is_dml = any(query.strip().upper().startswith(prefix)
+                     for prefix in ["INSERT", "UPDATE", "DELETE"])
+
         def _run_execute(query, eval_query=None, rollback=False):
             result, eval_result, error = [], [], None
-            try:
-                # Spanner snapshots are read-only and don't need rollback.
-                # If rollback=True, we might want to ensure no side effects,
-                # but snapshot() is safe.
-                with self.database.snapshot() as snapshot:
-                    res = snapshot.execute_sql(query)
-                    rows = list(res)
-                    fields = [f.name for f in res.fields] if res.fields else []
-                    result = [dict(zip(fields, row)) for row in rows]
 
-                    if eval_query:
-                        res_eval = snapshot.execute_sql(eval_query)
-                        rows_eval = list(res_eval)
-                        fields_eval = [
-                            f.name for f in res_eval.fields] if res_eval.fields else []
-                        eval_result = [dict(zip(fields_eval, row))
-                                       for row in rows_eval]
-            except Exception as e:
-                error = str(e)
+            if is_dml or rollback:
+                class RollbackException(Exception):
+                    pass
+
+                def _tx_logic(transaction):
+                    nonlocal result, eval_result, error
+                    try:
+                        if is_dml:
+                            rows_affected = transaction.execute_update(
+                                query, timeout=15)
+                            result = [{"rows_affected": rows_affected}]
+                        else:
+                            res = transaction.execute_sql(query, timeout=15)
+                            rows = list(res)
+                            fields = [
+                                f.name for f in res.fields] if res.fields else []
+                            result = [dict(zip(fields, row)) for row in rows]
+
+                        if eval_query:
+                            res_eval = transaction.execute_sql(
+                                eval_query, timeout=15)
+                            rows_eval = list(res_eval)
+                            fields_eval = [
+                                f.name for f in res_eval.fields] if res_eval.fields else []
+                            eval_result = [dict(zip(fields_eval, row))
+                                           for row in rows_eval]
+                    except Exception as e:
+                        error = str(e)
+                    raise RollbackException()
+
+                try:
+                    self.database.run_in_transaction(_tx_logic)
+                except RollbackException:
+                    pass
+                except Exception as e:
+                    if not error:
+                        error = str(e)
+            else:
+                try:
+                    with self.database.snapshot() as snapshot:
+                        res = snapshot.execute_sql(query, timeout=15)
+                        rows = list(res)
+                        fields = [
+                            f.name for f in res.fields] if res.fields else []
+                        result = [dict(zip(fields, row)) for row in rows]
+
+                        if eval_query:
+                            res_eval = snapshot.execute_sql(
+                                eval_query, timeout=15)
+                            rows_eval = list(res_eval)
+                            fields_eval = [
+                                f.name for f in res_eval.fields] if res_eval.fields else []
+                            eval_result = [dict(zip(fields_eval, row))
+                                           for row in rows_eval]
+                except Exception as e:
+                    error = str(e)
             return result, eval_result, error
 
         try:
@@ -131,7 +204,7 @@ class SpannerDB(DB):
             type_col = "spanner_type" if self.expected_dialect_str == "GOOGLESQL" else "data_type"
             query = f"SELECT table_name, column_name, {type_col} FROM information_schema.columns WHERE table_schema = '{schema_name}' ORDER BY table_name, ordinal_position"
             with self.database.snapshot() as snapshot:
-                res = snapshot.execute_sql(query)
+                res = snapshot.execute_sql(query, timeout=15)
                 for row in res:
                     t_name, c_name, d_type = row[0], row[1], row[2]
                     if t_name not in db_metadata:
@@ -161,10 +234,57 @@ class SpannerDB(DB):
         return "\n\n".join(ddl_parts)
 
     def create_tmp_database(self, database_name):
-        pass
+        # Spanner database IDs cannot end with an underscore
+        database_name = database_name.rstrip("_")
+        logging.info(f"Creating temporary Spanner database: {database_name}...")
+        self.ensure_database_exists(database_name)
 
     def drop_tmp_database(self, database_name):
-        pass
+        database_name = database_name.rstrip("_")
+        logging.info(f"Dropping temporary Spanner database: {database_name}...")
+        try:
+            spanner_client = spanner.Client(disable_builtin_metrics=True)
+            instance = spanner_client.instance(self.instance_id)
+            database = instance.database(database_name)
+            database.drop()
+            logging.info(f"Successfully dropped Spanner database {database_name}.")
+        except Exception as e:
+            logging.warning(f"Failed to drop temporary Spanner database {database_name}: {e}")
+
+    def resetup_database(self, force=False, setup_users=False) -> None:
+        # For Spanner, we need to ensure the database exists before we can resetup it
+        db_id = self.database.database_id.rstrip("_")
+
+        if self.database.exists():
+            # Verify the backend dialect matches what we expect
+            self.database.reload()
+            if self.database.database_dialect != self.dialect_enum:
+                logging.warning(f"Database {db_id} exists but has wrong dialect ({self.database.database_dialect} != {self.dialect_enum}). Dropping it.")
+                self.drop_tmp_database(db_id)
+                # Wait for drop to complete (drop is usually fast, but just in case)
+                time.sleep(2)
+
+        if not self.database.exists():
+            logging.info(f"Database {db_id} does not exist. Creating it before setup...")
+            self.create_tmp_database(db_id)
+
+        super().resetup_database(force=force, setup_users=setup_users)
+
+    def ensure_database_exists(self, database_name: str) -> None:
+        spanner_client = spanner.Client(disable_builtin_metrics=True)
+        instance_id = self.instance_id
+        instance = spanner_client.instance(instance_id)
+        # Create database with the configured dialect
+        database = instance.database(database_name, database_dialect=self.dialect_enum)
+        try:
+            op = database.create()
+            op.result()  # Wait for completion
+            logging.info(f"Successfully created Spanner database {database_name}.")
+        except exceptions.AlreadyExists:
+            pass
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to create Spanner DB {database_name}: {e}") from e
 
     def ensure_database_exists(self, database_name: str) -> None:
         from google.cloud import spanner
@@ -184,10 +304,13 @@ class SpannerDB(DB):
 
     def drop_all_tables(self):
         try:
+            if not self.database.exists():
+                logging.info(f"Database {self.database.database_id} does not exist. Skipping drop_all_tables.")
+                return
+
             with self.database.snapshot() as snapshot:
                 schema_name = 'public' if self.expected_dialect_str == "POSTGRESQL" else ''
-                res = snapshot.execute_sql(
-                    f"SELECT table_name FROM information_schema.tables WHERE table_schema = '{schema_name}' AND table_type = 'BASE TABLE'")
+                res = snapshot.execute_sql(f"SELECT table_name FROM information_schema.tables WHERE table_schema = '{schema_name}' AND table_type = 'BASE TABLE'", timeout=15)
                 table_names = [row[0] for row in res]
                 if not table_names:
                     return
@@ -217,7 +340,7 @@ class SpannerDB(DB):
             with self.database.snapshot() as snapshot:
                 type_col = "spanner_type" if self.expected_dialect_str == "GOOGLESQL" else "data_type"
                 query = f"SELECT table_name, column_name, {type_col} FROM information_schema.columns WHERE table_schema = '{schema_name}' ORDER BY table_name, ordinal_position"
-                res = snapshot.execute_sql(query)
+                res = snapshot.execute_sql(query, timeout=15)
                 for row in res:
                     t_name, c_name, d_type = row[0], row[1], row[2]
                     if t_name not in table_info:
@@ -282,6 +405,12 @@ class SpannerDB(DB):
                         if idx < len(p_row) and p_row[idx]:
                             try:
                                 p_row[idx] = float(p_row[idx])
+                            except BaseException:
+                                pass
+                    for idx in info["numeric_indices"]:
+                        if idx < len(p_row) and p_row[idx]:
+                            try:
+                                p_row[idx] = Decimal(str(p_row[idx]))
                             except BaseException:
                                 pass
                     for idx in info["bool_indices"]:
