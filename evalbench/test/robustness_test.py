@@ -1,9 +1,10 @@
 import time
-<<<<<<< fix-resource-leaks
 from queue import Queue
 from unittest.mock import MagicMock, patch
 from util.rate_limit import rate_limit, ResourceExhaustedError
 from work.sqlexecwork import SQLExecWork
+from evaluator.evaluator import Evaluator
+from concurrent.futures import Future
 import unittest
 
 
@@ -44,11 +45,6 @@ class TestStability(unittest.TestCase):
 
         # The DB object MUST have been returned to the queue despite the crash
         self.assertEqual(db_queue.get_nowait(), db)
-=======
-from evaluator.evaluator import Evaluator
-from unittest.mock import MagicMock, patch
-from concurrent.futures import Future
-import unittest
 
 
 class TestEvaluatorRobustness(unittest.TestCase):
@@ -148,7 +144,6 @@ class TestEvaluatorRobustness(unittest.TestCase):
 
         self.assertTrue(
             any("Promptgen future error: Worker crashed" in output for output in cm.output))
->>>>>>> main
 
 
 if __name__ == '__main__':
