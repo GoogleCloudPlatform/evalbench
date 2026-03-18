@@ -39,7 +39,6 @@ container:
 		-v ~/.config/gcloud:/root/.config/gcloud \
 		-e GOOGLE_CLOUD_PROJECT=cloud-db-nl2sql \
 		--cap-add=SYS_PTRACE	\
-		-e CLOUD_RUN=True \
 		-p 3000:3000 \
 		-p 50051:50051 \
 		-e TYPE=$(TYPE) evalbench:latest
@@ -73,6 +72,7 @@ deploy:
 	kubectl apply -f evalbench_service/k8s/ksa.yaml
 	kubectl apply -f evalbench_service/k8s/service.yaml
 	kubectl apply -f evalbench_service/k8s/evalbench.yaml
+	kubectl apply -f evalbench_service/k8s/hpa.yaml
 	kubectl apply -f evalbench_service/k8s/vertical-autoscale.yaml
 
 deploy-test:
@@ -111,7 +111,7 @@ test:
 	@nox
 
 style:
-	@pycodestyle --exclude=evalbench/lib,evalbench/lib64 --max-line-length=120 evalbench
+	@pycodestyle --exclude=evalbench/lib,evalbench/lib64,evalproto evalbench
 
 run:
 	@./run_service.sh

@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import shutil
+import sys
 
 
 class CLICommand:
@@ -23,32 +24,44 @@ class GeminiCliGenerator(QueryGenerator):
         super().__init__(querygenerator_config)
         self.name = "gemini_cli"
 
-        self.real_home = os.environ.get('HOME', os.path.expanduser('~'))
+        self.real_home = os.environ.get("HOME", os.path.expanduser("~"))
 
-        self.fake_home = os.path.abspath(os.path.join('.venv', 'fake_home'))
-        self.gemini_home = os.path.join(self.fake_home, '.gemini')
-        self.extensions_dir = os.path.join(self.gemini_home, 'extensions')
-        self.skills_dir = os.path.join(self.gemini_home, 'skills')
+        # If running via eval_server.py (gRPC), use session-specific path in shared volume
+        if sys.argv[0].endswith("eval_server.py"):
+            session_id = querygenerator_config.get("session_id", "default")
+            self.fake_home = os.path.join("/tmp_session_files", session_id, "fake_home")
+        else:
+            self.fake_home = os.path.abspath(os.path.join(".venv", "fake_home"))
+
+        self.gemini_home = os.path.join(self.fake_home, ".gemini")
+        self.extensions_dir = os.path.join(self.gemini_home, "extensions")
+        self.skills_dir = os.path.join(self.gemini_home, "skills")
 
         os.makedirs(self.fake_home, exist_ok=True)
         os.makedirs(self.extensions_dir, exist_ok=True)
         os.makedirs(self.skills_dir, exist_ok=True)
 
         self.env = querygenerator_config.get("env", {})
-        self.env['HOME'] = self.fake_home
+        self.env["HOME"] = self.fake_home
 
-        if 'GOOGLE_APPLICATION_CREDENTIALS' not in self.env:
+        if "GOOGLE_APPLICATION_CREDENTIALS" not in self.env:
             default_adc = os.path.join(
-                self.real_home, '.config', 'gcloud', 'application_default_credentials.json')
+                self.real_home,
+                ".config",
+                "gcloud",
+                "application_default_credentials.json",
+            )
             if os.path.exists(default_adc):
-                self.env['GOOGLE_APPLICATION_CREDENTIALS'] = default_adc
+                self.env["GOOGLE_APPLICATION_CREDENTIALS"] = default_adc
 
-        if 'CLOUDSDK_CONFIG' not in self.env:
-            self.env['CLOUDSDK_CONFIG'] = os.path.join(
-                self.real_home, '.config', 'gcloud')
+        if "CLOUDSDK_CONFIG" not in self.env:
+            self.env["CLOUDSDK_CONFIG"] = os.path.join(
+                self.real_home, ".config", "gcloud"
+            )
 
         self.gemini_cli_version = querygenerator_config.get(
-            "gemini_cli_version", "gemini-cli")
+            "gemini_cli_version", "gemini-cli"
+        )
         self.setup_config = querygenerator_config.get("setup", {})
         if self.setup_config:
             self._setup()
@@ -65,7 +78,10 @@ class GeminiCliGenerator(QueryGenerator):
         self._setup_mcp_servers(mcp_servers_config, gemini_settings_path)
         if "fake_mcp_servers" in self.setup_config:
             self._setup_mcp_servers(
-                self.setup_config["fake_mcp_servers"], gemini_settings_path, verify_tools=False)
+                self.setup_config["fake_mcp_servers"],
+                gemini_settings_path,
+                verify_tools=False,
+            )
 
         self._setup_npm_auth()
 
@@ -86,7 +102,7 @@ class GeminiCliGenerator(QueryGenerator):
                 ["gcloud", "auth", "print-access-token"],
                 check=True,
                 capture_output=True,
-                text=True
+                text=True,
             )
             access_token = result.stdout.strip()
         except subprocess.CalledProcessError as e:
@@ -95,7 +111,8 @@ class GeminiCliGenerator(QueryGenerator):
 
         if not access_token:
             logging.error(
-                "Error: Failed to retrieve access token. Please run 'gcloud auth login' first.")
+                "Error: Failed to retrieve access token. Please run 'gcloud auth login' first."
+            )
             return
 
         npmrc_file = os.path.join(self.fake_home, ".npmrc")
@@ -104,7 +121,7 @@ class GeminiCliGenerator(QueryGenerator):
         registries = [
             "//us-west1-npm.pkg.dev/gemini-code-dev/gemini-code/",
             "//us-npm.pkg.dev/artifact-foundry-prod/npm-3p-trusted/",
-            "//us-npm.pkg.dev/artifact-foundry-prod/ah-3p-staging-npm/"
+            "//us-npm.pkg.dev/artifact-foundry-prod/ah-3p-staging-npm/",
         ]
 
         lines = []
@@ -141,8 +158,7 @@ class GeminiCliGenerator(QueryGenerator):
         with open(npmrc_file, "w") as f:
             f.writelines(lines)
 
-        logging.info(
-            f"NPM authentication updated successfully at {npmrc_file}")
+        logging.info(f"NPM authentication updated successfully at {npmrc_file}")
 
     def _setup_skills(self, skills: list):
         """Sets up skills by copying them or performing specified actions."""
@@ -162,7 +178,8 @@ class GeminiCliGenerator(QueryGenerator):
 
                 if not os.path.exists(real_skill_path):
                     logging.warning(
-                        f"Requested skill '{skill_name}' not found at {real_skill_path}.")
+                        f"Requested skill '{skill_name}' not found at {real_skill_path}."
+                    )
                     continue
 
                 logging.info(f"Syncing skill: {skill_name}")
@@ -181,47 +198,96 @@ class GeminiCliGenerator(QueryGenerator):
                 cmd = None
                 if action == "link" and path:
                     logging.info(f"Linking skill from path: {path}")
-                    cmd = ["npm", "exec", "--yes", self.gemini_cli_version,
-                           "--", "skills", "link", path, "--consent"]
+                    cmd = [
+                        "npm",
+                        "exec",
+                        "--yes",
+                        self.gemini_cli_version,
+                        "--",
+                        "skills",
+                        "link",
+                        path,
+                        "--consent",
+                    ]
                 elif action == "install" and (path or name):
                     target = path if path else name
                     logging.info(f"Installing skill: {target}")
-                    cmd = ["npm", "exec", "--yes", self.gemini_cli_version,
-                           "--", "skills", "install", target, "--consent"]
+                    cmd = [
+                        "npm",
+                        "exec",
+                        "--yes",
+                        self.gemini_cli_version,
+                        "--",
+                        "skills",
+                        "install",
+                        target,
+                        "--consent",
+                    ]
                 elif action == "enable" and name:
                     logging.info(f"Enabling skill: {name}")
-                    cmd = ["npm", "exec", "--yes", self.gemini_cli_version,
-                           "--", "skills", "enable", name]
+                    cmd = [
+                        "npm",
+                        "exec",
+                        "--yes",
+                        self.gemini_cli_version,
+                        "--",
+                        "skills",
+                        "enable",
+                        name,
+                    ]
                 elif action == "disable" and name:
                     logging.info(f"Disabling skill: {name}")
-                    cmd = ["npm", "exec", "--yes", self.gemini_cli_version,
-                           "--", "skills", "disable", name]
+                    cmd = [
+                        "npm",
+                        "exec",
+                        "--yes",
+                        self.gemini_cli_version,
+                        "--",
+                        "skills",
+                        "disable",
+                        name,
+                    ]
                 elif action == "uninstall" and name:
                     logging.info(f"Uninstalling skill: {name}")
-                    cmd = ["npm", "exec", "--yes", self.gemini_cli_version,
-                           "--", "skills", "uninstall", name]
+                    cmd = [
+                        "npm",
+                        "exec",
+                        "--yes",
+                        self.gemini_cli_version,
+                        "--",
+                        "skills",
+                        "uninstall",
+                        name,
+                    ]
                 else:
                     logging.warning(
-                        f"Unsupported or malformed skill config: {skill_config}")
+                        f"Unsupported or malformed skill config: {skill_config}"
+                    )
 
                 if cmd:
                     try:
                         result = subprocess.run(
-                            cmd, check=False, capture_output=True, text=True, env=setup_env
+                            cmd,
+                            check=False,
+                            capture_output=True,
+                            text=True,
+                            env=setup_env,
                         )
                         if result.returncode != 0:
                             logging.error(
-                                f"Failed to execute skill action '{action}'. Output: {result.stdout}, Error: {result.stderr}")
+                                f"Failed to execute skill action '{action}'. Output: {result.stdout}, Error: {result.stderr}"
+                            )
                     except Exception as e:
-                        logging.error(
-                            f"Failed to execute skill action '{action}': {e}")
+                        logging.error(f"Failed to execute skill action '{action}': {e}")
 
-    def _setup_mcp_servers(self, mcp_servers_config: dict, settings_path: str, verify_tools: bool = True):
+    def _setup_mcp_servers(
+        self, mcp_servers_config: dict, settings_path: str, verify_tools: bool = True
+    ):
         """Configures MCP servers in the settings file and verifies connectivity."""
         current_settings = {}
         if os.path.exists(settings_path):
             try:
-                with open(settings_path, 'r') as f:
+                with open(settings_path, "r") as f:
                     current_settings = json.load(f)
             except json.JSONDecodeError:
                 pass
@@ -232,14 +298,13 @@ class GeminiCliGenerator(QueryGenerator):
         existing_servers = list(current_settings["mcpServers"].keys())
         for server in existing_servers:
             if server not in mcp_servers_config:
-                logging.info(
-                    f"Removing stale MCP server configuration: {server}")
+                logging.info(f"Removing stale MCP server configuration: {server}")
                 del current_settings["mcpServers"][server]
 
         for server_name, config in mcp_servers_config.items():
             current_settings["mcpServers"][server_name] = config
 
-        with open(settings_path, 'w') as f:
+        with open(settings_path, "w") as f:
             json.dump(current_settings, f, indent=2)
 
         if verify_tools:
@@ -247,7 +312,8 @@ class GeminiCliGenerator(QueryGenerator):
                 logging.info(f"Verifying MCP server: {server_name}")
                 if not self._verify_mcp_server(server_name, settings_path):
                     raise RuntimeError(
-                        f"MCP Server '{server_name}' failed verification. Please check the configuration and ensure the server is running correctly.")
+                        f"MCP Server '{server_name}' failed verification. Please check the configuration and ensure the server is running correctly."
+                    )
 
     def _verify_mcp_server(self, server_name: str, settings_path: str) -> bool:
         """Verifies an MCP server by asking the Gemini model CLI what tools it has loaded."""
@@ -258,8 +324,15 @@ class GeminiCliGenerator(QueryGenerator):
 
         prompt = "List the exact names of all tools provided to you. Return ONLY a JSON array of their names. Do not include markdown formatting or backticks."
         cmd = [
-            "npm", "exec", "--yes", self.gemini_cli_version, "--",
-            "run", prompt, "--output-format", "json"
+            "npm",
+            "exec",
+            "--yes",
+            self.gemini_cli_version,
+            "--",
+            "run",
+            prompt,
+            "--output-format",
+            "json",
         ]
 
         if hasattr(self, "model") and isinstance(self.model, str):
@@ -268,7 +341,8 @@ class GeminiCliGenerator(QueryGenerator):
         cmd.extend(["--allowed-mcp-server-names", server_name])
 
         logging.info(
-            f"Running gemini cli to verify loaded tools for MCP server: {server_name}")
+            f"Running gemini cli to verify loaded tools for MCP server: {server_name}"
+        )
 
         try:
             result = subprocess.run(
@@ -277,63 +351,77 @@ class GeminiCliGenerator(QueryGenerator):
                 text=True,
                 check=False,
                 env=verify_env,
-                timeout=120
+                timeout=120,
             )
 
             if result.returncode != 0:
                 logging.error(
-                    f"MCP server '{server_name}' failed verification. CLI Error:\n{result.stderr}")
+                    f"MCP server '{server_name}' failed verification. CLI Error:\n{result.stderr}"
+                )
                 return False
 
             stdout = result.stdout.strip()
 
             try:
-                json_start = stdout.find('{')
-                json_end = stdout.rfind('}') + 1
+                json_start = stdout.find("{")
+                json_end = stdout.rfind("}") + 1
                 if json_start >= 0 and json_end > json_start:
                     envelope = json.loads(stdout[json_start:json_end])
                     if "response" in envelope:
                         response_text = envelope["response"].strip()
 
-                        if response_text.startswith('```'):
-                            lines = response_text.split('\n')
-                            if lines and lines[0].startswith('```'):
-                                lines = lines[1:]
-                            if lines and lines[-1].startswith('```'):
-                                lines = lines[:-1]
-                            response_text = '\n'.join(lines).strip()
+                        if response_text.startswith(
+                            "```"
+                        ) or response_text.startswith('"'):
+                            # Robust JSON parsing
+                            json_match = re.search(
+                                r"\\[.*\\]", response_text, re.DOTALL
+                            )
+                            if json_match:
+                                response_text = json_match.group(0)
 
                         tools = json.loads(response_text)
 
                         if isinstance(tools, list):
                             # Filter out standard Gemini CLI built-in tools
                             built_in_tools = {
-                                "list_directory", "read_file", "search_file_content", "glob",
-                                "activate_skill", "save_memory", "google_web_search", "write_todos",
-                                "delegate_to_agent", "grep_search", "codebase_investigator", "cli_help"
+                                "list_directory",
+                                "read_file",
+                                "search_file_content",
+                                "glob",
+                                "activate_skill",
+                                "save_memory",
+                                "google_web_search",
+                                "write_todos",
+                                "delegate_to_agent",
+                                "grep_search",
+                                "codebase_investigator",
+                                "cli_help",
                             }
-                            mcp_tools = [
-                                t for t in tools if t not in built_in_tools]
+                            mcp_tools = [t for t in tools if t not in built_in_tools]
 
                             if len(mcp_tools) > 0:
                                 logging.info(
-                                    f"MCP server '{server_name}' successfully loaded {len(mcp_tools)} tools: {mcp_tools}")
+                                    f"MCP server '{server_name}' successfully loaded {len(mcp_tools)} tools: {mcp_tools}"
+                                )
                                 return True
                             else:
                                 logging.error(
-                                    f"MCP server '{server_name}' returned 0 non-builtin tools. The server might be unreachable or lacks tools.")
+                                    f"MCP server '{server_name}' returned 0 non-builtin tools. The server might be unreachable or lacks tools."
+                                )
                                 return False
             except Exception as e:
                 logging.debug(
-                    f"Failed to parse tools from MCP server {server_name}: {e}")
+                    f"Failed to parse tools from MCP server {server_name}: {e}"
+                )
 
             logging.error(
-                f"MCP server '{server_name}' didn't return a clear JSON array. Output: {stdout}")
+                f"MCP server '{server_name}' didn't return a clear JSON array. Output: {stdout}"
+            )
             return False
 
         except subprocess.TimeoutExpired:
-            logging.error(
-                f"Verification of MCP server {server_name} timed out.")
+            logging.error(f"Verification of MCP server {server_name} timed out.")
             return False
         except Exception as e:
             logging.error(f"Failed to verify MCP server {server_name}: {e}")
@@ -351,34 +439,43 @@ class GeminiCliGenerator(QueryGenerator):
 
         installed_extensions = set()
         try:
-            cmd = ["npm", "exec", "--yes", self.gemini_cli_version,
-                   "--", "extensions", "list"]
+            cmd = [
+                "npm",
+                "exec",
+                "--yes",
+                self.gemini_cli_version,
+                "--",
+                "extensions",
+                "list",
+            ]
             result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-                env=install_env
+                cmd, capture_output=True, text=True, check=False, env=install_env
             )
 
             for line in result.stdout.splitlines():
                 line = line.strip()
 
                 warn_match = re.search(
-                    r"Warning: Skipping extension in (.*?): Configuration file not found", line)
+                    r"Warning: Skipping extension in (.*?): Configuration file not found",
+                    line,
+                )
                 if warn_match:
                     corrupted_path = warn_match.group(1).strip()
                     logging.warning(
-                        f"Detected corrupted extension at {corrupted_path}. Removing...")
+                        f"Detected corrupted extension at {corrupted_path}. Removing..."
+                    )
                     try:
                         shutil.rmtree(corrupted_path)
                     except Exception as e:
                         logging.error(
-                            f"Failed to remove corrupted extension directory {corrupted_path}: {e}")
+                            f"Failed to remove corrupted extension directory {corrupted_path}: {e}"
+                        )
                     continue
 
                 keychain_match = re.search(
-                    r"Warning: Skipping extension in (.*?): Keychain is not available", line)
+                    r"Warning: Skipping extension in (.*?): Keychain is not available",
+                    line,
+                )
                 if keychain_match:
                     ext_path = keychain_match.group(1).strip()
                     self._patch_manifest_sensitive(ext_path)
@@ -397,8 +494,11 @@ class GeminiCliGenerator(QueryGenerator):
                         if "(" in parts[0]:
                             continue
 
-                        name = parts[1] if "✓" in parts[0] and len(
-                            parts) >= 2 else parts[0]
+                        name = (
+                            parts[1]
+                            if "✓" in parts[0] and len(parts) >= 2
+                            else parts[0]
+                        )
 
                         if not name.startswith("("):
                             installed_extensions.add(name)
@@ -422,15 +522,22 @@ class GeminiCliGenerator(QueryGenerator):
             for ext in to_uninstall:
                 try:
                     subprocess.run(
-                        ["npm", "exec", "--yes", self.gemini_cli_version,
-                            "--", "extensions", "uninstall", ext],
+                        [
+                            "npm",
+                            "exec",
+                            "--yes",
+                            self.gemini_cli_version,
+                            "--",
+                            "extensions",
+                            "uninstall",
+                            ext,
+                        ],
                         check=False,
                         capture_output=True,
-                        env=install_env
+                        env=install_env,
                     )
                 except Exception as e:
-                    logging.warning(
-                        f"Failed to uninstall extension {ext}: {e}")
+                    logging.warning(f"Failed to uninstall extension {ext}: {e}")
 
         # Install requested extensions
         for ext in extension_names:
@@ -445,7 +552,8 @@ class GeminiCliGenerator(QueryGenerator):
 
             if already_installed:
                 logging.info(
-                    f"Extension '{ext}' appears to be already installed. Skipping.")
+                    f"Extension '{ext}' appears to be already installed. Skipping."
+                )
                 continue
 
             logging.info(f"Installing extension: {ext}")
@@ -457,19 +565,29 @@ class GeminiCliGenerator(QueryGenerator):
             try:
                 # gemini extensions install <name_or_url> --consent
                 result = subprocess.run(
-                    ['npm', 'exec', '--yes', self.gemini_cli_version,
-                        '--', 'extensions', 'install', ext, '--consent'],
+                    [
+                        "npm",
+                        "exec",
+                        "--yes",
+                        self.gemini_cli_version,
+                        "--",
+                        "extensions",
+                        "install",
+                        ext,
+                        "--consent",
+                    ],
                     check=False,
                     capture_output=True,
                     text=True,
-                    input='\n' * 10,
+                    input="\n" * 10,
                     env=current_ext_env,
-                    timeout=300
+                    timeout=300,
                 )
 
                 if result.returncode != 0:
                     logging.error(
-                        f"Failed to install extension {ext}. Output: {result.stdout}, Error: {result.stderr}")
+                        f"Failed to install extension {ext}. Output: {result.stdout}, Error: {result.stderr}"
+                    )
                 else:
                     logging.info(f"Successfully installed extension: {ext}")
 
@@ -480,7 +598,8 @@ class GeminiCliGenerator(QueryGenerator):
                         for item in os.listdir(self.extensions_dir):
                             if search_name in item:
                                 self._patch_manifest_sensitive(
-                                    os.path.join(self.extensions_dir, item))
+                                    os.path.join(self.extensions_dir, item)
+                                )
 
             except subprocess.TimeoutExpired:
                 logging.error(f"Installation of extension {ext} timed out.")
@@ -492,15 +611,15 @@ class GeminiCliGenerator(QueryGenerator):
         manifest_path = os.path.join(ext_path, "gemini-extension.json")
         try:
             if os.path.exists(manifest_path):
-                with open(manifest_path, 'r') as f:
+                with open(manifest_path, "r") as f:
                     content = f.read()
 
                 if '"sensitive": true' in content:
                     logging.info(
-                        f"Patching manifest at {manifest_path} for headless compatibility.")
-                    content = content.replace(
-                        '"sensitive": true', '"sensitive": false')
-                    with open(manifest_path, 'w') as f:
+                        f"Patching manifest at {manifest_path} for headless compatibility."
+                    )
+                    content = content.replace('"sensitive": true', '"sensitive": false')
+                    with open(manifest_path, "w") as f:
                         f.write(content)
         except Exception as e:
             logging.error(f"Failed to patch manifest at {manifest_path}: {e}")
@@ -510,29 +629,38 @@ class GeminiCliGenerator(QueryGenerator):
             cli_cmd = CLICommand(self.gemini_cli_version, str(cli_cmd))
         return self._run_gemini_cli(cli_cmd)
 
-    def _execute_cli_command(self, command: list[str], env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+    def _execute_cli_command(
+        self, command: list[str], env: dict[str, str] | None = None
+    ) -> subprocess.CompletedProcess:
         try:
             result = subprocess.run(
                 command, capture_output=True, text=True, check=False, env=env
             )
             # Filter out benign schema warnings from json decoder from stderr to reduce noise
             if result.stderr:
-                result.stderr = "\n".join([
-                    line for line in result.stderr.splitlines()
-                    if 'unknown format "google-duration" ignored' not in line
-                ])
+                result.stderr = "\n".join(
+                    [
+                        line
+                        for line in result.stderr.splitlines()
+                        if 'unknown format "google-duration" ignored' not in line
+                    ]
+                )
             return result
         except FileNotFoundError:
-            return subprocess.CompletedProcess(command, 127, "", f"Error: Command not found: {command[0]}")
+            return subprocess.CompletedProcess(
+                command, 127, "", f"Error: Command not found: {command[0]}"
+            )
         except Exception as e:
-            return subprocess.CompletedProcess(command, 1, "", f"An unexpected error occurred: {e}")
+            return subprocess.CompletedProcess(
+                command, 1, "", f"An unexpected error occurred: {e}"
+            )
 
     def _run_gemini_cli(self, cli_cmd: CLICommand):
         gemini_settings_path = os.path.join(self.gemini_home, "settings.json")
 
         if not os.path.exists(gemini_settings_path):
             os.makedirs(os.path.dirname(gemini_settings_path), exist_ok=True)
-            with open(gemini_settings_path, 'w') as f:
+            with open(gemini_settings_path, "w") as f:
                 json.dump({}, f)
 
         env = os.environ.copy()
@@ -553,12 +681,14 @@ class GeminiCliGenerator(QueryGenerator):
         if cli_cmd.yolo:
             command.append("--yolo")
 
-        command.extend([
-            "--output-format",
-            "stream-json",
-            "--prompt",
-            cli_cmd.prompt,
-        ])
+        command.extend(
+            [
+                "--output-format",
+                "stream-json",
+                "--prompt",
+                cli_cmd.prompt,
+            ]
+        )
 
         result = self._execute_cli_command(command, env=env)
         if result.returncode == 0 and result.stdout:
@@ -574,7 +704,7 @@ class GeminiCliGenerator(QueryGenerator):
         tool_results = {}
         model_name = "gemini-2.5-flash"
 
-        for line in stream_output.split('\n'):
+        for line in stream_output.split("\n"):
             line = line.strip()
             if not line:
                 continue
@@ -603,7 +733,7 @@ class GeminiCliGenerator(QueryGenerator):
                             "api": {
                                 "totalRequests": 1,
                                 "totalErrors": 0,
-                                "totalLatencyMs": total_duration
+                                "totalLatencyMs": total_duration,
                             },
                             "tokens": {
                                 "input": s.get("input_tokens", 0),
@@ -612,7 +742,7 @@ class GeminiCliGenerator(QueryGenerator):
                                 "total": s.get("total_tokens", 0),
                                 "cached": s.get("cached", 0),
                                 "thoughts": 0,
-                                "tool": 0
+                                "tool": 0,
                             },
                             "roles": {
                                 "main": {
@@ -626,26 +756,34 @@ class GeminiCliGenerator(QueryGenerator):
                                         "total": s.get("total_tokens", 0),
                                         "cached": s.get("cached", 0),
                                         "thoughts": 0,
-                                        "tool": 0
-                                    }
+                                        "tool": 0,
+                                    },
                                 }
-                            }
+                            },
                         }
                     }
                     final_obj["stats"]["models"] = models
 
                     tools_stats = {
                         "totalCalls": len(tool_uses),
-                        "totalSuccess": sum(1 for tr in tool_results.values() if tr.get("status") == "success"),
-                        "totalFail": sum(1 for tr in tool_results.values() if tr.get("status") != "success"),
+                        "totalSuccess": sum(
+                            1
+                            for tr in tool_results.values()
+                            if tr.get("status") == "success"
+                        ),
+                        "totalFail": sum(
+                            1
+                            for tr in tool_results.values()
+                            if tr.get("status") != "success"
+                        ),
                         "totalDurationMs": 0,
                         "decisions": {
                             "accept": len(tool_uses),
                             "reject": 0,
                             "modify": 0,
-                            "auto_accept": len(tool_uses)
+                            "auto_accept": len(tool_uses),
                         },
-                        "byName": {}
+                        "byName": {},
                     }
 
                     for tid, tu in tool_uses.items():
@@ -661,8 +799,8 @@ class GeminiCliGenerator(QueryGenerator):
                                     "accept": 0,
                                     "reject": 0,
                                     "modify": 0,
-                                    "auto_accept": 0
-                                }
+                                    "auto_accept": 0,
+                                },
                             }
 
                         tstat = tools_stats["byName"][tname]
@@ -682,8 +820,7 @@ class GeminiCliGenerator(QueryGenerator):
                             try:
                                 t1 = dateutil.parser.isoparse(tu["timestamp"])
                                 t2 = dateutil.parser.isoparse(tr["timestamp"])
-                                duration = int(
-                                    (t2 - t1).total_seconds() * 1000)
+                                duration = int((t2 - t1).total_seconds() * 1000)
                             except Exception as e:
                                 logging.debug(
                                     "Failed to parse tool timestamps for duration calculation: "
@@ -729,7 +866,9 @@ class GeminiCliGenerator(QueryGenerator):
             result.stderr += "\nError: Generator returned empty response."
         return result
 
-    def create_command(self, cli: str, prompt: str, env: dict = None, resume: bool = False) -> CLICommand:
+    def create_command(
+        self, cli: str, prompt: str, env: dict = None, resume: bool = False
+    ) -> CLICommand:
         merged_env = self.env.copy()
 
         if hasattr(self, "setup_config") and "extensions" in self.setup_config:

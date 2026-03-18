@@ -1,5 +1,6 @@
 """A gRPC servicer that handles EvalService requests."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import AsyncGenerator
 
@@ -46,10 +47,8 @@ class SessionManagerInterceptor(grpc.aio.ServerInterceptor):
         ],
         handler_call_details: grpc.HandlerCallDetails,
     ) -> grpc.RpcMethodHandler:
-        # type: ignore
         _metadata = dict(handler_call_details.invocation_metadata)
         if rpc_id_var.get() == "default":
-            # type: ignore
             _metadata = dict(handler_call_details.invocation_metadata)
             rpc_id_var.set(self.decorate(_metadata["client-rpc-id"]))
             SESSIONMANAGER.create_session(rpc_id_var.get())
@@ -73,14 +72,14 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         request: eval_request_pb2.PingRequest,
         context: grpc.ServicerContext,
     ) -> eval_response_pb2.EvalResponse:
-        return eval_response_pb2.EvalResponse(response=f"ack")
+        return eval_response_pb2.EvalResponse(response="ack")
 
     async def Connect(
         self,
         request,
         context,
     ) -> eval_response_pb2.EvalResponse:
-        return eval_response_pb2.EvalResponse(response=f"ack")
+        return eval_response_pb2.EvalResponse(response="ack")
 
     async def EvalConfig(
         self,
@@ -89,13 +88,11 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
     ) -> eval_response_pb2.EvalResponse:
         experiment_config = yaml.safe_load(request.yaml_config.decode("utf-8"))
         session = SESSIONMANAGER.get_session(rpc_id_var.get())
-        SESSIONMANAGER.write_resource_files(
-            rpc_id_var.get(), request.resources)
+        SESSIONMANAGER.write_resource_files(rpc_id_var.get(), request.resources)
         resource_map = {r.address: r.address for r in request.resources}
-        update_google3_relative_paths(
-            experiment_config, rpc_id_var.get(), resource_map)
+        update_google3_relative_paths(experiment_config, rpc_id_var.get(), resource_map)
         set_session_configs(session, experiment_config)
-        return eval_response_pb2.EvalResponse(response=f"ack")
+        return eval_response_pb2.EvalResponse(response="ack")
 
     async def ListEvalInputs(
         self,
@@ -106,8 +103,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         logging.info("Retrieving Evals for: %s.", rpc_id_var.get())
         experiment_config = session["config"]
         dataset_config_json = experiment_config["dataset_config"]
-        dataset = load_dataset_from_json(
-            dataset_config_json, experiment_config)
+        dataset = load_dataset_from_json(dataset_config_json, experiment_config)
         for _, eval_inputs in dataset.items():
             for eval_input in eval_inputs:
                 eval_input_request = eval_input.to_proto()
@@ -118,19 +114,32 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         request_iterator: AsyncIterator[eval_request_pb2.EvalInputRequest],
         context: grpc.ServicerContext,
     ) -> eval_response_pb2.EvalResponse:
-        session = SESSIONMANAGER.get_session(rpc_id_var.get())
-        config, db_configs, model_config, setup_config = load_session_configs(
-            session)
+        session_id = rpc_id_var.get()
+        session = SESSIONMANAGER.get_session(session_id)
+        config, db_configs, model_config, setup_config = load_session_configs(session)
+        if config is not None:
+            config["session_id"] = session_id
+
         dataset = await get_dataset_from_request(request_iterator)
 
         evaluator = get_orchestrator(
             config, db_configs, setup_config, report_progress=True
         )
-        evaluator.evaluate(dataset)
+
+        loop = asyncio.get_event_loop()
+
+        # Offload blocking evaluate call to a thread pool
+        logging.info("Offloading evaluation to thread pool...")
+        await loop.run_in_executor(None, evaluator.evaluate, dataset)
 
         job_id, run_time, results_tf, scores_tf = evaluator.process()
         reporters = get_reporters(config.get("reporting"), job_id, run_time)
-        _process_results(
+
+        # Offload blocking results processing to a thread pool
+        logging.info("Offloading results processing to thread pool...")
+        await loop.run_in_executor(
+            None,
+            _process_results,
             reporters,
             job_id,
             run_time,
@@ -140,6 +149,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             model_config,
             db_configs,
         )
+
         logging.info(
             f"Finished Job ID {job_id} Thread count:{threading.active_count()}"
         )

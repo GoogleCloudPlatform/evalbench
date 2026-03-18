@@ -6,9 +6,6 @@ import json
 import sys
 import os
 
-sys.path.append(os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "../..")))
-
 
 # Mocking the MongoClient to use mongomock
 @pytest.fixture(scope="session")
@@ -69,9 +66,11 @@ class TestMongoDB:
 
     def test_aggregate(self, client):
         """Tests aggregation query."""
-        # Data already inserted in previous test (session scope fixture, but we might want to clean up)
+        # Data already inserted in previous test
+        # (session scope fixture, but we might want to clean up)
         # For safety, let's insert again or assume persistence.
-        # mongomock is in-memory, so it persists for the session if not cleared.
+        # mongomock is in-memory, so it persists for the session if not
+        # cleared.
 
         query = json.dumps(
             {

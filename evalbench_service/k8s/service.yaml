@@ -11,10 +11,14 @@ spec:
   - IPv6
   - IPv4
   ports:
-  - name: eval-server
+  - name: grpc
     port: 50051
     protocol: TCP
     targetPort: 50051
+  - name: ui
+    port: 3000
+    protocol: TCP
+    targetPort: 3000
   selector:
     app: evalbench-eval-server
   type: ClusterIP

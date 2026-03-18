@@ -169,15 +169,15 @@ def load_dataset_from_bird_format(dataset: Sequence[dict], config):
             item["question"] = item["other"]["question"]
         if "db_id" not in item:
             item["db_id"] = dataset_str
-        if "SQL" not in item:
-            if dialects[0] in item["golden_sql"]:
-                item["SQL"] = item["golden_sql"][dialects[0]]
-            else:
-                item["SQL"] = ""
         if "difficulty" not in item and "tags" in item:
             item["difficulty"] = item["tags"]
 
-        if item["SQL"]:
+        golden_sql_dict = item.get("golden_sql", {})
+        if not golden_sql_dict and item.get("SQL"):
+            # Fallback to single SQL string mapped to all requested dialects
+            golden_sql_dict = {d: item["SQL"] for d in config["dialects"]}
+
+        if golden_sql_dict:
             eval_input = EvalInputRequest(
                 id=item["question_id"],
                 nl_prompt="".join([item["question"], item["evidence"]]).replace(
@@ -186,7 +186,7 @@ def load_dataset_from_bird_format(dataset: Sequence[dict], config):
                 query_type=query_type,
                 database=item["db_id"],
                 dialects=config["dialects"],
-                golden_sql=item["SQL"],
+                golden_sql=golden_sql_dict,
                 eval_query="",
                 setup_sql="",
                 cleanup_sql="",

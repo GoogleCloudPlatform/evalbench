@@ -71,7 +71,22 @@ class State:
 def app():
     state = me.state(State)
 
-    results_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "results")
+    # Check multiple locations for results directory
+    results_dir_candidates = [
+        "/tmp_session_files/results",
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "results"),
+        os.path.join(os.getcwd(), "results")
+    ]
+    
+    results_dir = None
+    for candidate in results_dir_candidates:
+        if os.path.exists(candidate) and os.path.isdir(candidate):
+            results_dir = candidate
+            break
+            
+    if results_dir is None:
+        results_dir = results_dir_candidates[1] # Fallback to default
+
     directories = []
     if os.path.exists(results_dir):
         # List directories only
