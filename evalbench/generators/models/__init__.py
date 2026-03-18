@@ -17,7 +17,7 @@ def get_generator(global_models, model_config_path: str, db: DB = None):
         config = load_yaml_config(model_config_path)
         # Create a new model_config
         model: QueryGenerator | None = None
-        if config["generator"] == "gcp_vertex_gemini":
+        if config["generator"] == "gcp_vertex_gemini" or config["generator"] == "gemini_cli":
             model = GeminiGenerator(config)
         if config["generator"] == "gcp_vertex_claude":
             model = ClaudeGenerator(config)
