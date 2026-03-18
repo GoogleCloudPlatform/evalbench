@@ -1,0 +1,28 @@
+gemini_cli_version: "@google/gemini-cli@0.25.1"
+generator: gemini_cli
+model: "gemini-2.5-flash"
+
+# For GeminiGenerator (Vertex AI) - used if generator type is switched or by other tools
+vertex_model: "gemini-2.5-flash"
+gcp_project_id: "cloud-bigtable-spacewalk"
+gcp_region: "us-central1"
+
+# For Rate Limiting
+execs_per_minute: 180
+
+env:
+  GOOGLE_CLOUD_PROJECT: "cloud-bigtable-spacewalk"
+  GOOGLE_CLOUD_LOCATION: "us-central1"
+  GOOGLE_GENAI_USE_VERTEXAI: "true"
+  GEMINI_API_MODEL: "gemini-2.5-flash"
+  GEMINI_MODEL: "gemini-2.5-flash"
+setup:
+  mcp_servers:
+    "bigtable":
+      httpUrl: "https://bigtableadmin.googleapis.com/mcp"
+      authProviderType: google_credentials
+      oauth:
+        scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+      headers:
+        X-Goog-User-Project: cloud-bigtable-spacewalk
