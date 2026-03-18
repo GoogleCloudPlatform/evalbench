@@ -5,7 +5,7 @@ import pytest
 import json
 import sys
 import os
-from evalbench.databases import mongodb
+from databases import mongodb
 
 
 # Mocking the MongoClient to use mongomock
