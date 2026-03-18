@@ -22,18 +22,20 @@ def rate_limit(
 
     result = None
     semaphore.acquire()
-    attempt = 1
-    while attempt <= max_attempts:
-        try:
-            result = execution_method(*query)
-            break
-        except ResourceExhaustedError as e:
-            # exponentially backoff starting at 5 seconds
-            time.sleep(5 * (2 ** (attempt)))
-            attempt += 1
-    time.sleep(60 / execs_per_minute)
-    semaphore.release()
-    if attempt > max_attempts:
-        # All attempts were unsuccessful
-        raise ResourceExhaustedError()
-    return result
+    try:
+        attempt = 1
+        while attempt <= max_attempts:
+            try:
+                result = execution_method(*query)
+                break
+            except ResourceExhaustedError as e:
+                # exponentially backoff starting at 5 seconds
+                time.sleep(5 * (2 ** (attempt)))
+                attempt += 1
+        time.sleep(60 / execs_per_minute)
+        if attempt > max_attempts:
+            # All attempts were unsuccessful
+            raise ResourceExhaustedError()
+        return result
+    finally:
+        semaphore.release()

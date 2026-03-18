@@ -1,5 +1,6 @@
 """A gRPC servicer that handles EvalService requests."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import AsyncGenerator
 
@@ -46,10 +47,8 @@ class SessionManagerInterceptor(grpc.aio.ServerInterceptor):
         ],
         handler_call_details: grpc.HandlerCallDetails,
     ) -> grpc.RpcMethodHandler:
-        # type: ignore
         _metadata = dict(handler_call_details.invocation_metadata)
         if rpc_id_var.get() == "default":
-            # type: ignore
             _metadata = dict(handler_call_details.invocation_metadata)
             rpc_id_var.set(self.decorate(_metadata["client-rpc-id"]))
             SESSIONMANAGER.create_session(rpc_id_var.get())
@@ -126,11 +125,21 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         evaluator = get_orchestrator(
             config, db_configs, setup_config, report_progress=True
         )
-        evaluator.evaluate(dataset)
+
+        loop = asyncio.get_event_loop()
+
+        # Offload blocking evaluate call to a thread pool
+        logging.info("Offloading evaluation to thread pool...")
+        await loop.run_in_executor(None, evaluator.evaluate, dataset)
 
         job_id, run_time, results_tf, scores_tf = evaluator.process()
         reporters = get_reporters(config.get("reporting"), job_id, run_time)
-        _process_results(
+
+        # Offload blocking results processing to a thread pool
+        logging.info("Offloading results processing to thread pool...")
+        await loop.run_in_executor(
+            None,
+            _process_results,
             reporters,
             job_id,
             run_time,
@@ -140,6 +149,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             model_config,
             db_configs,
         )
+
         logging.info(
             f"Finished Job ID {job_id} Thread count:{threading.active_count()}"
         )

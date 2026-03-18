@@ -35,3 +35,4 @@ google-adk
 mcp
 pytest
 sqlparse
+mock
