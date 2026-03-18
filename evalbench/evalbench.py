@@ -15,6 +15,7 @@ from util.service import load_session_configs
 import os
 import sys
 import yaml
+import multiprocessing
 
 try:
     import google.colab  # type: ignore
@@ -164,4 +165,5 @@ def main(argv: Sequence[str]):
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()  # Required for PyInstaller multiprocessing support
     app.run(main)

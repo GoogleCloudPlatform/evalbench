@@ -119,3 +119,7 @@ style:
 
 run:
 	@./run_service.sh
+
+binary:
+	uv pip install pyinstaller
+	uv run pyinstaller pyinstaller.spec
