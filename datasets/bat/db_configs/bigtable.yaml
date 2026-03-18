@@ -1,4 +1,0 @@
-db_type: bigtable
-dialect: bigtable
-max_executions_per_minute: 180
-location: US
