@@ -370,15 +370,13 @@ class GeminiCliGenerator(QueryGenerator):
                     if "response" in envelope:
                         response_text = envelope["response"].strip()
 
-                        if response_text.startswith(
-                            "```"
-                        ) or response_text.startswith('"'):
-                            # Robust JSON parsing
-                            json_match = re.search(
-                                r"\\[.*\\]", response_text, re.DOTALL
-                            )
-                            if json_match:
-                                response_text = json_match.group(0)
+                        if response_text.startswith('```'):
+                            lines = response_text.split('\n')
+                            if lines and lines[0].startswith('```'):
+                                lines = lines[1:]
+                            if lines and lines[-1].startswith('```'):
+                                lines = lines[:-1]
+                            response_text = '\n'.join(lines).strip()
 
                         tools = json.loads(response_text)
 
@@ -685,7 +683,6 @@ class GeminiCliGenerator(QueryGenerator):
             [
                 "--output-format",
                 "stream-json",
-                "--prompt",
                 cli_cmd.prompt,
             ]
         )
