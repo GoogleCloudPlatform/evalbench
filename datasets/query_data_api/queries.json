@@ -1,0 +1,36 @@
+[
+  {
+    "id": "sample_01",
+    "nl_prompt": "<YOUR_NATURAL_LANGUAGE_QUESTION_1>",
+    "query_type": "dql",
+    "golden_sql": {
+      "postgres": [
+        "<YOUR_GOLDEN_SQL_QUERY_1>"
+      ]
+    },
+    "database": "<YOUR_DATABASE_NAME>",
+    "dialects": ["postgres"],
+    "tags": ["Simple"],
+    "eval_query": { "postgres": [ null ] },
+    "setup_sql": {},
+    "cleanup_sql": {},
+    "other": {}
+  },
+  {
+    "id": "sample_02",
+    "nl_prompt": "<YOUR_NATURAL_LANGUAGE_QUESTION_2>",
+    "query_type": "dql",
+    "golden_sql": {
+      "postgres": [
+        "<YOUR_GOLDEN_SQL_QUERY_2>"
+      ]
+    },
+    "database": "<YOUR_DATABASE_NAME>",
+    "dialects": ["postgres"],
+    "tags": ["Simple"],
+    "eval_query": { "postgres": [ null ] },
+    "setup_sql": {},
+    "cleanup_sql": {},
+    "other": {}
+  }
+]
