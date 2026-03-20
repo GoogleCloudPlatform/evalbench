@@ -5,7 +5,7 @@ import time
 from absl import app
 import uuid
 
-SESSION_RESOURCES_PATH = "/tmp_session_files/"
+SESSION_RESOURCES_PATH = "/tmp_sessions/"
 
 
 class SessionManager:

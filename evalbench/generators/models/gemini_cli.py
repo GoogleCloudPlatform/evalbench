@@ -29,7 +29,7 @@ class GeminiCliGenerator(QueryGenerator):
         # If running via eval_server.py (gRPC), use session-specific path in shared volume
         if sys.argv[0].endswith("eval_server.py"):
             session_id = querygenerator_config.get("session_id", "default")
-            self.fake_home = os.path.join("/tmp_session_files", session_id, "fake_home")
+            self.fake_home = os.path.join("/tmp_sessions", session_id, "fake_home")
         else:
             self.fake_home = os.path.abspath(os.path.join(".venv", "fake_home"))
 
@@ -73,6 +73,9 @@ class GeminiCliGenerator(QueryGenerator):
         if not os.path.exists(os.path.dirname(gemini_settings_path)):
             os.makedirs(os.path.dirname(gemini_settings_path), exist_ok=True)
 
+        # Setup NPM Authentication first, so we can pull gemini-cli/extensions
+        self._setup_npm_auth()
+
         # Setup MCP Servers
         mcp_servers_config = self.setup_config.get("mcp_servers", {})
         self._setup_mcp_servers(mcp_servers_config, gemini_settings_path)
@@ -82,8 +85,6 @@ class GeminiCliGenerator(QueryGenerator):
                 gemini_settings_path,
                 verify_tools=False,
             )
-
-        self._setup_npm_auth()
 
         # Install Extensions
         extensions_config = self.setup_config.get("extensions", {})
@@ -351,7 +352,7 @@ class GeminiCliGenerator(QueryGenerator):
                 text=True,
                 check=False,
                 env=verify_env,
-                timeout=120,
+                timeout=300,
             )
 
             if result.returncode != 0:
@@ -549,9 +550,7 @@ class GeminiCliGenerator(QueryGenerator):
                     break
 
             if already_installed:
-                logging.info(
-                    f"Extension '{ext}' appears to be already installed. Skipping."
-                )
+                logging.info(f"Extension '{ext}' appears to be already installed. Skipping.")
                 continue
 
             logging.info(f"Installing extension: {ext}")
@@ -631,9 +630,7 @@ class GeminiCliGenerator(QueryGenerator):
         self, command: list[str], env: dict[str, str] | None = None
     ) -> subprocess.CompletedProcess:
         try:
-            result = subprocess.run(
-                command, capture_output=True, text=True, check=False, env=env
-            )
+            result = subprocess.run(command, capture_output=True, text=True, check=False, env=env)
             # Filter out benign schema warnings from json decoder from stderr to reduce noise
             if result.stderr:
                 result.stderr = "\n".join(

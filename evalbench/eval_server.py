@@ -1,33 +1,13 @@
 """Server on GCP side for the evaluation service."""
 
-import asyncio
-from collections.abc import Sequence
-
-from absl import app
-from absl import flags
-from absl import logging
-import grpc
-import util
-from eval_service import EvalServicer
-from eval_service import SessionManagerInterceptor
-from evalproto import eval_service_pb2_grpc
 import os
 import sys
+from absl import logging
 
-_LOCALHOST = flags.DEFINE_bool(
-    "localhost",
-    False,
-    "Whether to use localhost. ALTS is only available on GCP, so this is useful"
-    " for local testing.",
-)
-
-CLOUD_RUN = os.getenv("CLOUD_RUN", False)
-PORT = os.getenv("PORT", 50051)
-_cleanup_coroutines = []
+# --- Logging Initialization (MUST happen before other imports) ---
 
 
 class UncloseableStream:
-
     def __init__(self, stream):
         self.stream = stream
 
@@ -41,10 +21,36 @@ class UncloseableStream:
         pass  # Do not close the underlying stream
 
 
+logging.use_absl_handler()
+# Prevent stream closing globally
+logging.get_absl_handler().python_handler.stream = UncloseableStream(sys.stdout)
+
+# --- Remaining Imports ---
+import asyncio
+from collections.abc import Sequence
+
+from absl import app
+from absl import flags
+import grpc
+import util
+from eval_service import EvalServicer
+from eval_service import SessionManagerInterceptor
+from evalproto import eval_service_pb2_grpc
+
+_LOCALHOST = flags.DEFINE_bool(
+    "localhost",
+    False,
+    "Whether to use localhost. ALTS is only available on GCP, so this is useful"
+    " for local testing.",
+)
+
+CLOUD_RUN = os.getenv("CLOUD_RUN", False)
+PORT = os.getenv("PORT", 50051)
+_cleanup_coroutines = []
+
+
 async def _serve():
     """Starts the server."""
-    # Prevent stream closing
-    logging.get_absl_handler().python_handler.stream = UncloseableStream(sys.stdout)
     logging.info("Starting server")
 
     interceptors = [
@@ -75,8 +81,6 @@ async def _serve():
 def main(argv: Sequence[str]) -> None:
     if len(argv) > 1:
         raise app.UsageError("Too many command-line arguments.")
-
-    logging.use_absl_handler()
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)

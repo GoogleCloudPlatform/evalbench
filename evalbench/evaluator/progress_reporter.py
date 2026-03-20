@@ -13,6 +13,7 @@ _ORIGINAL_STDOUT = sys.stdout
 _ORIGINAL_STDERR = sys.stderr
 _ORIGINAL_HANDLERS = None
 _NUM_LINES_FOR_PROGRESS = 5
+_STDOUT_LOCK = threading.Lock()
 try:
     import google.colab  # type: ignore
     from IPython.display import display, HTML  # type: ignore
@@ -69,11 +70,12 @@ def _setup_colab(progress_report):
 
 def _setup_stdout_reporting():
     global _ORIGINAL_HANDLERS
-    logger = logging.getLogger()
-    _ORIGINAL_HANDLERS = logger.handlers
-    sys.stderr = sys.stdout = tmp_buffer = StringIO()
-    logger.handlers = [logging.StreamHandler(tmp_buffer)]
-    _ORIGINAL_STDOUT.write(("-" * 80 + "\n") * _NUM_LINES_FOR_PROGRESS)
+    with _STDOUT_LOCK:
+        logger = logging.getLogger()
+        _ORIGINAL_HANDLERS = logger.handlers
+        sys.stderr = sys.stdout = tmp_buffer = StringIO()
+        logger.handlers = [logging.StreamHandler(tmp_buffer)]
+        _ORIGINAL_STDOUT.write(("-" * 80 + "\n") * _NUM_LINES_FOR_PROGRESS)
     return tmp_buffer
 
 
@@ -282,13 +284,14 @@ def cleanup_progress_reporting(
         colab_progress_report.update(_colab_progress(progress_report))
         return
     global _ORIGINAL_HANDLERS
-    sys.stdout = _ORIGINAL_STDOUT
-    sys.stderr = _ORIGINAL_STDERR
-    logger = logging.getLogger()
-    if _ORIGINAL_HANDLERS:
-        logger.handlers = _ORIGINAL_HANDLERS
-    _print_report(progress_report, tmp_buffer)
-    tmp_buffer.close()
+    with _STDOUT_LOCK:
+        sys.stdout = _ORIGINAL_STDOUT
+        sys.stderr = _ORIGINAL_STDERR
+        logger = logging.getLogger()
+        if _ORIGINAL_HANDLERS:
+            logger.handlers = _ORIGINAL_HANDLERS
+        _print_report(progress_report, tmp_buffer)
+        tmp_buffer.close()
 
 
 # Print iterations progress bar for parallel calls

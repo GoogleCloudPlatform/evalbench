@@ -1,0 +1,1199 @@
+[
+  {
+    "insertMany": "customers",
+    "documents": [
+      {
+        "customer_id": "cust_001",
+        "name": "Alice Johnson",
+        "email": "alice@example.com",
+        "tier": "gold",
+        "created_at": "2023-06-01",
+        "addresses": [
+          {
+            "type": "home",
+            "street": "123 Main St",
+            "city": "New York",
+            "state": "NY",
+            "zip": "10001",
+            "country": "US"
+          },
+          {
+            "type": "work",
+            "street": "456 Office Blvd",
+            "city": "New York",
+            "state": "NY",
+            "zip": "10002",
+            "country": "US"
+          }
+        ],
+        "preferences": {
+          "newsletter": true,
+          "notifications": {
+            "email": true,
+            "sms": false
+          },
+          "preferred_categories": [
+            "Electronics",
+            "Books"
+          ]
+        },
+        "stats": {
+          "total_orders": 2,
+          "total_spent": 295.95,
+          "last_order_date": "2024-03-10"
+        }
+      },
+      {
+        "customer_id": "cust_002",
+        "name": "Bob Smith",
+        "email": "bob@example.com",
+        "tier": "silver",
+        "created_at": "2023-09-15",
+        "addresses": [
+          {
+            "type": "home",
+            "street": "789 Oak Ave",
+            "city": "Los Angeles",
+            "state": "CA",
+            "zip": "90001",
+            "country": "US"
+          }
+        ],
+        "preferences": {
+          "newsletter": false,
+          "notifications": {
+            "email": true,
+            "sms": true
+          },
+          "preferred_categories": [
+            "Clothing",
+            "Sports"
+          ]
+        },
+        "stats": {
+          "total_orders": 2,
+          "total_spent": 209.97,
+          "last_order_date": "2024-02-20"
+        }
+      },
+      {
+        "customer_id": "cust_003",
+        "name": "Carol White",
+        "email": "carol@example.com",
+        "tier": "gold",
+        "created_at": "2024-01-10",
+        "addresses": [
+          {
+            "type": "home",
+            "street": "321 Pine Rd",
+            "city": "Chicago",
+            "state": "IL",
+            "zip": "60601",
+            "country": "US"
+          },
+          {
+            "type": "work",
+            "street": "654 Business Park",
+            "city": "Chicago",
+            "state": "IL",
+            "zip": "60602",
+            "country": "US"
+          }
+        ],
+        "preferences": {
+          "newsletter": true,
+          "notifications": {
+            "email": true,
+            "sms": true
+          },
+          "preferred_categories": [
+            "Electronics",
+            "Home"
+          ]
+        },
+        "stats": {
+          "total_orders": 2,
+          "total_spent": 350.92,
+          "last_order_date": "2024-03-15"
+        }
+      },
+      {
+        "customer_id": "cust_004",
+        "name": "David Lee",
+        "email": "david@example.com",
+        "tier": "bronze",
+        "created_at": "2024-02-05",
+        "addresses": [
+          {
+            "type": "home",
+            "street": "987 Elm St",
+            "city": "Houston",
+            "state": "TX",
+            "zip": "77001",
+            "country": "US"
+          }
+        ],
+        "preferences": {
+          "newsletter": true,
+          "notifications": {
+            "email": false,
+            "sms": false
+          },
+          "preferred_categories": [
+            "Books"
+          ]
+        },
+        "stats": {
+          "total_orders": 1,
+          "total_spent": 39.99,
+          "last_order_date": "2024-02-28"
+        }
+      },
+      {
+        "customer_id": "cust_005",
+        "name": "Eva Martinez",
+        "email": "eva@example.com",
+        "tier": "silver",
+        "created_at": "2023-11-20",
+        "addresses": [
+          {
+            "type": "home",
+            "street": "555 Maple Dr",
+            "city": "San Francisco",
+            "state": "CA",
+            "zip": "94102",
+            "country": "US"
+          },
+          {
+            "type": "work",
+            "street": "777 Tech Blvd",
+            "city": "San Jose",
+            "state": "CA",
+            "zip": "95101",
+            "country": "US"
+          }
+        ],
+        "preferences": {
+          "newsletter": false,
+          "notifications": {
+            "email": true,
+            "sms": false
+          },
+          "preferred_categories": [
+            "Electronics",
+            "Sports"
+          ]
+        },
+        "stats": {
+          "total_orders": 3,
+          "total_spent": 445.9,
+          "last_order_date": "2024-03-20"
+        }
+      },
+      {
+        "customer_id": "cust_006",
+        "name": "Frank Brown",
+        "email": "frank@example.com",
+        "tier": "bronze",
+        "created_at": "2024-03-01",
+        "addresses": [
+          {
+            "type": "home",
+            "street": "111 Cedar Lane",
+            "city": "New York",
+            "state": "NY",
+            "zip": "10003",
+            "country": "US"
+          }
+        ],
+        "preferences": {
+          "newsletter": true,
+          "notifications": {
+            "email": true,
+            "sms": true
+          },
+          "preferred_categories": [
+            "Clothing"
+          ]
+        },
+        "stats": {
+          "total_orders": 1,
+          "total_spent": 154.97,
+          "last_order_date": "2024-03-05"
+        }
+      },
+      {
+        "customer_id": "cust_007",
+        "name": "Grace Kim",
+        "email": "grace@example.com",
+        "tier": "gold",
+        "created_at": "2023-03-15",
+        "addresses": [
+          {
+            "type": "home",
+            "street": "222 Birch Ave",
+            "city": "Seattle",
+            "state": "WA",
+            "zip": "98101",
+            "country": "US"
+          }
+        ],
+        "preferences": {
+          "newsletter": true,
+          "notifications": {
+            "email": true,
+            "sms": false
+          },
+          "preferred_categories": [
+            "Books",
+            "Home"
+          ]
+        },
+        "stats": {
+          "total_orders": 2,
+          "total_spent": 569.86,
+          "last_order_date": "2024-03-18"
+        }
+      },
+      {
+        "customer_id": "cust_008",
+        "name": "Henry Wilson",
+        "email": "henry@example.com",
+        "tier": "silver",
+        "created_at": "2024-01-25",
+        "addresses": [
+          {
+            "type": "home",
+            "street": "333 Spruce St",
+            "city": "Los Angeles",
+            "state": "CA",
+            "zip": "90002",
+            "country": "US"
+          },
+          {
+            "type": "work",
+            "street": "888 Corporate Way",
+            "city": "Los Angeles",
+            "state": "CA",
+            "zip": "90071",
+            "country": "US"
+          }
+        ],
+        "preferences": {
+          "newsletter": false,
+          "notifications": {
+            "email": false,
+            "sms": true
+          },
+          "preferred_categories": [
+            "Sports",
+            "Clothing"
+          ]
+        },
+        "stats": {
+          "total_orders": 2,
+          "total_spent": 309.92,
+          "last_order_date": "2024-03-12"
+        }
+      }
+    ]
+  },
+  {
+    "insertMany": "products",
+    "documents": [
+      {
+        "product_id": "prod_001",
+        "name": "Laptop Stand",
+        "category": "Electronics",
+        "price": 45.99,
+        "stock": 150,
+        "attributes": {
+          "brand": "TechBrand",
+          "material": "Aluminum",
+          "color": "Silver",
+          "weight_kg": 0.8
+        },
+        "tags": [
+          "ergonomic",
+          "portable",
+          "aluminum"
+        ],
+        "ratings": {
+          "average": 4.5,
+          "count": 230
+        }
+      },
+      {
+        "product_id": "prod_002",
+        "name": "USB-C Hub",
+        "category": "Electronics",
+        "price": 34.99,
+        "stock": 200,
+        "attributes": {
+          "brand": "TechBrand",
+          "material": "Plastic",
+          "color": "Black",
+          "weight_kg": 0.15
+        },
+        "tags": [
+          "connectivity",
+          "portable",
+          "usb"
+        ],
+        "ratings": {
+          "average": 4.2,
+          "count": 415
+        }
+      },
+      {
+        "product_id": "prod_003",
+        "name": "Mechanical Keyboard",
+        "category": "Electronics",
+        "price": 129.99,
+        "stock": 75,
+        "attributes": {
+          "brand": "KeyMaster",
+          "material": "Aluminum",
+          "color": "Black",
+          "weight_kg": 1.2
+        },
+        "tags": [
+          "gaming",
+          "mechanical",
+          "rgb",
+          "aluminum"
+        ],
+        "ratings": {
+          "average": 4.7,
+          "count": 892
+        }
+      },
+      {
+        "product_id": "prod_004",
+        "name": "Running Shoes",
+        "category": "Sports",
+        "price": 89.99,
+        "stock": 300,
+        "attributes": {
+          "brand": "SpeedFoot",
+          "material": "Mesh",
+          "color": "Blue",
+          "weight_kg": 0.35
+        },
+        "tags": [
+          "running",
+          "lightweight",
+          "breathable"
+        ],
+        "ratings": {
+          "average": 4.4,
+          "count": 567
+        }
+      },
+      {
+        "product_id": "prod_005",
+        "name": "Python Programming Book",
+        "category": "Books",
+        "price": 39.99,
+        "stock": 500,
+        "attributes": {
+          "brand": "TechPublish",
+          "material": "Paper",
+          "color": "White",
+          "weight_kg": 0.6
+        },
+        "tags": [
+          "programming",
+          "python",
+          "education"
+        ],
+        "ratings": {
+          "average": 4.8,
+          "count": 1243
+        }
+      },
+      {
+        "product_id": "prod_006",
+        "name": "Yoga Mat",
+        "category": "Sports",
+        "price": 29.99,
+        "stock": 180,
+        "attributes": {
+          "brand": "ZenFit",
+          "material": "TPE",
+          "color": "Purple",
+          "weight_kg": 1.0
+        },
+        "tags": [
+          "yoga",
+          "exercise",
+          "portable"
+        ],
+        "ratings": {
+          "average": 4.3,
+          "count": 328
+        }
+      },
+      {
+        "product_id": "prod_007",
+        "name": "Cotton T-Shirt",
+        "category": "Clothing",
+        "price": 19.99,
+        "stock": 600,
+        "attributes": {
+          "brand": "ComfortWear",
+          "material": "Cotton",
+          "color": "White",
+          "weight_kg": 0.2
+        },
+        "tags": [
+          "casual",
+          "cotton",
+          "comfortable"
+        ],
+        "ratings": {
+          "average": 4.1,
+          "count": 756
+        }
+      },
+      {
+        "product_id": "prod_008",
+        "name": "Desk Lamp",
+        "category": "Home",
+        "price": 49.99,
+        "stock": 120,
+        "attributes": {
+          "brand": "BrightLife",
+          "material": "Metal",
+          "color": "White",
+          "weight_kg": 0.9
+        },
+        "tags": [
+          "led",
+          "dimmable",
+          "ergonomic"
+        ],
+        "ratings": {
+          "average": 4.6,
+          "count": 189
+        }
+      },
+      {
+        "product_id": "prod_009",
+        "name": "Wireless Mouse",
+        "category": "Electronics",
+        "price": 44.99,
+        "stock": 250,
+        "attributes": {
+          "brand": "TechBrand",
+          "material": "Plastic",
+          "color": "Black",
+          "weight_kg": 0.1
+        },
+        "tags": [
+          "wireless",
+          "portable",
+          "ergonomic"
+        ],
+        "ratings": {
+          "average": 4.3,
+          "count": 624
+        }
+      },
+      {
+        "product_id": "prod_010",
+        "name": "Water Bottle",
+        "category": "Sports",
+        "price": 24.99,
+        "stock": 400,
+        "attributes": {
+          "brand": "HydroMax",
+          "material": "Stainless Steel",
+          "color": "Silver",
+          "weight_kg": 0.3
+        },
+        "tags": [
+          "hydration",
+          "portable",
+          "eco-friendly"
+        ],
+        "ratings": {
+          "average": 4.5,
+          "count": 892
+        }
+      }
+    ]
+  },
+  {
+    "insertMany": "orders",
+    "documents": [
+      {
+        "order_id": "ord_001",
+        "customer_id": "cust_001",
+        "status": "delivered",
+        "created_at": "2024-01-15",
+        "total_amount": 125.97,
+        "shipping_address": {
+          "street": "123 Main St",
+          "city": "New York",
+          "state": "NY",
+          "zip": "10001",
+          "country": "US"
+        },
+        "items": [
+          {
+            "product_id": "prod_001",
+            "name": "Laptop Stand",
+            "category": "Electronics",
+            "quantity": 1,
+            "unit_price": 45.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_002",
+            "name": "USB-C Hub",
+            "category": "Electronics",
+            "quantity": 1,
+            "unit_price": 34.99,
+            "discount": 5
+          },
+          {
+            "product_id": "prod_009",
+            "name": "Wireless Mouse",
+            "category": "Electronics",
+            "quantity": 1,
+            "unit_price": 44.99,
+            "discount": 0
+          }
+        ],
+        "payment": {
+          "method": "credit_card",
+          "status": "paid",
+          "transaction_id": "txn_abc001"
+        }
+      },
+      {
+        "order_id": "ord_002",
+        "customer_id": "cust_002",
+        "status": "shipped",
+        "created_at": "2024-02-03",
+        "total_amount": 119.98,
+        "shipping_address": {
+          "street": "789 Oak Ave",
+          "city": "Los Angeles",
+          "state": "CA",
+          "zip": "90001",
+          "country": "US"
+        },
+        "items": [
+          {
+            "product_id": "prod_004",
+            "name": "Running Shoes",
+            "category": "Sports",
+            "quantity": 1,
+            "unit_price": 89.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_006",
+            "name": "Yoga Mat",
+            "category": "Sports",
+            "quantity": 1,
+            "unit_price": 29.99,
+            "discount": 0
+          }
+        ],
+        "payment": {
+          "method": "paypal",
+          "status": "paid",
+          "transaction_id": "txn_abc002"
+        }
+      },
+      {
+        "order_id": "ord_003",
+        "customer_id": "cust_003",
+        "status": "delivered",
+        "created_at": "2024-01-28",
+        "total_amount": 265.94,
+        "shipping_address": {
+          "street": "321 Pine Rd",
+          "city": "Chicago",
+          "state": "IL",
+          "zip": "60601",
+          "country": "US"
+        },
+        "items": [
+          {
+            "product_id": "prod_003",
+            "name": "Mechanical Keyboard",
+            "category": "Electronics",
+            "quantity": 1,
+            "unit_price": 129.99,
+            "discount": 10
+          },
+          {
+            "product_id": "prod_008",
+            "name": "Desk Lamp",
+            "category": "Home",
+            "quantity": 1,
+            "unit_price": 49.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_001",
+            "name": "Laptop Stand",
+            "category": "Electronics",
+            "quantity": 1,
+            "unit_price": 45.99,
+            "discount": 5
+          },
+          {
+            "product_id": "prod_007",
+            "name": "Cotton T-Shirt",
+            "category": "Clothing",
+            "quantity": 2,
+            "unit_price": 19.99,
+            "discount": 0
+          }
+        ],
+        "payment": {
+          "method": "credit_card",
+          "status": "paid",
+          "transaction_id": "txn_abc003"
+        }
+      },
+      {
+        "order_id": "ord_004",
+        "customer_id": "cust_004",
+        "status": "delivered",
+        "created_at": "2024-02-28",
+        "total_amount": 39.99,
+        "shipping_address": {
+          "street": "987 Elm St",
+          "city": "Houston",
+          "state": "TX",
+          "zip": "77001",
+          "country": "US"
+        },
+        "items": [
+          {
+            "product_id": "prod_005",
+            "name": "Python Programming Book",
+            "category": "Books",
+            "quantity": 1,
+            "unit_price": 39.99,
+            "discount": 0
+          }
+        ],
+        "payment": {
+          "method": "credit_card",
+          "status": "paid",
+          "transaction_id": "txn_abc004"
+        }
+      },
+      {
+        "order_id": "ord_005",
+        "customer_id": "cust_005",
+        "status": "processing",
+        "created_at": "2024-03-20",
+        "total_amount": 184.97,
+        "shipping_address": {
+          "street": "555 Maple Dr",
+          "city": "San Francisco",
+          "state": "CA",
+          "zip": "94102",
+          "country": "US"
+        },
+        "items": [
+          {
+            "product_id": "prod_003",
+            "name": "Mechanical Keyboard",
+            "category": "Electronics",
+            "quantity": 1,
+            "unit_price": 129.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_006",
+            "name": "Yoga Mat",
+            "category": "Sports",
+            "quantity": 1,
+            "unit_price": 29.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_010",
+            "name": "Water Bottle",
+            "category": "Sports",
+            "quantity": 1,
+            "unit_price": 24.99,
+            "discount": 0
+          }
+        ],
+        "payment": {
+          "method": "credit_card",
+          "status": "paid",
+          "transaction_id": "txn_abc005"
+        }
+      },
+      {
+        "order_id": "ord_006",
+        "customer_id": "cust_006",
+        "status": "delivered",
+        "created_at": "2024-03-05",
+        "total_amount": 154.97,
+        "shipping_address": {
+          "street": "111 Cedar Lane",
+          "city": "New York",
+          "state": "NY",
+          "zip": "10003",
+          "country": "US"
+        },
+        "items": [
+          {
+            "product_id": "prod_007",
+            "name": "Cotton T-Shirt",
+            "category": "Clothing",
+            "quantity": 3,
+            "unit_price": 19.99,
+            "discount": 10
+          },
+          {
+            "product_id": "prod_008",
+            "name": "Desk Lamp",
+            "category": "Home",
+            "quantity": 1,
+            "unit_price": 49.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_010",
+            "name": "Water Bottle",
+            "category": "Sports",
+            "quantity": 1,
+            "unit_price": 24.99,
+            "discount": 0
+          }
+        ],
+        "payment": {
+          "method": "debit_card",
+          "status": "paid",
+          "transaction_id": "txn_abc006"
+        }
+      },
+      {
+        "order_id": "ord_007",
+        "customer_id": "cust_007",
+        "status": "delivered",
+        "created_at": "2024-03-18",
+        "total_amount": 239.93,
+        "shipping_address": {
+          "street": "222 Birch Ave",
+          "city": "Seattle",
+          "state": "WA",
+          "zip": "98101",
+          "country": "US"
+        },
+        "items": [
+          {
+            "product_id": "prod_005",
+            "name": "Python Programming Book",
+            "category": "Books",
+            "quantity": 2,
+            "unit_price": 39.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_008",
+            "name": "Desk Lamp",
+            "category": "Home",
+            "quantity": 1,
+            "unit_price": 49.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_002",
+            "name": "USB-C Hub",
+            "category": "Electronics",
+            "quantity": 2,
+            "unit_price": 34.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_010",
+            "name": "Water Bottle",
+            "category": "Sports",
+            "quantity": 2,
+            "unit_price": 24.99,
+            "discount": 5
+          }
+        ],
+        "payment": {
+          "method": "credit_card",
+          "status": "paid",
+          "transaction_id": "txn_abc007"
+        }
+      },
+      {
+        "order_id": "ord_008",
+        "customer_id": "cust_008",
+        "status": "cancelled",
+        "created_at": "2024-03-01",
+        "total_amount": 164.95,
+        "shipping_address": {
+          "street": "333 Spruce St",
+          "city": "Los Angeles",
+          "state": "CA",
+          "zip": "90002",
+          "country": "US"
+        },
+        "items": [
+          {
+            "product_id": "prod_004",
+            "name": "Running Shoes",
+            "category": "Sports",
+            "quantity": 1,
+            "unit_price": 89.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_006",
+            "name": "Yoga Mat",
+            "category": "Sports",
+            "quantity": 1,
+            "unit_price": 29.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_007",
+            "name": "Cotton T-Shirt",
+            "category": "Clothing",
+            "quantity": 2,
+            "unit_price": 19.99,
+            "discount": 15
+          },
+          {
+            "product_id": "prod_010",
+            "name": "Water Bottle",
+            "category": "Sports",
+            "quantity": 1,
+            "unit_price": 24.99,
+            "discount": 0
+          }
+        ],
+        "payment": {
+          "method": "paypal",
+          "status": "refunded",
+          "transaction_id": "txn_abc008"
+        }
+      },
+      {
+        "order_id": "ord_009",
+        "customer_id": "cust_001",
+        "status": "shipped",
+        "created_at": "2024-03-10",
+        "total_amount": 169.98,
+        "shipping_address": {
+          "street": "123 Main St",
+          "city": "New York",
+          "state": "NY",
+          "zip": "10001",
+          "country": "US"
+        },
+        "items": [
+          {
+            "product_id": "prod_003",
+            "name": "Mechanical Keyboard",
+            "category": "Electronics",
+            "quantity": 1,
+            "unit_price": 129.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_005",
+            "name": "Python Programming Book",
+            "category": "Books",
+            "quantity": 1,
+            "unit_price": 39.99,
+            "discount": 0
+          }
+        ],
+        "payment": {
+          "method": "credit_card",
+          "status": "paid",
+          "transaction_id": "txn_abc009"
+        }
+      },
+      {
+        "order_id": "ord_010",
+        "customer_id": "cust_005",
+        "status": "delivered",
+        "created_at": "2024-02-14",
+        "total_amount": 94.97,
+        "shipping_address": {
+          "street": "555 Maple Dr",
+          "city": "San Francisco",
+          "state": "CA",
+          "zip": "94102",
+          "country": "US"
+        },
+        "items": [
+          {
+            "product_id": "prod_009",
+            "name": "Wireless Mouse",
+            "category": "Electronics",
+            "quantity": 1,
+            "unit_price": 44.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_001",
+            "name": "Laptop Stand",
+            "category": "Electronics",
+            "quantity": 1,
+            "unit_price": 45.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_006",
+            "name": "Yoga Mat",
+            "category": "Sports",
+            "quantity": 1,
+            "unit_price": 29.99,
+            "discount": 20
+          }
+        ],
+        "payment": {
+          "method": "paypal",
+          "status": "paid",
+          "transaction_id": "txn_abc010"
+        }
+      },
+      {
+        "order_id": "ord_011",
+        "customer_id": "cust_003",
+        "status": "pending",
+        "created_at": "2024-03-15",
+        "total_amount": 84.98,
+        "shipping_address": {
+          "street": "321 Pine Rd",
+          "city": "Chicago",
+          "state": "IL",
+          "zip": "60601",
+          "country": "US"
+        },
+        "items": [
+          {
+            "product_id": "prod_002",
+            "name": "USB-C Hub",
+            "category": "Electronics",
+            "quantity": 1,
+            "unit_price": 34.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_008",
+            "name": "Desk Lamp",
+            "category": "Home",
+            "quantity": 1,
+            "unit_price": 49.99,
+            "discount": 0
+          }
+        ],
+        "payment": {
+          "method": "credit_card",
+          "status": "pending",
+          "transaction_id": "txn_abc011"
+        }
+      },
+      {
+        "order_id": "ord_012",
+        "customer_id": "cust_007",
+        "status": "delivered",
+        "created_at": "2024-01-05",
+        "total_amount": 329.93,
+        "shipping_address": {
+          "street": "222 Birch Ave",
+          "city": "Seattle",
+          "state": "WA",
+          "zip": "98101",
+          "country": "US"
+        },
+        "items": [
+          {
+            "product_id": "prod_003",
+            "name": "Mechanical Keyboard",
+            "category": "Electronics",
+            "quantity": 1,
+            "unit_price": 129.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_009",
+            "name": "Wireless Mouse",
+            "category": "Electronics",
+            "quantity": 1,
+            "unit_price": 44.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_001",
+            "name": "Laptop Stand",
+            "category": "Electronics",
+            "quantity": 1,
+            "unit_price": 45.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_002",
+            "name": "USB-C Hub",
+            "category": "Electronics",
+            "quantity": 2,
+            "unit_price": 34.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_005",
+            "name": "Python Programming Book",
+            "category": "Books",
+            "quantity": 1,
+            "unit_price": 39.99,
+            "discount": 0
+          }
+        ],
+        "payment": {
+          "method": "credit_card",
+          "status": "paid",
+          "transaction_id": "txn_abc012"
+        }
+      },
+      {
+        "order_id": "ord_013",
+        "customer_id": "cust_002",
+        "status": "pending",
+        "created_at": "2024-02-20",
+        "total_amount": 89.99,
+        "shipping_address": {
+          "street": "789 Oak Ave",
+          "city": "Los Angeles",
+          "state": "CA",
+          "zip": "90001",
+          "country": "US"
+        },
+        "items": [
+          {
+            "product_id": "prod_004",
+            "name": "Running Shoes",
+            "category": "Sports",
+            "quantity": 1,
+            "unit_price": 89.99,
+            "discount": 0
+          }
+        ],
+        "payment": {
+          "method": "debit_card",
+          "status": "failed",
+          "transaction_id": "txn_abc013"
+        }
+      },
+      {
+        "order_id": "ord_014",
+        "customer_id": "cust_008",
+        "status": "delivered",
+        "created_at": "2024-03-12",
+        "total_amount": 144.97,
+        "shipping_address": {
+          "street": "333 Spruce St",
+          "city": "Los Angeles",
+          "state": "CA",
+          "zip": "90002",
+          "country": "US"
+        },
+        "items": [
+          {
+            "product_id": "prod_004",
+            "name": "Running Shoes",
+            "category": "Sports",
+            "quantity": 1,
+            "unit_price": 89.99,
+            "discount": 10
+          },
+          {
+            "product_id": "prod_006",
+            "name": "Yoga Mat",
+            "category": "Sports",
+            "quantity": 1,
+            "unit_price": 29.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_010",
+            "name": "Water Bottle",
+            "category": "Sports",
+            "quantity": 1,
+            "unit_price": 24.99,
+            "discount": 0
+          }
+        ],
+        "payment": {
+          "method": "credit_card",
+          "status": "paid",
+          "transaction_id": "txn_abc014"
+        }
+      },
+      {
+        "order_id": "ord_015",
+        "customer_id": "cust_005",
+        "status": "delivered",
+        "created_at": "2024-01-20",
+        "total_amount": 165.96,
+        "shipping_address": {
+          "street": "555 Maple Dr",
+          "city": "San Francisco",
+          "state": "CA",
+          "zip": "94102",
+          "country": "US"
+        },
+        "items": [
+          {
+            "product_id": "prod_001",
+            "name": "Laptop Stand",
+            "category": "Electronics",
+            "quantity": 1,
+            "unit_price": 45.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_002",
+            "name": "USB-C Hub",
+            "category": "Electronics",
+            "quantity": 1,
+            "unit_price": 34.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_009",
+            "name": "Wireless Mouse",
+            "category": "Electronics",
+            "quantity": 1,
+            "unit_price": 44.99,
+            "discount": 0
+          },
+          {
+            "product_id": "prod_005",
+            "name": "Python Programming Book",
+            "category": "Books",
+            "quantity": 1,
+            "unit_price": 39.99,
+            "discount": 0
+          }
+        ],
+        "payment": {
+          "method": "paypal",
+          "status": "paid",
+          "transaction_id": "txn_abc015"
+        }
+      }
+    ]
+  }
+]

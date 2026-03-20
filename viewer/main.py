@@ -7,13 +7,12 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 try:
-    import summary
     import dashboard
     import conversations
 except ImportError:
     # Optional modules could not be imported; continue without them.
     logging.warning(
-        "Optional modules 'summary', 'dashboard', and 'conversations' "
+        "Optional modules 'dashboard', and 'conversations' "
         "could not be imported (absolute or relative)."
     )
 
@@ -65,8 +64,8 @@ class State:
         "%20%20max-height%3A%20none%20%21important%3B%0A"
         "%20%20max-width%3A%20none%20%21important%3B%0A"
         "%20%20white-space%3A%20pre-wrap%20%21important%3B%0A"
-        "%7D"
-    ]
+        "%7D",
+    ],
 )
 def app():
     state = me.state(State)
@@ -75,17 +74,17 @@ def app():
     results_dir_candidates = [
         "/tmp_session_files/results",
         os.path.join(os.path.dirname(os.path.dirname(__file__)), "results"),
-        os.path.join(os.getcwd(), "results")
+        os.path.join(os.getcwd(), "results"),
     ]
-    
+
     results_dir = None
     for candidate in results_dir_candidates:
         if os.path.exists(candidate) and os.path.isdir(candidate):
             results_dir = candidate
             break
-            
+
     if results_dir is None:
-        results_dir = results_dir_candidates[1] # Fallback to default
+        results_dir = results_dir_candidates[1]  # Fallback to default
 
     directories = []
     if os.path.exists(results_dir):
@@ -128,10 +127,14 @@ def app():
             gap="16px",
         )
     ):
-        with me.box(style=me.Style(width="100%", max_width="400px", margin=me.Margin(bottom="8px"))):
+        with me.box(
+            style=me.Style(width="100%", max_width="400px", margin=me.Margin(bottom="8px"))
+        ):
             me.select(
                 label="Select a result directory",
-                options=[me.SelectOption(label=d, value=d) for d in sorted(directories)],
+                options=[
+                    me.SelectOption(label=d, value=d) for d in sorted(directories)
+                ],
                 on_selection_change=on_selection_change,
                 value=state.selected_directory,
                 appearance="outline",
@@ -149,7 +152,9 @@ def app():
                     me.ButtonToggleButton(label="Configs", value="Configs"),
                     # me.ButtonToggleButton(label="Evals", value="Evals"),
                     # me.ButtonToggleButton(label="Scores", value="Scores"),
-                    me.ButtonToggleButton(label="Conversations", value="Conversations"),
+                    me.ButtonToggleButton(
+                        label="Conversations", value="Conversations"
+                    ),
                     # me.ButtonToggleButton(label="Summary", value="Summary"),
                 ],
                 on_change=on_tab_change,

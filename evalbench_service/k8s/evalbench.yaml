@@ -17,6 +17,8 @@ spec:
       annotations:
         gke-gcsfuse/volumes: "true"
     spec:
+      securityContext:
+        fsGroup: 65532
       serviceAccountName: evalbench-ksa
       containers:
       - image: us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:latest
@@ -65,6 +67,8 @@ spec:
           name: tmp-volume
         - mountPath: /tmp_session_files
           name: gcs-fuse-csi-vol
+        - mountPath: /tmp_sessions
+          name: evalbench-ssd-vol
       volumes:
       - name: tmp-volume
         emptyDir: {}
@@ -74,3 +78,6 @@ spec:
           volumeAttributes:
             bucketName: evalbench-sessions-cloud-db-nl2sql
             mountOptions: "implicit-dirs,uid=65532,gid=65532"
+      - name: evalbench-ssd-vol
+        persistentVolumeClaim:
+          claimName: evalbench-ssd-pvc
