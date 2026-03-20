@@ -164,24 +164,26 @@ The database structure is defined by the following collection schemas:
 {SCHEMA}
 **************************
 
-Please generate a MongoDB query (in JSON format) for the following question following these rules:
-- Output the query as a valid JSON string only without any explanation.
-- The JSON should be in one of the following formats:
-  - Find: {{"find": "collection_name", "filter": {{...}}, "projection": {{...}}}}
-  - Aggregate: {{"aggregate": "collection_name", "pipeline": [...]}}
-  - Count: {{"count": "collection_name", "filter": {{...}}}}
-- Do not use markdown code blocks around the outputted query.
+Please generate a MongoDB aggregation query for the following question following these rules:
+- Use MongoDB shell syntax: db.<collection>.aggregate([...])
+- Output the query directly without any explanation or markdown code blocks.
+- Use aggregate pipelines as the canonical query format.
+- Always suppress the _id field in the final output stage using {{"_id": 0}} in $project.
 
-MongoDB generation rules:
-- Use standard MongoDB operators (e.g., $match, $group, $lookup, $project).
-- Ensure the JSON is valid and executable by pymongo.
+MongoDB aggregation rules:
+- Use $match for filtering, $group for grouping, $project for shaping output.
+- Use $unwind to deconstruct arrays before grouping or filtering on array element fields.
+- Access nested document fields using dot notation (e.g., "shipping_address.city", "payment.method", "attributes.brand").
+- Access array element fields using dot notation directly (e.g., "items.category", "tags") — MongoDB matches if any element satisfies the condition.
+- Use $sort for ordering results.
 - Only use collections and fields from the provided schema.
+- Ensure the pipeline is valid and executable by pymongo.
 
-Think step by step about generating a correct MongoDB query!
+Think step by step about generating a correct MongoDB aggregation query!
 
 **************************
 
-Here is the natural language question for generating MongoDB query:
+Here is the natural language question for generating a MongoDB query:
 {USER_PROMPT}
 """
 

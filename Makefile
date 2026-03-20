@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 
-default:apply
+default:deploy
 .PHONY: default
 
 CONTAINER_ENGINE ?= docker
@@ -73,6 +73,7 @@ push:
 deploy:
 	gcloud container clusters get-credentials evalbench-directpath-cluster --zone us-central1-c --project cloud-db-nl2sql
 	kubectl apply -f evalbench_service/k8s/namespace.yaml
+	kubectl apply -f evalbench_service/k8s/pvc.yaml
 	kubectl apply -f evalbench_service/k8s/ksa.yaml
 	kubectl apply -f evalbench_service/k8s/service.yaml
 	kubectl apply -f evalbench_service/k8s/evalbench.yaml
@@ -98,6 +99,22 @@ undeploy-test:
 	kubectl delete -f evalbench_service/k8s/ksa-test.yaml
 	kubectl delete -f evalbench_service/k8s/service-test.yaml
 	kubectl delete -f evalbench_service/k8s/evalbench-test.yaml
+
+redeploy:
+	gcloud container clusters get-credentials evalbench-directpath-cluster --zone us-central1-c --project cloud-db-nl2sql
+	kubectl rollout restart deployment/evalbench-eval-server-deploy -n evalbench-namespace
+
+redeploy-test:
+	gcloud container clusters get-credentials evalbench-directpath-cluster --zone us-central1-c --project cloud-db-nl2sql
+	kubectl rollout restart deployment/evalbench-test-eval-server-deploy -n evalbench-test-namespace
+
+pod-shell:
+	gcloud container clusters get-credentials evalbench-directpath-cluster --zone us-central1-c --project cloud-db-nl2sql
+	kubectl exec -it deployment/evalbench-eval-server-deploy -n evalbench-namespace -c evalbench-eval -- /bin/bash
+
+pod-shell-test:
+	gcloud container clusters get-credentials evalbench-directpath-cluster --zone us-central1-c --project cloud-db-nl2sql
+	kubectl exec -it deployment/evalbench-test-eval-server-deploy -n evalbench-test-namespace -c evalbench-test-eval -- /bin/bash
 
 proto:
 	@python -m grpc_tools.protoc \

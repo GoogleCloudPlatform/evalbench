@@ -1,0 +1,19 @@
+# Project and location for the Gemini Data Analytics API call
+project_id: "<YOUR_GCP_PROJECT_ID>"
+location: "<YOUR_GDA_LOCATION>"
+generator: "query_data_api"
+
+# This context block directly maps to the gda.QueryDataContext protobuf definition
+context:
+  datasource_references:
+    alloydb: # Change this to the target database type (e.g. bigquery, alloydb)
+      # The Database Information
+      database_reference:
+        project_id: "<YOUR_GCP_PROJECT_ID>"
+        region: "<YOUR_DATABASE_REGION>"
+        cluster_id: "<YOUR_CLUSTER_ID>"
+        instance_id: "<YOUR_INSTANCE_ID>"
+        database_id: "<YOUR_DATABASE_ID>"
+      # The Agent Context Information (Optional, for context hill-climbing)
+      agent_context_reference:
+        context_set_id: "projects/<YOUR_GCP_PROJECT_ID>/locations/<YOUR_GDA_LOCATION>/contextSets/<YOUR_CONTEXT_SET_ID>"

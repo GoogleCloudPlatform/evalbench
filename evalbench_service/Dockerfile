@@ -31,9 +31,9 @@ RUN uv sync
 
 RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN make proto -f ./Makefile
-RUN mkdir /tmp_session_files
+RUN mkdir /tmp_session_files /tmp_sessions
 RUN cp /evalbench/evalbench_service/supervisord.conf /evalbench/supervisord.conf
-RUN chown -R 65532:65532 /evalbench /tmp /tmp_session_files /home/evalbench
+RUN chown -R 65532:65532 /evalbench /tmp /tmp_session_files /tmp_sessions /home/evalbench
 
 CMD ["/usr/bin/supervisord", "-c", "/evalbench/supervisord.conf"]
 EXPOSE 50051 3000

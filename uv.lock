@@ -688,6 +688,7 @@ dependencies = [
     { name = "google-adk" },
     { name = "google-cloud-alloydb-connector", extra = ["pg8000"] },
     { name = "google-cloud-bigtable" },
+    { name = "google-cloud-geminidataanalytics" },
     { name = "google-cloud-secret-manager" },
     { name = "google-cloud-spanner" },
     { name = "google-genai" },
@@ -714,6 +715,11 @@ dependencies = [
     { name = "tabulate" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pycodestyle" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "absl-py" },
@@ -726,6 +732,7 @@ requires-dist = [
     { name = "google-adk" },
     { name = "google-cloud-alloydb-connector", extras = ["pg8000"] },
     { name = "google-cloud-bigtable" },
+    { name = "google-cloud-geminidataanalytics", specifier = ">=0.11.0" },
     { name = "google-cloud-secret-manager" },
     { name = "google-cloud-spanner" },
     { name = "google-genai" },
@@ -750,6 +757,9 @@ requires-dist = [
     { name = "sqlparse" },
     { name = "tabulate" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pycodestyle", specifier = ">=2.14.0" }]
 
 [[package]]
 name = "exceptiongroup"
@@ -1319,6 +1329,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8f/cd/b33bbc4b096d937abee5ebfad3908b2bdc65acd1582191aa33beaa2b70a5/google_cloud_discoveryengine-0.13.12.tar.gz", hash = "sha256:d6b9f8fadd8ad0d2f4438231c5eb7772a317e9f59cafbcbadc19b5d54c609419", size = 3582382, upload-time = "2025-09-22T16:51:14.052Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/93/70/607f6011648f603d35e60a16c34aee68a0b39510e4268d4859f3268684f9/google_cloud_discoveryengine-0.13.12-py3-none-any.whl", hash = "sha256:295f8c6df3fb26b90fb82c2cd6fbcf4b477661addcb19a94eea16463a5c4e041", size = 3337248, upload-time = "2025-09-22T16:50:57.375Z" },
+]
+
+[[package]]
+name = "google-cloud-geminidataanalytics"
+version = "0.11.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "google-api-core", extra = ["grpc"] },
+    { name = "google-auth" },
+    { name = "grpc-google-iam-v1" },
+    { name = "grpcio" },
+    { name = "proto-plus" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f0/6f/4266a503b1b467493df0dfd2b0ca00c6fe4fc76260d00dd8602e957b5d78/google_cloud_geminidataanalytics-0.11.0.tar.gz", hash = "sha256:5eef51b29a78a74012e4ec2165c0541714948b77ea268cb45339884a7f197fd1", size = 336611, upload-time = "2026-03-12T19:31:00.933Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/64/ac/d70b30f9b2971a1e6fe895c28884cd75c4d512cdb451dfdb547058fdf0b4/google_cloud_geminidataanalytics-0.11.0-py3-none-any.whl", hash = "sha256:16eb43c9c424e0b5fee512cdbbcf146b4424a91269f837aa24cb5504035f0b7b", size = 293592, upload-time = "2026-03-12T19:30:40.207Z" },
 ]
 
 [[package]]
@@ -3309,6 +3336,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e9/e6/78ebbb10a8c8e4b61a59249394a4a594c1a7af95593dc933a349c8d00964/pyasn1_modules-0.4.2.tar.gz", hash = "sha256:677091de870a80aae844b1ca6134f54652fa2c8c5a52aa396440ac3106e941e6", size = 307892, upload-time = "2025-03-28T02:41:22.17Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/47/8d/d529b5d697919ba8c11ad626e835d4039be708a35b0d22de83a269a6682c/pyasn1_modules-0.4.2-py3-none-any.whl", hash = "sha256:29253a9207ce32b64c3ac6600edc75368f98473906e8fd1043bd6b5b1de2c14a", size = 181259, upload-time = "2025-03-28T02:41:19.028Z" },
+]
+
+[[package]]
+name = "pycodestyle"
+version = "2.14.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/11/e0/abfd2a0d2efe47670df87f3e3a0e2edda42f055053c85361f19c0e2c1ca8/pycodestyle-2.14.0.tar.gz", hash = "sha256:c4b5b517d278089ff9d0abdec919cd97262a3367449ea1c8b49b91529167b783", size = 39472, upload-time = "2025-06-20T18:49:48.75Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d7/27/a58ddaf8c588a3ef080db9d0b7e0b97215cee3a45df74f3a94dbbf5c893a/pycodestyle-2.14.0-py2.py3-none-any.whl", hash = "sha256:dd6bf7cb4ee77f8e016f9c8e74a35ddd9f67e1d5fd4184d86c3b98e07099f42d", size = 31594, upload-time = "2025-06-20T18:49:47.491Z" },
 ]
 
 [[package]]

@@ -23,6 +23,7 @@ class SQLGenWork(Work):
         """
         generated_sql = None
         sql_generator_error = None
+        generator_result = None
         if self.eval_result["prompt_generator_error"] is None:
             if "noop" in self.generator.name:
                 # only set these if value is truthy, to avoid issues like
@@ -34,7 +35,7 @@ class SQLGenWork(Work):
             else:
                 try:
                     start_time = time.time()
-                    generated_sql = self.generator.generate(
+                    generator_result = self.generator.generate(
                         self.eval_result["generated_prompt"]
                     )
                     end_time = time.time()
@@ -42,6 +43,19 @@ class SQLGenWork(Work):
                 except Exception as e:
                     sql_generator_error = str(e)
 
+        if generator_result is not None:
+            generated_sql = self._get_generated_sql(generator_result)
+            self._attach_generator_info(self.eval_result, generator_result)
+
         self.eval_result["generated_sql"] = generated_sql
         self.eval_result["sql_generator_error"] = sql_generator_error
         return self.eval_result
+
+    def _get_generated_sql(self, generator_result: Any) -> Any:
+        if isinstance(generator_result, dict):
+            return generator_result.get("generated_sql")
+        return generator_result
+
+    def _attach_generator_info(self, eval_result: dict, generator_result: Any) -> None:
+        if isinstance(generator_result, dict):
+            eval_result.update(generator_result)

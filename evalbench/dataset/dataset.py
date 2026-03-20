@@ -1,6 +1,6 @@
 """Process datasets."""
 
-from typing import Any
+from typing import Any, Optional
 import json
 import logging
 from collections.abc import Sequence
@@ -205,17 +205,17 @@ def load_dataset(dataset: Sequence[dict], config):
             continue
         eval_input = EvalInputRequest(
             id=item["id"],
-            nl_prompt=item["nl_prompt"],
-            query_type=item["query_type"].lower(),
-            database=item["database"],
+            nl_prompt=item.get("nl_prompt", ""),
+            query_type=item.get("query_type", "dql").lower(),
+            database=item.get("database", ""),
             dialects=_union_dialects(
-                item["dialects"], config.get("dialects", [])),
-            golden_sql=item["golden_sql"],
-            eval_query=item["eval_query"],
-            setup_sql=item["setup_sql"],
-            cleanup_sql=item["cleanup_sql"],
-            tags=item["tags"],
-            other=build_normalized_other(item["other"]),
+                item.get("dialects", []), config.get("dialects", [])),
+            golden_sql=item.get("golden_sql", []),
+            eval_query=item.get("eval_query", ""),
+            setup_sql=item.get("setup_sql", []),
+            cleanup_sql=item.get("cleanup_sql", []),
+            tags=item.get("tags", []),
+            other=build_normalized_other(item.get("other")),
         )
         input_items[eval_input.query_type].append(eval_input)
     return input_items
@@ -245,7 +245,9 @@ def _item_meets_config_filters(item: dict, config: dict):
     return False
 
 
-def build_normalized_other(other: dict[str, Any]):
+def build_normalized_other(other: Optional[dict[str, Any]]):
+    if not other:
+        return {}
     return {key: json.dumps(value) for key, value in other.items()}
 
 

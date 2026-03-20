@@ -1,0 +1,39 @@
+############################################################
+### Dataset / Eval Items
+############################################################
+dataset_config: datasets/query_data_api/queries.json
+database_configs:
+- datasets/query_data_api/db_configs/alloydb.yaml
+dialects:
+- postgres
+query_types:
+- dql
+dialect: postgres
+# Explicitly use the standard format
+dataset_format: evalbench-standard-format
+
+############################################################
+### Prompt and Generation Modules
+############################################################
+# Use the QueryData API generator
+model_config: datasets/query_data_api/model_configs/querydata_config.yaml
+# Pass the raw natural language question directly (no template wrapping)
+prompt_generator: 'NOOPGenerator'
+
+############################################################
+### Scorer Related Configs
+############################################################
+scorers:
+  # Basic set-based comparison of SQL results
+  set_match: null
+  # Semantic comparison of queries using LLM
+  llmrater:
+    model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+
+############################################################
+### Reporting
+############################################################
+reporting:
+  csv:
+    # Results will be output to this directory
+    output_directory: 'query_data_api_results'
