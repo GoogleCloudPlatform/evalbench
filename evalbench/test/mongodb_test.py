@@ -628,3 +628,67 @@ class TestGetMetadataRecursive:
         assert "preferences.notifications" in customer_field_names
         assert "preferences.notifications.email" in customer_field_names
         assert "preferences.notifications.sms" in customer_field_names
+
+
+class TestFirestoreMongoDBAPI:
+    """Tests for Firestore MongoDB API execution using IQL pipeline."""
+
+    def test_firestore_execution_routing(self, monkeypatch):
+        """Verify that when firestore_database is set, it uses Firestore client and pipeline."""
+        from unittest.mock import MagicMock
+        import sys
+
+        # Mock google.cloud modules so imports inside mongodb.py don't fail if the library is missing
+        mock_firestore_v1 = MagicMock()
+        mock_pipeline_mod = MagicMock()
+        mock_stages_mod = MagicMock()
+        mock_types_doc = MagicMock()
+
+        # Set up mocks
+        mock_firestore_v1.Client.return_value = MagicMock()
+        # Pipeline builder pattern: ensure raw_stage returns the pipeline itself for chaining
+        mock_pipeline_mod.Pipeline.return_value.raw_stage.return_value = mock_pipeline_mod.Pipeline.return_value
+
+        # Mock result object with .data() method (PipelineResult)
+        mock_result = MagicMock()
+        mock_result.data.return_value = {"product_id": "p1", "price": 10.0}
+        mock_pipeline_mod.Pipeline.return_value.execute.return_value = [mock_result]
+        mock_types_doc.Value = MagicMock()
+
+        # Add to modules
+        monkeypatch.setitem(sys.modules, "google.cloud", mock_firestore_v1)
+        monkeypatch.setitem(sys.modules, "google.cloud.firestore_v1", mock_firestore_v1)
+        monkeypatch.setitem(sys.modules, "google.cloud.firestore_v1.pipeline", mock_pipeline_mod)
+        monkeypatch.setitem(sys.modules, "google.cloud.firestore_v1.pipeline_stages", mock_stages_mod)
+        monkeypatch.setitem(sys.modules, "google.cloud.firestore_v1.types.document", mock_types_doc)
+
+        # Config
+        db_config = {
+            "db_type": "mongodb",
+            "database_name": "test-db",
+            "database_path": "",
+            "max_executions_per_minute": 100,
+            "connection_string": "mongodb://mock-host:27017",
+            "firestore_database": "projects/test-project/databases/test-db",
+        }
+
+        # Initialize
+        from databases.mongodb import MongoDB
+        db = MongoDB(db_config)
+
+        # Execute
+        query = "db.products.aggregate([{\"$count\": \"test\"}])"
+        result, _, error = db.execute(query)
+
+        # Assertions
+        assert error is None
+        assert len(result) == 1
+        assert result[0]["product_id"] == "p1"
+
+        # Verify RawStage called with correct name "iql" and query
+        mock_pipeline_mod.Pipeline.return_value.raw_stage.assert_called_once()
+        called_raw_stage_args = mock_pipeline_mod.Pipeline.return_value.raw_stage.call_args[0]
+        assert called_raw_stage_args[0] == "iql"
+
+        # Verify Value was called with the query string
+        mock_types_doc.Value.assert_called_once_with(string_value=query)

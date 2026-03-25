@@ -44,6 +44,7 @@ dependencies = [
     "rich",
     "google-adk",
     "google-cloud-geminidataanalytics>=0.11.0",
+    "google-cloud-firestore",
 ]
 
 [tool.setuptools.packages.find]

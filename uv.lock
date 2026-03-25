@@ -688,6 +688,7 @@ dependencies = [
     { name = "google-adk" },
     { name = "google-cloud-alloydb-connector", extra = ["pg8000"] },
     { name = "google-cloud-bigtable" },
+    { name = "google-cloud-firestore" },
     { name = "google-cloud-geminidataanalytics" },
     { name = "google-cloud-secret-manager" },
     { name = "google-cloud-spanner" },
@@ -732,6 +733,7 @@ requires-dist = [
     { name = "google-adk" },
     { name = "google-cloud-alloydb-connector", extras = ["pg8000"] },
     { name = "google-cloud-bigtable" },
+    { name = "google-cloud-firestore" },
     { name = "google-cloud-geminidataanalytics", specifier = ">=0.11.0" },
     { name = "google-cloud-secret-manager" },
     { name = "google-cloud-spanner" },
@@ -1329,6 +1331,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8f/cd/b33bbc4b096d937abee5ebfad3908b2bdc65acd1582191aa33beaa2b70a5/google_cloud_discoveryengine-0.13.12.tar.gz", hash = "sha256:d6b9f8fadd8ad0d2f4438231c5eb7772a317e9f59cafbcbadc19b5d54c609419", size = 3582382, upload-time = "2025-09-22T16:51:14.052Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/93/70/607f6011648f603d35e60a16c34aee68a0b39510e4268d4859f3268684f9/google_cloud_discoveryengine-0.13.12-py3-none-any.whl", hash = "sha256:295f8c6df3fb26b90fb82c2cd6fbcf4b477661addcb19a94eea16463a5c4e041", size = 3337248, upload-time = "2025-09-22T16:50:57.375Z" },
+]
+
+[[package]]
+name = "google-cloud-firestore"
+version = "2.25.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "google-api-core", extra = ["grpc"] },
+    { name = "google-auth" },
+    { name = "google-cloud-core" },
+    { name = "grpcio" },
+    { name = "proto-plus" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fd/84/4acfdc4d29de4eae4dd6ac1267611421c2a36975c473b2a86fd2e9752e75/google_cloud_firestore-2.25.0.tar.gz", hash = "sha256:9bca3b504f5473048eeab603b9bec69bbeffcdddc4e5fc65cdcc01b449628fc0", size = 621860, upload-time = "2026-03-12T19:31:06.062Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/30/f2/29abde0fcd98f32ce61fc2064a1a3e39b4e64746537409f8ea5521f79afb/google_cloud_firestore-2.25.0-py3-none-any.whl", hash = "sha256:c933a7696b7dd160953d60413ab9481387f6dd8367e77dd750d841689773104a", size = 416714, upload-time = "2026-03-12T19:30:36.674Z" },
 ]
 
 [[package]]

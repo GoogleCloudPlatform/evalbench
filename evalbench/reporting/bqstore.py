@@ -1,5 +1,6 @@
 from google.cloud import bigquery
 import logging
+import pandas as pd
 from reporting.report import Reporter, STORETYPE
 from util.gcp import get_gcp_project
 import urllib.parse
@@ -14,7 +15,49 @@ except ImportError:
 
 _CHUNK_SIZE = 250
 
-_REPORT_QUERY = "WITH all_runs_with_set_tag AS ( SELECT job_id, database, REPLACE(REPLACE(REPLACE(dialects, '[', ''),']',''),'\\'','') AS dialect, id, nl_prompt, trim(generated_sql) AS generated_sql, golden_sql AS golden_sqls, eval_query AS eval_sqls, CASE WHEN generated_error IS NOT NULL THEN generated_error ELSE generated_result END AS generated_result, CASE WHEN golden_error IS NOT NULL THEN golden_error ELSE golden_result END AS golden_result, eval_results AS generated_eval_result, golden_eval_results AS golden_eval_result, DATE(run_time) AS date_of_eval, FROM evalbench.results WHERE job_id = @eval_id ) SELECT *, comparator = @correctness_scorer AS is_correctness_score, '__PROJECT_ID__' AS project_id FROM all_runs_with_set_tag AS eval LEFT JOIN ( SELECT id, job_id, score, COALESCE(dialects[SAFE_OFFSET(0)],'') AS dialect, database, comparator, IFNULL(comparison_logs, '') AS comparison_logs FROM evalbench.scores ) AS scores USING (job_id, id, dialect, database) ORDER BY date_of_eval DESC;"
+_REPORT_QUERY = """
+WITH all_runs_with_set_tag AS (
+    SELECT
+        job_id,
+        database,
+        REPLACE(REPLACE(REPLACE(dialects, '[', ''),']',''),'\'','') AS dialect,
+        id,
+        nl_prompt,
+        trim(generated_sql) AS generated_sql,
+        golden_sql AS golden_sqls,
+        eval_query AS eval_sqls,
+        CASE
+            WHEN generated_error IS NOT NULL THEN generated_error
+            ELSE generated_result
+        END AS generated_result,
+        CASE
+            WHEN golden_error IS NOT NULL THEN golden_error
+            ELSE golden_result
+        END AS golden_result,
+        eval_results AS generated_eval_result,
+        golden_eval_results AS golden_eval_result,
+        DATE(run_time) AS date_of_eval
+    FROM evalbench.results
+    WHERE job_id = @eval_id
+)
+SELECT
+    *,
+    comparator = @correctness_scorer AS is_correctness_score,
+    '__PROJECT_ID__' AS project_id
+FROM all_runs_with_set_tag AS eval
+LEFT JOIN (
+    SELECT
+        id,
+        job_id,
+        score,
+        COALESCE(dialects[SAFE_OFFSET(0)],'') AS dialect,
+        database,
+        comparator,
+        IFNULL(comparison_logs, '') AS comparison_logs
+    FROM evalbench.scores
+) AS scores USING (job_id, id, dialect, database)
+ORDER BY date_of_eval DESC;
+"""
 
 
 def _split_dataframe(df, chunk_size):
@@ -51,6 +94,10 @@ class BigQueryReporter(Reporter):
         self.summary_table = "{}.summary".format(self.dataset_id)
 
     def store(self, results, type: STORETYPE):
+        if results is None or results.empty:
+            logging.info(f"No results to store for {type}")
+            return
+
         dataset = bigquery.Dataset(self.dataset_id)
         dataset.location = self.location
         dataset = self.client.create_dataset(
@@ -61,6 +108,7 @@ class BigQueryReporter(Reporter):
             )
         )
         job_config = bigquery.LoadJobConfig()
+        job_config.autodetect = True
         job_config.schema_update_options = [
             bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION,
             bigquery.SchemaUpdateOption.ALLOW_FIELD_RELAXATION,
@@ -75,8 +123,45 @@ class BigQueryReporter(Reporter):
             table = self.summary_table
 
         # Chunk this to avoid BQ OOM
-        job_config.write_disposition = bigquery.job.WriteDisposition.WRITE_APPEND  # type: ignore
+        job_config.write_disposition = (
+            bigquery.job.WriteDisposition.WRITE_APPEND  # type: ignore
+        )
         for chunk in _split_dataframe(results, _CHUNK_SIZE):
+            # Workaround for pyarrow truncation error when inserting floats
+            # into INT64 columns. This happens if BQ autodetected a column as
+            # INT64 in a previous run. Casting to string avoids the client-side
+            # pyarrow crash and lets BQ handle the conversion.
+            if type in [STORETYPE.SUMMARY, STORETYPE.SCORES]:
+                chunk = chunk.copy()
+                # 1. Identify columns that BQ might have already locked
+                # as INT64 common ones are 'metric_score', etc.
+                int_cols = [
+                    "metric_score", "totalLatencyMs",
+                    "total_results_count", "correct_results_count"
+                ]
+                for col in int_cols:
+                    if col in chunk.columns:
+                        # Round and cast to Int64 (nullable integer type)
+                        chunk[col] = pd.to_numeric(
+                            chunk[col], errors="coerce"
+                        ).round().astype("Int64")
+
+                # 2. For any remaining float columns that aren't in our
+                # "must-be-int" list, we cast to string to avoid pyarrow's
+                # strict truncation check if BQ thinks it's an int.
+                float_cols = chunk.select_dtypes(
+                    include=["float64", "float32"]
+                ).columns
+                for col in float_cols:
+                    if col not in int_cols:
+                        # Convert to string and strip .0 if effectively int
+                        chunk[col] = (
+                            chunk[col]
+                            .astype(str)
+                            .str.replace(r"\.0$", "", regex=True)
+                            .replace("nan", None)
+                        )
+
             job = self.client.load_table_from_dataframe(
                 chunk, table, job_config=job_config
             )
@@ -92,15 +177,23 @@ class BigQueryReporter(Reporter):
             + "c.reportId=e7d7fc00-4268-45d6-b17b-160ca271a4d0"
             + "&ds.eval_results.connector=bigQuery"
             + "&ds.eval_results.type=CUSTOM_QUERY"
-            + f"&ds.eval_results.projectId={urllib.parse.quote(self.project_id)}"
-            + f"&ds.eval_results.sql={urllib.parse.quote(report_query)}"
-            + f"&ds.eval_results.billingProjectId={urllib.parse.quote(self.project_id)}"
+            + "&ds.eval_results.projectId="
+            + urllib.parse.quote(self.project_id)
+            + "&ds.eval_results.sql="
+            + urllib.parse.quote(report_query)
+            + "&ds.eval_results.billingProjectId="
+            + urllib.parse.quote(self.project_id)
             + f"&r.reportName={urllib.parse.quote(report_name)}"
             + f"&params={urllib.parse.quote(report_params)}"
         )
         if _IN_COLAB:
-            html_link = f'The evaluation report is now available on this <a href="{report_link}">Dashboard!</a>'
+            html_link = (
+                "The evaluation report is now available on this "
+                f"<a href=\"{report_link}\">Dashboard!</a>"
+            )
             display(HTML(html_link))  # type: ignore
         else:
             print(
-                f"Results available at:\n\033[1;34m{report_link}\033[0m\n---\n")
+                "Results available at:\n"
+                f"\033[1;34m{report_link}\033[0m\n---\n"
+            )

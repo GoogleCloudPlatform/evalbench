@@ -6,6 +6,7 @@ from .db import DB
 from .util import DatabaseSchema
 import pymongo
 from pymongo import MongoClient
+from google.cloud import firestore_v1
 
 # Matches: db.<collection>.aggregate([...])  or  db.<collection>.find({...})
 _SHELL_QUERY_RE = re.compile(
@@ -18,6 +19,17 @@ class MongoDB(DB):
         super().__init__(db_config)
 
         self.connection_string = db_config.get("connection_string")
+        self.firestore_database = db_config.get("firestore_database")
+
+        if self.firestore_database:
+            parts = self.firestore_database.split("/")
+            self.project_id = parts[1]
+            self.database_id = parts[3]
+            self.firestore_client = firestore_v1.Client(
+                project=self.project_id, database=self.database_id
+            )
+        else:
+            self.firestore_client = None
 
         # Handle DB name mismatch: replace underscores with hyphens
         if "_" in self.db_name:
@@ -98,6 +110,28 @@ class MongoDB(DB):
     # ------------------------------------------------------------------
     def _execute_query(self, query_str: str) -> Tuple[List, Optional[str]]:
         query_str = query_str.strip()
+
+        if self.firestore_client:
+            try:
+                from google.cloud.firestore_v1.pipeline import Pipeline
+                from google.cloud.firestore_v1.types.document import Value
+
+                pipeline = Pipeline(self.firestore_client).raw_stage("iql", Value(string_value=query_str))
+                results = pipeline.execute()
+
+                res_list = []
+                for item in results:
+                    if hasattr(item, "data"):
+                        # PipelineResult has a .data() method returning a dict
+                        res_list.append(item.data())
+                    elif hasattr(item, "to_dict"):
+                        res_list.append(item.to_dict())
+                    else:
+                        res_list.append(item)
+                return res_list, None
+            except Exception as e:
+                logging.error(f"Firestore IQL execution failed: {e}")
+                return [], str(e)
 
         # Dispatch shell-style queries (db.collection.method(...))
         if query_str.startswith("db."):
