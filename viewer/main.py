@@ -10,8 +10,8 @@ logging.basicConfig(level=logging.INFO)
 # (e.g. when running in container behind a proxy)
 if os.environ.get("MESOP_XSRF_CHECK") == "false":
     try:
-        import mesop.runtime as mesop_runtime
-        mesop_runtime.enable_debug_mode()
+        from mesop.runtime import runtime
+        runtime().debug_mode = True
     except Exception as e:
         logging.error(f"Failed to enable debug mode: {e}")
 
