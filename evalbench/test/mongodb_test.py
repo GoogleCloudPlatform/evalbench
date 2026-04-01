@@ -7,10 +7,10 @@ import sys
 import os
 from databases import mongodb
 
+
 # ---------------------------------------------------------------------------
 # Shared fixture
 # ---------------------------------------------------------------------------
-
 @pytest.fixture(scope="module")
 def client():
     """MongoDB client backed by mongomock, seeded with e-commerce documents."""
