@@ -6,8 +6,10 @@ Run configurations: None
 """
 
 from typing import Tuple
+from collections import Counter
 
 from scorers import comparator
+from scorers.util import make_hashable
 from scorers.comparator import convert_to_set
 
 
@@ -54,17 +56,9 @@ class SetMatcher(comparator.Comparator):
                     return False
 
                 if _is_document_structure(golden_execution_result) or _is_document_structure(generated_execution_result):
-                    def _make_hashable(item):
-                        if isinstance(item, list):
-                            return tuple(_make_hashable(x) for x in item)
-                        elif isinstance(item, dict):
-                            return tuple(sorted((k, _make_hashable(v)) for k, v in item.items()))
-                        else:
-                            return item
-
-                    h1 = [_make_hashable(d) for d in golden_execution_result]
-                    h2 = [_make_hashable(d) for d in generated_execution_result]
-                    score = 100 if sorted(h1) == sorted(h2) else 0
+                    h1 = [make_hashable(d) for d in golden_execution_result]
+                    h2 = [make_hashable(d) for d in generated_execution_result]
+                    score = 100 if Counter(h1) == Counter(h2) else 0
                 else:
                     # SQL Model: flat primitives, ignore column names, remove duplicates
                     golden_execution_result_tuple = [
