@@ -144,7 +144,8 @@ class SQLExecWork(Work):
             ]
         else:
             self.eval_result["sanitized_sql"] = sanitize_sql(
-                self.eval_result["generated_sql"]
+                self.eval_result["generated_sql"],
+                dialect=self.experiment_config.get("dialect"),
             )
         return self.eval_result["sanitized_sql"]
 

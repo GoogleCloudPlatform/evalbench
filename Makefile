@@ -38,8 +38,9 @@ container:
 	$(CONTAINER_ENGINE) run --rm --name=evalbench_server \
 		$(if $(filter podman,$(CONTAINER_ENGINE)),--sysctl net.ipv6.conf.all.disable_ipv6=1) \
 		$(if $(filter docker,$(CONTAINER_ENGINE)),--net=host) \
-		-v ~/.config/gcloud:/home/evalbench/.config/gcloud \
+		-v ~/.config/gcloud:/root/.config/gcloud \
 		-e GOOGLE_CLOUD_PROJECT=cloud-db-nl2sql \
+		-e MESOP_XSRF_CHECK=false \
 		--cap-add=SYS_PTRACE	\
 		-p 3000:3000 \
 		-p 50051:50051 \
@@ -52,7 +53,7 @@ shell:
 		$(if $(filter podman,$(CONTAINER_ENGINE)),--sysctl net.ipv6.conf.all.disable_ipv6=1) \
 		$(if $(filter docker,$(CONTAINER_ENGINE)),--net=host) \
 		--cap-add=SYS_PTRACE \
-		-v ~/.config/gcloud:/home/evalbench/.config/gcloud \
+		-v ~/.config/gcloud:/root/.config/gcloud \
 		-v $(PWD)/requirements.txt:/evalbench/requirements.txt \
 		-v $(PWD)/evalbench:/evalbench/evalbench \
 		-v $(PWD)/viewer:/evalbench/viewer \
@@ -69,6 +70,10 @@ push-test:
 push:
 	$(CONTAINER_ENGINE) image tag evalbench:latest us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:latest
 	$(CONTAINER_ENGINE) push us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:latest
+
+push-corprun:
+	$(CONTAINER_ENGINE) image tag evalbench:latest us-central1-docker.pkg.dev/evalbench-dev/cr-images/eval_server:latest
+	$(CONTAINER_ENGINE) push us-central1-docker.pkg.dev/evalbench-dev/cr-images/eval_server:latest
 
 deploy:
 	gcloud container clusters get-credentials evalbench-directpath-cluster --zone us-central1-c --project cloud-db-nl2sql
@@ -87,6 +92,22 @@ deploy-test:
 	kubectl apply -f evalbench_service/k8s/service-test.yaml
 	kubectl apply -f evalbench_service/k8s/evalbench-test.yaml
 	kubectl apply -f evalbench_service/k8s/vertical-autoscale-test.yaml
+
+deploy-corprun:
+	gcloud run deploy evalbench \
+		--project=evalbench-dev \
+		--region=us-central1 \
+		--image=us-central1-docker.pkg.dev/evalbench-dev/cr-images/eval_server:latest \
+		--port=3000 \
+		--memory=2Gi \
+		--service-account=crsvc-evalbench@evalbench-dev.iam.gserviceaccount.com \
+		--set-env-vars CLOUD_RUN=True,GOOGLE_CLOUD_PROJECT=evalbench-dev,MESOP_XSRF_CHECK=false \
+		--ingress=internal-and-cloud-load-balancing \
+		--network=cr-infra-vpc-network \
+		--subnet=cr-infra-subnetwork \
+		--vpc-egress=all-traffic \
+		--add-volume=name=session-files,type=cloud-storage,bucket=evalbench-sessions-cloud-db-nl2sql \
+		--add-volume-mount=volume=session-files,mount-path=/tmp_session_files
 
 undeploy:
 	gcloud container clusters get-credentials evalbench-directpath-cluster --zone us-central1-c --project cloud-db-nl2sql

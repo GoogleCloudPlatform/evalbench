@@ -6,4 +6,5 @@ option java_multiple_files = true;
 
 message EvalConnectRequest {
   string client_id = 1;
+  bool streaming_eval = 2;
 }

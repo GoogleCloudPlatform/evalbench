@@ -81,6 +81,7 @@ class Evaluator:
         run_time: datetime.datetime,
         progress_reporting,
         global_models,
+        close_connections=True,
     ):
         eval_outputs: List[Any] = []
         scoring_results: List[Any] = []
@@ -202,7 +203,7 @@ class Evaluator:
                 logging.error(f"Truncation error: {e}")
             eval_outputs.append(eval_output)
 
-        if db_queue:
+        if close_connections and db_queue:
             while not db_queue.empty():
                 db = db_queue.get()
                 db.close_connections()

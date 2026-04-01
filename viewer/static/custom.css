@@ -1,0 +1,5 @@
+.mdc-tooltip__surface {
+  max-height: none !important;
+  max-width: none !important;
+  white-space: pre-wrap !important;
+}

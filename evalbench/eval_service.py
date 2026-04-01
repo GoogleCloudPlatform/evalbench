@@ -11,7 +11,8 @@ import yaml
 import grpc
 import pathlib
 from dataset.dataset import load_json
-from evaluator import get_orchestrator
+from dataset import evalinput
+from evaluator import get_orchestrator, get_streaming_orchestrator
 
 import reporting.report as report
 from reporting import get_reporters
@@ -79,6 +80,10 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         request,
         context,
     ) -> eval_response_pb2.EvalResponse:
+        session_id = rpc_id_var.get()
+        session = SESSIONMANAGER.get_session(session_id)
+        if session is not None:
+            session["streaming_eval"] = request.streaming_eval
         return eval_response_pb2.EvalResponse(response="ack")
 
     async def EvalConfig(
@@ -120,17 +125,29 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         if config is not None:
             config["session_id"] = session_id
 
-        dataset = await get_dataset_from_request(request_iterator)
-
-        evaluator = get_orchestrator(
-            config, db_configs, setup_config, report_progress=True
-        )
-
+        streaming_eval = session.get("streaming_eval", False) if session else False
         loop = asyncio.get_event_loop()
 
-        # Offload blocking evaluate call to a thread pool
-        logging.info("Offloading evaluation to thread pool...")
-        await loop.run_in_executor(None, evaluator.evaluate, dataset)
+        if streaming_eval:
+            evaluator = get_streaming_orchestrator(
+                config, db_configs, setup_config, report_progress=True
+            )
+            logging.info("Streaming eval mode: evaluating items as they arrive...")
+            tasks = []
+            async for request in request_iterator:
+                eval_input = evalinput.EvalInputRequest.init_from_proto(request)
+                task = loop.run_in_executor(
+                    None, evaluator.evaluate_item, eval_input
+                )
+                tasks.append(task)
+            await asyncio.gather(*tasks)
+        else:
+            dataset = await get_dataset_from_request(request_iterator)
+            evaluator = get_orchestrator(
+                config, db_configs, setup_config, report_progress=True
+            )
+            logging.info("Batch eval mode: evaluating all items together...")
+            await loop.run_in_executor(None, evaluator.evaluate, dataset)
 
         job_id, run_time, results_tf, scores_tf = evaluator.process()
         reporters = get_reporters(config.get("reporting"), job_id, run_time)
