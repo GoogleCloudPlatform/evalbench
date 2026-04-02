@@ -132,7 +132,7 @@ def config_to_df(
     df = pd.DataFrame.from_dict(configs)
     df[["job_id", "config", "value"]] = df[[
         "job_id", "config", "value"]].astype("string")
-    return config
+    return df
 
 
 def update_google3_relative_paths(
