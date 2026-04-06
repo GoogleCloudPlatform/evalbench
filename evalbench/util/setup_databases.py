@@ -67,18 +67,13 @@ def setup_databases(config_path: str):
                 print(f"  Failed to setup {db_name} on {db_type}: {e}")
 
 
-_EXPERIMENT_CONFIG = flags.DEFINE_string(
-    "experiment_config",
-    None,
-    "Path to the eval execution configuration file.",
-    required=True
-)
+from util.flags import EXPERIMENT_CONFIG
 
 
 def main(argv):
     if len(argv) > 1:
         raise app.UsageError("Too many command-line arguments.")
-    setup_databases(_EXPERIMENT_CONFIG.value)
+    setup_databases(EXPERIMENT_CONFIG.value)
 
 
 if __name__ == "__main__":

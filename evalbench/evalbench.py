@@ -12,6 +12,7 @@ import reporting.analyzer as analyzer
 import logging
 from util.config import set_session_configs
 from util.service import load_session_configs
+from util.flags import EXPERIMENT_CONFIG
 import os
 import sys
 import yaml
@@ -25,12 +26,6 @@ except ImportError:
     _IN_COLAB = False
 
 logging.getLogger().setLevel(logging.INFO)
-
-_EXPERIMENT_CONFIG = flags.DEFINE_string(
-    "experiment_config",
-    "configs/experiment_config.yaml",
-    "Path to the eval execution configuration file.",
-)
 
 
 _SUITE_CONFIG = flags.DEFINE_string(
@@ -156,7 +151,7 @@ def main(argv: Sequence[str]):
     if _SUITE_CONFIG.value:
         success = run_suite(_SUITE_CONFIG.value)
     else:
-        success = eval(experiment_config=_EXPERIMENT_CONFIG.value)
+        success = eval(experiment_config=EXPERIMENT_CONFIG.value)
 
     exit_code = 0 if success else 1
     if _IN_COLAB:
