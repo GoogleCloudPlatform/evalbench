@@ -35,11 +35,14 @@ def setup_databases(config_path: str):
 
     print(f"Setting up databases for: {unique_db_names}")
 
+    db_name_mappings = config.get("db_name_mappings", {})
     for db_config_path in config.get("database_configs", []):
         db_config = load_yaml_config(db_config_path)
         db_type = db_config["db_type"]
+        dialect = db_config.get("dialect", db_type)
 
-        for db_name in unique_db_names:
+        for db_name_from_dataset in unique_db_names:
+            db_name = db_name_mappings.get(dialect, "{db_id}").format(db_id=db_name_from_dataset)
             print(f"Processing {db_name} for engine {db_type}...")
 
             # Get connection wrapper to the specific database
