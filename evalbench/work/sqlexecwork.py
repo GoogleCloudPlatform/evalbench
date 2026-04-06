@@ -46,16 +46,27 @@ class SQLExecWork(Work):
         golden_eval_result = None
         golden_error = None
 
+        query_type = self.eval_result["query_type"]
+        eval_query = self._get_eval_query()
+        preprocess_sql = self._get_preprocess_sql_query()
+        golden_sql = self._get_golden_sql()
+
+        if golden_sql:
+            golden_result, golden_eval_result, golden_error = (
+                self._evaluate_execution_results(
+                    golden_sql,
+                    preprocess_sql,
+                    eval_query,
+                    query_type,
+                    is_golden=True,
+                )
+            )
+
         if (
             self.eval_result["sql_generator_error"] is None
-            and self.eval_result["generated_sql"]
+            and self.eval_result.get("generated_sql")
         ):
-            query_type = self.eval_result["query_type"]
-            eval_query = self._get_eval_query()
             sanitized_generated_sql = self._sanitize_sql()
-            preprocess_sql = self._get_preprocess_sql_query()
-            golden_sql = self._get_golden_sql()
-
             if sanitized_generated_sql:
                 generated_result, generated_eval_result, generated_error = (
                     self._evaluate_execution_results(
@@ -66,15 +77,6 @@ class SQLExecWork(Work):
                         is_golden=False,
                     )
                 )
-            golden_result, golden_eval_result, golden_error = (
-                self._evaluate_execution_results(
-                    golden_sql,
-                    preprocess_sql,
-                    eval_query,
-                    query_type,
-                    is_golden=True,
-                )
-            )
 
         self.eval_result["generated_result"] = generated_result
         self.eval_result["eval_results"] = generated_eval_result
@@ -96,10 +98,17 @@ class SQLExecWork(Work):
                 self.db.execute(preprocess_sql)
             except Exception as preprocess_error:
                 traceback.print_exc()
+
+        if not query or not query.strip():
+            return None, None, "list index out of range (empty query)"
+
         if query_type == "dql":
             try:
+                stmts = sqlparse.split(query)
+                if not stmts:
+                    return None, None, "list index out of range (empty query)"
                 result, _, error = self.db.execute(
-                    sqlparse.split(query)[0], use_cache=True, rollback=True
+                    stmts[0], use_cache=True, rollback=True
                 )
             except Exception as e:
                 error = str(e)
