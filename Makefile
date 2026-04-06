@@ -197,10 +197,10 @@ pod-shell-test:
 
 proto:
 	@python -m grpc_tools.protoc \
-		--proto_path=evalbench/evalproto \
-		--python_out=evalbench/evalproto \
-		--pyi_out=evalbench/evalproto \
-		--grpc_python_out=evalbench/evalproto \
+		--proto_path=evalbench \
+		--python_out=evalbench \
+		--pyi_out=evalbench \
+		--grpc_python_out=evalbench \
 		--experimental_editions evalbench/evalproto/*.proto
 
 clean:
