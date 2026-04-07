@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.2.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.1.0...v1.2.0) (2026-04-07)
+
+
+### Features
+
+* **adc:** support ADC for database authentication ([#306](https://github.com/GoogleCloudPlatform/evalbench/issues/306)) ([6cb05e6](https://github.com/GoogleCloudPlatform/evalbench/commit/6cb05e64e7993876971b465f7a8859ea5788e3ef))
+* add Cloud Run support with entrypoint script, custom CSS, and environment-based XSRF configuration ([82fdeca](https://github.com/GoogleCloudPlatform/evalbench/commit/82fdeca112220560e83c4f7ccde16b4598ef0e5c))
+* add UV_NO_SYNC support to run script and update Dockerfile and cloudbuild configuration accordingly ([43731f9](https://github.com/GoogleCloudPlatform/evalbench/commit/43731f90d138d920edf1e4ef6bf1000c0644ef3d))
+* allow database name mapping via config ([#303](https://github.com/GoogleCloudPlatform/evalbench/issues/303)) ([3e8d25a](https://github.com/GoogleCloudPlatform/evalbench/commit/3e8d25aced3403611e26465533faccfb2449ad4d))
+* **geminicli:** populate adc in fake home ([01c9c5b](https://github.com/GoogleCloudPlatform/evalbench/commit/01c9c5b7f1cc14861415f5aee8c3bb99da6ab2a0))
+* **geminicli:** populate adc in fake home ([ce06c9b](https://github.com/GoogleCloudPlatform/evalbench/commit/ce06c9b934ace4c3d7a45bb502a26961c36583df))
+* implement on_load logic to auto-select job directory from query parameters ([4691de4](https://github.com/GoogleCloudPlatform/evalbench/commit/4691de485c139c5a770e61161d3db7efa0b0e738))
+
+
+### Bug Fixes
+
+* consolidate experiment_config flag into util/flags.py ([#304](https://github.com/GoogleCloudPlatform/evalbench/issues/304)) ([432d11e](https://github.com/GoogleCloudPlatform/evalbench/commit/432d11e4813087f66a1b098bc4dbe8a57c4fb299))
+* handle empty queries safely, ensure golden execution, and parse config robustly ([#265](https://github.com/GoogleCloudPlatform/evalbench/issues/265)) ([9ba022b](https://github.com/GoogleCloudPlatform/evalbench/commit/9ba022be63d43fb66ff04771efa82fa8feb0c04d))
+* remove backticks from sanitized SQL strings ([#297](https://github.com/GoogleCloudPlatform/evalbench/issues/297)) ([4e4e201](https://github.com/GoogleCloudPlatform/evalbench/commit/4e4e2011fda461ef626648f4c0d67183064e1e9d))
+
 ## [1.1.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.0.0...v1.1.0) (2026-03-20)
 
 
