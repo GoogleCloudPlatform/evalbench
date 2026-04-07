@@ -17,6 +17,7 @@ class AlloyDB(PGDB):
         """
         super().__init__(db_config)
         self.nl_config = db_config['nl_config']
+        self.use_adc = not self.username and not self.password
 
         if 'api_endpoint' in db_config:
             CONNECTOR._alloydb_api_endpoint = db_config['api_endpoint']
@@ -28,7 +29,7 @@ class AlloyDB(PGDB):
                 user=self.username,
                 password=self.password,
                 db=self.db_name,
-                enable_iam_auth=False,
+                enable_iam_auth=self.use_adc,  # handled in PGDB
                 ip_type=AlloyDBIPTypes.PUBLIC,
             )
 

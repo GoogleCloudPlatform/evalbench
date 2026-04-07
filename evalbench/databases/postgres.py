@@ -5,6 +5,7 @@ from sqlalchemy.engine.base import Connection
 import logging
 from .db import DB
 from google.cloud.sql.connector import Connector
+from util.auth import get_adc_user_email
 from .util import (
     get_db_secret,
     with_cache_execute,
@@ -55,6 +56,10 @@ class PGDB(DB):
         # Normalize password for drivers that dislike None
         effective_password = self.password if self.password is not None else ""
 
+        self.use_adc = not self.username and not self.password
+        if self.use_adc:
+            self.username = get_adc_user_email()
+
         def get_conn():
             # Only used for Cloud SQL Connector path
             conn = CONNECTOR.connect(
@@ -63,6 +68,7 @@ class PGDB(DB):
                 user=self.username,
                 password=effective_password,
                 db=self.db_name,
+                enable_iam_auth=self.use_adc,
             )
             return conn
 

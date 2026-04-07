@@ -5,12 +5,12 @@ import pytest
 import json
 import sys
 import os
+from databases import mongodb
 
 
 # ---------------------------------------------------------------------------
 # Shared fixture
 # ---------------------------------------------------------------------------
-
 @pytest.fixture(scope="module")
 def client():
     """MongoDB client backed by mongomock, seeded with e-commerce documents."""
@@ -21,13 +21,11 @@ def client():
         "max_executions_per_minute": 100,
         "connection_string": "mongodb://mock-host:27017",
     }
-
-    from databases import mongodb
-
+    # Directly use mongomock.MongoClient instead of patching
+    # This avoids issues with where MongoClient is imported
     mock_client = mongomock.MongoClient("mongodb://mock-host:27017")
     original_client = mongodb.MongoClient
     mongodb.MongoClient = lambda *args, **kwargs: mock_client
-
     try:
         db = get_database(db_config, "unit_test_db")
 

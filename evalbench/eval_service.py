@@ -91,11 +91,16 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         request,
         context,
     ) -> eval_response_pb2.EvalResponse:
+        resource_map = {r.address: r.address for r in request.resources}
         experiment_config = yaml.safe_load(request.yaml_config.decode("utf-8"))
+        update_google3_relative_paths(experiment_config, rpc_id_var.get(), resource_map)
+        for resource in request.resources:
+            if resource.address.endswith(".yaml"):
+                yaml_config = yaml.safe_load(resource.content.decode("utf-8"))
+                update_google3_relative_paths(yaml_config, rpc_id_var.get(), resource_map)
+                resource.content = yaml.dump(yaml_config).encode("utf-8")
         session = SESSIONMANAGER.get_session(rpc_id_var.get())
         SESSIONMANAGER.write_resource_files(rpc_id_var.get(), request.resources)
-        resource_map = {r.address: r.address for r in request.resources}
-        update_google3_relative_paths(experiment_config, rpc_id_var.get(), resource_map)
         set_session_configs(session, experiment_config)
         return eval_response_pb2.EvalResponse(response="ack")
 

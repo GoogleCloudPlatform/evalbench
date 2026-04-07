@@ -104,8 +104,7 @@ class SpannerEmulatorManager:
         # Create Instance
         instance = client.instance(instance_id)
         if not instance.exists():
-            config_name = f"{
-                client.project_name}/instanceConfigs/emulator-config"
+            config_name = f"{client.project_name}/instanceConfigs/emulator-config"
             instance = client.instance(
                 instance_id, configuration_name=config_name)
             op = instance.create()
