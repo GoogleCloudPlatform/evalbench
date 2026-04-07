@@ -1,5 +1,4 @@
 import logging
-
 import time
 from typing import Any, List
 import datetime
@@ -37,8 +36,8 @@ def _process_futures_with_timeout(
         if elapsed_since_last > timeout:
 
             logging.error(
-                f"Abandoning {
-                    len(uncompleted)} hung futures after {timeout}s timeout.")
+                f"Abandoning {len(uncompleted)} hung futures after {timeout}s timeout."
+            )
             for f in list(uncompleted):
                 uncompleted.remove(f)
                 yield f, future_to_eval_map[f], True

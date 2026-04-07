@@ -1,3 +1,4 @@
+import traceback
 from typing import Any, List
 import datetime
 from work import promptgenwork
@@ -96,8 +97,6 @@ class DataAgentEvaluator:
                 try:
                     result = future.result()
                 except Exception as exc:
-                    import traceback
-
                     print(traceback.format_exc())
                     print(f"A task generated an exception: {exc}")
 
