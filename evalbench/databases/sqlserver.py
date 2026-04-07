@@ -6,6 +6,7 @@ import logging
 import sqlparse
 from .db import DB
 from google.cloud.sql.connector import Connector
+from util.auth import get_adc_user_email
 from .util import (
     get_db_secret,
     with_cache_execute,
@@ -54,6 +55,10 @@ class SQLServerDB(DB):
         logging.getLogger("pytds").setLevel(logging.ERROR)
         self.connector = Connector()
 
+        self.use_adc = not self.username and not self.password
+        if self.use_adc:
+            self.username = get_adc_user_email()
+
         def get_conn():
             conn = self.connector.connect(
                 self.db_path,
@@ -61,6 +66,7 @@ class SQLServerDB(DB):
                 user=self.username,
                 password=self.password,
                 db=self.db_name,
+                enable_iam_auth=self.use_adc,
             )
             return conn
 

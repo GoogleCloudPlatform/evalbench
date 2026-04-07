@@ -213,15 +213,10 @@ class SpannerDB(DB):
                         {"name": c_name, "type": str(d_type)})
 
             if db_metadata:
-                logging.info(
-                    f"Metadata extracted for {
-                        len(db_metadata)} tables in Spanner {
-                        self.expected_dialect_str}")
+                logging.info(f"Metadata extracted for {len(db_metadata)} tables in Spanner {self.expected_dialect_str}")
                 return db_metadata
             else:
-                logging.warning(
-                    f"No metadata found in Spanner {
-                        self.expected_dialect_str} information_schema for schema '{schema_name}'")
+                logging.warning(f"No metadata found in Spanner {self.expected_dialect_str} information_schema for schema '{schema_name}'")
         except Exception as e:
             logging.error(f"Native metadata inspection failed: {e}")
         return db_metadata

@@ -157,6 +157,13 @@ def update_google3_relative_paths(
                                 resource_map[sub_value],
                             )
                         )
+                    elif isinstance(sub_value, dict):
+                        for k, v in sub_value.items():
+                            if isinstance(v, str) and v.startswith("google3/"):
+                                sub_value[k] = get_google3_relative_path(
+                                    v, session_id
+                                )
+                        values.append(sub_value)
                     else:
                         values.append(sub_value)
                 experiment_config[key] = values

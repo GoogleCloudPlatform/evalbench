@@ -7,6 +7,7 @@ import pymysql
 import logging
 from .db import DB
 from google.cloud.sql.connector import Connector
+from util.auth import get_adc_user_email
 from .util import (
     get_db_secret,
     with_cache_execute,
@@ -57,6 +58,10 @@ class MySQLDB(DB):
 
         self.connector = Connector() if self.use_cloud_sql else None
 
+        self.use_adc = not self.username and not self.password
+        if self.use_adc:
+            self.username = get_adc_user_email()
+
         def get_conn():
             """Callable for sqlalchemy 'creator' parameter."""
             if self.use_cloud_sql:
@@ -66,6 +71,7 @@ class MySQLDB(DB):
                     user=self.username,
                     password=self.password,
                     db=self.db_name,
+                    enable_iam_auth=self.use_adc,
                 )
             else:
                 # Local/Direct connection

@@ -45,6 +45,7 @@ dependencies = [
     "google-adk",
     "google-cloud-geminidataanalytics>=0.11.0",
     "google-cloud-firestore",
+    "google-cloud-iam",
 ]
 
 [tool.setuptools.packages.find]
