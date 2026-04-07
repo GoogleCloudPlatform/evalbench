@@ -60,7 +60,6 @@ shell:
 		-p 3000:3000 \
 		-p 50051:50051 \
 		-e GOOGLE_CLOUD_PROJECT=cloud-db-nl2sql \
-		-e CLOUD_RUN=True \
 		-e TYPE=$(TYPE) evalbench:latest bash
 
 push-test:

@@ -1,3 +1,4 @@
+import traceback
 """Work is the base class for all work items."""
 
 from typing import Any
@@ -30,8 +31,6 @@ class SQLGenQueryDataWork(Work):
                     self.eval_result["generated_sql"] = None
                     self.eval_result["sql_generator_error"] = "No result generated"
             except Exception as e:
-                import traceback
-
                 traceback.print_exc()
                 sql_generator_error = str(e)
 

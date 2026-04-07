@@ -105,12 +105,7 @@ def _report(
             last_counts = current_counts
             last_change_time = time.time()
         elif time.time() - last_change_time > warn_seconds:
-            msg = f"\nWARNING: No progress observed for {warn_seconds} seconds. Currently at: Prompt {
-                current_counts['prompt']}, Gen {
-                current_counts['gen']}, Exec {
-                current_counts['exec']}, Score {
-                current_counts['score']} / {
-                    progress_reporting['total']}\n"
+            msg = f"\nWARNING: No progress observed for {warn_seconds} seconds. Currently at: Prompt {current_counts['prompt']}, Gen {current_counts['gen']}, Exec {current_counts['exec']}, Score {current_counts['score']} / {progress_reporting['total']}\n"
             if tmp_buffer:
                 _ORIGINAL_STDOUT.write(msg)
                 _ORIGINAL_STDOUT.flush()

@@ -1,8 +1,11 @@
 import datetime
 import json
+import logging
 
 import google.auth
+import google.auth.transport.requests
 from google.cloud import iam_credentials_v1
+import requests
 
 
 def generate_jwt_payload(service_account_email: str, resource_url: str) -> str:
@@ -74,3 +77,36 @@ def sign_jwt(target_sa: str, resource_url: str) -> str:
     response = iam_client.sign_jwt(name=name, payload=payload)
 
     return response.signed_jwt
+
+
+def get_adc_user_email() -> str | None:
+    """Attempts to derive the user email from Application Default Credentials."""
+    try:
+        credentials, project = google.auth.default()
+
+        # Check if it's a Service Account
+        if hasattr(credentials, "service_account_email"):
+            return credentials.service_account_email
+
+        # Check if it's a User Account (from gcloud auth application-default login)
+        # We need to refresh to ensure we have a valid token
+        request = google.auth.transport.requests.Request()
+        credentials.refresh(request)
+
+        response = requests.get(
+            "https://www.googleapis.com/oauth2/v1/userinfo",
+            headers={"Authorization": f"Bearer {credentials.token}"},
+            timeout=5,
+        )
+
+        if response.status_code == 200:
+            return response.json().get("email")
+        else:
+            logging.warning(
+                f"Failed to fetch user info from ADC: {response.text}"
+            )
+
+    except Exception as e:
+        logging.warning(f"Could not derive user email from ADC: {e}")
+
+    return None

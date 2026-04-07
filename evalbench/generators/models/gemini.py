@@ -6,6 +6,7 @@ from google.api_core.exceptions import ResourceExhausted
 from .generator import QueryGenerator
 from util.sanitizer import sanitize_sql
 import logging
+import os
 
 
 class GeminiGenerator(QueryGenerator):
@@ -17,13 +18,20 @@ class GeminiGenerator(QueryGenerator):
         self.project_id = get_gcp_project(
             querygenerator_config.get("gcp_project_id"))
         self.region = get_gcp_region(querygenerator_config.get("gcp_region"))
+        if not self.project_id or not self.region:
+            # Attempt to use GEMINI_API_KEY for authentication
+            api_key = os.environ.get("GEMINI_API_KEY")
+            if not api_key:
+                raise ValueError("Both gcp_project_id and gcp_region must be set in config when GEMINI_API_KEY is not available.")
+            self.client = genai.Client(api_key=api_key)
+        else:
+            self.client = genai.Client(
+                vertexai=True, project=self.project_id, location=self.region
+            )
+
         self.vertex_model = querygenerator_config["vertex_model"]
         self.base_prompt = querygenerator_config.get("base_prompt") or ""
         self.generation_config = None
-
-        self.client = genai.Client(
-            vertexai=True, project=self.project_id, location=self.region
-        )
         self.base_prompt = self.base_prompt
 
     def generate_internal(self, prompt):
