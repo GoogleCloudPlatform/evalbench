@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.2.0...v1.3.0) (2026-04-09)
+
+
+### Features
+
+* Add summary_in_response and improve LLM rater resilience ([#311](https://github.com/GoogleCloudPlatform/evalbench/issues/311)) ([68b72ee](https://github.com/GoogleCloudPlatform/evalbench/commit/68b72ee375ac949e8601256125728b6dafc96622))
+
 ## [1.2.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.1.0...v1.2.0) (2026-04-07)
 
 
