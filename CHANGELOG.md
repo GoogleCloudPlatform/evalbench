@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.1](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.3.0...v1.3.1) (2026-04-10)
+
+
+### Bug Fixes
+
+* **databases/alloydb:** restore correct use_adc flag behavior ([#315](https://github.com/GoogleCloudPlatform/evalbench/issues/315)) ([909e11d](https://github.com/GoogleCloudPlatform/evalbench/commit/909e11d29a095425b9f8247b4abcc9bc2fcb24d3))
+* **generators/query_data_api:** add retry support for transient API errors ([#317](https://github.com/GoogleCloudPlatform/evalbench/issues/317)) ([e5fdead](https://github.com/GoogleCloudPlatform/evalbench/commit/e5fdeadcbab141b0e3cbb69bff72c874cb289085))
+
 ## [1.3.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.2.0...v1.3.0) (2026-04-09)
 
 
