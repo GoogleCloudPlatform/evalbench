@@ -17,7 +17,6 @@ class AlloyDB(PGDB):
         """
         super().__init__(db_config)
         self.nl_config = db_config['nl_config']
-        self.use_adc = not self.username and not self.password
 
         if 'api_endpoint' in db_config:
             CONNECTOR._alloydb_api_endpoint = db_config['api_endpoint']
