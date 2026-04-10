@@ -2,6 +2,8 @@ from .generator import QueryGenerator
 import google.cloud.geminidataanalytics_v1beta as gda
 import logging
 from typing import Dict, Any
+from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable, DeadlineExceeded
+from util.rate_limit import ResourceExhaustedError
 
 
 class QueryDataAPIGenerator(QueryGenerator):
@@ -75,6 +77,8 @@ class QueryDataAPIGenerator(QueryGenerator):
             }
             return result
 
+        except (ResourceExhausted, ServiceUnavailable, DeadlineExceeded) as e:
+            raise ResourceExhaustedError(e)
         except Exception as e:
             logger.exception("Unhandled exception during QueryData API call")
             raise
