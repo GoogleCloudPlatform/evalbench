@@ -1,0 +1,10 @@
+db_type: alloydb
+dialect: postgres
+database_name: <YOUR_DATABASE_NAME>
+# You will need to fill in the PROJECT_ID, REGION and CLUSTER_NAME if different from placeholders below.
+database_path: projects/<YOUR_GCP_PROJECT_ID>/locations/<YOUR_REGION>/clusters/<YOUR_CLUSTER_ID>/instances/<YOUR_INSTANCE_ID>
+max_executions_per_minute: 120
+user_name: <YOUR_DATABASE_USER>
+password: <YOUR_DATABASE_PASSWORD>
+# nl_config should match the name used in your data agent setup if applicable.
+nl_config: <YOUR_NL_CONFIG>

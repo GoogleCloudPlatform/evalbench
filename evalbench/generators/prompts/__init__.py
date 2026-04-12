@@ -2,6 +2,8 @@ from .sqlgenbase import SQLGenBasePromptGenerator
 from .passthrough import NOOPGenerator
 from .interactsystem import InteractSystemGenerator
 from .interactuser import InteractUserGenerator
+from .simulateduser import SimulatedUserPromptGenerator
+from .dataagentinteractuser import DataAgentInteractUserGenerator
 
 
 def get_generator(db, promptgenerator_config, generator_name=None):
@@ -16,4 +18,8 @@ def get_generator(db, promptgenerator_config, generator_name=None):
         return InteractSystemGenerator(db, promptgenerator_config)
     if promptgenerator_config["prompt_generator"] == "InteractUserGenerator":
         return InteractUserGenerator(db, promptgenerator_config)
+    if promptgenerator_config["prompt_generator"] == "SimulatedUserPromptGenerator":
+        return SimulatedUserPromptGenerator(db, promptgenerator_config)
+    if promptgenerator_config["prompt_generator"] == "DataAgentInteractUserGenerator":
+        return DataAgentInteractUserGenerator(db, promptgenerator_config)
     raise ValueError("Prompt Generator not Supported")

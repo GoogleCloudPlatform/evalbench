@@ -30,3 +30,8 @@ anthropic[vertex]
 sqlglot
 pymongo
 mongomock
+rich
+google-adk
+mcp
+pytest
+mock

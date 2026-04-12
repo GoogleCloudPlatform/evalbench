@@ -1,0 +1,12 @@
+gemini_cli_version: "@google/gemini-cli@0.31.0"
+generator: gemini_cli
+env:
+  GOOGLE_CLOUD_PROJECT: "astana-evaluation"
+  GOOGLE_CLOUD_LOCATION: "us-central1"
+  GOOGLE_GENAI_USE_VERTEXAI: "true"
+  GEMINI_API_MODEL: "gemini-2.5-flash"
+  GEMINI_MODEL: "gemini-2.5-flash"
+setup:  
+  skills:
+    - action: link
+      path: "/usr/local/google/home/prernakakkar/senseai/cloud-sql-postgresql/skills/cloudsql-postgres-admin"

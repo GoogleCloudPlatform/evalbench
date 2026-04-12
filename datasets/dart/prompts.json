@@ -1,0 +1,602 @@
+[
+  {
+    "id": "ec_001",
+    "nl_prompt": "Count the total number of orders.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$count\": \"total_orders\"}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "count"]
+  },
+  {
+    "id": "ec_002",
+    "nl_prompt": "How many orders are there for each status?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$group\": {\"_id\": \"$status\", \"count\": {\"$sum\": 1}}}, {\"$project\": {\"status\": \"$_id\", \"count\": 1, \"_id\": 0}}, {\"$sort\": {\"count\": -1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "group"]
+  },
+  {
+    "id": "ec_003",
+    "nl_prompt": "List all orders placed by customer cust_001.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$match\": {\"customer_id\": \"cust_001\"}}, {\"$project\": {\"order_id\": 1, \"status\": 1, \"total_amount\": 1, \"created_at\": 1, \"_id\": 0}}, {\"$sort\": {\"order_id\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "filter"]
+  },
+  {
+    "id": "ec_004",
+    "nl_prompt": "List all products in the Electronics category.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.products.aggregate([{\"$match\": {\"category\": \"Electronics\"}}, {\"$project\": {\"product_id\": 1, \"name\": 1, \"price\": 1, \"_id\": 0}}, {\"$sort\": {\"product_id\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "filter"]
+  },
+  {
+    "id": "ec_005",
+    "nl_prompt": "Find all products with a price greater than 40.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.products.aggregate([{\"$match\": {\"price\": {\"$gt\": 40}}}, {\"$project\": {\"product_id\": 1, \"name\": 1, \"price\": 1, \"category\": 1, \"_id\": 0}}, {\"$sort\": {\"price\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "filter", "comparison"]
+  },
+  {
+    "id": "ec_006",
+    "nl_prompt": "Find all orders placed after 2024-03-01.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$match\": {\"created_at\": {\"$gt\": \"2024-03-01\"}}}, {\"$project\": {\"order_id\": 1, \"customer_id\": 1, \"created_at\": 1, \"total_amount\": 1, \"_id\": 0}}, {\"$sort\": {\"created_at\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "filter", "date"]
+  },
+  {
+    "id": "ec_007",
+    "nl_prompt": "What is the total revenue from all orders?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$group\": {\"_id\": null, \"total_revenue\": {\"$sum\": \"$total_amount\"}}}, {\"$project\": {\"total_revenue\": 1, \"_id\": 0}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "aggregate", "sum"]
+  },
+  {
+    "id": "ec_008",
+    "nl_prompt": "What are the 3 most expensive products?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.products.aggregate([{\"$sort\": {\"price\": -1}}, {\"$limit\": 3}, {\"$project\": {\"product_id\": 1, \"name\": 1, \"price\": 1, \"category\": 1, \"_id\": 0}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "sort", "limit"]
+  },
+  {
+    "id": "ec_009",
+    "nl_prompt": "How many customers are in each tier?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.customers.aggregate([{\"$group\": {\"_id\": \"$tier\", \"count\": {\"$sum\": 1}}}, {\"$project\": {\"tier\": \"$_id\", \"count\": 1, \"_id\": 0}}, {\"$sort\": {\"count\": -1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "group"]
+  },
+  {
+    "id": "ec_010",
+    "nl_prompt": "List products with stock less than 150.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.products.aggregate([{\"$match\": {\"stock\": {\"$lt\": 150}}}, {\"$project\": {\"product_id\": 1, \"name\": 1, \"stock\": 1, \"category\": 1, \"_id\": 0}}, {\"$sort\": {\"stock\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "filter", "comparison"]
+  },
+  {
+    "id": "ec_011",
+    "nl_prompt": "What is the average order amount?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$group\": {\"_id\": null, \"avg_order_amount\": {\"$avg\": \"$total_amount\"}}}, {\"$project\": {\"avg_order_amount\": 1, \"_id\": 0}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "aggregate", "avg"]
+  },
+  {
+    "id": "ec_012",
+    "nl_prompt": "Find all delivered orders.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$match\": {\"status\": \"delivered\"}}, {\"$project\": {\"order_id\": 1, \"customer_id\": 1, \"created_at\": 1, \"total_amount\": 1, \"_id\": 0}}, {\"$sort\": {\"order_id\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "filter"]
+  },
+  {
+    "id": "ec_013",
+    "nl_prompt": "List all distinct product categories.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.products.aggregate([{\"$group\": {\"_id\": \"$category\"}}, {\"$project\": {\"category\": \"$_id\", \"_id\": 0}}, {\"$sort\": {\"category\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "distinct"]
+  },
+  {
+    "id": "ec_014",
+    "nl_prompt": "How many products are in each category?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.products.aggregate([{\"$group\": {\"_id\": \"$category\", \"count\": {\"$sum\": 1}}}, {\"$project\": {\"category\": \"$_id\", \"count\": 1, \"_id\": 0}}, {\"$sort\": {\"count\": -1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "group", "count"]
+  },
+  {
+    "id": "ec_015",
+    "nl_prompt": "Find orders with a total amount greater than 200.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$match\": {\"total_amount\": {\"$gt\": 200}}}, {\"$project\": {\"order_id\": 1, \"customer_id\": 1, \"total_amount\": 1, \"status\": 1, \"_id\": 0}}, {\"$sort\": {\"total_amount\": -1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "filter", "comparison"]
+  },
+  {
+    "id": "ec_016",
+    "nl_prompt": "List the top 5 customers by total amount spent according to their stats.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.customers.aggregate([{\"$sort\": {\"stats.total_spent\": -1}}, {\"$limit\": 5}, {\"$project\": {\"customer_id\": 1, \"name\": 1, \"stats.total_spent\": 1, \"_id\": 0}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "nested", "sort", "limit"]
+  },
+  {
+    "id": "ec_017",
+    "nl_prompt": "How many customers joined in 2024?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.customers.aggregate([{\"$match\": {\"created_at\": {\"$gte\": \"2024-01-01\", \"$lt\": \"2025-01-01\"}}}, {\"$count\": \"customers_joined_2024\"}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "filter", "date", "count"]
+  },
+  {
+    "id": "ec_018",
+    "nl_prompt": "List products with an average rating of 4.5 or above.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.products.aggregate([{\"$match\": {\"ratings.average\": {\"$gte\": 4.5}}}, {\"$project\": {\"product_id\": 1, \"name\": 1, \"ratings.average\": 1, \"_id\": 0}}, {\"$sort\": {\"ratings.average\": -1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "nested", "filter"]
+  },
+  {
+    "id": "ec_019",
+    "nl_prompt": "How many orders were placed in February 2024?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$match\": {\"created_at\": {\"$gte\": \"2024-02-01\", \"$lt\": \"2024-03-01\"}}}, {\"$count\": \"orders_in_feb_2024\"}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "filter", "date", "count"]
+  },
+  {
+    "id": "ec_020",
+    "nl_prompt": "What is the total revenue per product category from order items?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$unwind\": \"$items\"}, {\"$group\": {\"_id\": \"$items.category\", \"total_revenue\": {\"$sum\": {\"$multiply\": [\"$items.quantity\", \"$items.unit_price\"]}}}}, {\"$project\": {\"category\": \"$_id\", \"total_revenue\": 1, \"_id\": 0}}, {\"$sort\": {\"total_revenue\": -1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "unwind", "group", "array"]
+  },
+  {
+    "id": "ec_021",
+    "nl_prompt": "List all gold tier customers.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.customers.aggregate([{\"$match\": {\"tier\": \"gold\"}}, {\"$project\": {\"customer_id\": 1, \"name\": 1, \"email\": 1, \"_id\": 0}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "filter"]
+  },
+  {
+    "id": "ec_022",
+    "nl_prompt": "What are the total units sold per product, sorted by units sold descending?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$unwind\": \"$items\"}, {\"$group\": {\"_id\": \"$items.product_id\", \"total_units_sold\": {\"$sum\": \"$items.quantity\"}}}, {\"$project\": {\"product_id\": \"$_id\", \"total_units_sold\": 1, \"_id\": 0}}, {\"$sort\": {\"total_units_sold\": -1, \"product_id\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "unwind", "group", "array"]
+  },
+  {
+    "id": "ec_023",
+    "nl_prompt": "What is the total number of line items across all orders?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$unwind\": \"$items\"}, {\"$count\": \"total_line_items\"}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "unwind", "count", "array"]
+  },
+  {
+    "id": "ec_024",
+    "nl_prompt": "What is the average rating across all products?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.products.aggregate([{\"$group\": {\"_id\": null, \"avg_rating\": {\"$avg\": \"$ratings.average\"}}}, {\"$project\": {\"avg_rating\": 1, \"_id\": 0}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "nested", "aggregate", "avg"]
+  },
+  {
+    "id": "ec_025",
+    "nl_prompt": "How many orders are currently pending?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$match\": {\"status\": \"pending\"}}, {\"$count\": \"pending_orders\"}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["simple", "filter", "count"]
+  },
+  {
+    "id": "ec_026",
+    "nl_prompt": "Find all orders shipped to New York.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$match\": {\"shipping_address.city\": \"New York\"}}, {\"$project\": {\"order_id\": 1, \"customer_id\": 1, \"status\": 1, \"total_amount\": 1, \"_id\": 0}}, {\"$sort\": {\"order_id\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["nested_map", "filter", "shipping_address"]
+  },
+  {
+    "id": "ec_027",
+    "nl_prompt": "How many orders were paid by credit card?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$match\": {\"payment.method\": \"credit_card\"}}, {\"$count\": \"credit_card_orders\"}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["nested_map", "filter", "payment"]
+  },
+  {
+    "id": "ec_028",
+    "nl_prompt": "List all products from the TechBrand brand.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.products.aggregate([{\"$match\": {\"attributes.brand\": \"TechBrand\"}}, {\"$project\": {\"product_id\": 1, \"name\": 1, \"category\": 1, \"price\": 1, \"_id\": 0}}, {\"$sort\": {\"product_id\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["nested_map", "filter", "attributes"]
+  },
+  {
+    "id": "ec_029",
+    "nl_prompt": "How many customers have email notifications enabled?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.customers.aggregate([{\"$match\": {\"preferences.notifications.email\": true}}, {\"$count\": \"customers_with_email_notifications\"}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["nested_map", "filter", "preferences", "deep_nest"]
+  },
+  {
+    "id": "ec_030",
+    "nl_prompt": "List all aluminum products.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.products.aggregate([{\"$match\": {\"attributes.material\": \"Aluminum\"}}, {\"$project\": {\"product_id\": 1, \"name\": 1, \"attributes.material\": 1, \"price\": 1, \"_id\": 0}}, {\"$sort\": {\"product_id\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["nested_map", "filter", "attributes"]
+  },
+  {
+    "id": "ec_031",
+    "nl_prompt": "Find orders with a failed payment.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$match\": {\"payment.status\": \"failed\"}}, {\"$project\": {\"order_id\": 1, \"customer_id\": 1, \"total_amount\": 1, \"payment\": 1, \"_id\": 0}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["nested_map", "filter", "payment"]
+  },
+  {
+    "id": "ec_032",
+    "nl_prompt": "Find customers who prefer the Electronics category.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.customers.aggregate([{\"$match\": {\"preferences.preferred_categories\": \"Electronics\"}}, {\"$project\": {\"customer_id\": 1, \"name\": 1, \"preferences.preferred_categories\": 1, \"_id\": 0}}, {\"$sort\": {\"customer_id\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["nested_map", "array", "filter", "preferences"]
+  },
+  {
+    "id": "ec_033",
+    "nl_prompt": "List products weighing less than 0.5 kg.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.products.aggregate([{\"$match\": {\"attributes.weight_kg\": {\"$lt\": 0.5}}}, {\"$project\": {\"product_id\": 1, \"name\": 1, \"attributes.weight_kg\": 1, \"_id\": 0}}, {\"$sort\": {\"attributes.weight_kg\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["nested_map", "filter", "attributes", "comparison"]
+  },
+  {
+    "id": "ec_034",
+    "nl_prompt": "What is the average product rating per category?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.products.aggregate([{\"$group\": {\"_id\": \"$category\", \"avg_rating\": {\"$avg\": \"$ratings.average\"}}}, {\"$project\": {\"category\": \"$_id\", \"avg_rating\": 1, \"_id\": 0}}, {\"$sort\": {\"avg_rating\": -1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["nested_map", "group", "aggregate"]
+  },
+  {
+    "id": "ec_035",
+    "nl_prompt": "Find all orders shipped to California.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$match\": {\"shipping_address.state\": \"CA\"}}, {\"$project\": {\"order_id\": 1, \"customer_id\": 1, \"shipping_address.city\": 1, \"status\": 1, \"_id\": 0}}, {\"$sort\": {\"order_id\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["nested_map", "filter", "shipping_address"]
+  },
+  {
+    "id": "ec_036",
+    "nl_prompt": "How many customers have SMS notifications enabled?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.customers.aggregate([{\"$match\": {\"preferences.notifications.sms\": true}}, {\"$count\": \"customers_with_sms\"}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["nested_map", "filter", "preferences", "deep_nest"]
+  },
+  {
+    "id": "ec_037",
+    "nl_prompt": "List all black colored products.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.products.aggregate([{\"$match\": {\"attributes.color\": \"Black\"}}, {\"$project\": {\"product_id\": 1, \"name\": 1, \"attributes.color\": 1, \"_id\": 0}}, {\"$sort\": {\"product_id\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["nested_map", "filter", "attributes"]
+  },
+  {
+    "id": "ec_038",
+    "nl_prompt": "How many customers have subscribed to the newsletter?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.customers.aggregate([{\"$match\": {\"preferences.newsletter\": true}}, {\"$count\": \"newsletter_subscribers\"}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["nested_map", "filter", "preferences"]
+  },
+  {
+    "id": "ec_039",
+    "nl_prompt": "What is the total revenue from PayPal orders?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$match\": {\"payment.method\": \"paypal\"}}, {\"$group\": {\"_id\": null, \"total_revenue\": {\"$sum\": \"$total_amount\"}}}, {\"$project\": {\"total_revenue\": 1, \"_id\": 0}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["nested_map", "filter", "payment", "aggregate"]
+  },
+  {
+    "id": "ec_040",
+    "nl_prompt": "What is the maximum order total among delivered orders?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$match\": {\"status\": \"delivered\"}}, {\"$group\": {\"_id\": null, \"max_order_total\": {\"$max\": \"$total_amount\"}}}, {\"$project\": {\"max_order_total\": 1, \"_id\": 0}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["nested_map", "filter", "aggregate", "max"]
+  },
+  {
+    "id": "ec_041",
+    "nl_prompt": "Find all products tagged as portable.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.products.aggregate([{\"$match\": {\"tags\": \"portable\"}}, {\"$project\": {\"product_id\": 1, \"name\": 1, \"tags\": 1, \"_id\": 0}}, {\"$sort\": {\"product_id\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["array", "filter", "tags"]
+  },
+  {
+    "id": "ec_042",
+    "nl_prompt": "Find all orders that contain at least one Electronics item.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$match\": {\"items.category\": \"Electronics\"}}, {\"$project\": {\"order_id\": 1, \"customer_id\": 1, \"status\": 1, \"_id\": 0}}, {\"$sort\": {\"order_id\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["array", "filter", "items"]
+  },
+  {
+    "id": "ec_043",
+    "nl_prompt": "How many distinct tags are used across all products?",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.products.aggregate([{\"$unwind\": \"$tags\"}, {\"$group\": {\"_id\": \"$tags\"}}, {\"$count\": \"distinct_tag_count\"}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["array", "unwind", "distinct", "count", "tags"]
+  },
+  {
+    "id": "ec_044",
+    "nl_prompt": "Find customers whose preferred categories include Books.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.customers.aggregate([{\"$match\": {\"preferences.preferred_categories\": \"Books\"}}, {\"$project\": {\"customer_id\": 1, \"name\": 1, \"preferences.preferred_categories\": 1, \"_id\": 0}}, {\"$sort\": {\"customer_id\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["array", "nested_map", "filter", "preferences"]
+  },
+  {
+    "id": "ec_045",
+    "nl_prompt": "Find orders that contain more than 3 items.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$match\": {\"$expr\": {\"$gt\": [{\"$size\": \"$items\"}, 3]}}}, {\"$project\": {\"order_id\": 1, \"customer_id\": 1, \"status\": 1, \"items_count\": {\"$size\": \"$items\"}, \"_id\": 0}}, {\"$sort\": {\"items_count\": -1, \"order_id\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["array", "filter", "size", "items"]
+  },
+  {
+    "id": "ec_046",
+    "nl_prompt": "List products that have more than 3 tags.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.products.aggregate([{\"$match\": {\"$expr\": {\"$gt\": [{\"$size\": \"$tags\"}, 3]}}}, {\"$project\": {\"product_id\": 1, \"name\": 1, \"tags\": 1, \"_id\": 0}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["array", "filter", "size", "tags"]
+  },
+  {
+    "id": "ec_047",
+    "nl_prompt": "Find orders where at least one item has a discount greater than 0.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$match\": {\"items.discount\": {\"$gt\": 0}}}, {\"$project\": {\"order_id\": 1, \"customer_id\": 1, \"status\": 1, \"_id\": 0}}, {\"$sort\": {\"order_id\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["array", "filter", "items", "comparison"]
+  },
+  {
+    "id": "ec_048",
+    "nl_prompt": "List all unique tags across all products along with how many products use each tag, sorted by count descending.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.products.aggregate([{\"$unwind\": \"$tags\"}, {\"$group\": {\"_id\": \"$tags\", \"product_count\": {\"$sum\": 1}}}, {\"$project\": {\"tag\": \"$_id\", \"product_count\": 1, \"_id\": 0}}, {\"$sort\": {\"product_count\": -1, \"tag\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["array", "unwind", "group", "tags"]
+  },
+  {
+    "id": "ec_049",
+    "nl_prompt": "Find customers who have both a home and a work address.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.customers.aggregate([{\"$match\": {\"$and\": [{\"addresses.type\": \"home\"}, {\"addresses.type\": \"work\"}]}}, {\"$project\": {\"customer_id\": 1, \"name\": 1, \"_id\": 0}}, {\"$sort\": {\"customer_id\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["array", "filter", "addresses", "and"]
+  },
+  {
+    "id": "ec_050",
+    "nl_prompt": "Find all orders that include a Mechanical Keyboard.",
+    "query_type": "dql",
+    "database": "db_dart",
+    "dialects": ["mongodb"],
+    "golden_sql": {
+      "mongodb": ["db.orders.aggregate([{\"$match\": {\"items.name\": \"Mechanical Keyboard\"}}, {\"$project\": {\"order_id\": 1, \"customer_id\": 1, \"status\": 1, \"created_at\": 1, \"_id\": 0}}, {\"$sort\": {\"order_id\": 1}}])"]
+    },
+    "eval_query": {"mongodb": [null]},
+    "tags": ["array", "filter", "items"]
+  }
+]

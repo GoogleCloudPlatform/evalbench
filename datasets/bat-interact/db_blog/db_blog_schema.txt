@@ -1,0 +1,596 @@
+CREATE TABLE tbl_attachments (
+    attachment_id serial4 NOT NULL,
+    post_id int4 NULL,
+    user_id int4 NULL,
+    file_name varchar(255) NULL,
+    file_path varchar(255) NULL,
+    file_size int4 NULL,
+    file_type varchar(50) NULL,
+    upload_date timestamp NULL,
+    description text NULL,
+    is_active bool NULL,
+    visibility_status varchar(20) NULL,
+    download_count int4 NULL,
+    file_extension varchar(10) NULL,
+    uploaded_by_ip varchar(15) NULL,
+    last_modified timestamp NULL,
+    expiration_date timestamp NULL,
+    tags_file jsonb NULL,
+    category_file jsonb NULL,
+    access_permissions jsonb NULL,
+    storage_location varchar(255) NULL,
+    metadata jsonb NULL,
+    is_featured bool NULL,
+    parent_attachment_id int4 NULL,
+    CONSTRAINT tbl_attachments_pkey PRIMARY KEY (attachment_id),
+    CONSTRAINT fk_parent_attachment_id FOREIGN KEY (parent_attachment_id) REFERENCES tbl_attachments(attachment_id),
+    CONSTRAINT fk_post_id FOREIGN KEY (post_id) REFERENCES tbl_posts(post_id),
+    CONSTRAINT fk_user_id FOREIGN KEY (user_id) REFERENCES tbl_users(user_id)
+);
+
+First 3 rows:
+attachment_id  post_id  user_id  file_name         file_path                      file_size  file_type  upload_date              description                         is_active  visibility_status  download_count  file_extension  uploaded_by_ip  last_modified            expiration_date          tags_file                          category_file        access_permissions        storage_location  metadata  is_featured  parent_attachment_id
+-------------  -------  -------  ----------------  -----------------------------  ---------  ---------  -----------------------  ----------------------------------  ---------  -----------------  --------------  --------------  --------------  -----------------------  -----------------------  ---------------------------------  -------------------  ------------------------  ----------------  --------  -----------  --------------------
+1              1        1        attachment1.pdf   /attachments/attachment1.pdf   1,024      pdf        2024-02-26 11:00:00.000  Attachment for the SQL post         true       public             50              pdf             192.168.1.1     2024-02-26 11:00:00.000  2024-03-26 11:00:00.000  "[\"database\", \"attachment\"]"   "[\"programming\"]"  "{\"read_write\": true}"  cloud             ""        false        
+2              2        2        attachment2.jpg   /attachments/attachment2.jpg   2,048      jpg        2024-02-25 17:00:00.000  Attachment for the Marketing post   true       public             30              jpg             192.168.1.2     2024-02-25 17:00:00.000  2024-03-25 17:00:00.000  "[\"marketing\", \"attachment\"]"  "[\"digital\"]"      "{\"read_write\": true}"  cloud             ""        false        
+3              1        1        attachment3.docx  /attachments/attachment3.docx  512        docx       2024-02-26 12:00:00.000  Additional Attachment for SQL post  true       private            20              docx            192.168.1.1     2024-02-26 12:00:00.000  2024-03-26 12:00:00.000  "[\"database\", \"attachment\"]"   "[\"programming\"]"  "{\"read_write\": true}"  local             ""        true         
+...
+
+
+CREATE TABLE tbl_categories (
+    category_id serial4 NOT NULL,
+    created_by int4 NULL,
+    updated_by int4 NULL,
+    "name" varchar(255) NULL,
+    description text NULL,
+    created_at timestamp NULL,
+    updated_at timestamp NULL,
+    parent_category int4 NULL,
+    slug varchar(255) NULL,
+    image varchar(255) NULL,
+    count int4 NULL,
+    visibility bool NULL,
+    is_edited bool NULL,
+    CONSTRAINT tbl_categories_pkey PRIMARY KEY (category_id),
+    CONSTRAINT fk_created_by FOREIGN KEY (created_by) REFERENCES tbl_users(user_id),
+    CONSTRAINT fk_updated_by FOREIGN KEY (updated_by) REFERENCES tbl_users(user_id)
+);
+
+First 3 rows:
+category_id  created_by  updated_by  name         description                      created_at               updated_at               parent_category  slug         image            count  visibility  is_edited
+-----------  ----------  ----------  -----------  -------------------------------  -----------------------  -----------------------  ---------------  -----------  ---------------  -----  ----------  ---------
+1            1           1           Programming  Category related to programming  2024-02-26 05:00:00.000  2024-02-26 05:00:00.000                   programming  programming.jpg  50     true        false
+2            2           2           Marketing    Category related to marketing    2024-02-25 10:15:00.000  2024-02-25 10:15:00.000                   marketing    marketing.jpg    30     true        false
+3            1           1           Technology   Category related to technology   2024-02-26 05:30:00.000  2024-02-26 05:30:00.000                   technology   technology.jpg   20     true        false
+...
+
+
+CREATE TABLE tbl_categories_hierarchy (
+    category_hierarchy_id serial4 NOT NULL,
+    category_id int4 NULL,
+    created_by int4 NULL,
+    updated_by int4 NULL,
+    "name" varchar(255) NULL,
+    description text NULL,
+    created_at timestamp NULL,
+    updated_at timestamp NULL,
+    status varchar(50) NULL,
+    visibility varchar(50) NULL,
+    orden_priority int4 NULL,
+    icon varchar(255) NULL,
+    color varchar(50) NULL,
+    metadata text NULL,
+    parent_category_name varchar(255) NULL,
+    CONSTRAINT tbl_categories_hierarchy_pkey PRIMARY KEY (category_hierarchy_id),
+    CONSTRAINT fk_category_id FOREIGN KEY (category_id) REFERENCES tbl_categories(category_id),
+    CONSTRAINT fk_created_by FOREIGN KEY (created_by) REFERENCES tbl_users(user_id),
+    CONSTRAINT fk_updated_by FOREIGN KEY (updated_by) REFERENCES tbl_users(user_id)
+);
+
+First 3 rows:
+No data available in this table.
+
+
+CREATE TABLE tbl_comments (
+    comment_id serial4 NOT NULL,
+    "content" text NULL,
+    user_id int4 NULL,
+    post_id int4 NULL,
+    parent_comment_id int4 NULL,
+    likes_count int4 NULL,
+    created_at timestamp NULL,
+    updated_at timestamp NULL,
+    is_approved bool NULL,
+    dislikes_count int4 NULL,
+    report_count int4 NULL,
+    is_deleted bool NULL,
+    user_ip varchar(255) NULL,
+    user_agent varchar(255) NULL,
+    is_flagged bool NULL,
+    reply_count int4 NULL,
+    mentions jsonb NULL,
+    attachments jsonb NULL,
+    metadata jsonb NULL,
+    is_edited bool NULL,
+    CONSTRAINT tbl_comments_pkey PRIMARY KEY (comment_id),
+    CONSTRAINT fk_post_id FOREIGN KEY (post_id) REFERENCES tbl_posts(post_id),
+    CONSTRAINT fk_user_id FOREIGN KEY (user_id) REFERENCES tbl_users(user_id)
+);
+
+First 3 rows:
+comment_id  content             user_id  post_id  parent_comment_id  likes_count  created_at               updated_at               is_approved  dislikes_count  report_count  is_deleted  user_ip      user_agent    is_flagged  reply_count  mentions  attachments  metadata  is_edited
+----------  ------------------  -------  -------  -----------------  -----------  -----------------------  -----------------------  -----------  --------------  ------------  ----------  -----------  ------------  ----------  -----------  --------  -----------  --------  ---------
+1           Great post!         2        1                           10           2024-02-26 06:45:00.000  2024-02-26 06:45:00.000  true         2               0             false       192.168.1.1  Mozilla/5.0   false       0            ""        ""           ""        false
+2           Nice explanation!   1        1                           8            2024-02-26 07:00:00.000  2024-02-26 07:00:00.000  true         1               0             false       192.168.1.2  Chrome/89.0   false       0            ""        ""           ""        false
+3           I have a question.  2        1                           5            2024-02-26 07:30:00.000  2024-02-26 07:30:00.000  false        0               0             false       192.168.1.3  Firefox/90.0  false       2            ""        ""           ""        false
+...
+
+
+CREATE TABLE tbl_country (
+    country_name varchar(255) NOT NULL,
+    country_id int4 NULL,
+    continent varchar(255) NULL,
+    region varchar(255) NULL,
+    x float8 NULL,
+    y float8 NULL,
+    CONSTRAINT tbl_country_pkey PRIMARY KEY (country_name)
+);
+
+First 3 rows:
+country_name  country_id  continent      region     x         y
+------------  ----------  -------------  ---------  --------  --------
+Australia     5           Oceania        Australia  -25.2744  133.775
+Brazil        7           South America  South      -14.235   -51.9253
+Canada        3           North America  North      56.1304   -106.347
+...
+
+
+CREATE TABLE tbl_followers (
+    follower_id serial4 NOT NULL,
+    following_id int4 NULL,
+    created_at timestamp NULL,
+    updated_at timestamp NULL,
+    follower_data jsonb NULL,
+    CONSTRAINT tbl_followers_pkey PRIMARY KEY (follower_id)
+);
+
+First 3 rows:
+follower_id  following_id  created_at               updated_at               follower_data
+-----------  ------------  -----------------------  -----------------------  -----------------------------------------------------
+1            2             2024-02-26 06:30:00.000  2024-02-26 06:30:00.000  "{\"name\": \"Jane Smith\", \"action\": \"Follows\"}"
+2            1             2024-02-25 11:00:00.000  2024-02-25 11:00:00.000  "{\"name\": \"John Doe\", \"action\": \"Follows\"}"
+3            1             2024-02-26 09:15:00.000  2024-02-26 09:15:00.000  "{\"name\": \"John Doe\", \"action\": \"Follows\"}"
+...
+
+
+CREATE TABLE tbl_labels (
+    label_id serial4 NOT NULL,
+    creator_id int4 NULL,
+    updated_by int4 NULL,
+    "name" varchar(255) NULL,
+    description text NULL,
+    created_at timestamp NULL,
+    updated_at timestamp NULL,
+    post_count int4 NULL,
+    visibility_status varchar(50) NULL,
+    is_active bool NULL,
+    usage_frequency int4 NULL,
+    parent_label_id int4 NULL,
+    CONSTRAINT tbl_labels_pkey PRIMARY KEY (label_id)
+);
+
+First 3 rows:
+label_id  creator_id  updated_by  name          description                           created_at               updated_at               post_count  visibility_status  is_active  usage_frequency  parent_label_id
+--------  ----------  ----------  ------------  ------------------------------------  -----------------------  -----------------------  ----------  -----------------  ---------  ---------------  ---------------
+1         1                       Technology    Label for technology-related content  2024-02-26 05:15:00.000  2024-02-26 05:15:00.000  15          public             true       10               
+2         2                       Social Media  Label for social media discussions    2024-02-25 10:45:00.000  2024-02-25 10:45:00.000  8           public             true       5                
+3         1                       Science       Label for scientific topics           2024-02-26 06:00:00.000  2024-02-26 06:00:00.000  12          public             true       8                
+...
+
+
+CREATE TABLE tbl_media (
+    media_id serial4 NOT NULL,
+    post_id int4 NULL,
+    "type" varchar(255) NULL,
+    url varchar(255) NULL,
+    description text NULL,
+    upload_date timestamp NULL,
+    updated_at timestamp NULL,
+    filename varchar(255) NULL,
+    file_size int4 NULL,
+    caption text NULL,
+    uploader_id int4 NULL,
+    visibility varchar(50) NULL,
+    access_rights json NULL,
+    file_path varchar(255) NULL,
+    metadata json NULL,
+    hash varchar(255) NULL,
+    is_encrypted bool NULL,
+    encryption_key varchar(255) NULL,
+    encryption_algorithm varchar(50) NULL,
+    status_id int4 NULL,
+    CONSTRAINT tbl_media_pkey PRIMARY KEY (media_id)
+);
+
+First 3 rows:
+media_id  post_id  type   url                                               description              upload_date              updated_at               filename               file_size  caption                          uploader_id  visibility  access_rights             file_path                     metadata  hash          is_encrypted  encryption_key  encryption_algorithm  status_id
+--------  -------  -----  ------------------------------------------------  -----------------------  -----------------------  -----------------------  ---------------------  ---------  -------------------------------  -----------  ----------  ------------------------  ----------------------------  --------  ------------  ------------  --------------  --------------------  ---------
+1         1        image  https://example.com/images/sql_image.jpg          SQL Image                2024-02-26 05:45:00.000  2024-02-26 05:45:00.000  sql_image.jpg          1,024      An image for the SQL post        1            public      "{\"read_write\": true}"  /media/sql_image.jpg          ""        abcdef123456  false                                               1
+2         2        image  https://example.com/images/digital_marketing.jpg  Digital Marketing Image  2024-02-25 12:00:00.000  2024-02-25 12:00:00.000  digital_marketing.jpg  2,048      An image for the Marketing post  2            public      "{\"read_write\": true}"  /media/digital_marketing.jpg  ""        xyz987654321  false                                               1
+3         1        video  https://example.com/videos/sql_intro.mp4          SQL Introduction Video   2024-02-26 06:30:00.000  2024-02-26 06:30:00.000  sql_intro.mp4          4,096      An introductory video for SQL    1            public      "{\"read_write\": true}"  /media/sql_intro.mp4          ""        ghijk789012   false                                               1
+...
+
+
+CREATE TABLE tbl_notifications (
+    notification_id serial4 NOT NULL,
+    user_id int4 NULL,
+    notification_type varchar(255) NULL,
+    sender_id int4 NULL,
+    post_id int4 NULL,
+    comment_id int4 NULL,
+    notification_message text NULL,
+    notification_date timestamp NULL,
+    is_read bool NULL,
+    is_archived bool NULL,
+    is_deleted bool NULL,
+    link_to_notification varchar(255) NULL,
+    notification_priority int4 NULL,
+    additional_data json NULL,
+    notification_subject varchar(255) NULL,
+    notification_status varchar(50) NULL,
+    notification_action varchar(50) NULL,
+    related_user_id int4 NULL,
+    source_application varchar(255) NULL,
+    notification_category varchar(255) NULL,
+    expiration_date timestamp NULL,
+    delivery_method varchar(50) NULL,
+    notification_channel varchar(50) NULL,
+    notification_language varchar(50) NULL,
+    recipient_group varchar(255) NULL,
+    notification_tags json NULL,
+    notification_expiry_time timestamp NULL,
+    notification_context json NULL,
+    notification_origin varchar(255) NULL,
+    CONSTRAINT tbl_notifications_pkey PRIMARY KEY (notification_id),
+    CONSTRAINT fk_post_id FOREIGN KEY (post_id) REFERENCES tbl_posts(post_id),
+    CONSTRAINT fk_sender_id FOREIGN KEY (sender_id) REFERENCES tbl_users(user_id),
+    CONSTRAINT fk_user_id FOREIGN KEY (user_id) REFERENCES tbl_users(user_id)
+);
+
+First 3 rows:
+notification_id  user_id  notification_type  sender_id  post_id  comment_id  notification_message                notification_date        is_read  is_archived  is_deleted  link_to_notification                   notification_priority  additional_data  notification_subject  notification_status  notification_action  related_user_id  source_application  notification_category  expiration_date          delivery_method    notification_channel  notification_language  recipient_group  notification_tags  notification_expiry_time  notification_context  notification_origin
+---------------  -------  -----------------  ---------  -------  ----------  ----------------------------------  -----------------------  -------  -----------  ----------  -------------------------------------  ---------------------  ---------------  --------------------  -------------------  -------------------  ---------------  ------------------  ---------------------  -----------------------  -----------------  --------------------  ---------------------  ---------------  -----------------  ------------------------  --------------------  -------------------
+1                2        like               1          1                    John Doe liked your post.           2024-02-26 12:45:00.000  false    false        false       https://example.com/posts/1#comment-1  1                      ""               Post Liked            active               view_post            1                web                 social                 2024-03-26 12:45:00.000  email              inbox                 en                                      ""                 2024-03-26 12:45:00.000   ""                    app
+2                1        comment            2          1        2           Jane Smith commented on your post.  2024-02-26 13:15:00.000  false    false        false       https://example.com/posts/1#comment-2  2                      ""               New Comment           active               view_comment         2                web                 social                 2024-03-26 13:15:00.000  push_notification  mobile_app            en                                      ""                 2024-03-26 13:15:00.000   ""                    app
+3                1        follow             2                               Jane Smith started following you.   2024-02-26 14:00:00.000  false    false        false       https://example.com/users/1            3                      ""               New Follower          active               view_profile         2                web                 social                 2024-03-26 14:00:00.000  push_notification  mobile_app            en                                      ""                 2024-03-26 14:00:00.000   ""                    app
+...
+
+
+CREATE TABLE tbl_posts (
+    post_id serial4 NOT NULL,
+    user_id int4 NULL,
+    title varchar(255) NULL,
+    "content" text NULL,
+    published_at timestamp NULL,
+    is_published bool NULL,
+    views_count int4 NULL,
+    likes_count int4 NULL,
+    shares_count int4 NULL,
+    created_at timestamp NULL,
+    updated_at timestamp NULL,
+    slug varchar(255) NULL,
+    excerpt text NULL,
+    status_id int4 NULL,
+    category_id int4 NULL,
+    dislikes_count int4 NULL,
+    comments_count int4 NULL,
+    is_featured bool NULL,
+    author_name varchar(255) NULL,
+    image_url varchar(255) NULL,
+    tags json NULL,
+    reading_time int4 NULL,
+    external_link varchar(255) NULL,
+    metadata json NULL,
+    CONSTRAINT tbl_posts_pkey PRIMARY KEY (post_id),
+    CONSTRAINT fk_user_id FOREIGN KEY (user_id) REFERENCES tbl_users(user_id)
+);
+
+First 3 rows:
+post_id  user_id  title                           content                                            published_at             is_published  views_count  likes_count  shares_count  created_at               updated_at               slug                            excerpt                                          status_id  category_id  dislikes_count  comments_count  is_featured  author_name  image_url              tags                                              reading_time  external_link  metadata
+-------  -------  ------------------------------  -------------------------------------------------  -----------------------  ------------  -----------  -----------  ------------  -----------------------  -----------------------  ------------------------------  -----------------------------------------------  ---------  -----------  --------------  --------------  -----------  -----------  ---------------------  ------------------------------------------------  ------------  -------------  --------
+1        1        Introduction to SQL             This is a post about SQL.                          2024-02-26 12:00:00.000  true          100          50           20            2024-02-26 10:30:00.000  2024-02-26 10:30:00.000  introduction-to-sql             A brief overview of SQL                          1          1            5               15              false        John Doe     sql_image.jpg          "[\"database\", \"sql\", \"programming\"]"        10                           ""
+2        2        Digital Marketing Strategies    Exploring effective digital marketing strategies.  2024-02-25 16:00:00.000  true          150          80           30            2024-02-25 15:45:00.000  2024-02-25 15:45:00.000  digital-marketing-strategies    Key strategies for successful digital marketing  2          2            8               25              true         Jane Smith   digital_marketing.jpg  "[\"marketing\", \"strategy\", \"digital\"]"      12                           ""
+3        1        Web Development Best Practices  Tips and tricks for efficient web development.     2024-02-26 14:30:00.000  true          120          65           15            2024-02-26 14:00:00.000  2024-02-26 14:00:00.000  web-development-best-practices  Improving your web development skills            1          1            7               20              false        John Doe     web_dev.jpg            "[\"web\", \"development\", \"best practices\"]"  8                            ""
+...
+
+
+CREATE TABLE tbl_posts_tags (
+    post_id int4 NOT NULL,
+    tag_id int4 NOT NULL,
+    "comments" json NULL,
+    label_status varchar(50) NULL,
+    label_at timestamp NULL,
+    CONSTRAINT tbl_posts_tags_pkey PRIMARY KEY (post_id, tag_id),
+    CONSTRAINT fk_post_id FOREIGN KEY (post_id) REFERENCES tbl_posts(post_id),
+    CONSTRAINT fk_tag_id FOREIGN KEY (tag_id) REFERENCES tbl_tags(tag_id)
+);
+
+First 3 rows:
+post_id  tag_id  comments                                    label_status  label_at
+-------  ------  ------------------------------------------  ------------  -----------------------
+1        1       "{\"comment\": \"Tagged with Database\"}"   public        2024-02-26 06:00:00.000
+2        2       "{\"comment\": \"Tagged with Marketing\"}"  public        2024-02-25 12:15:00.000
+3        1       "{\"comment\": \"Tagged with SQL\"}"        public        2024-02-27 04:45:00.000
+...
+
+
+CREATE TABLE tbl_private_messages (
+    message_id serial4 NOT NULL,
+    sender_id int4 NULL,
+    receiver_id int4 NULL,
+    subject varchar(255) NULL,
+    body text NULL,
+    sending_time timestamp NULL,
+    is_read bool NULL,
+    is_archived bool NULL,
+    is_deleted_by_sender bool NULL,
+    is_deleted_by_receiver bool NULL,
+    is_flagged bool NULL,
+    priority int4 NULL,
+    attachment_id int4 NULL,
+    conversation_id int4 NULL,
+    status varchar(50) NULL,
+    parent_message_id int4 NULL,
+    read_timestamp timestamp NULL,
+    message_data json NULL,
+    CONSTRAINT tbl_private_messages_pkey PRIMARY KEY (message_id)
+);
+
+First 3 rows:
+message_id  sender_id  receiver_id  subject           body                                 sending_time             is_read  is_archived  is_deleted_by_sender  is_deleted_by_receiver  is_flagged  priority  attachment_id  conversation_id  status    parent_message_id  read_timestamp           message_data
+----------  ---------  -----------  ----------------  -----------------------------------  -----------------------  -------  -----------  --------------------  ----------------------  ----------  --------  -------------  ---------------  --------  -----------------  -----------------------  ------------------------------------
+1           1          2            Hello Jane        Just wanted to say hi!               2024-02-26 07:00:00.000  true     false        false                 false                   false                 2                               sent                         2024-02-26 07:00:00.000  ""
+2           2          1            Hi John           Hi John! How are you?                2024-02-25 11:30:00.000  false    false        false                 false                   false                 1                               received                     2024-02-25 11:30:00.000  ""
+3           1          2            Meeting Tomorrow  Let's discuss our project tomorrow.  2024-02-26 10:15:00.000  false    false        false                 false                   false                                3                draft                                                 "{\"additional_info\": \"meeting\"}"
+...
+
+
+CREATE TABLE tbl_reactions (
+    reaction_id serial4 NOT NULL,
+    comment_id int4 NULL,
+    user_id int4 NULL,
+    post_id int4 NULL,
+    reaction_type varchar(255) NULL,
+    reaction_date timestamp NULL,
+    reaction_score int4 NULL,
+    reaction_text text NULL,
+    is_active bool NULL,
+    reaction_count int4 NULL,
+    source_ip varchar(255) NULL,
+    device_info json NULL,
+    CONSTRAINT tbl_reactions_pkey PRIMARY KEY (reaction_id)
+);
+
+First 3 rows:
+reaction_id  comment_id  user_id  post_id  reaction_type  reaction_date            reaction_score  reaction_text          is_active  reaction_count  source_ip    device_info
+-----------  ----------  -------  -------  -------------  -----------------------  --------------  ---------------------  ---------  --------------  -----------  ---------------------------------------------------
+1            1           2                 like           2024-02-26 06:45:00.000  5               Liked this comment     true       10              192.168.1.2  "{\"browser\": \"Chrome\", \"version\": \"89.0\"}"
+2                        1        1        love           2024-02-26 07:00:00.000  8               Loved this post        true       15              192.168.1.1  "{\"browser\": \"Mozilla\", \"version\": \"5.0\"}"
+3            2           1                 dislike        2024-02-26 07:30:00.000  2               Disliked this comment  true       5               192.168.1.1  "{\"browser\": \"Firefox\", \"version\": \"90.0\"}"
+...
+
+
+CREATE TABLE tbl_reports (
+    report_id serial4 NOT NULL,
+    user_id int4 NULL,
+    post_id int4 NULL,
+    report_reason varchar(255) NULL,
+    report_timestamp timestamp NULL,
+    is_resolved bool NULL,
+    resolved_by int4 NULL,
+    resolution_timestamp timestamp NULL,
+    report_comments text NULL,
+    severity_level int4 NULL,
+    report_type varchar(50) NULL,
+    report_entity_type varchar(50) NULL,
+    report_entity_id int4 NULL,
+    action_taken text NULL,
+    action_timestamp timestamp NULL,
+    report_ip_address varchar(15) NULL,
+    reported_user_id int4 NULL,
+    reported_comment_id int4 NULL,
+    reported_user_reputation int4 NULL,
+    report_category varchar(50) NULL,
+    reported_context_text text NULL,
+    attachments json NULL,
+    flagged_user bool NULL,
+    report_source varchar(50) NULL,
+    report_feedback text NULL,
+    report_verification_status varchar(50) NULL,
+    report_mechanism varchar(50) NULL,
+    report_priority int4 NULL,
+    assigned_to int4 NULL,
+    report_history json NULL,
+    CONSTRAINT tbl_reports_pkey PRIMARY KEY (report_id)
+);
+
+First 3 rows:
+report_id  user_id  post_id  report_reason          report_timestamp         is_resolved  resolved_by  resolution_timestamp     report_comments                            severity_level  report_type  report_entity_type  report_entity_id  action_taken               action_timestamp         report_ip_address  reported_user_id  reported_comment_id  reported_user_reputation  report_category  reported_context_text    attachments  flagged_user  report_source  report_feedback       report_verification_status  report_mechanism  report_priority  assigned_to  report_history
+---------  -------  -------  ---------------------  -----------------------  -----------  -----------  -----------------------  -----------------------------------------  --------------  -----------  ------------------  ----------------  -------------------------  -----------------------  -----------------  ----------------  -------------------  ------------------------  ---------------  -----------------------  -----------  ------------  -------------  --------------------  --------------------------  ----------------  ---------------  -----------  --------------
+1          2        1        Inappropriate content  2024-02-26 07:30:00.000  false                                              This post contains inappropriate content.  2               content      post                1                                                                                                                                                         spam                                      ""           false         web            No feedback provided  pending                     user_report       3                             ""
+2          1        2        Spam                   2024-02-25 12:30:00.000  true         2            2024-02-26 08:00:00.000  This comment is spam.                      1               content      comment             2                 Removed the comment        2024-02-26 08:00:00.000  192.168.1.1        2                 2                    3                         spam             Spammy comment           ""           false         web            Resolved as spam      verified                    user_report       1                2            ""
+3          1        3        Hate speech            2024-02-24 15:15:00.000  false                                              This post contains hate speech.            3               content      post                1                 Removed offensive content  2024-02-24 15:30:00.000  192.168.1.2        3                                                                hate_speech      Offensive language used  ""           false         web            Content removed       verified                    user_report       2                3            ""
+...
+
+
+CREATE TABLE tbl_status (
+    status_id serial4 NOT NULL,
+    "name" varchar(255) NULL,
+    CONSTRAINT tbl_status_pkey PRIMARY KEY (status_id)
+);
+
+First 3 rows:
+status_id  name
+---------  --------
+1          Active
+2          Inactive
+3          Pending
+...
+
+
+CREATE TABLE tbl_tags (
+    tag_id serial4 NOT NULL,
+    creator_id int4 NULL,
+    category_id int4 NULL,
+    "name" varchar(255) NULL,
+    description text NULL,
+    created_at timestamp NULL,
+    updated_at timestamp NULL,
+    slug varchar(255) NULL,
+    count int4 NULL,
+    visibility bool NULL,
+    active bool NULL,
+    parent_tag int4 NULL,
+    status_id int4 NULL,
+    access_level int4 NULL,
+    is_approved bool NULL,
+    metadata json NULL,
+    CONSTRAINT tbl_tags_pkey PRIMARY KEY (tag_id)
+);
+
+First 3 rows:
+tag_id  creator_id  category_id  name         description                 created_at               updated_at               slug         count  visibility  active  parent_tag  status_id  access_level  is_approved  metadata
+------  ----------  -----------  -----------  --------------------------  -----------------------  -----------------------  -----------  -----  ----------  ------  ----------  ---------  ------------  -----------  --------
+1       1           1            Database     Tag related to databases    2024-02-26 05:15:00.000  2024-02-26 05:15:00.000  database     20     true        true                1          1             true         ""
+2       2           2            Marketing    Tag related to marketing    2024-02-25 10:45:00.000  2024-02-25 10:45:00.000  marketing    15     true        true                1          1             true         ""
+3       1           1            Programming  Tag related to programming  2024-02-24 09:00:00.000  2024-02-24 09:00:00.000  programming  18     true        true                1          1             true         ""
+...
+
+
+CREATE TABLE tbl_tags_hierarchy (
+    tag_hierarchy_id serial4 NOT NULL,
+    tag_id int4 NULL,
+    relationship_type varchar(255) NULL,
+    weight numeric(10, 2) NULL,
+    created_at timestamp NULL,
+    updated_at timestamp NULL,
+    active bool NULL,
+    description text NULL,
+    creator_id int4 NULL,
+    modifier_id int4 NULL,
+    is_deleted bool NULL,
+    deleted_at timestamp NULL,
+    revision_history json NULL,
+    "comments" json NULL,
+    CONSTRAINT tbl_tags_hierarchy_pkey PRIMARY KEY (tag_hierarchy_id)
+);
+
+First 3 rows:
+tag_hierarchy_id  tag_id  relationship_type  weight  created_at               updated_at               active  description                 creator_id  modifier_id  is_deleted  deleted_at  revision_history  comments
+----------------  ------  -----------------  ------  -----------------------  -----------------------  ------  --------------------------  ----------  -----------  ----------  ----------  ----------------  --------
+1                 1       parent             1       2024-02-26 05:15:00.000  2024-02-26 05:15:00.000  true    Parent tag for databases    1                        false                   ""                ""
+2                 2       parent             1       2024-02-25 10:45:00.000  2024-02-25 10:45:00.000  true    Parent tag for marketing    2                        false                   ""                ""
+3                 3       parent             1       2024-02-25 10:45:00.000  2024-02-25 10:45:00.000  true    Parent tag for programming  1                        false                   ""                ""
+...
+
+
+CREATE TABLE tbl_user_activity (
+    activity_id serial4 NOT NULL,
+    user_id int4 NULL,
+    activity_type varchar(255) NULL,
+    activity_timestamp timestamp NULL,
+    post_id int4 NULL,
+    comment_id int4 NULL,
+    activity_description text NULL,
+    activity_source varchar(255) NULL,
+    activity_location varchar(255) NULL,
+    activity_duration int4 NULL,
+    activity_device varchar(255) NULL,
+    activity_status varchar(50) NULL,
+    activity_impact varchar(50) NULL,
+    activity_privacy_level varchar(50) NULL,
+    activity_related_users json NULL,
+    activity_extra_data json NULL,
+    ip_address varchar(15) NULL,
+    user_agent varchar(255) NULL,
+    url varchar(255) NULL,
+    session_id varchar(255) NULL,
+    browser varchar(255) NULL,
+    operating_system varchar(255) NULL,
+    referrer varchar(255) NULL,
+    event_id int4 NULL,
+    error_message text NULL,
+    location_coordinates json NULL,
+    session_duration int4 NULL,
+    CONSTRAINT tbl_user_activity_pkey PRIMARY KEY (activity_id)
+);
+
+First 3 rows:
+activity_id  user_id  activity_type  activity_timestamp       post_id  comment_id  activity_description  activity_source  activity_location  activity_duration  activity_device  activity_status  activity_impact  activity_privacy_level  activity_related_users  activity_extra_data     ip_address   user_agent    url                                    session_id  browser  operating_system  referrer            event_id  error_message  location_coordinates  session_duration
+-----------  -------  -------------  -----------------------  -------  ----------  --------------------  ---------------  -----------------  -----------------  ---------------  ---------------  ---------------  ----------------------  ----------------------  ----------------------  -----------  ------------  -------------------------------------  ----------  -------  ----------------  ------------------  --------  -------------  --------------------  ----------------
+1            1        login          2024-02-26 04:30:00.000                       User login            web              home               10                 Chrome/89.0      success          low              public                  ""                      ""                      192.168.1.1  Mozilla/5.0   https://example.com                    session123  Chrome   Windows 10                                                     "[12.34, 56.78]"      600
+2            2        post           2024-02-26 06:00:00.000  2                    Created a new post    web              programming        20                 Firefox/90.0     success          medium           public                  ""                      ""                      192.168.1.2  Firefox/90.0  https://example.com/posts/2            session456  Firefox  MacOS                                                          "[34.56, 78.9]"       300
+3            3        comment        2024-02-26 06:45:00.000  1        1           Commented on a post   mobile           travel             15                 iPhone/14.0      success          high             private                 "[2, 3]"                "{\"key\": \"value\"}"  192.168.1.3  Safari/15.0   https://example.com/posts/1#comment-1  session789  Safari   iOS 15            https://google.com                           "[23.45, 67.89]"      450
+...
+
+
+CREATE TABLE tbl_user_roles (
+    role_id serial4 NOT NULL,
+    created_by int4 NULL,
+    updated_by int4 NULL,
+    description varchar(255) NULL,
+    created_at timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+    updated_at timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+    permissions json NULL,
+    role_name varchar(50) NULL,
+    is_active bool NULL,
+    restrictions json NULL,
+    expiry_date date NULL,
+    created_by_ip varchar(50) NULL,
+    updated_by_ip varchar(50) NULL,
+    created_by_device varchar(100) NULL,
+    updated_by_device varchar(100) NULL,
+    active_sessions int4 NULL,
+    last_sessions json NULL,
+    CONSTRAINT tbl_user_roles_pkey PRIMARY KEY (role_id),
+    CONSTRAINT fk_created_by FOREIGN KEY (created_by) REFERENCES tbl_users(user_id),
+    CONSTRAINT fk_updated_by FOREIGN KEY (updated_by) REFERENCES tbl_users(user_id)
+);
+
+First 3 rows:
+role_id  created_by  updated_by  description     created_at               updated_at               permissions              role_name  is_active  restrictions  expiry_date  created_by_ip  updated_by_ip  created_by_device  updated_by_device  active_sessions  last_sessions
+-------  ----------  ----------  --------------  -----------------------  -----------------------  -----------------------  ---------  ---------  ------------  -----------  -------------  -------------  -----------------  -----------------  ---------------  -------------------
+1        1                       Admin Role      2024-02-26 04:30:00.000  2024-02-26 04:30:00.000  "{\"admin\": true}"      Admin      true       ""                         192.168.1.1                   Desktop                               5                "{\"sessions\": 2}"
+2        2                       User Role       2024-02-25 09:30:00.000  2024-02-25 09:30:00.000  "{\"user\": true}"       User       true       ""                         192.168.1.2                   Mobile                                10               "{\"sessions\": 5}"
+3        1                       Moderator Role  2024-02-26 05:30:00.000  2024-02-26 05:30:00.000  "{\"moderator\": true}"  Moderator  true       ""                         192.168.1.1                   Desktop                               8                "{\"sessions\": 3}"
+...
+
+
+CREATE TABLE tbl_users (
+    user_id int4 NOT NULL,
+    first_name varchar(255) DEFAULT NULL::character varying NULL,
+    last_name varchar(255) DEFAULT NULL::character varying NULL,
+    username varchar(255) DEFAULT NULL::character varying NULL,
+    password_hash varchar(255) DEFAULT NULL::character varying NULL,
+    social_media_links json NULL,
+    contact_info json NULL,
+    avatar_url varchar(255) DEFAULT NULL::character varying NULL,
+    bio text NULL,
+    website varchar(255) DEFAULT NULL::character varying NULL,
+    created_at timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+    updated_at timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+    notification_preferences varchar(255) DEFAULT NULL::character varying NULL,
+    role_id int4 NULL,
+    last_login timestamp NULL,
+    active varchar(1) DEFAULT NULL::character varying NULL,
+    CONSTRAINT tbl_users_pkey PRIMARY KEY (user_id),
+    CONSTRAINT fk_user_role_id FOREIGN KEY (role_id) REFERENCES tbl_user_roles(role_id)
+);
+
+First 3 rows:
+user_id  first_name  last_name  username       password_hash     social_media_links                                            contact_info                                avatar_url   bio                         website                   created_at               updated_at               notification_preferences  role_id  last_login               active
+-------  ----------  ---------  -------------  ----------------  ------------------------------------------------------------  ------------------------------------------  -----------  --------------------------  ------------------------  -----------------------  -----------------------  ------------------------  -------  -----------------------  ------
+1        John        Doe        john.doe       hashed_password   "{\"twitter\": \"https://twitter.com/johndoe\"}"              "{\"email\": \"john.doe@email.com\"}"       avatar1.jpg  Web developer and designer  https://johndoe.com       2024-02-27 07:26:14.000  2024-02-27 07:26:14.000  email,app                 1        2024-02-26 05:00:00.000  1
+2        Jane        Smith      jane.smith     hashed_password2  "{\"linkedin\": \"https://www.linkedin.com/in/janesmith/\"}"  "{\"email\": \"jane.smith@email.com\"}"     avatar2.jpg  Digital marketer            https://janesmith.com     2024-02-27 07:26:14.000  2024-02-27 07:26:14.000  app                       2        2024-02-25 10:15:00.000  1
+3        Alice       Johnson    alice.johnson  hashed_password3  "{\"facebook\": \"https://www.facebook.com/alicejohnson\"}"   "{\"email\": \"alice.johnson@email.com\"}"  avatar3.jpg  Software engineer           https://alicejohnson.com  2024-02-27 07:26:14.000  2024-02-27 07:26:14.000  email,app                 1        2024-02-26 05:45:00.000  1
+...

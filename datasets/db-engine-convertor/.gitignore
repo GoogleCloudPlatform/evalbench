@@ -1,0 +1,78 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+*.txt
+
+# Generated migrations (all contents except structure)
+migrations/
+temp_export/
+exported_output/
+converted_csv/
+sqlite_export/
+
+# Query conversion files (exclude root-level experimental CSVs, but keep examples/)
+/*_queries.csv
+/query_conversion_results*.csv
+/query_results*.csv
+/*_results.csv
+/comparison*.csv
+/step*.csv
+/mysql_queries*.csv
+
+# BUT include examples directory
+!examples/
+
+# Old files archive
+old_files_archive/
+
+# Database files
+*.sqlite
+*.db
+
+# Environment variables
+.env
+.env.local
+
+# Test outputs
+test_output/
+*.test
+
+
+# Temporary files
+temp_*
+*.tmp
+

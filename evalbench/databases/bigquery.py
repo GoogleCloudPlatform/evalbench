@@ -68,30 +68,37 @@ class BQDB(DB):
             error = None
             query_replaced = query.replace("{{dataset}}", self.db_name)
             if eval_query is not None:
-                eval_query_replaced = eval_query.replace("{{dataset}}", self.db_name)
+                eval_query_replaced = eval_query.replace(
+                    "{{dataset}}", self.db_name)
             try:
                 if rollback:
                     try:
                         initial_query = "SELECT 1;"
                         job_config = QueryJobConfig(create_session=True)
-                        init_job = self.client.query(initial_query, job_config=job_config)
+                        init_job = self.client.query(
+                            initial_query, job_config=job_config)
                         init_job.result()
                         session_id = init_job.session_info.session_id
-                        conn_props = [ConnectionProperty(key="session_id", value=session_id)]
+                        conn_props = [ConnectionProperty(
+                            key="session_id", value=session_id)]
 
                         self.client.query(
                             "BEGIN TRANSACTION;",
-                            job_config=QueryJobConfig(connection_properties=conn_props)
+                            job_config=QueryJobConfig(
+                                connection_properties=conn_props)
                         ).result()
 
-                        result = self._execute_queries(query_replaced, job_config=QueryJobConfig(connection_properties=conn_props))
+                        result = self._execute_queries(
+                            query_replaced, job_config=QueryJobConfig(connection_properties=conn_props))
 
                         if eval_query:
-                            eval_result = self._execute_queries(eval_query_replaced, job_config=QueryJobConfig(connection_properties=conn_props))
+                            eval_result = self._execute_queries(
+                                eval_query_replaced, job_config=QueryJobConfig(connection_properties=conn_props))
 
                         self.client.query(
                             "ROLLBACK TRANSACTION;",
-                            job_config=QueryJobConfig(connection_properties=conn_props)
+                            job_config=QueryJobConfig(
+                                connection_properties=conn_props)
                         ).result()
 
                     except Exception as e:
@@ -102,7 +109,8 @@ class BQDB(DB):
                         if 'session_id' in locals():
                             self.client.query(
                                 "CALL BQ.ABORT_SESSION();",
-                                job_config=QueryJobConfig(connection_properties=conn_props)
+                                job_config=QueryJobConfig(
+                                    connection_properties=conn_props)
                             ).result()
                 if not rollback:
                     result = self._execute_queries(query_replaced)
@@ -113,9 +121,11 @@ class BQDB(DB):
             except (GoogleAPICallError, Exception) as e:
                 error = str(e)
                 if "resources exceeded" in error:
-                    raise ResourceExhaustedError(f"BigQuery resources exhausted: {e}") from e
+                    raise ResourceExhaustedError(
+                        f"BigQuery resources exhausted: {e}") from e
                 elif "quota exceeded" in error:
-                    raise ResourceExhaustedError(f"BigQuery quota exceeded: {e}") from e
+                    raise ResourceExhaustedError(
+                        f"BigQuery quota exceeded: {e}") from e
                 else:
                     print(error)
 
@@ -140,9 +150,11 @@ class BQDB(DB):
         try:
             for table in self.client.list_tables(self.db_name):
                 schema = self.client.get_table(table.reference).schema
-                metadata[table.table_id] = [{"name": f.name, "type": f.field_type} for f in schema]
+                metadata[table.table_id] = [
+                    {"name": f.name, "type": f.field_type} for f in schema]
         except Exception as e:
-            print(f"Error while fetching metadata for dataset '{self.db_name}': {e}")
+            print(
+                f"Error while fetching metadata for dataset '{self.db_name}': {e}")
         return metadata
 
     #####################################################
@@ -155,7 +167,8 @@ class BQDB(DB):
         ddl_statements = []
         try:
             for table in schema.tables:
-                columns = ", ".join([f"{col.name} {col.type}" for col in table.columns])
+                columns = ", ".join(
+                    [f"{col.name} {col.type}" for col in table.columns])
                 ddl_statements.append(
                     f"CREATE TABLE `{self.project_id}.{self.db_name}.{table.name}` ({columns})"
                 )
@@ -191,7 +204,8 @@ class BQDB(DB):
                     self.client.delete_table(full_table_id)
 
         except Exception as e:
-            raise RuntimeError(f"Failed to drop tables in dataset {self.db_name}: {e}")
+            raise RuntimeError(
+                f"Failed to drop tables in dataset {self.db_name}: {e}")
 
     def _is_float(self, value) -> bool:
         try:
@@ -204,11 +218,13 @@ class BQDB(DB):
         schema_mapping = {}
 
         for statement in sql_statements:
-            table_match = re.search(r'CREATE TABLE\s+`{{dataset}}\.(\w+)`', statement)
+            table_match = re.search(
+                r'CREATE TABLE\s+`{{dataset}}\.(\w+)`', statement)
             if not table_match:
                 continue
             table_name = table_match.group(1)
-            column_section_match = re.search(r'\(\n(.*?)\n\)', statement, re.DOTALL)
+            column_section_match = re.search(
+                r'\(\n(.*?)\n\)', statement, re.DOTALL)
             if not column_section_match:
                 continue
             columns_raw = column_section_match.group(1).split(",\n")

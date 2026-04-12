@@ -1,0 +1,386 @@
+-------- detailed description of this database ------
+
+---- table: tbl_users ----
+
+column `user_id` description: the primary key and unique identifier of the user
+column `first_name` description: the first name of the user
+column `last_name` description: the last name of the user
+column `username` description: the username of the user for identification
+column `password_hash` description: the hashed password of the user for security
+column `social_media_links` description: JSON data storing links to the user's social media profiles
+column `contact_info` description: JSON data storing contact information of the user (e.g., email, phone number)
+column `avatar_url` description: URL pointing to the user's avatar or profile picture
+column `bio` description: a brief biography or description of the user
+column `website` description: the user's personal or professional website URL
+column `created_at` description: timestamp indicating when the user account was created
+column `updated_at` description: timestamp indicating when the user account was last updated
+column `notification_preferences` description: settings for the user's notification preferences
+column `role_id` description: the role or access level of the user in the system
+column `last_login` description: timestamp indicating the user's last login date and time
+column `active` description: flag indicating whether the user account is currently active or inactive
+
+---- table: tbl_posts ----
+
+column `post_id` description: the primary key and unique identifier of the post
+column `user_id` description: foreign key referencing the user who created the post (linked to Users table)
+column `title` description: the title of the post
+column `content` description: the main content or body of the post
+column `published_at` description: timestamp indicating when the post was published
+column `is_published` description: flag indicating whether the post is published or not
+column `views_count` description: the number of views/views count for the post
+column `likes_count` description: the number of likes/likes count for the post
+column `shares_count` description: the number of shares/shares count for the post
+column `created_at` description: timestamp indicating when the post was created
+column `updated_at` description: timestamp indicating when the post was last updated
+column `slug` description: a URL-friendly version of the post title for SEO purposes
+column `excerpt` description: a brief excerpt or summary of the post content
+column `status_id` description: the status or status code of the post (e.g., draft, published)
+column `category_id` description: foreign key referencing the category or topic of the post
+column `dislikes_count` description: the number of dislikes/dislikes count for the post
+column `comments_count` description: the number of comments/comments count for the post
+column `is_featured` description: flag indicating whether the post is featured or not
+column `author_name` description: the name of the post's author (if different from the user)
+column `image_url` description: URL pointing to an image associated with the post
+column `tags` description: JSON data storing tags or keywords associated with the post for categorization
+column `reading_time` description: estimated reading time for the post
+column `external_link` description: URL pointing to an external resource related to the post
+column `metadata` description: JSON data storing additional metadata or information related to the post
+
+---- table: tbl_comments ----
+
+column `comment_id` description: the primary key and unique identifier of the comment
+column `content` description: the content or text of the comment
+column `user_id` description: foreign key referencing the user who posted the comment (linked to Users table)
+column `post_id` description: foreign key referencing the post to which the comment belongs (linked to Posts table)
+column `parent_comment_id` description: foreign key referencing the parent comment if this is a reply
+column `likes_count` description: the number of likes/likes count for the comment
+column `created_at` description: timestamp indicating when the comment was created
+column `updated_at` description: timestamp indicating when the comment was last updated
+column `is_approved` description: flag indicating whether the comment is approved or not
+column `dislikes_count` description: the number of dislikes/dislikes count for the comment
+column `report_count` description: the number of times the comment has been reported
+column `is_deleted` description: flag indicating whether the comment is deleted or not
+column `user_ip` description: the IP address of the user who posted the comment
+column `user_agent` description: information about the user's browser or agent when posting the comment
+column `is_flagged` description: flag indicating whether the comment is flagged for review or not
+column `reply_count` description: the number of replies/reply count for the comment
+column `mentions` description: JSON data storing mentions of other users in the comment
+column `attachments` description: JSON data storing any attachments or files associated with the comment
+column `metadata` description: JSON data storing additional metadata or information related to the comment
+column `is_edited` description: flag indicating whether the comment has been edited or not
+
+---- table: tbl_tags ----
+
+column `tag_id` description: the primary key and unique identifier of the tag
+column `creator_id` description: foreign key referencing the user who created the tag (linked to Users table)
+column `category_id` description: foreign key referencing the category to which the tag belongs (linked to Categories table)
+column `name` description: the name or title of the tag
+column `description` description: a brief description or summary of the tag
+column `created_at` description: timestamp indicating when the tag was created
+column `updated_at` description: timestamp indicating when the tag was last updated
+column `slug` description: a URL-friendly version of the tag name for SEO purposes
+column `count` description: the count or usage frequency of the tag
+column `visibility` description: flag indicating the visibility status of the tag
+column `active` description: flag indicating whether the tag is currently active or inactive
+column `parent_tag` description: foreign key referencing the parent tag if this is a sub-tag
+column `status_id` description: the status or status code of the tag (e.g., draft, published)
+column `access_level` description: the access level or permission settings for the tag
+column `is_approved` description: flag indicating whether the tag is approved or not
+column `metadata` description: JSON data storing additional metadata or information related to the tag
+column `is_edited` description: flag indicating whether the tag has been edited or not
+
+---- table: tbl_tags_hierarchy ----
+
+column `tag_hierarchy_id` description: the primary key and unique identifier of the tag hierarchy entry
+column `tag_id` description: foreign key referencing the tag associated with this hierarchy entry (linked to Tags table)
+column `relationship_type` description: type of relationship between tags in the hierarchy
+column `weight` description: a numerical value indicating the importance or priority of the relationship
+column `created_at` description: timestamp indicating when the tag hierarchy entry was created
+column `updated_at` description: timestamp indicating when the tag hierarchy entry was last updated
+column `active` description: flag indicating whether the tag hierarchy entry is currently active or inactive
+column `description` description: a brief description or summary of the tag hierarchy entry
+column `creator_id` description: foreign key referencing the user who created the tag hierarchy entry
+column `modifier_id` description: foreign key referencing the user who last modified the tag hierarchy entry
+column `is_deleted` description: flag indicating whether the tag hierarchy entry is deleted or not
+column `deleted_at` description: timestamp indicating when the tag hierarchy entry was deleted (if applicable)
+column `revision_history` description: JSON data storing the revision history or changes made to the tag hierarchy entry
+column `comments` description: JSON data storing comments or notes related to the tag hierarchy entry
+
+---- table: tbl_categories ----
+
+column `category_id` description: the primary key and unique identifier of the category
+column `created_by` description: foreign key referencing the user who created the category (linked to Users table)
+column `updated_by` description: foreign key referencing the user who last updated the category (linked to Users table)
+column `name` description: the name or title of the category
+column `description` description: a brief description or summary of the category
+column `created_at` description: timestamp indicating when the category was created
+column `updated_at` description: timestamp indicating when the category was last updated
+column `parent_category` description: foreign key referencing the parent category if this is a sub-category
+column `slug` description: a URL-friendly version of the category name for SEO purposes
+column `image` description: URL pointing to an image associated with the category
+column `count` description: the count or number of items/entities within the category
+column `visibility` description: flag indicating the visibility status of the category
+column `is_edited` description: flag indicating whether the category has been edited or not
+
+---- table: tbl_categories_hierarchy ----
+
+column `category_hierarchy_id` description: the primary key and unique identifier of the category hierarchy entry
+column `category_id` description: foreign key referencing the category associated with this hierarchy entry (linked to Categories table)
+column `created_by` description: foreign key referencing the user who created the category hierarchy entry (linked to Users table)
+column `updated_by` description: foreign key referencing the user who last updated the category hierarchy entry (linked to Users table)
+column `name` description: the name or title of the category hierarchy entry
+column `description` description: a brief description or summary of the category hierarchy entry
+column `created_at` description: timestamp indicating when the category hierarchy entry was created
+column `updated_at` description: timestamp indicating when the category hierarchy entry was last updated
+column `status` description: the status or status code of the category hierarchy entry
+column `visibility` description: flag indicating the visibility status of the category hierarchy entry
+column `orden_priority` description: priority or order of the category hierarchy entry
+column `icon` description: icon associated with the category hierarchy entry
+column `color` description: color associated with the category hierarchy entry
+column `metadata` description: additional metadata or information related to the category hierarchy entry
+column `parent_category_name` description: name of the parent category if this is a sub-category in the hierarchy
+
+---- table: tbl_reactions ----
+
+column `reaction_id` description: the primary key and unique identifier of the reaction
+column `comment_id` description: foreign key referencing the comment to which the reaction is associated (linked to Comments table)
+column `user_id` description: the user ID of the user who reacted
+column `post_id` description: foreign key referencing the post to which the reaction is associated
+column `reaction_type` description: type of reaction (e.g., like, dislike, love, etc.)
+column `reaction_date` description: timestamp indicating when the reaction was made
+column `reaction_score` description: numerical score or value associated with the reaction
+column `reaction_text` description: additional text or description related to the reaction
+column `is_active` description: flag indicating whether the reaction is currently active or inactive
+column `reaction_count` description: count of total reactions for the associated post or comment
+column `source_ip` description: IP address from which the reaction originated
+column `device_info` description: JSON data storing information about the device used to make the reaction
+
+---- table: tbl_followers ----
+
+column `follower_id` description: the primary key and unique identifier of the follower relationship
+column `following_id` description: foreign key referencing the user being followed (linked to Users table)
+column `created_at` description: timestamp indicating when the follower relationship was created
+column `updated_at` description: timestamp indicating when the follower relationship was last updated
+column `follower_data` description: JSON data storing additional information related to the follower relationship
+
+---- table: tbl_labels ----
+
+column `label_id` description: the primary key and unique identifier of the label
+column `creator_id` description: foreign key referencing the user who created the label (linked to Users table)
+column `updated_by` description: foreign key referencing the user who last updated the label (linked to Users table)
+column `name` description: the name or title of the label
+column `description` description: a brief description or summary of the label
+column `created_at` description: timestamp indicating when the label was created
+column `updated_at` description: timestamp indicating when the label was last updated
+column `post_count` description: the count or number of posts associated with the label
+column `visibility_status` description: the visibility status of the label
+column `is_active` description: flag indicating whether the label is currently active or inactive
+column `usage_frequency` description: the frequency of usage of the label
+column `parent_label_id` description: foreign key referencing the parent label if this is a sub-label
+
+---- table: tbl_attachments ----
+
+column `attachment_id` description: the primary key and unique identifier of the attachment
+column `post_id` description: foreign key referencing the post to which the attachment is associated (linked to Posts table)
+column `user_id` description: foreign key referencing the user who uploaded the attachment (linked to Users table)
+column `file_name` description: the name of the attachment file
+column `file_path` description: the path or location where the attachment file is stored
+column `file_size` description: the size of the attachment file
+column `file_type` description: the type or format of the attachment file
+column `upload_date` description: timestamp indicating when the attachment was uploaded
+column `description` description: a brief description or summary of the attachment
+column `is_active` description: flag indicating whether the attachment is currently active or inactive
+column `visibility_status` description: the visibility status of the attachment
+column `download_count` description: count of how many times the attachment has been downloaded
+column `file_extension` description: the file extension of the attachment
+column `uploaded_by_ip` description: IP address from which the attachment was uploaded
+column `last_modified` description: timestamp indicating when the attachment was last modified
+column `expiration_date` description: timestamp indicating the expiration date of the attachment
+column `tags_file` description: JSON data storing tags or keywords associated with the attachment file
+column `category_file` description: JSON data storing the category or topic of the attachment file
+column `access_permissions` description: JSON data storing access permissions or restrictions for the attachment file
+column `storage_location` description: the storage location of the attachment file
+column `metadata` description: additional metadata or information related to the attachment
+column `is_featured` description: flag indicating whether the attachment is featured or not
+column `parent_attachment_id` description: foreign key referencing the parent attachment if this is a sub-attachment
+
+---- table: tbl_private_messages ----
+
+column `message_id` description: the primary key and unique identifier of the private message
+column `sender_id` description: foreign key referencing the user who sent the message (linked to Users table)
+column `receiver_id` description: foreign key referencing the user who received the message (linked to Users table)
+column `subject` description: the subject or title of the message
+column `body` description: the content or body of the message
+column `sending_time` description: timestamp indicating when the message was sent
+column `is_read` description: flag indicating whether the message has been read by the receiver
+column `is_archived` description: flag indicating whether the message is archived
+column `is_deleted_by_sender` description: flag indicating whether the message is deleted by the sender
+column `is_deleted_by_receiver` description: flag indicating whether the message is deleted by the receiver
+column `is_flagged` description: flag indicating whether the message is flagged for review
+column `priority` description: priority level or importance of the message
+column `attachment_id` description: foreign key referencing the attachment associated with the message (if any)
+column `conversation_id` description: identifier for the conversation or thread the message belongs to
+column `status` description: status or status code of the message (e.g., draft, sent, received)
+column `parent_message_id` description: foreign key referencing the parent message if this is a reply or part of a chain
+column `read_timestamp` description: timestamp indicating when the message was read by the receiver
+column `message_data` description: JSON data storing additional data or information related to the message
+
+---- table: tbl_reports ----
+
+column `report_id` description: the primary key and unique identifier of the report
+column `user_id` description: foreign key referencing the user who made the report
+column `post_id` description: foreign key referencing the post that is being reported
+column `report_reason` description: specifies the reason provided for the report
+column `report_timestamp` description: timestamp indicating when the report was submitted
+column `is_resolved` description: flag indicating whether the report has been resolved
+column `resolved_by` description: references the user who resolved the report (if applicable)
+column `resolution_timestamp` description: timestamp indicating when the report was resolved
+column `report_comments` description: additional comments or notes provided with the report
+column `severity_level` description: indicates the severity level of the reported issue
+column `report_type` description: type or category of the report (e.g., spam, harassment)
+column `report_entity_type` description: type of entity being reported (e.g., post, user)
+column `report_entity_id` description: ID of the entity being reported (e.g., post ID, user ID)
+column `action_taken` description: describes the action taken in response to the report
+column `action_timestamp` description: timestamp indicating when the action was taken
+column `report_ip_address` description: IP address from which the report was submitted
+column `reported_user_id` description: ID of the user being reported (if applicable)
+column `reported_comment_id` description: ID of the comment being reported (if applicable)
+column `reported_user_reputation` description: reputation or status of the reported user
+column `report_category` description: category or classification of the report
+column `reported_context_text` description: textual context or description of the reported content
+column `attachments` description: JSON data storing any attachments or evidence related to the report
+column `flagged_user` description: flag indicating whether a user was flagged in the report
+column `report_source` description: source or origin of the report (e.g., user, automated system)
+column `report_feedback` description: feedback or response provided regarding the report
+column `report_verification_status` description: verification status of the report (e.g., verified, unverified)
+column `report_mechanism` description: mechanism or method used for reporting (e.g., form, API)
+column `report_priority` description: priority level assigned to the report
+column `assigned_to` description: indicates the user or entity assigned to handle the report
+column `report_history` description: JSON data storing the history or log of actions related to the report
+
+---- table: tbl_user_activity ----
+
+column `activity_id` description: the primary key and unique identifier of the activity
+column `user_id` description: foreign key referencing the user who performed the activity
+column `activity_type` description: type or category of the activity
+column `activity_timestamp` description: timestamp indicating when the activity occurred
+column `post_id` description: references the post associated with the activity (if applicable)
+column `comment_id` description: references the comment associated with the activity (if applicable)
+column `activity_description` description: description or details of the activity
+column `activity_source` description: source or origin of the activity
+column `activity_location` description: location or context where the activity took place
+column `activity_duration` description: duration or time spent on the activity
+column `activity_device` description: device used to perform the activity
+column `activity_status` description: status or outcome of the activity
+column `activity_impact` description: impact or significance of the activity
+column `activity_privacy_level` description: privacy level associated with the activity
+column `activity_related_users` description: JSON data storing information about related users involved in the activity
+column `activity_extra_data` description: JSON data storing additional details or metadata related to the activity
+column `ip_address` description: IP address from which the activity originated
+column `user_agent` description: information about the user's browser or agent
+column `url` description: URL associated with the activity
+column `session_id` description: ID of the session during which the activity occurred
+column `browser` description: browser used during the activity
+column `operating_system` description: operating system used during the activity
+column `referrer` description: referrer URL indicating how the user arrived at the activity location
+column `event_id` description: ID of the event related to the activity
+column `error_message` description: error message associated with the activity (if applicable)
+column `location_coordinates` description: JSON data storing geographical coordinates related to the activity location
+column `session_duration` description: duration of the user session during which the activity occurred
+
+---- table: tbl_notifications ----
+
+column `notification_id` description: the primary key and unique identifier of the notification
+column `user_id` description: foreign key referencing the user to whom the notification is addressed (linked to Users table)
+column `notification_type` description: type or category of the notification
+column `sender_id` description: foreign key referencing the user who sent the notification (if applicable, linked to Users table)
+column `post_id` description: foreign key referencing the post related to the notification (if applicable, linked to Posts table)
+column `comment_id` description: foreign key referencing the comment related to the notification (if applicable)
+column `notification_message` description: message or content of the notification
+column `notification_date` description: timestamp indicating when the notification was sent or generated
+column `is_read` description: flag indicating whether the notification has been read
+column `is_archived` description: flag indicating whether the notification is archived
+column `is_deleted` description: flag indicating whether the notification is deleted
+column `link_to_notification` description: link associated with the notification
+column `notification_priority` description: priority level of the notification
+column `additional_data` description: JSON data storing additional information related to the notification
+column `notification_subject` description: subject or title of the notification
+column `notification_status` description: status or status code of the notification
+column `notification_action` description: action associated with the notification
+column `related_user_id` description: ID of the related user (if applicable)
+column `source_application` description: application or source from which the notification originated
+column `notification_category` description: category or classification of the notification
+column `expiration_date` description: timestamp indicating the expiration date of the notification
+column `delivery_method` description: method used for delivering the notification
+column `notification_channel` description: channel through which the notification is delivered
+column `notification_language` description: language of the notification
+column `recipient_group` description: group or audience targeted by the notification
+column `notification_tags` description: JSON data storing tags or keywords associated with the notification
+column `notification_expiry_time` description: expiry time or duration of the notification
+column `notification_context` description: JSON data storing contextual information related to the notification
+column `notification_origin` description: origin or source of the notification
+
+---- table: tbl_media ----
+
+column `media_id` description: the primary key and unique identifier of the media
+column `post_id` description: foreign key referencing the post to which the media belongs (linked to Posts table)
+column `type` description: type or format of the media (e.g., image, video)
+column `url` description: URL or location of the media file
+column `description` description: brief description or summary of the media
+column `upload_date` description: timestamp indicating when the media was uploaded
+column `updated_at` description: timestamp indicating when the media was last updated
+column `filename` description: name of the media file
+column `file_size` description: size of the media file
+column `caption` description: caption or text associated with the media
+column `uploader_id` description: ID of the user who uploaded the media
+column `visibility` description: visibility status of the media
+column `access_rights` description: JSON data storing access rights or permissions for the media
+column `file_path` description: path or location where the media file is stored
+column `metadata` description: JSON data storing additional metadata or information related to the media
+column `hash` description: hash value or checksum of the media file
+column `is_encrypted` description: flag indicating whether the media is encrypted
+column `encryption_key` description: key used for encrypting the media (if applicable)
+column `encryption_algorithm` description: algorithm used for encrypting the media (if applicable)
+column `status_id` description: status or status code of the media (e.g., active, deleted)
+
+---- table: tbl_user_roles ----
+
+column `role_id` description: the primary key and unique identifier of the user role
+column `created_by` description: foreign key referencing the user who created the role (linked to Users table)
+column `updated_by` description: foreign key referencing the user who last updated the role (linked to Users table)
+column `description` description: description or details of the user role
+column `created_at` description: timestamp indicating when the user role was created
+column `updated_at` description: timestamp indicating when the user role was last updated
+column `permissions` description: JSON data storing permissions associated with the user role
+column `role_name` description: name or title of the user role
+column `is_active` description: flag indicating whether the user role is currently active
+column `restrictions` description: JSON data storing restrictions or limitations for the user role
+column `expiry_date` description: timestamp indicating the expiry date of the user role
+column `created_by_ip` description: IP address from which the user role was created
+column `updated_by_ip` description: IP address from which the user role was last updated
+column `created_by_device` description: device used to create the user role
+column `updated_by_device` description: device used to update the user role
+column `active_sessions` description: number of active sessions associated with the user role
+column `last_sessions` description: JSON data storing information about the last sessions associated with the user role
+
+---- table: tbl_posts_tags ----
+
+column `post_id` description: the primary key and unique identifier of the post-tag relationship
+column `tag_id` description: foreign key referencing the tag associated with the post (linked to Tags table)
+column `comments` description: JSON data storing comments or additional information related to the post-tag relationship
+column `label_status` description: status or label associated with the post-tag relationship
+column `label_at` description: timestamp indicating when the label was associated with the post-tag relationship
+
+---- table: tbl_country ----
+
+column `country_id` description: the unique identifier of the country
+column `country_name` description: the name of the country
+column `continent` description: the continent where the country is located
+column `region` description: the region or subregion within the country
+column `X` description: the x coordinate where the country is located
+column `Y` description: the y coordinate where the country is located
+
+---- table: tbl_status ----
+
+column `status_id` description: the primary key and unique identifier of the status
+column `Name` description: the name or title of the status

@@ -1,4 +1,66 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "Evalbench"
-version = "1.0.0"
+name = "evalbench"
+version = "1.3.1"
 requires-python = ">=3.10"
+description = "Evalbench - evaluation benchmarking framework"
+readme = "README.md"
+license = {file = "LICENSE"}
+dependencies = [
+    "cloud-sql-python-connector[pg8000]",
+    "google-cloud-alloydb-connector[pg8000]",
+    "cloud-sql-python-connector[pytds]",
+    "sqlalchemy-pytds",
+    "google-genai",
+    "google-cloud-secret-manager",
+    "google-cloud-bigtable",
+    "google-cloud-spanner",
+    "sqlalchemy-spanner",
+    "pandas",
+    "pandas-gbq",
+    "pymysql",
+    "sqlalchemy",
+    "pyaml_env",
+    "pyarrow",
+    "protobuf",
+    "absl-py",
+    "tabulate",
+    "grpcio>=1.80.0",
+    "grpcio-tools>=1.80.0",
+    "aiologger",
+    "jsonschema",
+    "ratelimit",
+    "backoff",
+    "GitPython",
+    "sqlparse",
+    "redis",
+    "anthropic[vertex]",
+    "sqlglot",
+    "pymongo",
+    "mongomock",
+    "rich",
+    "google-adk",
+    "google-cloud-geminidataanalytics>=0.11.0",
+    "google-cloud-firestore",
+    "google-cloud-iam",
+]
+
+[tool.setuptools.packages.find]
+include = ["evalbench*"]
+
+[tool.uv.workspace]
+members = [
+    "viewer",
+]
+
+[dependency-groups]
+dev = [
+    "pycodestyle>=2.14.0",
+]
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+default = true

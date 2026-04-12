@@ -8,6 +8,14 @@ from scorers import setmatcher
 from scorers import llmrater
 from scorers import returnedsql
 from scorers import executablesql
+from scorers import trajectorymatcher
+from scorers import goalcompletionrate
+from scorers import behavioralmetrics
+from scorers import parameteranalysis
+from scorers import turncount
+from scorers import endtoendlatency
+from scorers import toolcalllatency
+from scorers import tokenconsumption
 from dataset.evaloutput import EvalOutput
 import logging
 
@@ -29,11 +37,13 @@ def compare(
     if "exact_match" in scorers:
         comparators.append(exactmatcher.ExactMatcher(scorers["exact_match"]))
     if "recall_match" in scorers:
-        comparators.append(recallmatcher.RecallMatcher(scorers["recall_match"]))
+        comparators.append(
+            recallmatcher.RecallMatcher(scorers["recall_match"]))
     if "set_match" in scorers:
         comparators.append(setmatcher.SetMatcher(scorers["set_match"]))
     if "llmrater" in scorers:
-        comparators.append(llmrater.LLMRater(scorers["llmrater"], global_models))
+        comparators.append(llmrater.LLMRater(
+            scorers["llmrater"], global_models))
     if "regexp_matcher" in scorers:
         comparators.append(
             generatedqueryregexpmatcher.GeneratedQueryRegexpMatcher(
@@ -45,6 +55,44 @@ def compare(
     if "executable_sql" in scorers:
         comparators.append(
             executablesql.ExecutableGenerationScore(scorers["executable_sql"])
+        )
+    if "trajectory_matcher" in scorers:
+        comparators.append(
+            trajectorymatcher.TrajectoryMatcher(scorers["trajectory_matcher"])
+        )
+    if "goal_completion" in scorers:
+        comparators.append(
+            goalcompletionrate.GoalCompletionRate(
+                scorers["goal_completion"], global_models
+            )
+        )
+    if "behavioral_metrics" in scorers:
+        comparators.append(
+            behavioralmetrics.BehavioralMetrics(
+                scorers["behavioral_metrics"], global_models
+            )
+        )
+    if "parameter_analysis" in scorers:
+        comparators.append(
+            parameteranalysis.ParameterAnalysis(
+                scorers["parameter_analysis"], global_models
+            )
+        )
+    if "turn_count" in scorers:
+        comparators.append(
+            turncount.TurnCount(scorers["turn_count"])
+        )
+    if "end_to_end_latency" in scorers:
+        comparators.append(
+            endtoendlatency.EndToEndLatency(scorers["end_to_end_latency"])
+        )
+    if "tool_call_latency" in scorers:
+        comparators.append(
+            toolcalllatency.ToolCallLatency(scorers["tool_call_latency"])
+        )
+    if "token_consumption" in scorers:
+        comparators.append(
+            tokenconsumption.TokenConsumption(scorers["token_consumption"])
         )
 
     for comp in comparators:

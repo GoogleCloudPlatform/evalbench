@@ -1,0 +1,60 @@
+gemini_cli_version: "@google/gemini-cli@0.25.1"
+generator: gemini_cli
+env:
+  GOOGLE_CLOUD_PROJECT: "astana-evaluation"
+  GOOGLE_CLOUD_LOCATION: "us-central1"
+  GOOGLE_GENAI_USE_VERTEXAI: "true"
+setup:
+  fake_mcp_servers:
+    "cloud-sql":
+      command: "python"
+      args:
+        - "evalbench/util/fake_mcp_server.py"
+        - "--server-name"
+        - "cloud-sql"
+        - "--config"
+        - "datasets/model_configs/gemini_cli_fake_model.yaml"
+
+fake_mcp_tools:
+  "cloud-sql":
+    - name: create_instance
+      description: "Creates a Postgres instance using `Production` and `Development` presets. For the `Development` template, it chooses a 2 vCPU, 16 GiB RAM, 100 GiB SSD configuration with Non-HA/zonal availability. For the `Production` template, it chooses an 8 vCPU, 64 GiB RAM, 250 GiB SSD configuration with HA/regional availability. The Enterprise Plus edition is used in both cases. The default database version is `POSTGRES_17`. The agent should ask the user if they want to use a different version."
+      parameters:
+        type: object
+        properties:
+          project_id:
+            type: string
+            description: "The ID of the project."
+          instance_name:
+            type: string
+            description: "The name of the Cloud SQL instance."
+          database_version:
+            type: string
+            description: "The database engine type and version."
+          password:
+            type: string
+            description: "The password for the default user."
+          edition_preset:
+            type: string
+            description: "The edition preset for the instance."
+        required: ["project_id", "instance_name", "database_version", "password", "edition_preset"]
+      response:
+        status: "success"
+        message: "Instance created successfully"
+    - name: get_instance
+      description: "gets the details of a Cloud SQL instance."
+      parameters:
+        type: object
+        properties:
+          project_id:
+            type: string
+            description: "The ID of the project."
+          instance_name:
+            type: string
+            description: "The name of the Cloud SQL instance."
+        required: ["project_id", "instance_name"]
+      response:
+        status: "failure"
+        error:
+          code: 404
+          message: "Instance not found or permission denied"

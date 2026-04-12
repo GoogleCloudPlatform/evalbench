@@ -1,18 +1,22 @@
 """Process datasets."""
 
-from typing import Any
+from typing import Any, Optional
 import json
 import logging
 from collections.abc import Sequence
 from dataset.evalinput import EvalInputRequest
 from dataset.evalinteractinput import EvalInteractInputRequest
+from dataset.evalgeminicliinput import EvalGeminiCliRequest
 from itertools import chain
+import os
 
 
 def load_schema(dataset_dir: str, selected_database: str):
+    schema = ""
     schema_path = f"{dataset_dir}/{selected_database}/{selected_database}_schema.txt"
-    with open(schema_path, "r", encoding="utf-8") as f:
-        schema = f.read()
+    if os.path.exists(schema_path):
+        with open(schema_path, "r", encoding="utf-8") as f:
+            schema = f.read()
     return schema
 
 
@@ -25,11 +29,12 @@ def load_knowledge(
     for knowledge_amb_i in knowledge_ambiguity:
         exclude_ids.append(knowledge_amb_i["deleted_knowledge"])
 
-    with open(external_kg_path, "r", encoding="utf-8") as f:
-        for line in f:
-            if not line.strip():
-                continue
-            obj = json.loads(line)
+    if os.path.exists(external_kg_path):
+        with open(external_kg_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                obj = json.loads(line)
             if obj.get("id") not in exclude_ids:
                 external_kg_list.append(json.dumps(obj))
 
@@ -90,6 +95,21 @@ def load_bird_interact_dataset(json_file_path, config):
     return input_items
 
 
+def load_gemini_cli_json(json_file_path):
+    all_items: dict[str, list[EvalGeminiCliRequest]] = {
+        "gemini-cli-format": [],
+    }
+    with open(json_file_path, "r") as json_file:
+        json_item = json_file.read()
+        item = json.loads(json_item)
+        eval_input = EvalGeminiCliRequest(
+            id=item.get("id", "0"),
+            payload=json_item,
+        )
+        all_items["gemini-cli-format"].extend([eval_input])
+    return all_items
+
+
 def load_json(json_file_path):
     all_items = []
     with open(json_file_path, "r") as json_file:
@@ -102,6 +122,8 @@ def load_dataset_from_json(json_file_path, config):
     dataset_format = config.get("dataset_format", "evalbench-standard-format")
     if dataset_format == "bird-interact-format":
         all_items = load_bird_interact_dataset(json_file_path, config)
+    elif dataset_format == "gemini-cli-format":
+        all_items = load_gemini_cli_json(json_file_path)
     else:
         all_items = load_json(json_file_path)
 
@@ -112,18 +134,25 @@ def load_dataset_from_json(json_file_path, config):
         config["orchestrator"] = "oneshot"
         input_items = load_dataset_from_bird_format(all_items, config)
     elif dataset_format == "bird-interact-format":
-        config["orchestrator"] = "interact"
+        if "orchestrator" not in config:
+            config["orchestrator"] = "interact"
+        input_items = all_items
+    elif dataset_format == "gemini-cli-format":
+        config["orchestrator"] = "geminicli"
         input_items = all_items
     else:
         raise ValueError("Dataset not in any of the recognised formats")
 
-    totalEntries = sum(len(input_items.get(q, [])) for q in ["dql", "dml", "ddl"])
-    logging.info(f"Converted {totalEntries} entries to EvalInput.")
+    if dataset_format not in ["gemini-cli-format", "bird-interact-format"]:
+        totalEntries = sum(len(input_items.get(q, []))
+                           for q in ["dql", "dml", "ddl"])
+        logging.info(f"Converted {totalEntries} entries to EvalInput.")
     return input_items
 
 
 def load_dataset_from_bird_format(dataset: Sequence[dict], config):
-    input_items: dict[str, list[EvalInputRequest]] = {"dql": [], "dml": [], "ddl": []}
+    input_items: dict[str, list[EvalInputRequest]] = {
+        "dql": [], "dml": [], "ddl": []}
     dataset_config = config["dataset_config"]
     dataset_str = str(dataset_config).split("/")[-1].replace(".json", "")
     dialects = config["dialects"]
@@ -140,15 +169,15 @@ def load_dataset_from_bird_format(dataset: Sequence[dict], config):
             item["question"] = item["other"]["question"]
         if "db_id" not in item:
             item["db_id"] = dataset_str
-        if "SQL" not in item:
-            if dialects[0] in item["golden_sql"]:
-                item["SQL"] = item["golden_sql"][dialects[0]]
-            else:
-                item["SQL"] = ""
         if "difficulty" not in item and "tags" in item:
             item["difficulty"] = item["tags"]
 
-        if item["SQL"]:
+        golden_sql_dict = item.get("golden_sql", {})
+        if not golden_sql_dict and item.get("SQL"):
+            # Fallback to single SQL string mapped to all requested dialects
+            golden_sql_dict = {d: item["SQL"] for d in config["dialects"]}
+
+        if golden_sql_dict:
             eval_input = EvalInputRequest(
                 id=item["question_id"],
                 nl_prompt="".join([item["question"], item["evidence"]]).replace(
@@ -157,7 +186,7 @@ def load_dataset_from_bird_format(dataset: Sequence[dict], config):
                 query_type=query_type,
                 database=item["db_id"],
                 dialects=config["dialects"],
-                golden_sql=item["SQL"],
+                golden_sql=golden_sql_dict,
                 eval_query="",
                 setup_sql="",
                 cleanup_sql="",
@@ -169,22 +198,24 @@ def load_dataset_from_bird_format(dataset: Sequence[dict], config):
 
 
 def load_dataset(dataset: Sequence[dict], config):
-    input_items: dict[str, list[EvalInputRequest]] = {"dql": [], "dml": [], "ddl": []}
+    input_items: dict[str, list[EvalInputRequest]] = {
+        "dql": [], "dml": [], "ddl": []}
     for item in dataset:
         if not _item_meets_config_filters(item, config):
             continue
         eval_input = EvalInputRequest(
             id=item["id"],
-            nl_prompt=item["nl_prompt"],
-            query_type=item["query_type"].lower(),
-            database=item["database"],
-            dialects=_union_dialects(item["dialects"], config.get("dialects", [])),
-            golden_sql=item["golden_sql"],
-            eval_query=item["eval_query"],
-            setup_sql=item["setup_sql"],
-            cleanup_sql=item["cleanup_sql"],
-            tags=item["tags"],
-            other=build_normalized_other(item["other"]),
+            nl_prompt=item.get("nl_prompt", ""),
+            query_type=item.get("query_type", "dql").lower(),
+            database=item.get("database", ""),
+            dialects=_union_dialects(
+                item.get("dialects", []), config.get("dialects", [])),
+            golden_sql=item.get("golden_sql", []),
+            eval_query=item.get("eval_query", ""),
+            setup_sql=item.get("setup_sql", []),
+            cleanup_sql=item.get("cleanup_sql", []),
+            tags=item.get("tags", []),
+            other=build_normalized_other(item.get("other")),
         )
         input_items[eval_input.query_type].append(eval_input)
     return input_items
@@ -214,7 +245,9 @@ def _item_meets_config_filters(item: dict, config: dict):
     return False
 
 
-def build_normalized_other(other: dict[str, Any]):
+def build_normalized_other(other: Optional[dict[str, Any]]):
+    if not other:
+        return {}
     return {key: json.dumps(value) for key, value in other.items()}
 
 
@@ -249,4 +282,6 @@ def breakdown_datasets(total_dataset: list[EvalInputRequest]):
 
 
 def flatten_dataset(dataset: dict[str, list]):
+    if isinstance(dataset, list):
+        return dataset
     return list(chain.from_iterable(dataset.values()))

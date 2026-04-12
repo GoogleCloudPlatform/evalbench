@@ -37,6 +37,7 @@ message EvalInputRequest {
   // Detailed information and enriched output about the SQL generation.
   // This is populated based on the `SqlGenerationConfig` in the request.
   SqlGenerationDetails sql_generation_details = 18;
+  string payload = 19;
 }
 
 // Contains detailed, structured information beyond the single SQL string.

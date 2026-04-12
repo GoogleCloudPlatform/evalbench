@@ -1,0 +1,29 @@
+.mdc-tooltip__surface {
+  max-height: none !important;
+  max-width: none !important;
+  white-space: pre-wrap !important;
+}
+
+/* Style Material inputs */
+.mdc-text-field {
+  background-color: #ffffff !important;
+}
+.mdc-select__anchor {
+  background-color: #ffffff !important;
+}
+.mdc-select__selected-text {
+  color: #000000 !important;
+}
+.mdc-floating-label {
+  color: #6b7280 !important;
+}
+.mat-mdc-input-element {
+  color: #000000 !important;
+}
+.mat-mdc-select {
+  color: #000000 !important;
+}
+.mat-mdc-option {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+}

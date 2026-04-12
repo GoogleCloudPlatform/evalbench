@@ -30,6 +30,7 @@ class EvalInputRequest:
         trace_id: str = "",
         explanation: str = "",
         sql_generation_details: str = "",
+        payload: str = "",
     ):
         """Initializes an EvalInputRequest object with all required fields.
 
@@ -53,6 +54,7 @@ class EvalInputRequest:
         self.trace_id = trace_id
         self.explanation = explanation
         self.sql_generation_details = sql_generation_details
+        self.payload = payload
 
     if PROTO_IMPORTED:
 
@@ -80,6 +82,7 @@ class EvalInputRequest:
                 trace_id=request.get("traceId") or "",
                 explanation=request.get("explanation") or "",
                 sql_generation_details=request.get("sqlGenerationDetails") or [],
+                payload=request.get("payload") or "",
             )
 
         def to_proto(self):  # type: ignore
@@ -95,18 +98,30 @@ class EvalInputRequest:
                 cleanup_sql=self._set_dialect_based_sql(self.cleanup_sql),
                 tags=self.tags,
                 other=self.other,
+                sql_generator_error=self.sql_generator_error,
+                sql_generator_time=self.sql_generator_time,
+                generated_sql=self.generated_sql,
+                job_id=self.job_id,
+                trace_id=self.trace_id,
+                explanation=self.explanation,
+                sql_generation_details=self.sql_generation_details,
+                payload=self.payload,
             )
 
         def _set_dialect_based_sql(self, dialect_based_sql):
             if not isinstance(dialect_based_sql, dict):
                 return None
-            response: dict[str, eval_request_pb2.DialectBasedSQLStatements] = {}  # type: ignore
+            # type: ignore
+            response: dict[str,
+                           eval_request_pb2.DialectBasedSQLStatements] = {}
             for dialect, sql_statements in dialect_based_sql.items():
-                response[dialect] = eval_request_pb2.DialectBasedSQLStatements()  # type: ignore
+                # type: ignore
+                response[dialect] = eval_request_pb2.DialectBasedSQLStatements()
                 if isinstance(sql_statements, list):
                     for sql_statement in sql_statements:
                         if isinstance(sql_statement, str):
-                            response[dialect].sql_statements.append(sql_statement)
+                            response[dialect].sql_statements.append(
+                                sql_statement)
             return response
 
     else:
@@ -170,5 +185,5 @@ def breakdown_datasets(total_dataset: list[EvalInputRequest]):
             datasets[dialect][input.database][input.query_type].append(
                 input.copy_for_dialect(dialect)
             )
-        total_dataset_len += 1
+            total_dataset_len += 1
     return datasets, total_dataset_len, total_db_len

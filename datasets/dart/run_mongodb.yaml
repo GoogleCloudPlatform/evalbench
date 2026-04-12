@@ -1,0 +1,16 @@
+dataset_config: datasets/dart/prompts.json
+database_configs:
+  - datasets/dart/db_configs/mongodb.yaml
+dialects:
+  - mongodb
+query_types:
+  - dql
+prompt_generator: SQLGenBasePromptGenerator
+setup_directory: datasets/dart/setup
+scorers:
+  exact_match: null
+  set_match: null
+  executable_sql: null
+reporting:
+  csv:
+    output_directory: results/dart

@@ -1,6 +1,9 @@
 from evaluator.orchestrator import Orchestrator
 from evaluator.oneshotorchestrator import OneShotOrchestrator
 from evaluator.interactorchestrator import InteractOrchestrator
+from evaluator.dataagentorchestrator import DataAgentOrchestrator
+from evaluator.agentorchestrator import AgentOrchestrator
+from evaluator.streamingorchestrator import StreamingOrchestrator
 import logging
 
 
@@ -11,5 +14,13 @@ def get_orchestrator(config, db_configs, setup_config, report_progress=False):
         return OneShotOrchestrator(config, db_configs, setup_config, report_progress)
     elif orchestrator_type == "interact":
         return InteractOrchestrator(config, db_configs, setup_config, report_progress)
+    elif orchestrator_type == "dataagent":
+        return DataAgentOrchestrator(config, db_configs, setup_config, report_progress)
+    elif orchestrator_type == "geminicli":
+        return AgentOrchestrator(config, db_configs, setup_config, report_progress)
     else:
         return Orchestrator(config, db_configs, setup_config, report_progress)
+
+
+def get_streaming_orchestrator(config, db_configs, setup_config, report_progress=False):
+    return StreamingOrchestrator(config, db_configs, setup_config, report_progress)

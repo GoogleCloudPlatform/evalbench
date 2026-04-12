@@ -10,7 +10,7 @@ def truncateExecutionOutputs(eval_output, config):
     ]:
         truncated_result_count = 250
         if (
-            "reporting" in config
+            config.get("reporting")
             and "truncate_execution_outputs" in config["reporting"]
         ):
             truncated_result_count = config["reporting"]["truncate_execution_outputs"]
@@ -19,6 +19,7 @@ def truncateExecutionOutputs(eval_output, config):
             if len(eval_output[key]) > truncated_result_count:
                 suffix = f"...and {len(eval_output[key]) - truncated_result_count} more items truncated"
             eval_output[key] = (
-                json.dumps(eval_output[key][:truncated_result_count], default=str)
+                json.dumps(eval_output[key]
+                           [:truncated_result_count], default=str)
                 + suffix
             )

@@ -1,0 +1,27 @@
+gemini_cli_version: "@google/gemini-cli@0.25.1"
+generator: gemini_cli
+env:
+  GOOGLE_CLOUD_PROJECT: "astana-evaluation"
+  GOOGLE_CLOUD_LOCATION: "us-central1"
+  GOOGLE_GENAI_USE_VERTEXAI: "true"
+setup:
+  mcp_servers:
+    "cloud-sql":
+      httpUrl: "https://sqladmin.googleapis.com/mcp"
+      authProviderType: google_credentials
+      oauth:
+        scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+      headers:
+        X-Goog-User-Project: astana-evaluation
+        
+  # extensions:
+  #   "https://github.com/gemini-cli-extensions/cloud-sql-postgresql":
+  #     settings:
+  #       CLOUD_SQL_POSTGRES_PROJECT: "astana-evaluation"
+  #       CLOUD_SQL_POSTGRES_INSTANCE: "nl2code"
+  #       CLOUD_SQL_POSTGRES_REGION: "us-central1"
+  #       CLOUD_SQL_POSTGRES_DATABASE: "cymbalShop"
+  #       CLOUD_SQL_POSTGRES_USER: "app"
+  #       CLOUD_SQL_POSTGRES_PASSWORD: "Google123*"
+  #       CLOUD_SQL_POSTGRES_IP_TYPE: "PUBLIC"

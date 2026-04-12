@@ -6,6 +6,7 @@ import logging
 import sqlparse
 from .db import DB
 from google.cloud.sql.connector import Connector
+from util.auth import get_adc_user_email
 from .util import (
     get_db_secret,
     with_cache_execute,
@@ -54,6 +55,10 @@ class SQLServerDB(DB):
         logging.getLogger("pytds").setLevel(logging.ERROR)
         self.connector = Connector()
 
+        self.use_adc = not self.username and not self.password
+        if self.use_adc:
+            self.username = get_adc_user_email()
+
         def get_conn():
             conn = self.connector.connect(
                 self.db_path,
@@ -61,6 +66,7 @@ class SQLServerDB(DB):
                 user=self.username,
                 password=self.password,
                 db=self.db_name,
+                enable_iam_auth=self.use_adc,
             )
             return conn
 
@@ -78,7 +84,8 @@ class SQLServerDB(DB):
                 common_args["pool_recycle"] = 300
             return common_args
 
-        self.engine = sqlalchemy.create_engine("mssql+pytds://", **get_engine_args())
+        self.engine = sqlalchemy.create_engine(
+            "mssql+pytds://", **get_engine_args())
 
     def close_connections(self):
         try:
@@ -144,7 +151,8 @@ class SQLServerDB(DB):
                         result = self._execute_queries(connection, query)
 
                         if eval_query:
-                            eval_result = self._execute_queries(connection, eval_query)
+                            eval_result = self._execute_queries(
+                                connection, eval_query)
 
                         if rollback:
                             transaction.rollback()
@@ -178,7 +186,8 @@ class SQLServerDB(DB):
                 for table in metadata.tables.values():
                     columns = []
                     for column in table.columns:
-                        columns.append({"name": column.name, "type": str(column.type)})
+                        columns.append(
+                            {"name": column.name, "type": str(column.type)})
                     db_metadata[table.name] = columns
         except Exception:
             pass
@@ -200,11 +209,13 @@ class SQLServerDB(DB):
             columns = ", ".join(
                 [f"{column.name} {column.type}" for column in table.columns]
             )
-            create_statements.append(f"CREATE TABLE dbo.{table.name} ({columns});")
+            create_statements.append(
+                f"CREATE TABLE dbo.{table.name} ({columns});")
         return create_statements
 
     def create_tmp_database(self, database_name: str):
-        _, error = self._execute_autocommit(f"CREATE DATABASE {database_name};")
+        _, error = self._execute_autocommit(
+            f"CREATE DATABASE {database_name};")
         if error:
             raise RuntimeError(f"Could not create database: {error}")
         self.tmp_dbs.append(database_name)

@@ -1,0 +1,144 @@
+{
+  "scenarios": [
+    {
+      "id": "bt-setup-00",
+      "starting_prompt": "I need to initialize my Bigtable environment for evaluation if they don't exist already. Please create the following instances in project cloud-bigtable-spacewalk: 'evalbench-prod-data', 'evalbench-legacy-archive', 'evalbench-staging-db', 'evalbench-customers-v2', 'evalbench-dev-db', and 'evalbench-test-instance-123'. All clusters should be in us-central1-a. Also, in 'evalbench-legacy-archive' create a table 'evalbench-v1-data' and in 'evalbench-staging-db' create a table 'evalbench-temporary-data' if they don't exist already.",
+      "conversation_plan": "The user is seeding the environment. The agent should sequentially or in parallel create all requested instances and tables. Confirm when everything is ready.",
+      "expected_trajectory": [
+        "mcp_Bigtable_list_instances",
+        "mcp_Bigtable_create_instance",
+        "mcp_Bigtable_list_tables",
+        "mcp_Bigtable_create_table"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "cloud-bigtable-spacewalk"
+      },
+      "kind": "tools",
+      "max_turns": 10
+    },
+    {
+      "id": "bt-discovery-01",
+      "starting_prompt": "What Bigtable instances are running in project cloud-bigtable-spacewalk?",
+      "conversation_plan": "The user starts with a discovery question. The agent should list instances. The user then asks for the configuration details of the 'evalbench-prod-data' instance to check its clusters.",
+      "expected_trajectory": [
+        "mcp_Bigtable_list_instances",
+        "mcp_Bigtable_get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "cloud-bigtable-spacewalk"
+      },
+      "kind": "tools",
+      "max_turns": 3
+    },
+    {
+      "id": "bt-setup-provisioning-01",
+      "starting_prompt": "Set up a new Bigtable instance 'evalbench-metrics-db' in us-east1-c and add a 'evalbench-raw-metrics' table with a 'data' column family. If the instance creation is pending, please wait or check until it's ready before creating the table.",
+      "conversation_plan": "The agent must create the instance. If the table creation fails because the instance isn't ready, the agent should poll 'get_instance' or wait and try again. The user expects both to be completed.",
+      "expected_trajectory": [
+        "mcp_Bigtable_create_instance",
+        "mcp_Bigtable_get_instance",
+        "mcp_Bigtable_create_table"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "cloud-bigtable-spacewalk"
+      },
+      "kind": "tools",
+      "max_turns": 6
+    },
+    {
+      "id": "bt-exists-recovery-01",
+      "starting_prompt": "I need to ensure the Bigtable instance 'evalbench-prod-data' exists. If it's already there, just let me know its current state. If not, create it in us-central1-a.",
+      "conversation_plan": "The agent should first check for the instance's existence using 'get_instance'. If it exists, it should report the state. If it returns a 404/not found, it should proceed to 'create_instance'.",
+      "expected_trajectory": [
+        "mcp_Bigtable_get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "cloud-bigtable-spacewalk"
+      },
+      "kind": "tools",
+      "max_turns": 3
+    },
+    {
+      "id": "bt-table-lookup-01",
+      "starting_prompt": "I need to find the 'evalbench-audit' table in my 'evalbench-prod-data'. Can you get its metadata?",
+      "conversation_plan": "The user wants to find a specific table. The agent should list tables in the instance to verify existence and then get the table details.",
+      "expected_trajectory": [
+        "mcp_Bigtable_list_tables",
+        "mcp_Bigtable_get_table"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "cloud-bigtable-spacewalk"
+      },
+      "kind": "tools",
+      "max_turns": 3
+    },
+    {
+      "id": "bt-resource-cleanup-01",
+      "starting_prompt": "Delete the 'evalbench-temporary-data' table in the 'evalbench-staging-db' instance.",
+      "conversation_plan": "A direct administrative action. The agent must call delete_table. Since the tool requires confirmation, the agent should ask and the user will say 'yes'.",
+      "expected_trajectory": [
+        "mcp_Bigtable_delete_table"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "cloud-bigtable-spacewalk"
+      },
+      "kind": "tools",
+      "max_turns": 3
+    },
+    {
+      "id": "bt-recovery-discovery-01",
+      "starting_prompt": "Get details for the 'evalbench-customer-db' instance.",
+      "conversation_plan": "The user refers to an instance by a name that doesn't exist. The agent's 'get_instance' call will fail. The agent should then list instances, and the user will say 'Oh, I meant evalbench-customers-v2, get that one'.",
+      "expected_trajectory": [
+        "mcp_Bigtable_get_instance",
+        "mcp_Bigtable_list_instances",
+        "mcp_Bigtable_get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "cloud-bigtable-spacewalk"
+      },
+      "kind": "tools",
+      "max_turns": 5
+    },
+    {
+      "id": "bt-ambiguous-request-01",
+      "starting_prompt": "Add a new table to my instance.",
+      "conversation_plan": "A vague request. The agent should ask which instance. The user provides 'evalbench-dev-db'. The agent then asks for table name and families. The user provides name 'evalbench-app-logs' and family 'metadata'.",
+      "expected_trajectory": [
+        "mcp_Bigtable_list_instances",
+        "mcp_Bigtable_create_table"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "cloud-bigtable-spacewalk"
+      },
+      "kind": "tools",
+      "max_turns": 6
+    },
+    {
+      "id": "bt-instance-deletion-01",
+      "starting_prompt": "I no longer need the 'evalbench-test-instance-123'. Please delete it.",
+      "conversation_plan": "The user wants to delete a specific instance. The agent must call delete_instance. The tool requires explicit user confirmation, so the agent should ask and the user will confirm with 'yes'.",
+      "expected_trajectory": [
+        "mcp_Bigtable_delete_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "cloud-bigtable-spacewalk"
+      },
+      "kind": "tools",
+      "max_turns": 3
+    },
+    {
+      "id": "bt-cleanup-99",
+      "starting_prompt": "Evaluation is complete. Please delete all the Bigtable instances we used in project cloud-bigtable-spacewalk: 'evalbench-prod-data', 'evalbench-legacy-archive', 'evalbench-staging-db', 'evalbench-customers-v2', 'evalbench-dev-db', and 'evalbench-metrics-db'. Confirm each deletion when asked.",
+      "conversation_plan": "The user is cleaning up. The agent should call delete_instance for each instance. The user will provide 'yes' for each confirmation request.",
+      "expected_trajectory": [
+        "mcp_Bigtable_delete_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "cloud-bigtable-spacewalk"
+      },
+      "kind": "tools",
+      "max_turns": 15
+    }
+  ]
+}

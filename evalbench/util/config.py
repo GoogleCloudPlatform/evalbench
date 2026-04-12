@@ -1,3 +1,4 @@
+import json
 import datetime
 import logging
 import os
@@ -15,7 +16,8 @@ logging.getLogger().setLevel(logging.INFO)
 
 
 def load_yaml_config(yaml_file):
-    config = parse_config(yaml_file)
+    current_directory = os.getcwd()
+    config = parse_config(os.path.join(current_directory, yaml_file))
     return config
 
 
@@ -27,12 +29,18 @@ def load_textproto(textproto_file, text_proto_object):
 
 def load_db_data_from_csvs(data_directory: str):
     tables: dict[str, List[str]] = {}
-    if not os.path.isdir(data_directory):
+    current_directory = os.getcwd()
+    if not os.path.isdir(os.path.join(current_directory, data_directory)):
         return tables
-    for filename in os.listdir(data_directory):
+    for filename in os.listdir(
+        os.path.join(
+            current_directory,
+            data_directory)):
         if filename.endswith(".csv"):
             table_name = filename[:-4]
-            with open(os.path.join(data_directory, filename), "r") as csvfile:
+            with open(
+                os.path.join(current_directory, data_directory, filename), "r"
+            ) as csvfile:
                 reader = csv.reader(csvfile)
                 rows = []
                 for row in reader:
@@ -42,24 +50,32 @@ def load_db_data_from_csvs(data_directory: str):
 
 
 def load_setup_scripts(setup_scripts_directory_path: str):
+    current_directory = os.getcwd()
     pre_setup = _load_setup_sql(
-        os.path.join(setup_scripts_directory_path, "pre_setup.sql"),
+        os.path.join(current_directory,
+                     setup_scripts_directory_path, "pre_setup.sql"),
     )
     setup = _load_setup_sql(
-        os.path.join(setup_scripts_directory_path, "setup.sql"),
+        os.path.join(current_directory,
+                     setup_scripts_directory_path, "setup.sql"),
     )
     # Check for setup.json and append it if exists
-    setup_json_path = os.path.join(setup_scripts_directory_path, "setup.json")
+    setup_json_path = os.path.join(
+        current_directory, setup_scripts_directory_path, "setup.json"
+    )
     if os.path.exists(setup_json_path):
         with open(setup_json_path, "r") as f:
             setup.append(f.read())
 
     # Check for post_setup.json
-    post_setup_json_path = os.path.join(setup_scripts_directory_path, "post_setup.json")
+    post_setup_json_path = os.path.join(
+        current_directory, setup_scripts_directory_path, "post_setup.json"
+    )
     if os.path.exists(post_setup_json_path):
-        import json
+
         with open(post_setup_json_path, "r") as f:
-            # Load as list of dicts, then convert back to strings for batch_execute
+            # Load as list of dicts, then convert back to strings for
+            # batch_execute
             try:
                 data = json.load(f)
                 if isinstance(data, list):
@@ -70,7 +86,10 @@ def load_setup_scripts(setup_scripts_directory_path: str):
                 post_setup = []
     else:
         post_setup = _load_setup_sql(
-            os.path.join(setup_scripts_directory_path, "post_setup.sql"),
+            os.path.join(
+                current_directory,
+                setup_scripts_directory_path,
+                "post_setup.sql"),
         )
     return (pre_setup, setup, post_setup)
 
@@ -79,7 +98,8 @@ def _load_setup_sql(sql_file_path: str):
     try:
         with open(sql_file_path, "r") as file:
             sql_content = file.read()
-        sql_commands = [cmd.strip() for cmd in sql_content.split(";") if cmd.strip()]
+        sql_commands = [cmd.strip()
+                        for cmd in sql_content.split(";") if cmd.strip()]
         return sql_commands
     except Exception as e:
         return []
@@ -110,28 +130,52 @@ def config_to_df(
             }
         )
     df = pd.DataFrame.from_dict(configs)
-    df[["job_id", "config", "value"]] = df[["job_id", "config", "value"]].astype(
-        "string"
-    )
+    df[["job_id", "config", "value"]] = df[[
+        "job_id", "config", "value"]].astype("string")
     return df
 
 
-def update_google3_relative_paths(experiment_config: dict, session_id: str):
+def update_google3_relative_paths(
+    experiment_config: dict, session_id: str, resource_map: dict
+):
     if isinstance(experiment_config, dict):
         for key, value in experiment_config.items():
             if isinstance(value, dict):
-                update_google3_relative_paths(value, session_id)
+                update_google3_relative_paths(value, session_id, resource_map)
             elif isinstance(value, list):
                 values = []
                 for sub_value in value:
-                    if isinstance(sub_value, str) and sub_value.startswith("google3/"):
-                        values.append(get_google3_relative_path(sub_value, session_id))
+                    if isinstance(sub_value,
+                                  str) and sub_value.startswith("google3/"):
+                        values.append(get_google3_relative_path(
+                            sub_value, session_id))
+                    elif isinstance(sub_value, str) and sub_value in resource_map:
+                        values.append(
+                            os.path.join(
+                                SESSION_RESOURCES_PATH,
+                                session_id,
+                                resource_map[sub_value],
+                            )
+                        )
+                    elif isinstance(sub_value, dict):
+                        for k, v in sub_value.items():
+                            if isinstance(v, str) and v.startswith("google3/"):
+                                sub_value[k] = get_google3_relative_path(
+                                    v, session_id
+                                )
+                        values.append(sub_value)
                     else:
                         values.append(sub_value)
                 experiment_config[key] = values
             elif isinstance(value, str) and value.startswith("google3/"):
                 experiment_config[key] = get_google3_relative_path(
                     experiment_config[key], session_id
+                )
+            elif isinstance(value, str) and value in resource_map:
+                experiment_config[key] = os.path.join(
+                    SESSION_RESOURCES_PATH,
+                    session_id,
+                    resource_map[value],
                 )
 
 
@@ -146,7 +190,12 @@ def get_google3_relative_path(value, session_id):
 def set_session_configs(session, experiment_config: dict):
     session["config"] = experiment_config
     if "dataset_config" in experiment_config and experiment_config["dataset_config"]:
-        session["dataset_config"] = experiment_config["dataset_config"]
+        # Handle both flat string paths and nested dicts (e.g. BIRD configs)
+        dc = experiment_config["dataset_config"]
+        if isinstance(dc, dict) and "prompts_file" in dc:
+            session["dataset_config"] = dc["prompts_file"]
+        else:
+            session["dataset_config"] = dc
     if (
         "database_configs" in experiment_config
         and experiment_config["database_configs"]
@@ -158,7 +207,8 @@ def set_session_configs(session, experiment_config: dict):
     else:
         session["db_configs"] = []
     if "model_config" in experiment_config and experiment_config["model_config"]:
-        session["model_config"] = load_yaml_config(experiment_config["model_config"])
+        session["model_config"] = load_yaml_config(
+            experiment_config["model_config"])
     session["setup_config"] = {}
     if "setup_directory" in experiment_config and experiment_config["setup_directory"]:
         session["setup_config"]["setup_directory"] = experiment_config[

@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 
-default:apply
+default:deploy
 .PHONY: default
 
 CONTAINER_ENGINE ?= docker
@@ -27,28 +27,40 @@ SHELL := /bin/bash
 TYPE != awk -F '=' '/GOOGLE_ROLE/ { print $$2 }' /etc/lsb-release
 
 build:
+	git rev-parse --short HEAD > viewer/version.txt || echo "unknown" > viewer/version.txt
 	$(CONTAINER_ENGINE) build  -t evalbench -f evalbench_service/Dockerfile .
 
 build-test:
 	$(CONTAINER_ENGINE) build  -t evalbench-test -f evalbench_service/Dockerfile .
 
 container:
-	$(CONTAINER_ENGINE) run --rm --net=host --name=evalbench_container \
+	$(CONTAINER_ENGINE) stop evalbench_server || true
+	$(CONTAINER_ENGINE) rm evalbench_server || true
+	$(CONTAINER_ENGINE) run --rm --name=evalbench_server \
+		$(if $(filter podman,$(CONTAINER_ENGINE)),--sysctl net.ipv6.conf.all.disable_ipv6=1) \
+		$(if $(filter docker,$(CONTAINER_ENGINE)),--net=host) \
 		-v ~/.config/gcloud:/root/.config/gcloud \
 		-e GOOGLE_CLOUD_PROJECT=cloud-db-nl2sql \
+		-e MESOP_XSRF_CHECK=false \
 		--cap-add=SYS_PTRACE	\
-		-e OPTION=--localhost \
-		-e TYPE=$(TYPE) evalbench:latest /evalbench/run_service.sh 
+		-p 3000:3000 \
+		-p 50051:50051 \
+		-e TYPE=$(TYPE) evalbench:latest
 
 shell:
-	$(CONTAINER_ENGINE) run -ti --rm --net=host --name=evalbench_container \
-		--cap-add=SYS_PTRACE	\
+	$(CONTAINER_ENGINE) stop evalbench_server || true
+	$(CONTAINER_ENGINE) rm evalbench_server || true
+	$(CONTAINER_ENGINE) run -ti --rm --name=evalbench_server \
+		$(if $(filter podman,$(CONTAINER_ENGINE)),--sysctl net.ipv6.conf.all.disable_ipv6=1) \
+		$(if $(filter docker,$(CONTAINER_ENGINE)),--net=host) \
+		--cap-add=SYS_PTRACE \
 		-v ~/.config/gcloud:/root/.config/gcloud \
-		-v ~/.gitconfig:/root/.gitconfig \
-		-v ~/.gitcookies:/root/.gitcookies \
+		-v $(PWD)/requirements.txt:/evalbench/requirements.txt \
 		-v $(PWD)/evalbench:/evalbench/evalbench \
+		-v $(PWD)/viewer:/evalbench/viewer \
+		-p 3000:3000 \
+		-p 50051:50051 \
 		-e GOOGLE_CLOUD_PROJECT=cloud-db-nl2sql \
-		-e OPTION=--localhost \
 		-e TYPE=$(TYPE) evalbench:latest bash
 
 push-test:
@@ -59,12 +71,18 @@ push:
 	$(CONTAINER_ENGINE) image tag evalbench:latest us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:latest
 	$(CONTAINER_ENGINE) push us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:latest
 
+push-corprun:
+	$(CONTAINER_ENGINE) image tag evalbench:latest us-central1-docker.pkg.dev/evalbench-dev/cr-images/eval_server:latest
+	$(CONTAINER_ENGINE) push us-central1-docker.pkg.dev/evalbench-dev/cr-images/eval_server:latest
+
 deploy:
 	gcloud container clusters get-credentials evalbench-directpath-cluster --zone us-central1-c --project cloud-db-nl2sql
 	kubectl apply -f evalbench_service/k8s/namespace.yaml
+	kubectl apply -f evalbench_service/k8s/pvc.yaml
 	kubectl apply -f evalbench_service/k8s/ksa.yaml
 	kubectl apply -f evalbench_service/k8s/service.yaml
 	kubectl apply -f evalbench_service/k8s/evalbench.yaml
+	kubectl apply -f evalbench_service/k8s/hpa.yaml
 	kubectl apply -f evalbench_service/k8s/vertical-autoscale.yaml
 
 deploy-test:
@@ -74,6 +92,24 @@ deploy-test:
 	kubectl apply -f evalbench_service/k8s/service-test.yaml
 	kubectl apply -f evalbench_service/k8s/evalbench-test.yaml
 	kubectl apply -f evalbench_service/k8s/vertical-autoscale-test.yaml
+
+deploy-corprun:
+	gcloud run deploy evalbench \
+		--project=evalbench-dev \
+		--region=us-central1 \
+		--image=us-central1-docker.pkg.dev/evalbench-dev/cr-images/eval_server:latest \
+		--port=3000 \
+		--memory=2Gi \
+		--min-instances=1 \
+		--no-cpu-throttling \
+		--service-account=crsvc-evalbench@evalbench-dev.iam.gserviceaccount.com \
+		--set-env-vars CLOUD_RUN=True,GOOGLE_CLOUD_PROJECT=evalbench-dev,MESOP_XSRF_CHECK=false \
+		--ingress=internal-and-cloud-load-balancing \
+		--network=cr-infra-vpc-network \
+		--subnet=cr-infra-subnetwork \
+		--vpc-egress=all-traffic \
+		--add-volume=name=session-files,type=cloud-storage,bucket=evalbench-sessions-cloud-db-nl2sql \
+		--add-volume-mount=volume=session-files,mount-path=/tmp_session_files
 
 undeploy:
 	gcloud container clusters get-credentials evalbench-directpath-cluster --zone us-central1-c --project cloud-db-nl2sql
@@ -86,6 +122,22 @@ undeploy-test:
 	kubectl delete -f evalbench_service/k8s/ksa-test.yaml
 	kubectl delete -f evalbench_service/k8s/service-test.yaml
 	kubectl delete -f evalbench_service/k8s/evalbench-test.yaml
+
+redeploy:
+	gcloud container clusters get-credentials evalbench-directpath-cluster --zone us-central1-c --project cloud-db-nl2sql
+	kubectl rollout restart deployment/evalbench-eval-server-deploy -n evalbench-namespace
+
+redeploy-test:
+	gcloud container clusters get-credentials evalbench-directpath-cluster --zone us-central1-c --project cloud-db-nl2sql
+	kubectl rollout restart deployment/evalbench-test-eval-server-deploy -n evalbench-test-namespace
+
+pod-shell:
+	gcloud container clusters get-credentials evalbench-directpath-cluster --zone us-central1-c --project cloud-db-nl2sql
+	kubectl exec -it deployment/evalbench-eval-server-deploy -n evalbench-namespace -c evalbench-eval -- /bin/bash
+
+pod-shell-test:
+	gcloud container clusters get-credentials evalbench-directpath-cluster --zone us-central1-c --project cloud-db-nl2sql
+	kubectl exec -it deployment/evalbench-test-eval-server-deploy -n evalbench-test-namespace -c evalbench-test-eval -- /bin/bash
 
 proto:
 	@python -m grpc_tools.protoc \
@@ -103,7 +155,11 @@ test:
 	@nox
 
 style:
-	@pycodestyle --exclude=evalbench/lib,evalbench/lib64 --max-line-length=120 evalbench
+	@pycodestyle --config=.pycodestyle --exclude=evalbench/lib,evalbench/lib64,evalproto evalbench
 
 run:
 	@./run_service.sh
+
+binary:
+	uv pip install pyinstaller
+	uv run pyinstaller pyinstaller.spec

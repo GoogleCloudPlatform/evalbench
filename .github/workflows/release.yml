@@ -1,0 +1,122 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Release
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name for testing or asset re-upload (e.g., v1.0.0)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-artifacts:
+    name: Build Binary
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform_name: linux
+            arch_name: x64
+          - os: macos-latest
+            platform_name: darwin
+            arch_name: arm64
+          - os: windows-latest
+            platform_name: win32
+            arch_name: x64
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Install PyInstaller
+        run: uv pip install pyinstaller
+
+      - name: Build binary with PyInstaller
+        run: uv run pyinstaller pyinstaller.spec
+
+      - name: Prepare distribution
+        shell: bash
+        run: |
+          mkdir -p staging
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            mv dist/evalbench.exe staging/
+          else
+            mv dist/evalbench staging/
+          fi
+          cp README.md staging/
+          cp LICENSE staging/
+
+      - name: Archive artifacts (Unix)
+        if: runner.os != 'Windows'
+        working-directory: staging
+        run: |
+          tar -czf ../${{ matrix.platform_name }}.${{ matrix.arch_name }}.evalbench.tar.gz *
+
+      - name: Archive artifacts (Windows)
+        if: runner.os == 'Windows'
+        working-directory: staging
+        run: |
+          Compress-Archive -Path * -DestinationPath ../${{ matrix.platform_name }}.${{ matrix.arch_name }}.evalbench.zip
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.platform_name }}-${{ matrix.arch_name }}
+          path: |
+            ${{ matrix.platform_name }}.${{ matrix.arch_name }}.evalbench.tar.gz
+            ${{ matrix.platform_name }}.${{ matrix.arch_name }}.evalbench.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-release:
+    needs: build-artifacts
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: binary-*
+          merge-multiple: true
+
+      - name: Upload Release Assets
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name != '')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name || github.event.inputs.tag_name }}
+          files: release-assets/*

@@ -1,0 +1,8 @@
+1,1,'parent',1.00,'2024-02-26 05:15:00','2024-02-26 05:15:00',true,'Parent tag for databases',1,NULL,false,NULL,NULL,NULL
+2,2,'parent',1.00,'2024-02-25 10:45:00','2024-02-25 10:45:00',true,'Parent tag for marketing',2,NULL,false,NULL,NULL,NULL
+3,3,'parent',1.00,'2024-02-25 10:45:00','2024-02-25 10:45:00',true,'Parent tag for programming',1,NULL,false,NULL,NULL,NULL
+4,4,'parent',1.00,'2024-02-25 10:45:00','2024-02-25 10:45:00',true,'Parent tag for technology',2,NULL,false,NULL,NULL,NULL
+5,5,'parent',1.00,'2024-02-25 10:45:00','2024-02-25 10:45:00',true,'Parent tag for science',1,NULL,false,NULL,NULL,NULL
+6,6,'parent',1.00,'2024-02-25 10:45:00','2024-02-25 10:45:00',true,'Parent tag for business',2,NULL,false,NULL,NULL,NULL
+7,7,'parent',1.00,'2024-02-25 10:45:00','2024-02-25 10:45:00',true,'Parent tag for health',1,NULL,false,NULL,NULL,NULL
+8,8,'parent',1.00,'2024-02-25 10:45:00','2024-02-25 10:45:00',true,'Parent tag for education',2,NULL,false,NULL,NULL,NULL

@@ -1,0 +1,92 @@
+{
+  "scenarios": [
+    {
+      "id": "cloud-sql-debug-01",
+      "starting_prompt": "list all instances in project astana-evaluation",
+      "conversation_plan": "Ask the agent to list instances in project astana-evaluation. Once all instances are listed if nl2code exist get its state and validate its RUNNABLE",
+      "expected_trajectory": [
+        "list_instances",
+        "get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 3
+    },
+    {
+      "id": "csql-create-ambiguous-multiturn-01",
+      "starting_prompt": "I need a database.",
+      "conversation_plan": "The user starts with a vague request. You want to CREATE a NEW Cloud SQL instance named 'my-pg-app'. If the agent offers to create one, say YES. When asked for details, provide 'my-pg-app' as the instance name and 'user_data' as the database name. Never claim to have an existing instance. The goal is for the agent to eventually create the database 'user_data' inside 'my-pg-app' in astana-evaluation project.",
+      "expected_trajectory": [
+        "list_instances",
+        "create_instance",
+        "create_database"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation",
+        "CLOUD_SQL_POSTGRES_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 6
+    },
+    {
+      "id": "csql-clone-instance-success",
+      "starting_prompt": "I want to clone the 'production-db' instance.",
+      "conversation_plan": "The user wants to create a clone of the instance 'nl2code'. If the agent asks for a new instance name, provide 'staging-nl2code'. If asked to confirm the project, say 'astana-evaluation'.",
+      "expected_trajectory": [
+        "get_instance",
+        "clone_instance",
+        "get_operation"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 6
+    },
+    {
+      "id": "csql-update-instance-scaling",
+      "starting_prompt": "Scale up my database instance.",
+      "conversation_plan": "The user wants to increase the resources for 'nl2code' in astana-evaluation project. When asked for specifics, state you want to change the tier/machine type to 'db-custom-4-15360' (4 vCPUs, 15GB RAM). Confirm the update when asked. Verify the operation status.",
+      "expected_trajectory": [
+        "get_instance",
+        "update_instance",
+        "get_operation"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 6
+    },
+    {
+      "id": "csql-password-rotation-flow",
+      "starting_prompt": "I need to rotate the password for a user on the 'magic' instance, but I forgot their exact username.",
+      "conversation_plan": "First, the user asks to list all users on the 'magic' instance. The agent will show the users. The user then identifies 'webapp_service_account' and asks to update its password to 'NewStrictPassword99!'. Confirm the password update. The project name is astana-evaluation",
+      "expected_trajectory": [
+        "list_users",
+        "update_user"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 5
+    },
+    {
+      "id": "csql-instance-not-found-failure",
+      "starting_prompt": "Update the instance 'non-existent-db-123' to have 8 cores.",
+      "conversation_plan": "The user asks to interact with an instance named 'non-existent-db-123' in astana-evaluation project that doesn't exist. The agent should try to get the instance details or update it directly, fail to find it, and inform the user. The user will then ask to list instances to find the correct name.",
+      "expected_trajectory": [
+        "update_instance",
+        "list_instances"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 4
+    }
+  ]
+}

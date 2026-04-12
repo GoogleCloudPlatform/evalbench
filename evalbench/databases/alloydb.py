@@ -28,7 +28,7 @@ class AlloyDB(PGDB):
                 user=self.username,
                 password=self.password,
                 db=self.db_name,
-                enable_iam_auth=False,
+                enable_iam_auth=self.use_adc,  # handled in PGDB
                 ip_type=AlloyDBIPTypes.PUBLIC,
             )
 

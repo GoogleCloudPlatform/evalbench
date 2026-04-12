@@ -14,36 +14,70 @@ spec:
     metadata:
       labels:
         app: evalbench-eval-server
+      annotations:
+        gke-gcsfuse/volumes: "true"
     spec:
+      securityContext:
+        fsGroup: 0
       serviceAccountName: evalbench-ksa
       containers:
       - image: us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:latest
         env:
         - name: EVAL_DB_PASSWORD
           value: pantheon
+        - name: UV_CACHE_DIR
+          value: /tmp/uv-cache
+        - name: EVAL_GCP_PROJECT_ID
+          value: cloud-db-nl2sql
+        - name: GOOGLE_CLOUD_PROJECT
+          value: cloud-db-nl2sql
+        - name: EVAL_GCP_PROJECT_REGION
+          value: us-central1
         imagePullPolicy: Always
         name: evalbench-eval
-        # go/gke-shipshape
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
         securityContext:
-          allowPrivilegeEscalation: false
+          allowPrivilegeEscalation: true
           capabilities:
             drop:
             - ALL
-          readOnlyRootFilesystem: true
-          runAsUser: 65532
-          runAsGroup: 65532
+          readOnlyRootFilesystem: false
+          runAsUser: 0
+          runAsGroup: 0
           seccompProfile:
             type: RuntimeDefault
         ports:
         - protocol: TCP
           containerPort: 50051
+          name: grpc
+        - protocol: TCP
+          containerPort: 8000
+          name: metrics
+        - protocol: TCP
+          containerPort: 3000
+          name: ui
         volumeMounts:
         - mountPath: /tmp
           name: tmp-volume
         - mountPath: /tmp_session_files
-          name: tmp-session-files
+          name: gcs-fuse-csi-vol
+        - mountPath: /tmp_sessions
+          name: evalbench-ssd-vol
       volumes:
       - name: tmp-volume
         emptyDir: {}
-      - name: tmp-session-files
-        emptyDir: {}
+      - name: gcs-fuse-csi-vol
+        csi:
+          driver: gcsfuse.csi.storage.gke.io
+          volumeAttributes:
+            bucketName: evalbench-sessions-cloud-db-nl2sql
+            mountOptions: "implicit-dirs,uid=0,gid=0"
+      - name: evalbench-ssd-vol
+        persistentVolumeClaim:
+          claimName: evalbench-ssd-pvc

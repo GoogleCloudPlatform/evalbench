@@ -1,0 +1,30 @@
+############################################################
+### Dataset / Eval Items
+############################################################
+dataset_config: datasets/gemini-cli-tools/gemini-cli.evalset.json
+dataset_format: gemini-cli-format
+
+# Orchestrator Configuration
+orchestrator: geminicli
+model_config: datasets/model_configs/gemini_cli_skills_model.yaml
+simulated_user_model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+
+############################################################
+### Scorer Related Configs
+############################################################
+scorers:
+  goal_completion:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  behavioral_metrics:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  turn_count: {}
+  end_to_end_latency: {}
+  tool_call_latency: {}
+  token_consumption: {}
+
+############################################################
+### Reporting Related Configs
+############################################################
+reporting:
+  csv:
+    output_directory: 'results'

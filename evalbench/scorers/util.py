@@ -41,7 +41,8 @@ def with_cache_execute(
     try:
         response = execution_method(prompt)
     except Exception as e:
-        logging.error(f"Execution method failed for prompt: {prompt} with error: {e}")
+        logging.error(
+            f"Execution method failed for prompt: {prompt} with error: {e}")
         return None
 
     # Attempt to cache the result
@@ -56,7 +57,7 @@ def with_cache_execute(
 
 def make_hashable(value):
     if isinstance(value, list):
-        return tuple(value)
+        return tuple(make_hashable(v) for v in value)
     elif isinstance(value, dict):
         return frozenset((k, make_hashable(v)) for k, v in value.items())
     return value

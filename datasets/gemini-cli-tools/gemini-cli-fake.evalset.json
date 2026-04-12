@@ -1,0 +1,30 @@
+{
+  "scenarios": [
+    {
+      "id": "fake-csql-create-instance-success",
+      "starting_prompt": "Create a new Cloud SQL instance named 'my-fake-db' in project 'astana-evaluation'. Use PostgreSQL 17, and set the password to 'password123'. Also use the 'Development' edition preset.",
+      "conversation_plan": "The user wants to create a database. All required parameters are in the starting prompt. The agent should call create_instance and report the success message back.",
+      "expected_trajectory": [
+        "create_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 3
+    },
+    {
+      "id": "fake-csql-get-instance-failure",
+      "starting_prompt": "Get the details for the Cloud SQL instance named 'missing-db' in project 'astana-evaluation'.",
+      "conversation_plan": "The user wants to get instance details. The agent should call get_instance, which is hardcoded to fail with an error 'Instance not found or permission denied'. The agent should explain that the instance could not be found based on the error.",
+      "expected_trajectory": [
+        "get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 3
+    }
+  ]
+}

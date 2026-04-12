@@ -1,11 +1,52 @@
-"""Server on GCP side for the evaluation service."""
+import os
+import sys
+from absl import logging
 
+import logging as py_logging
+from util.context import rpc_id_var
+
+
+# --- Logging Initialization (MUST happen before other imports) ---
+
+
+class UncloseableStream:
+    def __init__(self, stream):
+        self.stream = stream
+
+    def write(self, data):
+        self.stream.write(data)
+
+    def flush(self):
+        self.stream.flush()
+
+    def close(self):
+        pass  # Do not close the underlying stream
+
+
+class SessionIdFilter(py_logging.Filter):
+    def filter(self, record):
+        record.session_id = rpc_id_var.get()
+        return True
+
+
+logging.use_absl_handler()
+python_handler = logging.get_absl_handler().python_handler
+python_handler.stream = UncloseableStream(sys.stdout)
+
+formatter = py_logging.Formatter(
+    '%(asctime)s [%(session_id)s] %(levelname)s '
+    '%(filename)s:%(lineno)d: %(message)s'
+)
+python_handler.setFormatter(formatter)
+python_handler.addFilter(SessionIdFilter())
+
+
+# --- Remaining Imports ---
 import asyncio
 from collections.abc import Sequence
 
 from absl import app
 from absl import flags
-from absl import logging
 import grpc
 import util
 from eval_service import EvalServicer
@@ -15,16 +56,19 @@ from evalproto import eval_service_pb2_grpc
 _LOCALHOST = flags.DEFINE_bool(
     "localhost",
     False,
-    "Whether to use localhost. ALTS is only available on GCP, so this is useful"
-    " for local testing.",
+    "Whether to use localhost. ALTS is only available on GCP, so this is "
+    "useful for local testing.",
 )
 
+CLOUD_RUN = os.getenv("CLOUD_RUN", False)
+PORT = os.getenv("PORT", 50051)
 _cleanup_coroutines = []
 
 
 async def _serve():
     """Starts the server."""
     logging.info("Starting server")
+
     interceptors = [
         SessionManagerInterceptor("SessionManagerInterceptor"),
     ]
@@ -38,16 +82,13 @@ async def _serve():
     )
     servicer = EvalServicer()
     eval_service_pb2_grpc.add_EvalServiceServicer_to_server(servicer, server)
-    if _LOCALHOST.value:
-        # --localhost is for testing purpose. Use insecure_server_credentials()
-        # because local creds does not work between a client running on the host
-        # and a server running inside a container on the same host.
+    if _LOCALHOST.value or CLOUD_RUN:
         logging.info("Using localhost server insecure credentials per flag")
-        server.add_insecure_port("[::]:50051")
+        server.add_insecure_port("[::]:%s" % PORT)
     else:
         logging.info("Using ALTS server credentials")
         creds = grpc.alts_server_credentials()
-        server.add_secure_port("[::]:50051", creds)
+        server.add_secure_port("[::]:%s" % PORT, creds)
     await server.start()
     logging.info("Server started")
 
@@ -62,6 +103,7 @@ async def _serve():
 def main(argv: Sequence[str]) -> None:
     if len(argv) > 1:
         raise app.UsageError("Too many command-line arguments.")
+
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
