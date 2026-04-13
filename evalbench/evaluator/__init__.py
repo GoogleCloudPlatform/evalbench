@@ -16,7 +16,7 @@ def get_orchestrator(config, db_configs, setup_config, report_progress=False):
         return InteractOrchestrator(config, db_configs, setup_config, report_progress)
     elif orchestrator_type == "dataagent":
         return DataAgentOrchestrator(config, db_configs, setup_config, report_progress)
-    elif orchestrator_type == "geminicli":
+    elif orchestrator_type in ("geminicli", "agent"):
         return AgentOrchestrator(config, db_configs, setup_config, report_progress)
     else:
         return Orchestrator(config, db_configs, setup_config, report_progress)

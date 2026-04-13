@@ -122,7 +122,7 @@ def load_dataset_from_json(json_file_path, config):
     dataset_format = config.get("dataset_format", "evalbench-standard-format")
     if dataset_format == "bird-interact-format":
         all_items = load_bird_interact_dataset(json_file_path, config)
-    elif dataset_format == "gemini-cli-format":
+    elif dataset_format in ("gemini-cli-format", "agent-format"):
         all_items = load_gemini_cli_json(json_file_path)
     else:
         all_items = load_json(json_file_path)
@@ -137,13 +137,14 @@ def load_dataset_from_json(json_file_path, config):
         if "orchestrator" not in config:
             config["orchestrator"] = "interact"
         input_items = all_items
-    elif dataset_format == "gemini-cli-format":
-        config["orchestrator"] = "geminicli"
+    elif dataset_format in ("gemini-cli-format", "agent-format"):
+        if "orchestrator" not in config:
+            config["orchestrator"] = "agent" if dataset_format == "agent-format" else "geminicli"
         input_items = all_items
     else:
         raise ValueError("Dataset not in any of the recognised formats")
 
-    if dataset_format not in ["gemini-cli-format", "bird-interact-format"]:
+    if dataset_format not in ["gemini-cli-format", "agent-format", "bird-interact-format"]:
         totalEntries = sum(len(input_items.get(q, []))
                            for q in ["dql", "dml", "ddl"])
         logging.info(f"Converted {totalEntries} entries to EvalInput.")

@@ -227,6 +227,12 @@ class SQLServerDB(DB):
         if error:
             logging.info(f"Could not delete database: {error}")
 
+    def ensure_database_exists(self, database_name: str) -> None:
+        query = f"IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = N'{database_name}') CREATE DATABASE {database_name};"
+        _, error = self._execute_autocommit(query)
+        if error:
+            raise RuntimeError(f"Could not ensure database exists: {error}")
+
     def drop_all_tables(self):
         _, error = self._execute_autocommit(
             DROP_ALL_TABLES_QUERY.format(DATABASE=self.db_name)

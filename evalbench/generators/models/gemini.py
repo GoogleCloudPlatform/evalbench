@@ -46,6 +46,11 @@ class GeminiGenerator(QueryGenerator):
             return r
         except ResourceExhausted as e:
             raise ResourceExhaustedError(e)
+        except genai.errors.ClientError as e:
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                raise ResourceExhaustedError(e)
+            logger.exception("Unhandled exception during generate_content")
+            raise
         except Exception as e:
             logger.exception("Unhandled exception during generate_content")
             raise

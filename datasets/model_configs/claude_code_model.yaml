@@ -1,0 +1,35 @@
+# Claude Code CLI version.
+#   - Globally installed binary:  "claude"
+#   - Pin to a specific npm version (uses `npm exec --yes` like Gemini CLI):
+#       "@anthropic-ai/claude-code@2.1.85"
+claude_code_version: "@anthropic-ai/claude-code@2.1.85"
+
+generator: claude_code
+
+# Model to use.
+#   - Vertex model IDs: "claude-opus-4-6", "claude-sonnet-4@20250514"
+#   - Direct API model IDs: "claude-sonnet-4-20250514", "claude-opus-4-20250514"
+model: "claude-opus-4-6"
+
+# --- Auth Option 1: Vertex AI (GCP ADC, no API key) ---
+# Requires Claude models enabled in your GCP project via Model Garden.
+# use_vertex: true
+# vertex_project_id: "astana-evaluation"
+# vertex_region: "us-east5"
+
+use_vertex: false
+env:
+  ANTHROPIC_API_KEY: <API_KEY>
+  GOOGLE_CLOUD_PROJECT: "astana-evaluation"
+  GOOGLE_CLOUD_LOCATION: "us-central1"
+
+setup:
+  mcp_servers:
+    "cloud-sql":
+      httpUrl: "https://sqladmin.googleapis.com/mcp"
+      authProviderType: google_credentials
+      oauth:
+        scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+      headers:
+        X-Goog-User-Project: astana-evaluation

@@ -204,8 +204,14 @@ class Evaluator:
             eval_outputs.append(eval_output)
 
         if close_connections and db_queue:
-            while not db_queue.empty():
-                db = db_queue.get()
-                db.close_connections()
+            import queue
+            while True:
+                try:
+                    db = db_queue.get(block=False)
+                    db.close_connections()
+                except queue.Empty:
+                    break
+                except Exception:
+                    break
 
         return eval_outputs, scoring_results

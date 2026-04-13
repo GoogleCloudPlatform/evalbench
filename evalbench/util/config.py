@@ -227,10 +227,10 @@ def breakdown_db_configs_by_dialect(db_configs: list[dict]):
     db_configs_by_dialect = {}
     for db_config_yaml in db_configs:
         db_config = load_yaml_config(db_config_yaml)
-        dialect = db_config.get("dialect")
-        if not dict:
+        if not db_config:
             continue
-        elif dialect in db_configs_by_dialect:
+        dialect = db_config.get("dialect")
+        if dialect in db_configs_by_dialect:
             db_configs_by_dialect[dialect].append(db_config)
         else:
             db_configs_by_dialect[dialect] = [db_config]

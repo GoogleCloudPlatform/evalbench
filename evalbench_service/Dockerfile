@@ -29,7 +29,8 @@ RUN uv pip install --system --break-system-packages .
 RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN make proto -f ./Makefile
 RUN mkdir /tmp_session_files /tmp_sessions
-RUN cp /evalbench/evalbench_service/supervisord.conf /evalbench/supervisord.conf
+RUN cp /evalbench/evalbench_service/supervisord_evalbench.conf /evalbench/supervisord_evalbench.conf
+RUN cp /evalbench/evalbench_service/supervisord_cloudrun.conf /evalbench/supervisord_cloudrun.conf
 RUN cp /evalbench/evalbench_service/entrypoint.sh /evalbench/entrypoint.sh && chmod +x /evalbench/entrypoint.sh
 RUN chmod +x /evalbench/evalbench/run.sh
 
