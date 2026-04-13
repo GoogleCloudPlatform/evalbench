@@ -8,7 +8,16 @@ import redis
 import re
 from dataclasses import dataclass, field
 
-CLIENT = secretmanager_v1.SecretManagerServiceClient()
+# CLIENT is initialized lazily to avoid blocking network calls during module import,
+# which can cause hangs in restricted environments like Cloud Build.
+CLIENT = None
+
+
+def get_client():
+    global CLIENT
+    if CLIENT is None:
+        CLIENT = secretmanager_v1.SecretManagerServiceClient()
+    return CLIENT
 
 
 @dataclass
@@ -54,7 +63,7 @@ def get_db_secret(secret):
         name=secret_path,
     )
     # Make the request
-    response = CLIENT.access_secret_version(request=request)
+    response = get_client().access_secret_version(request=request)
 
     # Return the secret
     return response.payload.data.decode("utf-8")

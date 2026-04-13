@@ -161,8 +161,9 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             )
 
         job_id, run_time, results_tf, scores_tf = evaluator.process()
+        # Fallback to empty dict if reporting is present but null in YAML
         reporters = get_reporters(
-            config.get("reporting", {}), job_id, run_time
+            config.get("reporting") or {}, job_id, run_time
         )
 
         # Offload blocking results processing to a thread pool
