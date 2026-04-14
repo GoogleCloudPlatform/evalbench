@@ -57,7 +57,7 @@ class TestLLMRater(unittest.TestCase):
             generated_eval_result="",
             generated_error=""
         )
-        
+
         self.assertEqual(score, 100)
         self.assertIn("EQUIVALENT", reason)
         mock_model.generate.assert_called_once()
@@ -83,7 +83,7 @@ class TestLLMRater(unittest.TestCase):
             generated_eval_result="",
             generated_error=""
         )
-        
+
         self.assertEqual(score, 0)
         self.assertIn("NOT_EQUIVALENT", reason)
         self.assertEqual(mock_model.generate.call_count, 2)
@@ -112,7 +112,7 @@ class TestLLMRater(unittest.TestCase):
             generated_eval_result="",
             generated_error=""
         )
-        
+
         self.assertEqual(score, 100)
         self.assertIn("Exact Match was found", reason)
         mock_model.generate.assert_not_called()
