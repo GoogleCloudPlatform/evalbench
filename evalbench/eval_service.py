@@ -124,8 +124,12 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         session_id = rpc_id_var.get()
         session = SESSIONMANAGER.get_session(session_id)
         config, db_configs, model_config, setup_config = load_session_configs(session)
-        if config is not None:
-            config["session_id"] = session_id
+        if config is None:
+            context.set_code(grpc.StatusCode.FAILED_PRECONDITION)
+            context.set_details("Session not configured")
+            return eval_response_pb2.EvalResponse()
+
+        config["session_id"] = session_id
 
         streaming_eval = session.get("streaming_eval", False) if session else False
         loop = asyncio.get_event_loop()

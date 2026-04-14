@@ -1,7 +1,11 @@
 #!/usr/bin/make -f
 
-default:deploy
-.PHONY: default
+default: deploy
+
+.PHONY: default build build-test container shell push-test push push-corprun \
+        deploy deploy-test deploy-corprun create-precompute-job run-precompute-job \
+        undeploy undeploy-test redeploy redeploy-test pod-shell pod-shell-test \
+        proto clean test style run binary
 
 CONTAINER_ENGINE ?= docker
 
@@ -28,10 +32,10 @@ TYPE != awk -F '=' '/GOOGLE_ROLE/ { print $$2 }' /etc/lsb-release
 
 build:
 	git rev-parse --short HEAD > viewer/version.txt || echo "unknown" > viewer/version.txt
-	$(CONTAINER_ENGINE) build  -t evalbench -f evalbench_service/Dockerfile .
+	$(CONTAINER_ENGINE) build -t evalbench -f evalbench_service/Dockerfile .
 
 build-test:
-	$(CONTAINER_ENGINE) build  -t evalbench-test -f evalbench_service/Dockerfile .
+	$(CONTAINER_ENGINE) build -t evalbench-test -f evalbench_service/Dockerfile .
 
 container:
 	$(CONTAINER_ENGINE) stop evalbench_server || true
@@ -42,7 +46,7 @@ container:
 		-v ~/.config/gcloud:/root/.config/gcloud \
 		-e GOOGLE_CLOUD_PROJECT=cloud-db-nl2sql \
 		-e MESOP_XSRF_CHECK=false \
-		--cap-add=SYS_PTRACE	\
+		--cap-add=SYS_PTRACE \
 		-p 3000:3000 \
 		-p 50051:50051 \
 		-e TYPE=$(TYPE) evalbench:latest

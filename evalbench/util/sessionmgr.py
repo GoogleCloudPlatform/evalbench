@@ -1,11 +1,36 @@
 import os
-from threading import Thread
+from threading import Thread, Lock
 import logging
 import time
 from absl import app
 import uuid
 
 SESSION_RESOURCES_PATH = "/tmp_sessions/"
+
+
+class RWLock:
+    def __init__(self):
+        self.lock = Lock()
+        self.write_lock = Lock()
+        self.readers = 0
+
+    def acquire_read(self):
+        with self.lock:
+            self.readers += 1
+            if self.readers == 1:
+                self.write_lock.acquire()
+
+    def release_read(self):
+        with self.lock:
+            self.readers -= 1
+            if self.readers == 0:
+                self.write_lock.release()
+
+    def acquire_write(self):
+        self.write_lock.acquire()
+
+    def release_write(self):
+        self.write_lock.release()
 
 
 class SessionManager:
@@ -15,6 +40,7 @@ class SessionManager:
         self.running = True
         self.sessions = {}
         self.ttl = 10800
+        self.lock = RWLock()
         logging.debug("Starting reaper...")
         reaper = Thread(target=self.reaper, args=[])
         reaper.daemon = True
@@ -27,7 +53,11 @@ class SessionManager:
         return self.ttl
 
     def get_session(self, session_id):
-        return self.sessions.get(session_id)
+        self.lock.acquire_read()
+        try:
+            return self.sessions.get(session_id)
+        finally:
+            self.lock.release_read()
 
     def write_resource_files(self, session_id, resources):
         for resource in resources:
@@ -52,20 +82,32 @@ class SessionManager:
         os.rmdir(path)
 
     def create_session(self, session_id):
-        if session_id in self.sessions.keys():
-            logging.info(f"Session {session_id} already exists.")
+        self.lock.acquire_write()
+        try:
+            if session_id in self.sessions:
+                logging.info(f"Session {session_id} already exists.")
+                return self.sessions[session_id]
+            logging.info(f"Create session {session_id}.")
+            self.sessions[session_id] = {
+                "create_ts": time.time(), "session_id": session_id}
             return self.sessions[session_id]
-        logging.info(f"Create session {session_id}.")
-        self.sessions[session_id] = {
-            "create_ts": time.time(), "session_id": session_id}
-        return self.sessions[session_id]
+        finally:
+            self.lock.release_write()
 
     def get_sessions(self):
-        return self.sessions
+        self.lock.acquire_read()
+        try:
+            return dict(self.sessions)
+        finally:
+            self.lock.release_read()
 
     def delete_session(self, session_id):
-        if session_id in self.sessions:
-            del self.sessions[session_id]
+        self.lock.acquire_write()
+        try:
+            if session_id in self.sessions:
+                del self.sessions[session_id]
+        finally:
+            self.lock.release_write()
 
     def shutdown(self):
         self.running = False
@@ -73,7 +115,12 @@ class SessionManager:
     def reaper(self):
         while self.running:
             now = time.time()
-            to_delete = [sid for sid, s in self.sessions.items() if now - s["create_ts"] > self.ttl]
+            self.lock.acquire_read()
+            try:
+                to_delete = [sid for sid, s in self.sessions.items() if now - s["create_ts"] > self.ttl]
+            finally:
+                self.lock.release_read()
+
             for sid in to_delete:
                 logging.info(f"Delete session {sid}.")
                 self.delete_session(sid)
