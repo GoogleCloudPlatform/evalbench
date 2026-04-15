@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.3.1...v1.4.0) (2026-04-15)
+
+
+### Features
+
+* **scorer/llmrater:** add fallback to SQL logic comparison for empty results ([#326](https://github.com/GoogleCloudPlatform/evalbench/issues/326)) ([d168ac0](https://github.com/GoogleCloudPlatform/evalbench/commit/d168ac0233eb2fad3fb26d01086ac262a916d9cd))
+
 ## [1.3.1](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.3.0...v1.3.1) (2026-04-10)
 
 
