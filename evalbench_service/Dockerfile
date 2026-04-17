@@ -26,6 +26,10 @@ RUN uv pip install --system --break-system-packages -r requirements.txt
 RUN uv pip install --system --break-system-packages ./viewer
 RUN uv pip install --system --break-system-packages .
 
+# Create a non-root user for Claude Code. It refuses
+# --dangerously-skip-permissions when running as root.
+RUN useradd -m -s /bin/bash claudeuser
+
 RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN make proto -f ./Makefile
 RUN mkdir /tmp_session_files /tmp_sessions
