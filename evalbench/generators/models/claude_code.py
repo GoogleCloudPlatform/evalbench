@@ -3,6 +3,7 @@ import subprocess
 import os
 import json
 import logging
+import shlex
 import sys
 
 
@@ -38,6 +39,10 @@ class ClaudeCodeGenerator(QueryGenerator):
 
         os.makedirs(self.fake_home, exist_ok=True)
         os.makedirs(self.claude_config_dir, exist_ok=True)
+
+        # When running as root, chown fake_home so the non-root claudeuser
+        # (used to run Claude Code) can write to it.
+        self._chown_for_claudeuser = os.getuid() == 0
 
         self.env = querygenerator_config.get("env", {})
         self.env["HOME"] = self.fake_home
@@ -273,6 +278,30 @@ class ClaudeCodeGenerator(QueryGenerator):
         if allowed_tools:
             for tool in allowed_tools:
                 command.extend(["--allowedTools", tool])
+
+        # Claude Code refuses --dangerously-skip-permissions when running as
+        # root.  Wrap with `su` to drop privileges to a non-root user.
+        # Recursively chown the fake_home so claudeuser can write to it
+        # (covers .claude dir, gcloud creds, MCP config copied during init).
+        if self._chown_for_claudeuser:
+            subprocess.run(
+                ["chown", "-R", "claudeuser", self.fake_home],
+                check=False,
+            )
+            # Build env var exports for critical authentication/config vars.
+            # su doesn't inherit env by default, so we explicitly export them.
+            env_exports = []
+            for key in [
+                "HOME", "PATH", "GOOGLE_APPLICATION_CREDENTIALS",
+                "ANTHROPIC_VERTEX_PROJECT_ID", "ANTHROPIC_API_KEY",
+                "CLOUD_ML_REGION", "GOOGLE_CLOUD_PROJECT"
+            ]:
+                if key in env and env[key]:
+                    env_exports.append(f"export {key}={shlex.quote(env[key])}")
+
+            cli_cmd = " ".join(shlex.quote(c) for c in command)
+            full_cmd = "; ".join(env_exports + [cli_cmd]) if env_exports else cli_cmd
+            command = ["su", "-s", "/bin/bash", "claudeuser", "-c", full_cmd]
 
         logging.info(f"Running Claude Code CLI: {' '.join(command)}")
 
