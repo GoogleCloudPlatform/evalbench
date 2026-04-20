@@ -1,4 +1,5 @@
 import asyncio
+import os
 from aiologger import Logger
 import grpc
 from evalproto import eval_request_pb2, eval_connect_pb2, eval_config_pb2
@@ -28,7 +29,6 @@ class EvalbenchClient:
     def __init__(self, endpoint: str):
         self.endpoint = endpoint
         if self.endpoint == "local":
-            import os
             host = os.getenv("EVALBENCH_HOST", "localhost")
             address = f"{host}:50051"
             if os.getenv("EVALBENCH_INSECURE", "").lower() == "true":
