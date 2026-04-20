@@ -76,13 +76,17 @@ async def _serve():
     server = grpc.aio.server(interceptors=interceptors)
     servicer = EvalServicer()
     eval_service_pb2_grpc.add_EvalServiceServicer_to_server(servicer, server)
+    host = os.getenv("EVALBENCH_HOST", "[::]")
     if _LOCALHOST.value or CLOUD_RUN:
         logging.info("Using localhost server insecure credentials per flag")
-        server.add_insecure_port("[::]:%s" % PORT)
+        bound_port = server.add_insecure_port(f"{host}:{PORT}")
     else:
         logging.info("Using ALTS server credentials")
         creds = grpc.alts_server_credentials()
-        server.add_secure_port("[::]:%s" % PORT, creds)
+        bound_port = server.add_secure_port(f"{host}:{PORT}", creds)
+    
+    if bound_port == 0:
+        raise RuntimeError(f"Failed to bind to port {PORT} on host {host}!")
     await server.start()
     logging.info("Server started")
 

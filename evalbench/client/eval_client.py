@@ -28,9 +28,14 @@ class EvalbenchClient:
     def __init__(self, endpoint: str):
         self.endpoint = endpoint
         if self.endpoint == "local":
-            address = "localhost:50051"
-            channel_creds = grpc.alts_channel_credentials()
-            self.channel = grpc.aio.secure_channel(address, channel_creds)
+            import os
+            host = os.getenv("EVALBENCH_HOST", "localhost")
+            address = f"{host}:50051"
+            if os.getenv("EVALBENCH_INSECURE", "").lower() == "true":
+                self.channel = grpc.aio.insecure_channel(address)
+            else:
+                channel_creds = grpc.alts_channel_credentials()
+                self.channel = grpc.aio.secure_channel(address, channel_creds)
         else:
             address = f"{self.endpoint}:443"
             id_token = get_id_token(f"https://{self.endpoint}")
