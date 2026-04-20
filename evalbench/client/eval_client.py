@@ -30,7 +30,8 @@ class EvalbenchClient:
         self.endpoint = endpoint
         if self.endpoint == "local":
             host = os.getenv("EVALBENCH_HOST", "localhost")
-            address = f"{host}:50051"
+            port = os.getenv("PORT", "50051")
+            address = f"{host}:{port}"
             if os.getenv("EVALBENCH_INSECURE", "").lower() == "true":
                 self.channel = grpc.aio.insecure_channel(address)
             else:
