@@ -84,7 +84,7 @@ async def _serve():
         logging.info("Using ALTS server credentials")
         creds = grpc.alts_server_credentials()
         bound_port = server.add_secure_port(f"{host}:{PORT}", creds)
-    
+
     if bound_port == 0:
         raise RuntimeError(f"Failed to bind to port {PORT} on host {host}!")
     await server.start()
