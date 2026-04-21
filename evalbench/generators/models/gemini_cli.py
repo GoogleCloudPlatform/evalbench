@@ -651,25 +651,37 @@ class GeminiCliGenerator(QueryGenerator):
                 else:
                     logging.info(f"Successfully installed extension: {ext}")
 
-                ext_name_match = re.search(r"([^/]+?)(?:\.git)?$", ext)
-                if ext_name_match:
-                    search_name = ext_name_match.group(1)
-                    if os.path.exists(self.extensions_dir):
-                        for item in os.listdir(self.extensions_dir):
-                            if search_name in item:
-                                ext_dir = os.path.join(self.extensions_dir, item)
-                                self._patch_manifest_sensitive(ext_dir)
-                                # For gemini-cli >= 0.36.0, --skip-settings was used
-                                # so we must persist settings explicitly afterwards.
-                                if "--skip-settings" in install_cmd:
-                                    settings_values = (
-                                        extensions[ext].get("settings", {})
-                                        if extensions[ext]
-                                        else {}
-                                    )
-                                    self._configure_extension_settings(
-                                        item, ext_dir, settings_values, install_env
-                                    )
+                search_name = None
+                manifest_path = os.path.join(ext, "gemini-extension.json")
+                if os.path.exists(manifest_path):
+                    try:
+                        with open(manifest_path, "r") as f:
+                            manifest = json.load(f)
+                            search_name = manifest.get("name")
+                    except Exception as e:
+                        logging.warning(f"Failed to read local manifest at {manifest_path}: {e}")
+
+                if not search_name:
+                    ext_name_match = re.search(r"([^/]+?)(?:\.git)?$", ext)
+                    if ext_name_match:
+                        search_name = ext_name_match.group(1)
+
+                if search_name and os.path.exists(self.extensions_dir):
+                    for item in os.listdir(self.extensions_dir):
+                        if search_name in item:
+                            ext_dir = os.path.join(self.extensions_dir, item)
+                            self._patch_manifest_sensitive(ext_dir)
+                            # For gemini-cli >= 0.36.0, --skip-settings was used
+                            # so we must persist settings explicitly afterwards.
+                            if "--skip-settings" in install_cmd:
+                                settings_values = (
+                                    extensions[ext].get("settings", {})
+                                    if extensions[ext]
+                                    else {}
+                                )
+                                self._configure_extension_settings(
+                                    item, ext_dir, settings_values, install_env
+                                )
 
             except subprocess.TimeoutExpired:
                 logging.error(f"Installation of extension {ext} timed out.")
