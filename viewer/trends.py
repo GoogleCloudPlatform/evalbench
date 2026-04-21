@@ -37,34 +37,27 @@ def generate_d3_chart(df, x_col, y_col, hue_col, title, ylabel):
     <head>
         <script src="https://d3js.org/d3.v7.min.js"></script>
         <style>
-            body {{ 
-                font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; 
-                margin: 0;
-                padding: 0;
-            }}
-            .axis-label {{ font-size: 12px; fill: #64748b; }}
-            .line {{ fill: none; stroke-width: 3px; stroke-linecap: round; }}
-            .area {{ opacity: 0.05; }}
-            .dot {{ stroke: #fff; stroke-width: 2px; transition: r 0.2s, fill 0.2s; }}
-            .dot:hover {{ r: 8px; cursor: pointer; }}
-            .grid line {{ stroke: #e2e8f0; stroke-opacity: 0.7; shape-rendering: crispEdges; }}
-            .grid path {{ stroke-width: 0; }}
+            body {{ font-family: Inter, system-ui, -apple-system, sans-serif; margin: 0; padding: 20px; background: transparent; }}
+            .axis-label {{ font-size: 10px; fill: #64748b; }}
+            .grid line {{ stroke: #e2e8f0; stroke-opacity: 0.7; }}
+            .line {{ fill: none; stroke-width: 2px; }}
+            .area {{ opacity: 0.1; pointer-events: none; }}
+            .dot {{ stroke: #ffffff; stroke-width: 2px; cursor: pointer; }}
+            .chart-title {{ font-size: 16px; font-weight: 700; fill: #1f2937; }}
             .tooltip {{
                 position: absolute;
-                text-align: left;
-                padding: 12px;
-                font-size: 14px;
-                background: rgba(255, 255, 255, 0.95);
-                border: 1px solid #e2e8f0;
-                border-radius: 8px;
+                background: rgba(15, 23, 42, 0.9);
+                color: white;
+                padding: 8px 12px;
+                border-radius: 6px;
+                font-size: 12px;
                 pointer-events: none;
                 opacity: 0;
-                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-                backdrop-filter: blur(4px);
                 transition: opacity 0.2s;
+                box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+                z-index: 1000;
             }}
-            .legend {{ font-size: 14px; fill: #334155; font-weight: 500; }}
-            .chart-title {{ font-size: 18px; font-weight: 700; fill: #0f172a; }}
+            .legend {{ font-size: 12px; fill: #475569; font-weight: 500; }}
         </style>
     </head>
     <body>
@@ -88,9 +81,6 @@ def generate_d3_chart(df, x_col, y_col, hue_col, title, ylabel):
     </html>
     """
     return html
-
-
-
 
 def trends_component():
     results_dir = get_results_dir()
@@ -221,59 +211,54 @@ def trends_component():
                 st = me.state(State)
                 st.trends_product_filter = val
                 st.open_dropdown = ""
-            handler.__name__ = f"click_trends_product_{val}"
             return handler
             
-        with me.box(style=me.Style(display="flex", align_items="center", gap="8px", margin=me.Margin(bottom="16px"))):
-            me.text("Filter by Product:", style=me.Style(font_weight="600"))
-            
-            with me.box(style=me.Style(position="relative", width="200px")):
-                # Trigger
+        with me.box(style=me.Style(position="relative", width="300px")):
+            with me.box(
+                style=me.Style(
+                    padding=me.Padding.all("12px"),
+                    background="#f8fafc",
+                    border=me.Border.all(me.BorderSide(width="1px", color="#e2e8f0")),
+                    border_radius="6px",
+                    cursor="pointer",
+                    display="flex",
+                    justify_content="space-between",
+                    align_items="center",
+                ),
+                on_click=toggle_trends_product_dropdown,
+            ):
+                me.text(state.trends_product_filter if state.trends_product_filter else "All Products", style=me.Style(font_weight="500"))
+                me.text("▼", style=me.Style(font_size="10px", color="#64748b"))
+                
+            if state.open_dropdown == "trends_product":
                 with me.box(
                     style=me.Style(
+                        position="absolute",
+                        top="100%",
+                        left="0",
+                        z_index=10,
                         background="#ffffff",
                         border=me.Border.all(me.BorderSide(width="1px", color="#e2e8f0")),
                         border_radius="4px",
-                        padding=me.Padding.all("8px"),
-                        cursor="pointer",
-                    ),
-                    on_click=toggle_trends_product_dropdown,
-                ):
-                    me.text(
-                        state.trends_product_filter if state.trends_product_filter else "All Products",
-                        style=me.Style(color="#1f2937"),
+                        width="100%",
+                        max_height="200px",
+                        overflow_y="auto",
                     )
-                    
-                # Popup
-                if state.open_dropdown == "trends_product":
+                ):
+                    # All option
                     with me.box(
-                        style=me.Style(
-                            position="absolute",
-                            top="100%",
-                            left="0",
-                            z_index=10,
-                            background="#ffffff",
-                            border=me.Border.all(me.BorderSide(width="1px", color="#e2e8f0")),
-                            border_radius="4px",
-                            width="100%",
-                            max_height="200px",
-                            overflow_y="auto",
-                        )
+                        style=me.Style(padding=me.Padding.all("8px"), cursor="pointer"),
+                        on_click=make_product_handler(""),
                     ):
-                        # All option
+                        me.text("All Products", style=me.Style(color="#1f2937"))
+                        
+                    # Product options
+                    for p in all_products:
                         with me.box(
                             style=me.Style(padding=me.Padding.all("8px"), cursor="pointer"),
-                            on_click=make_product_handler(""),
+                            on_click=make_product_handler(p),
                         ):
-                            me.text("All Products", style=me.Style(color="#1f2937"))
-                            
-                        # Product options
-                        for p in all_products:
-                            with me.box(
-                                style=me.Style(padding=me.Padding.all("8px"), cursor="pointer"),
-                                on_click=make_product_handler(p),
-                            ):
-                                me.text(p, style=me.Style(color="#1f2937"))
+                            me.text(p, style=me.Style(color="#1f2937"))
         
         with me.box(style=me.Style(display="flex", flex_direction="column", gap="16px", width="100%")):
             me.text("AI Score", style=me.Style(font_size="16px", font_weight="600"))

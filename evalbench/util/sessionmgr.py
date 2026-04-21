@@ -41,10 +41,27 @@ class SessionManager:
         self.sessions = {}
         self.ttl = 10800
         self.lock = RWLock()
+        self.load_sessions_from_disk()
         logging.debug("Starting reaper...")
         reaper = Thread(target=self.reaper, args=[])
         reaper.daemon = True
         reaper.start()
+
+    def load_sessions_from_disk(self):
+        try:
+            if not os.path.exists(SESSION_RESOURCES_PATH):
+                return
+            for sid in os.listdir(SESSION_RESOURCES_PATH):
+                dir_path = os.path.join(SESSION_RESOURCES_PATH, sid)
+                if os.path.isdir(dir_path):
+                    mtime = os.path.getmtime(dir_path)
+                    logging.info(f"Loading session {sid} from disk with mtime {mtime}.")
+                    self.sessions[sid] = {
+                        "create_ts": mtime,
+                        "session_id": sid,
+                    }
+        except Exception as e:
+            logging.error(f"Error loading sessions from disk: {e}")
 
     def set_ttl(self, ttl):
         self.ttl = ttl
@@ -78,7 +95,10 @@ class SessionManager:
                 os.remove(file_path)
             for dir in dirs:
                 dir_path = os.path.join(root, dir)
-                os.rmdir(dir_path)
+                if os.path.islink(dir_path):
+                    os.unlink(dir_path)
+                else:
+                    os.rmdir(dir_path)
         os.rmdir(path)
 
     def create_session(self, session_id):

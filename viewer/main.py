@@ -237,6 +237,19 @@ def on_load(e: me.LoadEvent):
     if job_id and job_id in directories:
         state.selected_directory = job_id
 
+    tab = me.query_params.get("tab")
+    eval1 = me.query_params.get("eval1")
+    eval2 = me.query_params.get("eval2")
+
+    if tab == "compare" and eval1 and eval2:
+        state.selected_main_tab = "Compare"
+        state.compare_tab_visible = True
+        state.compare_evals = json.dumps([eval1, eval2])
+        # Trigger the AI comparison
+        state.ai_comparison = compare_evals(eval1, eval2)
+
+
+
 
 
 def status_component():
@@ -2281,36 +2294,25 @@ def render_app_content():
                             from trends import trends_component
                             state = me.state(State)
                 
+                            def on_main_tab_change(e: me.ButtonToggleChangeEvent):
+                                st = me.state(State)
+                                st.selected_main_tab = e.value
+                                logging.info(f"Main tab changed to: {e.value}")
+                                
                             with me.box(style=me.Style(margin=me.Margin(bottom="12px"))):
-                                tabs = ["Status", "List", "Charts"]
+                                buttons = [
+                                    me.ButtonToggleButton(label="Status", value="Status"),
+                                    me.ButtonToggleButton(label="List", value="List"),
+                                    me.ButtonToggleButton(label="Charts", value="Charts"),
+                                ]
                                 if state.compare_tab_visible:
-                                    tabs.append("Compare")
-                                for tab in tabs:
-                                    is_active = state.selected_main_tab == tab
-                                    tab_text = tab
-                                    if tab == "Compare" and state.ai_comparison == "Comparing...":
-                                        tab_text += " (Loading...)"
-                                        
-                                    click_handler = None
-                                    if tab == "Status": click_handler = on_status_tab_click
-                                    elif tab == "List": click_handler = on_list_tab_click
-                                    elif tab == "Charts": click_handler = on_charts_tab_click
-                                    elif tab == "Compare": click_handler = on_compare_tab_click
+                                    buttons.append(me.ButtonToggleButton(label="Compare", value="Compare"))
                                     
-                                    me.button(
-                                        tab_text,
-                                        on_click=click_handler,
-                                        style=me.Style(
-                                            padding=me.Padding.symmetric(vertical="6px", horizontal="12px"),
-                                            background="#1e293b" if is_active else "#f1f5f9",
-                                            color="#ffffff" if is_active else "#475569",
-                                            border_radius="4px",
-                                            cursor="pointer",
-                                            font_weight="600" if is_active else "500",
-                                            font_size="14px",
-                                            margin=me.Margin(right="8px")
-                                        ),
-                                    )
+                                me.button_toggle(
+                                    value=state.selected_main_tab,
+                                    buttons=buttons,
+                                    on_change=on_main_tab_change,
+                                )
                 
                             if state.selected_main_tab == "List":
                                 try:

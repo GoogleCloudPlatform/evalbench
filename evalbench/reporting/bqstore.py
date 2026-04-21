@@ -109,6 +109,7 @@ class BigQueryReporter(Reporter):
         )
         job_config = bigquery.LoadJobConfig()
         job_config.autodetect = True
+        job_config.allow_quoted_newlines = True
         job_config.schema_update_options = [
             bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION,
             bigquery.SchemaUpdateOption.ALLOW_FIELD_RELAXATION,

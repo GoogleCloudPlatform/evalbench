@@ -37,11 +37,11 @@ spec:
         name: evalbench-eval
         resources:
           requests:
-            cpu: "42"
-            memory: "168Gi"
+            cpu: "20"
+            memory: "80Gi"
           limits:
-            cpu: "42"
-            memory: "168Gi"
+            cpu: "20"
+            memory: "80Gi"
         securityContext:
           allowPrivilegeEscalation: true
           capabilities:
