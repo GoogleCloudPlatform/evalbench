@@ -46,47 +46,55 @@ class ClaudeCodeGenerator(QueryGenerator):
 
         self.env = querygenerator_config.get("env", {})
         self.env["HOME"] = self.fake_home
+        self.env["IS_SANDBOX"] = "1"
 
-        self.use_vertex = querygenerator_config.get("use_vertex", False)
-        if self.use_vertex:
-            self.env["CLAUDE_CODE_USE_VERTEX"] = "1"
-            vertex_project = querygenerator_config.get(
-                "vertex_project_id"
-            ) or self.env.get("ANTHROPIC_VERTEX_PROJECT_ID") or os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID")
-            if vertex_project:
-                self.env["ANTHROPIC_VERTEX_PROJECT_ID"] = vertex_project
+        api_key = self.env.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
 
-            vertex_region = querygenerator_config.get(
-                "vertex_region"
-            ) or self.env.get("CLOUD_ML_REGION") or os.environ.get("CLOUD_ML_REGION")
-            if vertex_region:
-                self.env["CLOUD_ML_REGION"] = vertex_region
-
-            adc_path = self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
-            if not adc_path:
-                adc_path = os.path.join(
-                    self.real_home, ".config", "gcloud",
-                    "application_default_credentials.json",
-                )
-            if adc_path and os.path.exists(adc_path):
-                fake_gcloud_dir = os.path.join(
-                    self.fake_home, ".config", "gcloud")
-                os.makedirs(fake_gcloud_dir, exist_ok=True)
-                fake_adc_path = os.path.join(
-                    fake_gcloud_dir, "application_default_credentials.json")
-                if os.path.abspath(adc_path) != os.path.abspath(fake_adc_path):
-                    import shutil
-                    shutil.copy2(adc_path, fake_adc_path)
-
-            if "CLOUDSDK_CONFIG" not in self.env:
-                self.env["CLOUDSDK_CONFIG"] = os.path.join(
-                    self.real_home, ".config", "gcloud"
-                )
+        if api_key:
+            self.env["ANTHROPIC_API_KEY"] = api_key
+            self.use_vertex = False
+            self.env.pop("CLAUDE_CODE_USE_VERTEX", None)
         else:
-            api_key = self.env.get("ANTHROPIC_API_KEY") or os.environ.get(
-                "ANTHROPIC_API_KEY")
-            if api_key:
-                self.env["ANTHROPIC_API_KEY"] = api_key
+            self.use_vertex = querygenerator_config.get("use_vertex", False)
+            if self.use_vertex:
+                self.env["CLAUDE_CODE_USE_VERTEX"] = "1"
+                vertex_project = querygenerator_config.get(
+                    "vertex_project_id"
+                ) or self.env.get("ANTHROPIC_VERTEX_PROJECT_ID") or os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID")
+                if vertex_project:
+                    self.env["ANTHROPIC_VERTEX_PROJECT_ID"] = vertex_project
+
+                vertex_region = querygenerator_config.get(
+                    "vertex_region"
+                ) or self.env.get("CLOUD_ML_REGION") or os.environ.get("CLOUD_ML_REGION")
+                if vertex_region:
+                    self.env["CLOUD_ML_REGION"] = vertex_region
+
+                # Skip ADC setup if Service Account key is available
+                if not os.path.exists("/etc/evalbench-sa-key/key.json"):
+                    adc_path = self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
+                    if not adc_path:
+                        adc_path = os.path.join(
+                            self.real_home, ".config", "gcloud",
+                            "application_default_credentials.json",
+                        )
+                    if adc_path and os.path.exists(adc_path) and not adc_path.startswith("/etc/"):
+                        fake_gcloud_dir = os.path.join(
+                            self.fake_home, ".config", "gcloud")
+                        os.makedirs(fake_gcloud_dir, exist_ok=True)
+                        fake_adc_path = os.path.join(
+                            fake_gcloud_dir, "application_default_credentials.json")
+                        if os.path.abspath(adc_path) != os.path.abspath(fake_adc_path):
+                            import shutil
+                            shutil.copy2(adc_path, fake_adc_path)
+
+                    if "CLOUDSDK_CONFIG" not in self.env:
+                        self.env["CLOUDSDK_CONFIG"] = os.path.join(
+                            self.fake_home, ".config", "gcloud"
+                        )
+                else:
+                    # Explicitly set GOOGLE_APPLICATION_CREDENTIALS for Claude if secret is mounted
+                    self.env["GOOGLE_APPLICATION_CREDENTIALS"] = "/etc/evalbench-sa-key/key.json"
 
         # Copy Claude Code auth credentials from real home to fake home
         # so the CLI can authenticate in the sandboxed environment
@@ -222,7 +230,8 @@ class ClaudeCodeGenerator(QueryGenerator):
     ) -> subprocess.CompletedProcess:
         try:
             result = subprocess.run(
-                command, capture_output=True, text=True, check=False, env=env
+                command, capture_output=True, text=True, check=False, env=env,
+                stdin=subprocess.DEVNULL
             )
             return result
         except FileNotFoundError:
@@ -283,25 +292,6 @@ class ClaudeCodeGenerator(QueryGenerator):
         # root.  Wrap with `su` to drop privileges to a non-root user.
         # Recursively chown the fake_home so claudeuser can write to it
         # (covers .claude dir, gcloud creds, MCP config copied during init).
-        if self._chown_for_claudeuser:
-            subprocess.run(
-                ["chown", "-R", "claudeuser", self.fake_home],
-                check=False,
-            )
-            # Build env var exports for critical authentication/config vars.
-            # su doesn't inherit env by default, so we explicitly export them.
-            env_exports = []
-            for key in [
-                "HOME", "PATH", "GOOGLE_APPLICATION_CREDENTIALS",
-                "ANTHROPIC_VERTEX_PROJECT_ID", "ANTHROPIC_API_KEY",
-                "CLOUD_ML_REGION", "GOOGLE_CLOUD_PROJECT"
-            ]:
-                if key in env and env[key]:
-                    env_exports.append(f"export {key}={shlex.quote(env[key])}")
-
-            cli_cmd = " ".join(shlex.quote(c) for c in command)
-            full_cmd = "; ".join(env_exports + [cli_cmd]) if env_exports else cli_cmd
-            command = ["su", "-s", "/bin/bash", "claudeuser", "-c", full_cmd]
 
         logging.info(f"Running Claude Code CLI: {' '.join(command)}")
 

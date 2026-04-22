@@ -28,6 +28,9 @@ class State:
     ai_summary: str = ""
     is_summarizing: bool = False
     ai_score: float = 0.0
+    status_agent_tab: str = "Gemini"
+    list_agent_tab: str = "Gemini"
+    trends_agent_tab: str = "Gemini"
     show_formula: bool = False
     rows_to_show: int = 10
     selected_evals: str = "[]"
@@ -281,6 +284,22 @@ def status_component():
         me.text("Product Performance (Latest Eval per Product)", type="headline-6")
         me.box(style=me.Style(height="8px"))
         
+        # Add agent tabs
+        state = me.state(State)
+        def on_agent_tab_change(e):
+            st = me.state(State)
+            st.status_agent_tab = e.value
+            
+        me.button_toggle(
+            value=state.status_agent_tab,
+            buttons=[
+                me.ButtonToggleButton(label="Gemini", value="Gemini"),
+                me.ButtonToggleButton(label="Claude", value="Claude"),
+            ],
+            on_change=on_agent_tab_change,
+        )
+        me.box(style=me.Style(height="16px"))
+        
         # Build summary data from precomputed trends cache
         data = []
         cache_file = os.path.join(results_dir, "trends_cache.csv")
@@ -292,6 +311,7 @@ def status_component():
                         'AI Score': row['ai_score'] if 'ai_score' in row else None,
                         'Product': row['product'],
                         'Dataset': row['dataset'] if 'dataset' in row and not pd.isna(row['dataset']) else "N/A",
+                        'model_config.generator': row['model_config.generator'] if 'model_config.generator' in row else "unknown",
                         'Trajectory Matcher': row['trajectory'],
                         'Goal Completion': row['goal_completion'] if 'goal_completion' in row else None,
                         'Turn Count': row['turn_count'],
@@ -304,6 +324,8 @@ def status_component():
                 logging.error(f"Error reading trends cache: {e}")
         else:
             logging.warning(f"Trends cache file not found at {cache_file}")
+            me.text("Trends cache file not found. Please run precompute.")
+            return
                     
         # Add requested default products if not present in data
         default_products = ['spanner', 'bigtable', 'alloydb', 'memorystore', 'dms', 'datastream']
@@ -313,7 +335,10 @@ def status_component():
                 data.append({
                     'Product': p,
                     'Dataset': 'N/A',
+                    'model_config.generator': 'unknown',
+                    'AI Score': None,
                     'Trajectory Matcher': None,
+                    'Goal Completion': None,
                     'Turn Count': None,
                     'Executable': None,
                     'Token Consumption': None,
@@ -332,7 +357,11 @@ def status_component():
                 df = df.sort_values('Run Time', ascending=False, na_position='last')
                 
                 # Group by Product and Dataset and take the first (latest)
-                summary_df = df.groupby(["Product", "Dataset"]).first().reset_index()
+                summary_df = df.groupby(["Product", "Dataset", "model_config.generator"], dropna=False).first().reset_index()
+                
+                # Filter by agent tab
+                if state.status_agent_tab == "Gemini":
+                    summary_df = summary_df[(summary_df['model_config.generator'] == 'gemini_cli') | (summary_df['model_config.generator'] == 'unknown') | (summary_df['model_config.generator'] == 'N/A') | summary_df['Product'].isin(default_products)]
                 
                 # Render table similar to lists tab
                 with me.box(
@@ -388,6 +417,12 @@ def status_component():
                     for idx, row in summary_df.iterrows():
                         is_na = pd.isna(row['Trajectory Matcher'])
                         
+                        # Mask scores in Claude tab if not Claude or N/A generator
+                        if state.status_agent_tab == "Claude":
+                            gen = str(row.get('model_config.generator', '')).lower()
+                            if not ('claude' in gen or gen == 'n/a'):
+                                is_na = True
+                        
                         with me.box(
                             style=me.Style(
                                 display="table-row",
@@ -427,12 +462,13 @@ def status_component():
                             product_val = str(row['Product'])
                             dataset_val = str(row['Dataset'])
                             
-                            def make_click_handler(p_val, d_val):
+                            def make_click_handler(p_val, d_val, g_val):
                                 def handler(e: me.ClickEvent):
                                     st = me.state(State)
                                     st.selected_main_tab = "List"
                                     st.product_filter = p_val
                                     st.dataset_filter = d_val
+                                    st.list_agent_tab = st.status_agent_tab
                                 
                                 safe_p = str(p_val).replace(" ", "_").replace(".", "_").replace("-", "_")
                                 safe_d = str(d_val).replace(" ", "_").replace(".", "_").replace("-", "_")
@@ -441,11 +477,11 @@ def status_component():
                                 globals()[handler_name] = handler
                                 return handler
                                 
-                            click_handler = make_click_handler(product_val, dataset_val)
+                            click_handler = make_click_handler(product_val, dataset_val, row.get('model_config.generator'))
                             render_cell(product_val, color="#2563eb", on_click=click_handler)
-                            render_cell(dataset_val, color="#2563eb", on_click=click_handler)
+                            render_cell("N/A" if is_na else dataset_val, color="#2563eb", on_click=None if is_na else click_handler)
                             
-                            if pd.isna(row['AI Score']):
+                            if is_na or 'AI Score' not in row or pd.isna(row['AI Score']):
                                 render_cell("N/A", color="#94a3b8", cell_bg="#e2e8f0")
                             else:
                                 score_str = f"{row['AI Score']:.0f}%"
@@ -463,7 +499,7 @@ def status_component():
                                 traj_str = f"{row['Trajectory Matcher']:.0f}%"
                                 render_cell(traj_str, get_color_for_pct(traj_str))
                                 
-                                if pd.isna(row['Goal Completion']):
+                                if 'Goal Completion' not in row or pd.isna(row['Goal Completion']):
                                     render_cell("N/A", color="#94a3b8", cell_bg="#e2e8f0")
                                 else:
                                     goal_str = f"{row['Goal Completion']:.0f}%"
@@ -527,6 +563,21 @@ def list_view_component(directories, results_dir):
                 margin=me.Margin(bottom="16px"),
             ),
         )
+        
+        # Add agent tabs for List view
+        def on_list_agent_tab_change(e):
+            st = me.state(State)
+            st.list_agent_tab = e.value
+            
+        me.button_toggle(
+            value=state.list_agent_tab,
+            buttons=[
+                me.ButtonToggleButton(label="Gemini", value="Gemini"),
+                me.ButtonToggleButton(label="Claude", value="Claude"),
+            ],
+            on_change=on_list_agent_tab_change,
+        )
+        me.box(style=me.Style(height="16px"))
         if directories:
             # Compute summaries if empty
             s = me.state(State)
@@ -539,9 +590,11 @@ def list_view_component(directories, results_dir):
     
             if not summaries:
                 cache_file = os.path.join(results_dir, "trends_cache.csv")
+                logging.info(f"trends_cache.csv exists: {os.path.exists(cache_file)}")
                 if os.path.exists(cache_file):
                     try:
                         cache_df = pd.read_csv(cache_file)
+                        logging.info(f"Loaded {len(cache_df)} rows from trends cache.")
                         for _, row in cache_df.iterrows():
                             score = row['ai_score'] if 'ai_score' in row else 0.0
                             if (score == 0.0 or pd.isna(score)) and 'ai_summary' in row and not pd.isna(row['ai_summary']):
@@ -556,6 +609,7 @@ def list_view_component(directories, results_dir):
                                 "product": str(row['product']) if not pd.isna(row['product']) else "N/A",
                                 "requester": str(row['requester']) if not pd.isna(row['requester']) else "N/A",
                                 "dataset": str(row['dataset']) if 'dataset' in row and not pd.isna(row['dataset']) else "N/A",
+                                "model_config.generator": str(row['model_config.generator']) if 'model_config.generator' in row and not pd.isna(row['model_config.generator']) else "unknown",
                                 "ai_score": f"{score:.0f}%" if not pd.isna(score) and score != 0.0 else "N/A",
                                 "exact_match": f"{row['exact_match']:.0f}%" if not pd.isna(row['exact_match']) else "N/A",
                                 "llmrater": f"{row['llmrater']:.0f}%" if not pd.isna(row['llmrater']) else "N/A",
@@ -681,6 +735,12 @@ def list_view_component(directories, results_dir):
                 )
     
             # Apply filters
+            if state.list_agent_tab == "Gemini":
+                summaries = [x for x in summaries if x.get("model_config.generator") == "gemini_cli" or x.get("model_config.generator") == "unknown" or x.get("model_config.generator") == "N/A" or x.get("product") in ['spanner', 'bigtable', 'alloydb', 'memorystore', 'dms', 'datastream']]
+            elif state.list_agent_tab == "Claude":
+                summaries = [x for x in summaries if x.get("model_config.generator") == "claude_code" or (x.get("model_config.generator") == "unknown" and 'claude' in str(x.get("product")).lower())]
+            logging.info(f"Number of summaries after tab filter: {len(summaries)}")
+
             if state.eval_id_filter:
                 summaries = [
                     x

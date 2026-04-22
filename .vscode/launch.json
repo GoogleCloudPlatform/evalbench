@@ -74,6 +74,18 @@
         "${workspaceFolder}/datasets/bat/example_run_config.yaml"
       ],
       "console": "integratedTerminal"
+    },
+    {
+      "name": "Precompute Trends",
+      "type": "debugpy",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/evalbench:${workspaceFolder}/evalbench/evalproto"
+      },
+      "request": "launch",
+      "program": "${workspaceFolder}/viewer/precompute_trends.py",
+      "console": "integratedTerminal"
     }
   ]
 }
