@@ -136,6 +136,26 @@ create-precompute-job:
 run-precompute-job:
 	gcloud run jobs execute precompute-job --project=evalbench-dev --region=us-central1
 
+create-recompute-job:
+	gcloud run jobs create recompute-job \
+		--project=evalbench-dev \
+		--region=us-central1 \
+		--image=us-central1-docker.pkg.dev/evalbench-dev/cr-images/eval_server:latest \
+		--cpu=4 \
+		--memory=8Gi \
+		--service-account=crsvc-evalbench@evalbench-dev.iam.gserviceaccount.com \
+		--set-env-vars CLOUD_RUN=True,GOOGLE_CLOUD_PROJECT=evalbench-dev \
+		--network=cr-infra-vpc-network \
+		--subnet=cr-infra-subnetwork \
+		--vpc-egress=all-traffic \
+		--add-volume=name=session-files,type=cloud-storage,bucket=evalbench-sessions-cloud-db-nl2sql \
+		--add-volume-mount=volume=session-files,mount-path=/tmp_session_files \
+		--command=python3 \
+		--args=viewer/precompute_trends.py,--clean
+
+run-recompute-job:
+	gcloud run jobs execute recompute-job --project=evalbench-dev --region=us-central1
+
 undeploy:
 	gcloud container clusters get-credentials evalbench-directpath-cluster --zone us-central1-c --project cloud-db-nl2sql
 	kubectl delete -f evalbench_service/k8s/evalbench.yaml

@@ -44,9 +44,6 @@ spec:
             memory: "80Gi"
         securityContext:
           allowPrivilegeEscalation: true
-          capabilities:
-            drop:
-            - ALL
           readOnlyRootFilesystem: false
           runAsUser: 0
           runAsGroup: 0
@@ -69,6 +66,9 @@ spec:
           name: gcs-fuse-csi-vol
         - mountPath: /tmp_sessions
           name: evalbench-ssd-vol
+        - mountPath: /etc/evalbench-sa-key
+          name: evalbench-sa-key-vol
+          readOnly: true
       volumes:
       - name: tmp-volume
         emptyDir: {}
@@ -81,3 +81,7 @@ spec:
       - name: evalbench-ssd-vol
         persistentVolumeClaim:
           claimName: evalbench-ssd-pvc
+      - name: evalbench-sa-key-vol
+        secret:
+          secretName: evalbench-sa-key
+          defaultMode: 0444

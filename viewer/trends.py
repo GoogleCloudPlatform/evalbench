@@ -122,11 +122,13 @@ def trends_component():
                     
                     requester_row = configs_df[configs_df['config'].str.contains('guitar_requester', na=False)]
                     product_row = configs_df[configs_df['config'].isin(['experiment_config.product_name', 'experiment_config.poduct_name'])]
+                    generator_row = configs_df[configs_df['config'] == 'model_config.generator']
                     
                     requester = requester_row['value'].values[0] if not requester_row.empty else "unknown"
                     product = product_row['value'].values[0] if not product_row.empty else "unknown"
                     dataset_path = configs_df[configs_df['config'] == 'experiment_config.dataset_config']['value'].values[0] if 'experiment_config.dataset_config' in configs_df['config'].values else "unknown"
                     dataset = os.path.basename(dataset_path) if dataset_path != "unknown" else "unknown"
+                    generator = generator_row['value'].values[0] if not generator_row.empty else "unknown"
                     
                     summary_df = pd.read_csv(summary_file)
                     
@@ -150,6 +152,7 @@ def trends_component():
                         'requester': requester,
                         'product': product,
                         'dataset': dataset,
+                        'generator': generator,
                         'latency': latency,
                         'tokens': tokens,
                         'trajectory': trajectory,
@@ -174,17 +177,35 @@ def trends_component():
     # Filter by product (remove unknown or empty)
     df = df[df['product'].notna() & (df['product'] != 'unknown') & (df['product'].str.strip() != '')]
     
+    state = me.state(State)
+    
+    # Apply agent tab filter
+    if state.trends_agent_tab == "Gemini":
+        df = df[df['model_config.generator'].str.contains('gemini', case=False) | (df['model_config.generator'] == 'unknown') | (df['model_config.generator'] == 'N/A') | df['product'].isin(['spanner', 'bigtable', 'alloydb', 'memorystore', 'dms', 'datastream'])]
+    elif state.trends_agent_tab == "Claude":
+        df = df[df['model_config.generator'].str.contains('claude', case=False) | ((df['model_config.generator'] == 'unknown') & df['product'].str.contains('claude', case=False))]
+
     # Extract unique products for dropdown
     all_products = sorted(df['product'].unique().tolist())
-    
-    state = me.state(State)
     
     # Apply filter if selected
     if state.trends_product_filter:
         df = df[df['product'] == state.trends_product_filter]
     
     if df.empty:
-        me.text("No data found for selected filters.")
+        with me.box(
+            style=me.Style(
+                padding=me.Padding.all("24px"),
+                background="#f8fafc",
+                border=me.Border.all(me.BorderSide(width="1px", color="#e2e8f0")),
+                border_radius="8px",
+                text_align="center",
+                color="#64748b",
+                width="100%",
+            )
+        ):
+            me.text("No data found for the selected filters.", style=me.Style(font_size="16px", font_weight="500", color="#475569"))
+            me.text("Try adjusting your agent or product selection.", style=me.Style(font_size="14px", color="#64748b", margin=me.Margin(top="8px")))
         return
         
     # Generate charts
@@ -197,6 +218,21 @@ def trends_component():
     # Render charts
     with me.box(style=me.Style(display="flex", flex_direction="column", gap="24px", padding=me.Padding.all("24px"), width="100%")):
         me.text("Trends for cloud-db-nl2sql-testing-jobs", style=me.Style(font_size="20px", font_weight="700"))
+        
+        # Add agent tabs for Charts view
+        def on_trends_agent_tab_change(e):
+            st = me.state(State)
+            st.trends_agent_tab = e.value
+            
+        me.button_toggle(
+            value=state.trends_agent_tab,
+            buttons=[
+                me.ButtonToggleButton(label="Gemini", value="Gemini"),
+                me.ButtonToggleButton(label="Claude", value="Claude"),
+            ],
+            on_change=on_trends_agent_tab_change,
+        )
+        me.box(style=me.Style(height="16px"))
         
         # Render custom dropdown
         def toggle_trends_product_dropdown(e: me.ClickEvent):

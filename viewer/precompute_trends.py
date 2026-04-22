@@ -1,6 +1,7 @@
 import os
 import logging
 import json
+import argparse
 import pandas as pd
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -30,6 +31,7 @@ def process_directory(d, results_dir):
     configs_file = os.path.join(run_dir, "configs.csv")
     summary_file = os.path.join(run_dir, "summary.csv")
 
+    logging.info(f"Checking files for {d}: configs={os.path.exists(configs_file)}, summary={os.path.exists(summary_file)}")
     if not (os.path.exists(configs_file) and os.path.exists(summary_file)):
         return None
 
@@ -37,14 +39,16 @@ def process_directory(d, results_dir):
         # Read configs
         configs_df = pd.read_csv(configs_file)
 
-        # Extract requester, product and dataset
+        # Extract requester, product, dataset and generator
         requester_row = configs_df[configs_df['config'].str.contains('guitar_requester', na=False)]
         product_row = configs_df[configs_df['config'].isin(['experiment_config.product_name', 'experiment_config.poduct_name'])]
+        generator_row = configs_df[configs_df['config'] == 'model_config.generator']
 
         requester = requester_row['value'].values[0] if not requester_row.empty else "unknown"
         product = product_row['value'].values[0] if not product_row.empty else "unknown"
         dataset_path = configs_df[configs_df['config'] == 'experiment_config.dataset_config']['value'].values[0] if 'experiment_config.dataset_config' in configs_df['config'].values else "unknown"
         dataset = os.path.basename(dataset_path) if dataset_path != "unknown" else "unknown"
+        generator = generator_row['value'].values[0] if not generator_row.empty else "unknown"
 
         # Read summary
         summary_df = pd.read_csv(summary_file)
@@ -103,7 +107,7 @@ def process_directory(d, results_dir):
         run_time = summary_df['run_time'].values[0] if not summary_df.empty else "unknown"
         if run_time != "unknown":
             try:
-                run_time = pd.to_datetime(run_time).strftime('%Y-%m-%d')
+                run_time = pd.to_datetime(run_time).strftime('%Y-%m-%d %H:%M:%S')
             except Exception as e:
                 logging.warning(f"Failed to parse run_time '{run_time}': {e}")
 
@@ -122,11 +126,13 @@ def process_directory(d, results_dir):
         except Exception as e:
             logging.error(f"Error generating AI summary for {d}: {e}")
 
+        logging.info(f"Successfully processed directory: {d}")
         return {
             'run_time': run_time,
             'requester': requester,
             'product': product,
             'dataset': dataset,
+            'model_config.generator': generator,
             'latency': latency,
             'tokens': tokens,
             'trajectory': trajectory,
@@ -140,7 +146,7 @@ def process_directory(d, results_dir):
             'ai_summary': ai_summary
         }
     except Exception as e:
-        logging.error(f"Error reading data from {d}: {e}")
+        logging.exception(f"Error reading data from {d}")
         return None
 
 
@@ -206,8 +212,8 @@ def precompute():
     
     from concurrent.futures import ThreadPoolExecutor
     
-    logging.info(f"Processing {len(new_directories)} new directories with 10 threads...")
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    logging.info(f"Processing {len(new_directories)} new directories with 50 threads...")
+    with ThreadPoolExecutor(max_workers=50) as executor:
         futures = [executor.submit(process_directory, d, results_dir) for d in new_directories]
         
         for future in futures:
@@ -261,4 +267,22 @@ def precompute():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--clean", action="store_true", help="Delete cache files before processing")
+    args = parser.parse_args()
+    
+    if args.clean:
+        results_dir = get_results_dir()
+        cache_file = os.path.join(results_dir, "trends_cache.csv")
+        filters_file = os.path.join(results_dir, "filters_cache.json")
+        processed_dirs_file = os.path.join(results_dir, "processed_dirs.json")
+        
+        for f in [cache_file, filters_file, processed_dirs_file]:
+            if os.path.exists(f):
+                try:
+                    os.remove(f)
+                    logging.info(f"Removed cache file: {f}")
+                except Exception as e:
+                    logging.error(f"Error removing file {f}: {e}")
+                
     precompute()

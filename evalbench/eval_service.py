@@ -212,11 +212,7 @@ def _process_results(
     )
     results = load_json(results_tf)
     results_df = report.get_dataframe(results)
-    if results_df.empty:
-        logging.warning(
-            "There were no matching evals in this run. Returning empty set."
-        )
-        return {}
+    assert not results_df.empty, "There were no matching evals in this run."
     report.quick_summary(results_df)
     scores = load_json(scores_tf)
     scores_df, summary_scores_df = analyzer.analyze_result(scores, config)
