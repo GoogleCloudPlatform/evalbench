@@ -124,7 +124,6 @@ class TestScoreTrajectoryMatcherIntegration(unittest.TestCase):
         # We need to patch TrajectoryMatcher to check if it was called with generator="claude_code"
         with patch("scorers.trajectorymatcher.TrajectoryMatcher") as MockMatcher:
             score.compare(eval_output, experiment_config, scoring_results, None)
-    
             # Check if TrajectoryMatcher was called with generator="claude_code"
             MockMatcher.assert_called_once()
             kwargs = MockMatcher.call_args.kwargs
