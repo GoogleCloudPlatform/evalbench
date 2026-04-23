@@ -11,7 +11,7 @@ from scorers.trajectorymatcher import TrajectoryMatcher
 class TestTrajectoryMatcher(unittest.TestCase):
 
     def test_default_behavior_no_normalization(self):
-        config = {"agent_type": "gemini-cli"}
+        config = {"generator": "gemini-cli"}
         matcher = TrajectoryMatcher(config)
         
         expected = ["ToolA", "ToolB", "ToolSearch"]
@@ -22,7 +22,7 @@ class TestTrajectoryMatcher(unittest.TestCase):
         self.assertIn("Jaccard Similarity Score: 100.00", explanation)
 
     def test_claude_behavior_remove_toolsearch(self):
-        config = {"agent_type": "claude"}
+        config = {"generator": "claude_code"}
         matcher = TrajectoryMatcher(config)
         
         expected = ["ToolA", "ToolSearch", "ToolB"]
@@ -34,7 +34,7 @@ class TestTrajectoryMatcher(unittest.TestCase):
         self.assertEqual(score, 100.0)
 
     def test_claude_behavior_strip_mcp_prefix(self):
-        config = {"agent_type": "claude"}
+        config = {"generator": "claude_code"}
         matcher = TrajectoryMatcher(config)
         
         expected = ["mcp__server__toolA", "ToolB"]
@@ -45,7 +45,7 @@ class TestTrajectoryMatcher(unittest.TestCase):
         self.assertEqual(score, 100.0)
 
     def test_claude_behavior_combined(self):
-        config = {"agent_type": "claude"}
+        config = {"generator": "claude_code"}
         matcher = TrajectoryMatcher(config)
         
         expected = ["mcp__server__toolA", "ToolSearch", "ToolB"]
@@ -55,7 +55,7 @@ class TestTrajectoryMatcher(unittest.TestCase):
         self.assertEqual(score, 100.0)
 
     def test_flexible_ordering(self):
-        config = {"agent_type": "claude"}
+        config = {"generator": "claude_code"}
         matcher = TrajectoryMatcher(config)
         
         expected = ["mcp__server__toolA", "ToolB"]
@@ -66,7 +66,7 @@ class TestTrajectoryMatcher(unittest.TestCase):
         self.assertEqual(score, 100.0)
 
     def test_strict_ordering(self):
-        config = {"agent_type": "claude", "enforce_order": True}
+        config = {"generator": "claude_code", "enforce_order": True}
         matcher = TrajectoryMatcher(config)
         
         expected = ["mcp__server__toolA", "ToolB"]
@@ -119,14 +119,14 @@ class TestScoreTrajectoryMatcherIntegration(unittest.TestCase):
         
         scoring_results = []
         
-        # We need to patch TrajectoryMatcher to check if it was called with agent_type="claude"
+        # We need to patch TrajectoryMatcher to check if it was called with generator="claude_code"
         with patch("scorers.trajectorymatcher.TrajectoryMatcher") as MockMatcher:
             score.compare(eval_output, experiment_config, scoring_results, None)
             
-            # Check if TrajectoryMatcher was called with agent_type="claude"
+            # Check if TrajectoryMatcher was called with generator="claude_code"
             MockMatcher.assert_called_once()
             kwargs = MockMatcher.call_args.kwargs
-            self.assertEqual(kwargs.get("agent_type"), "claude")
+            self.assertEqual(kwargs.get("generator"), "claude_code")
 
 if __name__ == '__main__':
     unittest.main()
