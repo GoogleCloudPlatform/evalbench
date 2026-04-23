@@ -57,8 +57,10 @@ def compare(
             executablesql.ExecutableGenerationScore(scorers["executable_sql"])
         )
     if "trajectory_matcher" in scorers:
+        model_config_path = experiment_config.get("model_config", "")
+        agent_type = "claude" if "claude" in model_config_path else "gemini-cli"
         comparators.append(
-            trajectorymatcher.TrajectoryMatcher(scorers["trajectory_matcher"])
+            trajectorymatcher.TrajectoryMatcher(scorers["trajectory_matcher"], agent_type=agent_type)
         )
     if "goal_completion" in scorers:
         comparators.append(
