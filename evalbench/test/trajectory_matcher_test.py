@@ -81,8 +81,5 @@ class TestTrajectoryMatcher(unittest.TestCase):
         self.assertLess(score, 100.0)
 
 
-
-
-
 if __name__ == '__main__':
     unittest.main()
