@@ -18,7 +18,6 @@ from scorers import toolcalllatency
 from scorers import tokenconsumption
 from dataset.evaloutput import EvalOutput
 import logging
-import yaml
 
 
 def compare(
@@ -58,19 +57,8 @@ def compare(
             executablesql.ExecutableGenerationScore(scorers["executable_sql"])
         )
     if "trajectory_matcher" in scorers:
-        model_config_path = experiment_config.get("model_config", "")
-        generator = None
-        if model_config_path:
-            try:
-                with open(model_config_path, "r") as f:
-                    model_config = yaml.safe_load(f)
-                    if model_config.get("generator") == "claude_code":
-                        generator = "claude_code"
-            except Exception as e:
-                logging.warning(f"Failed to load model config from {model_config_path}: {e}")
-
         comparators.append(
-            trajectorymatcher.TrajectoryMatcher(scorers["trajectory_matcher"], generator=generator)
+            trajectorymatcher.TrajectoryMatcher(scorers["trajectory_matcher"])
         )
     if "goal_completion" in scorers:
         comparators.append(

@@ -81,53 +81,7 @@ class TestTrajectoryMatcher(unittest.TestCase):
         self.assertLess(score, 100.0)
 
 
-class TestScoreTrajectoryMatcherIntegration(unittest.TestCase):
 
-    @patch("builtins.open", new_callable=mock_open, read_data="generator: claude_code")
-    @patch("yaml.safe_load")
-    def test_score_detects_claude_from_config(self, mock_yaml_load, mock_file):
-        mock_yaml_load.return_value = {"generator": "claude_code"}
-
-        from scorers import score
-        from dataset.evaloutput import EvalOutput
-
-        class DummyEvalInput:
-            def __init__(self, data):
-                self.__dict__.update(data)
-
-        dummy_input = DummyEvalInput({
-            "id": 1,
-            "generated_sql": "SELECT 1",
-            "golden_sql": "SELECT 1",
-            "query_type": "dql",
-            "golden_result": [],
-            "golden_error": "",
-            "generated_result": [],
-            "generated_error": "",
-            "dialects": [],
-            "database": "",
-            "job_id": "",
-            "eval_results": "",
-            "golden_eval_results": ""
-        })
-        eval_output = EvalOutput(dummy_input)
-
-        experiment_config = {
-            "model_config": "dummy_path.yaml",
-            "scorers": {
-                "trajectory_matcher": {}
-            }
-        }
-
-        scoring_results = []
-
-        # We need to patch TrajectoryMatcher to check if it was called with generator="claude_code"
-        with patch("scorers.trajectorymatcher.TrajectoryMatcher") as MockMatcher:
-            score.compare(eval_output, experiment_config, scoring_results, None)
-            # Check if TrajectoryMatcher was called with generator="claude_code"
-            MockMatcher.assert_called_once()
-            kwargs = MockMatcher.call_args.kwargs
-            self.assertEqual(kwargs.get("generator"), "claude_code")
 
 
 if __name__ == '__main__':
