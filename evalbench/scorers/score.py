@@ -18,6 +18,7 @@ from scorers import toolcalllatency
 from scorers import tokenconsumption
 from dataset.evaloutput import EvalOutput
 import logging
+import yaml
 
 
 def compare(
@@ -58,7 +59,16 @@ def compare(
         )
     if "trajectory_matcher" in scorers:
         model_config_path = experiment_config.get("model_config", "")
-        agent_type = "claude" if "claude" in model_config_path else "gemini-cli"
+        agent_type = "gemini-cli"
+        if model_config_path:
+            try:
+                with open(model_config_path, "r") as f:
+                    model_config = yaml.safe_load(f)
+                    if model_config.get("generator") == "claude_code":
+                        agent_type = "claude"
+            except Exception as e:
+                logging.warning(f"Failed to load model config from {model_config_path}: {e}")
+        
         comparators.append(
             trajectorymatcher.TrajectoryMatcher(scorers["trajectory_matcher"], agent_type=agent_type)
         )
