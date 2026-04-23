@@ -11,7 +11,7 @@ from scorers.trajectorymatcher import TrajectoryMatcher
 class TestTrajectoryMatcher(unittest.TestCase):
 
     def test_default_behavior_no_normalization(self):
-        config = {"generator": "gemini-cli"}
+        config = {}
         matcher = TrajectoryMatcher(config)
         
         expected = ["ToolA", "ToolB", "ToolSearch"]

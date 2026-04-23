@@ -59,7 +59,7 @@ def compare(
         )
     if "trajectory_matcher" in scorers:
         model_config_path = experiment_config.get("model_config", "")
-        generator = "gemini-cli"
+        generator = None
         if model_config_path:
             try:
                 with open(model_config_path, "r") as f:
