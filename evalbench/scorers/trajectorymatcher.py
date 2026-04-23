@@ -56,7 +56,7 @@ class TrajectoryMatcher(comparator.Comparator):
     def _normalize_trajectory(self, trajectory: List[str]) -> List[str]:
         if not trajectory:
             return []
-        
+
         normalized = []
         for tool in trajectory:
             if self.generator == "claude_code":

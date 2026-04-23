@@ -68,7 +68,7 @@ def compare(
                         generator = "claude_code"
             except Exception as e:
                 logging.warning(f"Failed to load model config from {model_config_path}: {e}")
-        
+
         comparators.append(
             trajectorymatcher.TrajectoryMatcher(scorers["trajectory_matcher"], generator=generator)
         )
