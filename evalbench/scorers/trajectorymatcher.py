@@ -16,11 +16,11 @@ class TrajectoryMatcher(comparator.Comparator):
     Jaccard Similarity for flexible ordering or Levenshtein distance for strict order enforcement.
     """
 
-    def __init__(self, config: dict, generator: str = None):
+    def __init__(self, config: dict):
         self.name = "trajectory_matcher"
         self.config = config
         self.enforce_order = config.get("enforce_order", False)
-        self.generator = generator or config.get("generator", "")
+        self.generator = config.get("generator", "")
 
     def _levenshtein_distance(self, seq1: List[str], seq2: List[str]) -> int:
         n, m = len(seq1), len(seq2)
