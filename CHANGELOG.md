@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.5.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.4.0...v1.5.0) (2026-04-26)
+
+
+### Features
+
+* add support for custom host configuration and insecure gRPC channels via environment variables ([#336](https://github.com/GoogleCloudPlatform/evalbench/issues/336)) ([05efee0](https://github.com/GoogleCloudPlatform/evalbench/commit/05efee0c3d4b9d81120fadccd5261be89ae8fd19))
+
+
+### Bug Fixes
+
+* **geminicli:** resolve extension names from local manifests to apply settings ([#338](https://github.com/GoogleCloudPlatform/evalbench/issues/338)) ([4d82afe](https://github.com/GoogleCloudPlatform/evalbench/commit/4d82afeb814c0221b75de94e208c15041f3d2b75))
+
 ## [1.4.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.3.1...v1.4.0) (2026-04-15)
 
 
