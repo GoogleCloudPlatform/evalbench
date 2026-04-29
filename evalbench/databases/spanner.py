@@ -105,10 +105,23 @@ class SpannerDB(DB):
         is_ddl = any(upper_query.startswith(prefix) for prefix in ["CREATE", "ALTER", "DROP", "RENAME"])
 
         if is_ddl:
-            logging.info(f"Executing DDL in Spanner: {query[:100]}...")
+            logging.info(f"Executing mixed DDL/DML sequence in Spanner...")
             try:
-                op = self.database.update_ddl([query])
-                op.result(timeout=600)
+                statements = [s.strip() for s in query.split(";") if s.strip()]
+                for stmt in statements:
+                    stmt = stmt.strip()
+                    if stmt.endswith(";"):
+                        stmt = stmt[:-1].strip()
+                    if not stmt:
+                        continue
+                    upper_stmt = stmt.upper()
+                    is_sub_ddl = any(upper_stmt.startswith(prefix) for prefix in ["CREATE", "ALTER", "DROP", "RENAME"])
+                    if is_sub_ddl:
+                        op = self.database.update_ddl([stmt])
+                        op.result(timeout=600)
+                    else:
+                        # Route DML statement to normal execution
+                        self._execute(stmt, eval_query=None, rollback=False)
                 return [{"status": "success"}], None, None
             except Exception as e:
                 return None, None, str(e)
