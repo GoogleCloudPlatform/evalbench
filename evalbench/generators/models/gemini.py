@@ -35,22 +35,33 @@ class GeminiGenerator(QueryGenerator):
         self.base_prompt = self.base_prompt
 
     def generate_internal(self, prompt):
+        import time
+        from google.genai.errors import ClientError
         logger = logging.getLogger(__name__)
-        try:
-            response = self.client.models.generate_content(
-                model=self.vertex_model,
-                contents=self.base_prompt + prompt,
-            )
-            if isinstance(response, GenerateContentResponse):
-                r = sanitize_sql(response.text)
-            return r
-        except ResourceExhausted as e:
-            raise ResourceExhaustedError(e)
-        except genai.errors.ClientError as e:
-            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                raise ResourceExhaustedError(e)
-            logger.exception("Unhandled exception during generate_content")
-            raise
-        except Exception as e:
-            logger.exception("Unhandled exception during generate_content")
-            raise
+        for attempt in range(5):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.vertex_model,
+                    contents=self.base_prompt + prompt,
+                )
+                if isinstance(response, GenerateContentResponse):
+                    r = sanitize_sql(response.text)
+                return r
+            except ResourceExhausted as e:
+                if attempt < 4:
+                    logger.warning(f"ResourceExhausted. Retrying attempt {attempt + 1} after sleep...")
+                    time.sleep(2 ** attempt * 2)
+                else:
+                    raise ResourceExhaustedError(e)
+            except genai.errors.ClientError as e:
+                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                    if attempt < 4:
+                        logger.warning(f"429/RESOURCE_EXHAUSTED. Retrying attempt {attempt + 1} after sleep...")
+                        time.sleep(2 ** attempt * 2)
+                    else:
+                        raise ResourceExhaustedError(e)
+                else:
+                    raise
+            except Exception as e:
+                logger.exception("Unhandled exception during generate_content")
+                raise
