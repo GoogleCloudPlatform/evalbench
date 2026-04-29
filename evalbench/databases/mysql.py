@@ -1,4 +1,3 @@
-import sqlalchemy
 import sqlparse
 import pymysql
 from sqlalchemy import text, MetaData
@@ -313,23 +312,35 @@ class MySQLDB(DB):
             DROP_ALL_TABLES_QUERY.format(DATABASE=self.db_name).split(";")
         )
 
-    def insert_data(self, data: dict[str, List[str]],
-                    setup: Optional[List[str]] = None):
+    def insert_data(self, data: dict[str, List[str]], setup: Optional[List[str]] = None) -> None:
         if not data:
             return
-        insertion_statements = []
-        for table_name in data:
-            for row in data[table_name]:
-                inline_columns = ", ".join([f"{value}" for value in row])
-                insertion_statements.append(
-                    f"INSERT INTO `{table_name}` VALUES ({inline_columns});"
-                )
+
         try:
-            self.batch_execute(insertion_statements)
-        except RuntimeError as error:
+            with self.engine.begin() as connection:
+                for table_name in data:
+                    rows = data[table_name]
+                    if not rows:
+                        continue
+
+                    num_cols = len(rows[0])
+                    param_placeholders = ", ".join([f":v{i}" for i in range(num_cols)])
+                    stmt = text(f"INSERT INTO `{table_name}` VALUES ({param_placeholders})")
+
+                    params = []
+                    for row in rows:
+                        p = {}
+                        for i, val in enumerate(row):
+                            p[f"v{i}"] = self._clean_insert_value(val)
+                        params.append(p)
+
+                    connection.execute(stmt, params)
+        except Exception as error:
             raise RuntimeError(f"Could not insert data into database: {error}")
 
-    #####################################################
+    def _format_boolean_value(self, val: str) -> Any:
+        return 1 if val == "true" else 0
+    ######################################################
     #####################################################
     # Database User Management
     #####################################################

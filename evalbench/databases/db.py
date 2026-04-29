@@ -231,6 +231,21 @@ class DB(ABC):
         """
         raise NotImplementedError("Subclasses must implement this method")
 
+    def _format_boolean_value(self, val: str) -> Any:
+        return val
+
+    def _clean_insert_value(self, val: Any) -> Any:
+        if val is None or str(val).strip().lower() in ("", "null", "none"):
+            return None
+        v = str(val).strip()
+        if v.startswith("'") and v.endswith("'"):
+            v = v[1:-1]
+
+        lower_v = v.lower()
+        if lower_v in ("true", "false"):
+            return self._format_boolean_value(lower_v)
+        return v
+
     @abstractmethod
     def close_connections(self) -> None:
         """
