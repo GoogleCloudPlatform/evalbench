@@ -297,32 +297,113 @@ class SpannerDB(DB):
                 raise RuntimeError(
                     f"Failed to create Spanner DB {database_name}: {e}") from e
 
+    def _get_quote_char(self):
+        return '"' if self.expected_dialect_str == "POSTGRESQL" else '`'
+
+    def _execute_ddl_batch(self, commands, batch_size=50):
+        for i in range(0, len(commands), batch_size):
+            op = self.database.update_ddl(commands[i:i + batch_size])
+            op.result(timeout=300)
+
+    def _drop_views(self):
+        with self.database.snapshot() as snapshot:
+            if self.expected_dialect_str == "POSTGRESQL":
+                res = snapshot.execute_sql("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'VIEW'", timeout=15)
+            else:
+                res = snapshot.execute_sql("SELECT table_name FROM information_schema.tables WHERE (table_schema = '' OR table_schema IS NULL) AND table_type = 'VIEW'", timeout=15)
+            view_names = [row[0] for row in res]
+
+        if view_names:
+            quote = self._get_quote_char()
+            commands = [f"DROP VIEW {quote}{v}{quote}" for v in view_names]
+            try:
+                self._execute_ddl_batch(commands)
+            except Exception:
+                for v in view_names:
+                    try:
+                        self.database.update_ddl([f"DROP VIEW {quote}{v}{quote}"]).result(timeout=60)
+                    except Exception:
+                        pass
+
+    def _drop_indices(self):
+        with self.database.snapshot() as snapshot:
+            query = "SELECT index_name FROM information_schema.indexes WHERE (table_schema = '' OR table_schema IS NULL OR table_schema = 'public') AND index_name != 'PRIMARY_KEY'"
+            res = snapshot.execute_sql(query, timeout=15)
+            index_names = [row[0] for row in res]
+
+        if index_names:
+            quote = self._get_quote_char()
+            commands = [f"DROP INDEX {quote}{idx}{quote}" for idx in index_names]
+            try:
+                self._execute_ddl_batch(commands)
+            except Exception:
+                for idx in index_names:
+                    try:
+                        self.database.update_ddl([f"DROP INDEX {quote}{idx}{quote}"]).result(timeout=60)
+                    except Exception:
+                        pass
+
+    def _drop_foreign_keys(self):
+        with self.database.snapshot() as snapshot:
+            if self.expected_dialect_str == "POSTGRESQL":
+                query = "SELECT table_name, constraint_name FROM information_schema.table_constraints WHERE table_schema = 'public' AND constraint_type = 'FOREIGN KEY'"
+            else:
+                query = "SELECT table_name, constraint_name FROM information_schema.table_constraints WHERE (table_schema = '' OR table_schema IS NULL) AND constraint_type = 'FOREIGN KEY'"
+            res = snapshot.execute_sql(query, timeout=15)
+            fk_info = [(row[0], row[1]) for row in res]
+
+        if fk_info:
+            quote = self._get_quote_char()
+            commands = [f"ALTER TABLE {quote}{table}{quote} DROP CONSTRAINT {quote}{fk}{quote}" for table, fk in fk_info]
+            try:
+                self._execute_ddl_batch(commands)
+            except Exception:
+                for table, fk in fk_info:
+                    try:
+                        self.database.update_ddl([f"ALTER TABLE {quote}{table}{quote} DROP CONSTRAINT {quote}{fk}{quote}"]).result(timeout=60)
+                    except Exception:
+                        pass
+
+    def _drop_tables(self):
+        with self.database.snapshot() as snapshot:
+            if self.expected_dialect_str == "POSTGRESQL":
+                res = snapshot.execute_sql("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'", timeout=15)
+            else:
+                res = snapshot.execute_sql("SELECT table_name FROM information_schema.tables WHERE (table_schema = '' OR table_schema IS NULL) AND table_type = 'BASE TABLE'", timeout=15)
+            table_names = [row[0] for row in res]
+
+        if not table_names:
+            return
+
+        quote = self._get_quote_char()
+        commands = [f"DROP TABLE {quote}{t}{quote}" for t in table_names]
+
+        try:
+            self._execute_ddl_batch(commands)
+        except Exception:
+            pending_tables = table_names
+            for _ in range(5):
+                if not pending_tables:
+                    break
+                next_pending = []
+                for t in pending_tables:
+                    try:
+                        self.database.update_ddl([f"DROP TABLE {quote}{t}{quote}"]).result(timeout=30)
+                    except Exception as e:
+                        if "Table not found" not in str(e) and "does not exist" not in str(e):
+                            next_pending.append(t)
+                pending_tables = next_pending
+
     def drop_all_tables(self):
         try:
             if not self.database.exists():
                 logging.info(f"Database {self.database.database_id} does not exist. Skipping drop_all_tables.")
                 return
 
-            with self.database.snapshot() as snapshot:
-                schema_name = 'public' if self.expected_dialect_str == "POSTGRESQL" else ''
-                res = snapshot.execute_sql(f"SELECT table_name FROM information_schema.tables WHERE table_schema = '{schema_name}' AND table_type = 'BASE TABLE'", timeout=15)
-                table_names = [row[0] for row in res]
-                if not table_names:
-                    return
-                pending_tables = table_names
-                for _ in range(5):
-                    if not pending_tables:
-                        break
-                    next_pending = []
-                    quote = '"' if self.expected_dialect_str == "POSTGRESQL" else '`'
-                    for t in pending_tables:
-                        try:
-                            op = self.database.update_ddl(
-                                [f"DROP TABLE {quote}{t}{quote}"])
-                            op.result(timeout=60)
-                        except Exception:
-                            next_pending.append(t)
-                    pending_tables = next_pending
+            self._drop_views()
+            self._drop_indices()
+            self._drop_foreign_keys()
+            self._drop_tables()
         except Exception:
             pass
 
