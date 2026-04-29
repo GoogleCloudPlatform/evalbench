@@ -1004,6 +1004,27 @@ class GeminiCliGenerator(QueryGenerator):
             return list(output_json["stats"]["tools"]["byName"].keys())
         return []
 
+    def extract_skills(self, stdout: str) -> list[str]:
+        """Extracts activated skill names from the activate_skill tool's parameters.
+
+        In Gemini CLI, skills are invoked via the 'activate_skill' built-in tool.
+        This method extracts skill names from the parameters of activate_skill calls.
+        """
+        output_json = self.parse_response(stdout)
+        try:
+            by_name = output_json["stats"]["tools"]["byName"]
+            activate_calls = by_name.get("activate_skill", {})
+            parameters_list = activate_calls.get("parameters", [])
+            skills = []
+            for params in parameters_list:
+                # Try common parameter names for skill name
+                skill_name = params.get("skill_name") or params.get("skillName") or params.get("skill")
+                if skill_name and skill_name not in skills:
+                    skills.append(skill_name)
+            return skills
+        except (KeyError, TypeError):
+            return []
+
     def safe_generate(self, cli_cmd: CLICommand) -> subprocess.CompletedProcess:
         result = self.generate_internal(cli_cmd)
         if isinstance(result, str):

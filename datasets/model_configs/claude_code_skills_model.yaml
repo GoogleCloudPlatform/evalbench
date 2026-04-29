@@ -1,0 +1,31 @@
+# Claude Code CLI version.
+#   - Globally installed binary:  "claude"
+#   - Pin to a specific npm version (uses `npm exec --yes` like Gemini CLI):
+#       "@anthropic-ai/claude-code@2.1.85"
+claude_code_version: "@anthropic-ai/claude-code@2.1.119"
+
+generator: claude_code
+
+model: "claude-opus-4-7"
+
+use_vertex: true
+env:
+  ANTHROPIC_VERTEX_PROJECT_ID: "astana-evaluation"
+  CLOUD_ML_REGION: "global"
+  # Cloud SQL PostgreSQL extension configuration
+  CLOUD_SQL_POSTGRES_PROJECT: "astana-evaluation"
+  CLOUD_SQL_POSTGRES_REGION: "us-central1"
+  CLOUD_SQL_POSTGRES_INSTANCE: <instance>
+  CLOUD_SQL_POSTGRES_DATABASE: <database>
+  CLOUD_SQL_POSTGRES_USER: <user>
+  CLOUD_SQL_POSTGRES_PASSWORD: <password>
+  CLOUD_SQL_POSTGRES_IP_TYPE: "PUBLIC"
+
+setup:
+  # Install skills from main branch (uses npx toolbox-sdk, no local binary needed)
+  # For full plugin marketplace setup (interactive), manually run in Claude Code:
+  #   /plugin marketplace add https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git
+  #   /plugin install cloud-sql-postgresql@cloud-sql-postgresql-marketplace
+  skills:
+    - action: install_from_repo
+      url: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git"
