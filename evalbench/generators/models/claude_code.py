@@ -5,6 +5,8 @@ import json
 import logging
 import shlex
 import sys
+import re
+import shutil
 
 
 class CLICommand:
@@ -72,26 +74,50 @@ class ClaudeCodeGenerator(QueryGenerator):
 
                 # Skip ADC setup if Service Account key is available
                 if not os.path.exists("/etc/evalbench-sa-key/key.json"):
-                    adc_path = self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
-                    if not adc_path:
-                        adc_path = os.path.join(
-                            self.real_home, ".config", "gcloud",
-                            "application_default_credentials.json",
-                        )
-                    if adc_path and os.path.exists(adc_path) and not adc_path.startswith("/etc/"):
-                        fake_gcloud_dir = os.path.join(
-                            self.fake_home, ".config", "gcloud")
+                    fake_gcloud_dir = os.path.join(
+                        self.fake_home, ".config", "gcloud")
+
+                    # If GOOGLE_APPLICATION_CREDENTIALS is already set (e.g.,
+                    # Cloud Run mounts ADC at a specific path), copy that single
+                    # file into the fake home and point the env var at it.
+                    explicit_adc = self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
+                    if (
+                        explicit_adc
+                        and os.path.exists(explicit_adc)
+                        and not explicit_adc.startswith("/etc/")
+                    ):
                         os.makedirs(fake_gcloud_dir, exist_ok=True)
                         fake_adc_path = os.path.join(
                             fake_gcloud_dir, "application_default_credentials.json")
-                        if os.path.abspath(adc_path) != os.path.abspath(fake_adc_path):
-                            import shutil
-                            shutil.copy2(adc_path, fake_adc_path)
+                        if os.path.abspath(explicit_adc) != os.path.abspath(fake_adc_path):
+                            shutil.copy2(explicit_adc, fake_adc_path)
+                        self.env["GOOGLE_APPLICATION_CREDENTIALS"] = fake_adc_path
+                    else:
+                        # Local dev: copy the whole gcloud config dir so fresh
+                        # `gcloud auth login` credentials (credentials.db,
+                        # access_tokens.db, ADC) are available to skill scripts.
+                        real_gcloud_dir = os.path.join(
+                            self.real_home, ".config", "gcloud")
+                        if os.path.exists(real_gcloud_dir):
+                            os.makedirs(os.path.dirname(fake_gcloud_dir), exist_ok=True)
+                            if os.path.exists(fake_gcloud_dir):
+                                shutil.rmtree(fake_gcloud_dir)
+                            try:
+                                shutil.copytree(
+                                    real_gcloud_dir, fake_gcloud_dir,
+                                    ignore=shutil.ignore_patterns('logs', '*.db-wal'),
+                                )
+                                logging.info(
+                                    f"Copied gcloud config from {real_gcloud_dir} to {fake_gcloud_dir}")
+                            except (OSError, PermissionError) as e:
+                                logging.warning(f"Could not copy gcloud directory: {e}")
+                        fake_adc_path = os.path.join(
+                            fake_gcloud_dir, "application_default_credentials.json")
+                        if os.path.exists(fake_adc_path) and "GOOGLE_APPLICATION_CREDENTIALS" not in self.env:
+                            self.env["GOOGLE_APPLICATION_CREDENTIALS"] = fake_adc_path
 
                     if "CLOUDSDK_CONFIG" not in self.env:
-                        self.env["CLOUDSDK_CONFIG"] = os.path.join(
-                            self.fake_home, ".config", "gcloud"
-                        )
+                        self.env["CLOUDSDK_CONFIG"] = fake_gcloud_dir
                 else:
                     # Explicitly set GOOGLE_APPLICATION_CREDENTIALS for Claude if secret is mounted
                     self.env["GOOGLE_APPLICATION_CREDENTIALS"] = "/etc/evalbench-sa-key/key.json"
@@ -100,7 +126,6 @@ class ClaudeCodeGenerator(QueryGenerator):
         # so the CLI can authenticate in the sandboxed environment
         real_claude_dir = os.path.join(self.real_home, ".claude")
         if os.path.exists(real_claude_dir):
-            import shutil
             for fname in os.listdir(real_claude_dir):
                 src = os.path.join(real_claude_dir, fname)
                 dst = os.path.join(self.claude_config_dir, fname)
@@ -118,8 +143,18 @@ class ClaudeCodeGenerator(QueryGenerator):
             self._setup()
 
     def _setup(self):
-        """Performs initial setup for Claude Code CLI."""
-        # Setup MCP Servers
+        """Performs initial setup for Claude Code CLI.
+
+        Skills can be set up in two ways:
+        1. install_from_repo: Clone a plugin marketplace from a git repo
+           Example: {action: "install_from_repo", url: "https://github.com/repo.git#v1.0.0"}
+        2. skills_dir: Use a local directory as a plugin marketplace
+           Example: skills_dir: "/path/to/plugin-marketplace"
+
+        Both register the marketplace in settings.json as a `directory` source
+        and enable its first plugin via `enabledPlugins`, so Claude Code loads
+        the skills automatically without interactive `/plugin install`.
+        """
         mcp_servers_config = self.setup_config.get("mcp_servers", {})
         if mcp_servers_config:
             self._setup_mcp_servers(mcp_servers_config)
@@ -127,6 +162,14 @@ class ClaudeCodeGenerator(QueryGenerator):
         settings_config = self.setup_config.get("settings", {})
         if settings_config:
             self._setup_settings(settings_config)
+
+        skills_config = self.setup_config.get("skills", [])
+        if skills_config:
+            self._setup_skills(skills_config)
+
+        skills_dir_path = self.setup_config.get("skills_dir")
+        if skills_dir_path:
+            self._setup_skills_from_dir(skills_dir_path)
 
     def _setup_mcp_servers(self, mcp_servers_config: dict):
         """Configures MCP servers in a JSON config file for Claude Code.
@@ -219,6 +262,129 @@ class ClaudeCodeGenerator(QueryGenerator):
             json.dump(current_settings, f, indent=2)
 
         logging.info(f"Claude Code settings written to {settings_path}")
+
+    def _setup_skills(self, skills: list):
+        """Clones plugin marketplace repos and registers them in settings.json.
+
+        Each skill config: {action: "install_from_repo", url: "<git-url>[#tag]"}.
+        Each repo is expected to have `.claude-plugin/marketplace.json`. The
+        marketplace is registered as a `directory` source (no network fetch at
+        Claude Code startup) and the first declared plugin is enabled.
+        """
+        setup_env = os.environ.copy()
+        setup_env.update(self.env)
+
+        marketplaces_dir = os.path.join(
+            self.claude_config_dir, "plugins", "marketplaces")
+        os.makedirs(marketplaces_dir, exist_ok=True)
+
+        for skill_config in skills:
+            if not isinstance(skill_config, dict):
+                logging.warning(f"Unsupported skill config: {skill_config}")
+                continue
+            action = skill_config.get("action")
+            url = skill_config.get("url")
+            if action != "install_from_repo" or not url:
+                logging.warning(
+                    f"Unsupported skill config: {skill_config}. "
+                    "Only 'action: install_from_repo' with 'url' is supported.")
+                continue
+            marketplace_dir = self._clone_marketplace_repo(
+                url, marketplaces_dir, setup_env)
+            if marketplace_dir:
+                self._register_marketplace_plugin(marketplace_dir)
+
+    def _setup_skills_from_dir(self, skills_dir_path: str):
+        """Registers a local plugin marketplace directory in settings.json."""
+        if not os.path.isdir(skills_dir_path):
+            logging.warning(f"Skills directory not found: {skills_dir_path}")
+            return
+        self._register_marketplace_plugin(os.path.abspath(skills_dir_path))
+
+    def _clone_marketplace_repo(
+        self, url: str, marketplaces_dir: str, env: dict
+    ) -> str | None:
+        """Clones a plugin marketplace repo. Supports `<url>#<tag>` for version pinning."""
+        clone_url, _, version_tag = url.partition("#")
+        repo_name = re.sub(r"\.git$", "", clone_url.rstrip("/").split("/")[-1])
+        clone_target = os.path.join(marketplaces_dir, repo_name)
+        if os.path.exists(clone_target):
+            shutil.rmtree(clone_target)
+
+        cmd = ["git", "clone", "--depth", "1"]
+        if version_tag:
+            cmd.extend(["--branch", version_tag])
+        cmd.extend([clone_url, clone_target])
+
+        try:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, check=False,
+                env=env, timeout=120,
+            )
+            if result.returncode != 0:
+                logging.error(
+                    f"Failed to clone repo '{url}': {result.stderr.strip()}")
+                return None
+            logging.info(f"Cloned plugin marketplace '{url}' to {clone_target}")
+            return clone_target
+        except subprocess.TimeoutExpired:
+            logging.error(f"Cloning repo '{url}' timed out")
+            return None
+
+    def _register_marketplace_plugin(self, marketplace_dir: str):
+        """Reads marketplace.json and updates settings.json so Claude Code
+        auto-loads the marketplace's first plugin at startup."""
+        marketplace_json_path = os.path.join(
+            marketplace_dir, ".claude-plugin", "marketplace.json")
+        if not os.path.exists(marketplace_json_path):
+            logging.warning(
+                f"No .claude-plugin/marketplace.json in {marketplace_dir}; "
+                "cannot register as plugin marketplace.")
+            return
+
+        try:
+            with open(marketplace_json_path, "r", encoding="utf-8") as f:
+                marketplace_data = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logging.warning(f"Failed to read {marketplace_json_path}: {e}")
+            return
+
+        marketplace_name = marketplace_data.get("name")
+        plugins = marketplace_data.get("plugins") or []
+        if not marketplace_name or not plugins:
+            logging.warning(
+                f"marketplace.json missing 'name' or 'plugins': {marketplace_json_path}")
+            return
+
+        first = plugins[0]
+        plugin_name = first.get("name") if isinstance(first, dict) else str(first)
+        if not plugin_name:
+            logging.warning(f"First plugin entry has no name in {marketplace_json_path}")
+            return
+
+        settings_path = os.path.join(self.claude_config_dir, "settings.json")
+        settings = {}
+        if os.path.exists(settings_path):
+            try:
+                with open(settings_path, "r") as f:
+                    settings = json.load(f)
+            except json.JSONDecodeError:
+                settings = {}
+
+        settings.setdefault("extraKnownMarketplaces", {})[marketplace_name] = {
+            "source": {
+                "source": "directory",
+                "path": os.path.abspath(marketplace_dir),
+            }
+        }
+        settings.setdefault("enabledPlugins", {})[
+            f"{plugin_name}@{marketplace_name}"] = True
+
+        with open(settings_path, "w") as f:
+            json.dump(settings, f, indent=2)
+        logging.info(
+            f"Registered plugin '{plugin_name}@{marketplace_name}' "
+            f"(directory source: {marketplace_dir})")
 
     def generate_internal(self, cli_cmd):
         if not isinstance(cli_cmd, CLICommand):
@@ -531,6 +697,83 @@ class ClaudeCodeGenerator(QueryGenerator):
         ):
             return list(output_json["stats"]["tools"]["byName"].keys())
         return []
+
+    def _get_installed_skills(self) -> set[str]:
+        """Returns the set of skill directory names installed via plugin marketplaces."""
+        installed = set()
+        marketplaces_root = os.path.join(
+            self.claude_config_dir, "plugins", "marketplaces")
+        if os.path.isdir(marketplaces_root):
+            for marketplace in os.listdir(marketplaces_root):
+                self._collect_skills(
+                    os.path.join(marketplaces_root, marketplace, "skills"),
+                    installed,
+                )
+        skills_dir_path = (self.setup_config or {}).get("skills_dir")
+        if skills_dir_path:
+            self._collect_skills(
+                os.path.join(skills_dir_path, "skills"), installed)
+        return installed
+
+    @staticmethod
+    def _collect_skills(skills_root: str, into: set):
+        if not os.path.isdir(skills_root):
+            return
+        for entry in os.listdir(skills_root):
+            if os.path.exists(os.path.join(skills_root, entry, "SKILL.md")):
+                into.add(entry)
+
+    def _extract_script_names(self, by_name: dict) -> list[str]:
+        """Extracts script names (e.g. list_instances.js) from Bash tool invocations."""
+        scripts = []
+        for tool_name, tstat in by_name.items():
+            if tool_name.lower() != "bash":
+                continue
+            for params in tstat.get("parameters", []) or []:
+                command = params.get("command", "") if isinstance(params, dict) else ""
+                match = re.search(r'/scripts/([a-z_-]+\.js)', command)
+                if match and match.group(1) not in scripts:
+                    scripts.append(match.group(1))
+        return scripts
+
+    def extract_skills(self, stdout: str) -> list[str]:
+        """Extracts the names of skills activated during the run.
+
+        Returns only true skill names (those with a SKILL.md), not the
+        bash scripts a skill may invoke internally. Use `extract_skill_scripts`
+        for trajectory-style script-name extraction.
+        """
+        output_json = self.parse_response(stdout)
+        try:
+            by_name = output_json["stats"]["tools"]["byName"]
+        except (KeyError, TypeError):
+            return []
+
+        installed_skills = self._get_installed_skills()
+        items = []
+
+        # Pattern 1: a skill's tool surfaces directly under its own name
+        for tool_name in by_name:
+            if tool_name in installed_skills and tool_name not in items:
+                items.append(tool_name)
+
+        # Pattern 2: the built-in `Skill` tool with the skill name as a parameter
+        skill_tool = by_name.get("Skill", {})
+        for params in skill_tool.get("parameters", []):
+            name = params.get("skill") or params.get("name") or params.get("skill_name")
+            if name and name not in items:
+                items.append(name)
+
+        return items
+
+    def extract_skill_scripts(self, stdout: str) -> list[str]:
+        """Extracts skill-script names (e.g. list_instances.js) from Bash invocations."""
+        output_json = self.parse_response(stdout)
+        try:
+            by_name = output_json["stats"]["tools"]["byName"]
+        except (KeyError, TypeError):
+            return []
+        return self._extract_script_names(by_name)
 
     def safe_generate(self, cli_cmd: CLICommand) -> subprocess.CompletedProcess:
         result = self.generate_internal(cli_cmd)

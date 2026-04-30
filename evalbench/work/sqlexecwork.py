@@ -113,15 +113,21 @@ class SQLExecWork(Work):
             except Exception as e:
                 error = str(e)
         elif query_type == "dml":
-            # self.db.execute(self.eval_result["setup_sql"])
+            self.db.execute(self.eval_result["setup_sql"])
             result, eval_result, error = self.db.execute(
                 query, eval_query, use_cache=False, rollback=True
             )
-            # self.db.execute(self.eval_result["cleanup_sql"])
+            self.db.execute(self.eval_result["cleanup_sql"])
         elif query_type == "ddl":
-            # self.db.execute(self.eval_result["setup_sql"])
             try:
-                self.db.resetup_database(force=True)
+                # self.db.resetup_database(force=True)
+                setup_sql = self.eval_result.get("setup_sql")
+                if isinstance(setup_sql, dict):
+                    setup_sql = setup_sql.get(self.db.dialect)
+                elif isinstance(setup_sql, list) and len(setup_sql) > 0:
+                    setup_sql = setup_sql[0]
+                if setup_sql:
+                    self.db.execute(setup_sql)
             except Exception as setup_error:
                 return (
                     None,
@@ -131,7 +137,13 @@ class SQLExecWork(Work):
                 )
             result, _, error = self.db.execute(query, use_cache=False)
             eval_result = self.db.get_metadata()
-            # self.db.execute(self.eval_result["cleanup_sql"])
+            cleanup_sql = self.eval_result.get("cleanup_sql")
+            if isinstance(cleanup_sql, dict):
+                cleanup_sql = cleanup_sql.get(self.db.dialect)
+            elif isinstance(cleanup_sql, list) and len(cleanup_sql) > 0:
+                cleanup_sql = cleanup_sql[0]
+            if cleanup_sql:
+                self.db.execute(cleanup_sql)
         return result, eval_result, error
 
     def _sanitize_sql(self):
