@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.6.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.5.0...v1.6.0) (2026-04-30)
+
+
+### Features
+
+* add exponential backoff for Gemini 429 resource exhausted errors ([#352](https://github.com/GoogleCloudPlatform/evalbench/issues/352)) ([11d4236](https://github.com/GoogleCloudPlatform/evalbench/commit/11d423658a0b79385e5e05644cb614b32674b0dd))
+* allow execution of mixed DDL and DML statements in Spanner driver ([#351](https://github.com/GoogleCloudPlatform/evalbench/issues/351)) ([64c0b63](https://github.com/GoogleCloudPlatform/evalbench/commit/64c0b630ac95e9ad372afa516d6dc7b34be87ec9))
+* chunk Spanner DDL statements into groups of 10 to avoid limits ([#353](https://github.com/GoogleCloudPlatform/evalbench/issues/353)) ([306caad](https://github.com/GoogleCloudPlatform/evalbench/commit/306caad98bb5ee6825d834441edbf3a95067b030))
+* handle quoted fields in CSV setup data ([#350](https://github.com/GoogleCloudPlatform/evalbench/issues/350)) ([3ba2334](https://github.com/GoogleCloudPlatform/evalbench/commit/3ba2334d5a816fb4d4614a814e9c8a0a53ab1059))
+* handle recursive dependency cleanup in Spanner table drop ([#356](https://github.com/GoogleCloudPlatform/evalbench/issues/356)) ([3eb4d45](https://github.com/GoogleCloudPlatform/evalbench/commit/3eb4d45c2ecbc8bda538f5df7748f32e77ca0b17))
+* use parameterized queries for data insertion in MySQL, Postgres, and SQLite ([#358](https://github.com/GoogleCloudPlatform/evalbench/issues/358)) ([733724d](https://github.com/GoogleCloudPlatform/evalbench/commit/733724d9978b73c274dd0a489b1c35cd78c2cb75))
+
+
+### Bug Fixes
+
+* ensure setup and cleanup sql run for ddl and dml queries ([#354](https://github.com/GoogleCloudPlatform/evalbench/issues/354)) ([89b7c4d](https://github.com/GoogleCloudPlatform/evalbench/commit/89b7c4d438680cf3c96d6399d72fc46ff1ad6bdd))
+
 ## [1.5.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.4.0...v1.5.0) (2026-04-26)
 
 
