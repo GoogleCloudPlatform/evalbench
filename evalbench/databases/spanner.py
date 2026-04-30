@@ -80,21 +80,26 @@ class SpannerDB(DB):
         logging.debug(f"Executing batch of {len(commands)} statements in Spanner {self.expected_dialect_str} for {self.database.database_id}")
         if commands:
             logging.debug(f"First statement: {commands[0][:100]}...")
-        try:
-            op = self.database.update_ddl(commands)
-            op.result(timeout=600)
-        except Exception as e:
-            logging.warning(
-                f"update_ddl failed, trying individual execution: {e}")
-            for stmt in commands:
-                _, _, error = self.execute(stmt)
-                if error:
-                    # Ignore 'already exists' / 'Duplicate name' errors during fallback
-                    if "Duplicate name" in error or "already exists" in error:
-                        logging.info(f"Ignoring duplicate error during fallback: {error}")
-                    else:
-                        raise RuntimeError(
-                            f"Error in batch statement: {stmt}\nError: {error}")
+        # Chunk DDL statements into groups of 10 to avoid limit
+        chunk_size = 10
+        for i in range(0, len(commands), chunk_size):
+            chunk = commands[i:i + chunk_size]
+            try:
+                print(f"Creating tables in {self.database.name} with {len(chunk)} commands (chunk {i // chunk_size + 1})")
+                op = self.database.update_ddl(chunk)
+                op.result(timeout=600)
+            except Exception as e:
+                logging.warning(
+                    f"update_ddl failed for chunk {i // chunk_size + 1}, trying individual execution: {e}")
+                for stmt in chunk:
+                    _, _, error = self.execute(stmt)
+                    if error:
+                        # Ignore 'already exists' / 'Duplicate name' errors during fallback
+                        if "Duplicate name" in error or "already exists" in error:
+                            logging.info(f"Ignoring duplicate error during fallback: {error}")
+                        else:
+                            raise RuntimeError(
+                                f"Error in batch statement: {stmt}\nError: {error}")
 
     def execute(self, query, eval_query=None, use_cache=False, rollback=False):
         if query.strip() == "":

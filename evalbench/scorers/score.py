@@ -9,9 +9,11 @@ from scorers import llmrater
 from scorers import returnedsql
 from scorers import executablesql
 from scorers import trajectorymatcher
+from scorers import skillstrajectorymatcher
 from scorers import goalcompletionrate
 from scorers import behavioralmetrics
 from scorers import parameteranalysis
+from scorers import skillsbestpractices
 from scorers import turncount
 from scorers import endtoendlatency
 from scorers import toolcalllatency
@@ -62,6 +64,16 @@ def compare(
     if "trajectory_matcher" in scorers:
         comparators.append(
             trajectorymatcher.TrajectoryMatcher(scorers["trajectory_matcher"])
+        )
+    if "skills_trajectory" in scorers:
+        comparators.append(
+            skillstrajectorymatcher.SkillsTrajectoryMatcher(scorers["skills_trajectory"])
+        )
+    if "skills_best_practices" in scorers:
+        comparators.append(
+            skillsbestpractices.SkillsBestPractices(
+                scorers["skills_best_practices"], global_models
+            )
         )
     if "goal_completion" in scorers:
         comparators.append(
