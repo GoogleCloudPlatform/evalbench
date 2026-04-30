@@ -6,6 +6,8 @@ from .passthrough import NOOPGenerator
 from .claude import ClaudeGenerator
 from .querydata import QueryData
 from .query_data_api import QueryDataAPIGenerator
+from .gemini_cli import GeminiCliGenerator
+from .claude_code import ClaudeCodeGenerator
 from util.config import load_yaml_config
 
 
@@ -30,6 +32,10 @@ def get_generator(global_models, model_config_path: str, db: DB = None):
             model = QueryData(config)
         if config["generator"] == "query_data_api":
             model = QueryDataAPIGenerator(config)
+        if config["generator"] == "gemini_cli":
+            model = GeminiCliGenerator(config)
+        if config["generator"] == "claude_code":
+            model = ClaudeCodeGenerator(config)
         if not model:
             raise ValueError(f"Unknown Generator {config['generator']}")
 

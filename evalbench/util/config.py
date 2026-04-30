@@ -41,7 +41,7 @@ def load_db_data_from_csvs(data_directory: str):
             with open(
                 os.path.join(current_directory, data_directory, filename), "r"
             ) as csvfile:
-                reader = csv.reader(csvfile)
+                reader = csv.reader(csvfile, quotechar='"')
                 rows = []
                 for row in reader:
                     rows.append(row)
