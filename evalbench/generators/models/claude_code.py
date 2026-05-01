@@ -401,7 +401,7 @@ class ClaudeCodeGenerator(QueryGenerator):
         try:
             result = subprocess.run(
                 command, capture_output=True, text=True, check=False, env=env,
-                stdin=subprocess.DEVNULL
+                cwd=self.fake_home, stdin=subprocess.DEVNULL
             )
             return result
         except FileNotFoundError:

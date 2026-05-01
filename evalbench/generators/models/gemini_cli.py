@@ -788,7 +788,7 @@ class GeminiCliGenerator(QueryGenerator):
         self, command: list[str], env: dict[str, str] | None = None, cwd: str | None = None
     ) -> subprocess.CompletedProcess:
         try:
-            result = subprocess.run(command, capture_output=True, text=True, check=False, env=env, cwd=cwd)
+            result = subprocess.run(command, capture_output=True, text=True, check=False, env=env, cwd=cwd if cwd else self.fake_home)
             # Filter out benign schema warnings from json decoder from stderr to reduce noise
             if result.stderr:
                 result.stderr = "\n".join(
