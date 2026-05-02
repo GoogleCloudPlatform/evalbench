@@ -1,20 +1,17 @@
-import logging
-
 import concurrent.futures
 import datetime
 import json
-
+import logging
+from multiprocessing import get_context
 import tempfile
 import threading
 import uuid
-from multiprocessing import get_context
 
 import databases
-import generators.models as models
-import generators.prompts as prompts
 from dataset.evalinput import EvalInputRequest, breakdown_datasets
 from evaluator.db_manager import build_db_queue
 from evaluator.evaluator import Evaluator
+from evaluator.orchestrator import Orchestrator
 from evaluator.progress_reporter import (
     cleanup_progress_reporting,
     record_successful_setup,
@@ -22,10 +19,12 @@ from evaluator.progress_reporter import (
     skip_database,
     skip_dialect,
 )
-from evaluator.orchestrator import Orchestrator
+import generators.models as models
+import generators.prompts as prompts
 
 
 class OneShotOrchestrator(Orchestrator):
+
     def __init__(
         self,
         config,
@@ -40,18 +39,22 @@ class OneShotOrchestrator(Orchestrator):
         self.run_time = datetime.datetime.now()
         self.total_eval_outputs = []
         self.total_scoring_results = []
+        self.total_multi_trial_scoring_results = []
         self.reporting_total_evals_done = 0
         self.report_progress = report_progress
 
         runner_config = self.config.get("runners", {})
         self.eval_runners = runner_config.get("eval_runners", 4)
         self.sqlexec_runners = runner_config.get("sqlexec_runners", 10)
+        self.num_trials = self.config.get("num_trials", 1)
 
     def evaluate(self, dataset: list[EvalInputRequest]):
-        """This wrapper breaks down evaluations by category of evaluations. (dql, dml, ddl).
-        This allows the module to prepare the correct database connections as DDL queries
-        require setting up and tearing down the databsae and DML queries require prevention
-        of unintended consequences. Additionally, DQLs are run under a read-only user.
+        """This wrapper breaks down evaluations by category of evaluations.
+
+        (dql, dml, ddl). This allows the module to prepare the correct database
+        connections as DDL queries require setting up and tearing down the databsae
+        and DML queries require prevention of unintended consequences. Additionally,
+        DQLs are run under a read-only user.
         """
         progress_reporting_thread = None
         progress_reporting_finished = None
@@ -59,9 +62,10 @@ class OneShotOrchestrator(Orchestrator):
         tmp_buffer = None
         colab_progress_report = None
 
-        with get_context('spawn').Manager() as manager:
+        with get_context("spawn").Manager() as manager:
             sub_datasets, total_dataset_len, total_db_len = breakdown_datasets(
-                dataset)
+                dataset
+            )
             try:
                 if self.report_progress:
                     (
@@ -71,7 +75,7 @@ class OneShotOrchestrator(Orchestrator):
                         tmp_buffer,
                         colab_progress_report,
                     ) = setup_progress_reporting(
-                        manager, total_dataset_len, total_db_len
+                        manager, total_dataset_len, total_db_len, self.num_trials
                     )
 
                 global_models = {"registered_models": {},
@@ -85,8 +89,9 @@ class OneShotOrchestrator(Orchestrator):
                         db_configs = self.db_configs.get(dialect)
                         if not db_configs:
                             logging.info(
-                                f"Skipping queries for {dialect} as no applicable db_config" +
-                                " was found.")
+                                f"Skipping queries for {dialect} as no applicable db_config"
+                                + " was found."
+                            )
                             skip_dialect(
                                 sub_datasets[dialect], progress_reporting)
                             continue
@@ -107,15 +112,22 @@ class OneShotOrchestrator(Orchestrator):
                             # 24 hour timeout on the entire evaluator thread
                             # execution by default
                             timeout_seconds = self.config.get(
-                                "orchestrator_timeout_seconds", 86400)
-                            eval_outputs, scoring_results = future.result(
-                                timeout=timeout_seconds)
+                                "orchestrator_timeout_seconds", 86400
+                            )
+                            eval_outputs, scoring_results, multi_trial_scoring_results = (
+                                future.result(timeout=timeout_seconds)
+                            )
                             self.total_eval_outputs.extend(eval_outputs)
                             self.total_scoring_results.extend(scoring_results)
+                            self.total_multi_trial_scoring_results.extend(
+                                multi_trial_scoring_results
+                            )
                         except concurrent.futures.TimeoutError:
 
                             logging.error(
-                                f"A runner thread timed out and failed to complete within {timeout_seconds} seconds.")
+                                "A runner thread timed out and failed to complete within"
+                                f" {timeout_seconds} seconds."
+                            )
                         except Exception as e:
 
                             logging.error(f"A runner thread failed: {e}")
@@ -146,6 +158,7 @@ class OneShotOrchestrator(Orchestrator):
     ):
         total_eval_outputs = []
         total_scoring_results = []
+        total_multi_trial_scoring_results = []
 
         # Map database name if config provides mappings
         actual_db_name = database
@@ -165,7 +178,9 @@ class OneShotOrchestrator(Orchestrator):
             skip_database(sub_datasets[dialect]
                           [database], progress_reporting, None)
             logging.error(
-                f"Could not connect to database {actual_db_name} (from {database}) on {dialect}; due to {e}")
+                f"Could not connect to database {actual_db_name} (from {database}) on"
+                f" {dialect}; due to {e}"
+            )
             return [], []
 
         prompt_generator = prompts.get_generator(core_db, self.config)
@@ -195,29 +210,33 @@ class OneShotOrchestrator(Orchestrator):
                     + f"could not be setup properly in {dialect} due to {e}."
                 )
                 skip_database(
-                    sub_datasets[dialect][database],
-                    progress_reporting,
-                    query_type)
+                    sub_datasets[dialect][database], progress_reporting, query_type
+                )
                 continue
 
             evaluator = Evaluator(self.config)
             try:
-                eval_outputs, scoring_results = evaluator.evaluate(
-                    sub_dataset,
-                    db_queue,
-                    prompt_generator,
-                    model_generator,
-                    self.job_id,
-                    self.run_time,
-                    progress_reporting,
-                    global_models,
+                eval_outputs, scoring_results, multi_trial_scoring_results = (
+                    evaluator.evaluate(
+                        sub_dataset,
+                        db_queue,
+                        prompt_generator,
+                        model_generator,
+                        self.job_id,
+                        self.run_time,
+                        progress_reporting,
+                        global_models,
+                    )
                 )
                 total_eval_outputs.extend(eval_outputs)
                 total_scoring_results.extend(scoring_results)
+                total_multi_trial_scoring_results.extend(
+                    multi_trial_scoring_results)
             except Exception as e:
                 logging.error(
-                    f"Failed to evaluate {sub_dataset_len} {query_type} queries " +
-                    f"on DB {database} on {dialect}. Due to {e}")
+                    f"Failed to evaluate {sub_dataset_len} {query_type} queries "
+                    + f"on DB {database} on {dialect}. Due to {e}"
+                )
 
         # Cleanup all the tmp creations that were built from the core
         # connection
@@ -225,24 +244,42 @@ class OneShotOrchestrator(Orchestrator):
             core_db.clean_tmp_creations()
             core_db.close_connections()
 
-        return total_eval_outputs, total_scoring_results
+        return (
+            total_eval_outputs,
+            total_scoring_results,
+            total_multi_trial_scoring_results,
+        )
 
     def process(self):
-        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:
-            json.dump(self.total_eval_outputs, f,
-                      sort_keys=True, indent=4, default=str)
-            results_tf = f.name
-        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", delete=False, suffix=".json"
+        ) as f:
             json.dump(
-                self.total_scoring_results,
+                self.total_eval_outputs, f, sort_keys=True, indent=4, default=str
+            )
+            results_tf = f.name
+        with tempfile.NamedTemporaryFile(
+            mode="w", delete=False, suffix=".json"
+        ) as f:
+            json.dump(
+                self.total_scoring_results, f, sort_keys=True, indent=4, default=str
+            )
+            scores_tf = f.name
+        with tempfile.NamedTemporaryFile(
+            mode="w", delete=False, suffix=".json"
+        ) as f:
+            json.dump(
+                self.total_multi_trial_scoring_results,
                 f,
                 sort_keys=True,
                 indent=4,
-                default=str)
-            scores_tf = f.name
+                default=str,
+            )
+            multi_trial_scores_tf = f.name
         return (
             self.job_id,
             self.run_time,
             results_tf,
             scores_tf,
+            multi_trial_scores_tf,
         )

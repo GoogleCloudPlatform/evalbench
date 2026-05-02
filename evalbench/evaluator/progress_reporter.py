@@ -1,13 +1,11 @@
-import time
+from io import StringIO
 import logging
-import os
-
-
 from multiprocessing.managers import SyncManager
+import os
 import sys
 import threading
-from io import StringIO
 import threading
+import time
 
 _ORIGINAL_STDOUT = sys.stdout
 _ORIGINAL_STDERR = sys.stderr
@@ -24,7 +22,10 @@ except ImportError:
 
 
 def setup_progress_reporting(
-    manager: SyncManager, total_dataset_len: int, total_dbs: int
+    manager: SyncManager,
+    total_dataset_len: int,
+    total_dbs: int,
+    num_trials: int = 1,
 ):
     if sys.argv[0].endswith("eval_server.py"):
         return None, None, None, None, None
@@ -39,6 +40,11 @@ def setup_progress_reporting(
         "exec_i": manager.Value("i", 0),
         "score_i": manager.Value("i", 0),
         "total": total_dataset_len,
+        "total_trials": total_dataset_len * num_trials,
+        "total_scoring": (
+            total_dataset_len * num_trials
+            + (total_dataset_len if num_trials > 1 else 0)
+        ),
         "total_dbs": total_dbs,
     }
     if _IN_COLAB:
@@ -83,10 +89,11 @@ def _setup_stdout_reporting():
 
 
 def _report(
-        progress_reporting,
-        progress_reporting_finished,
-        tmp_buffer,
-        colab_progress_report):
+    progress_reporting,
+    progress_reporting_finished,
+    tmp_buffer,
+    colab_progress_report,
+):
     last_change_time = time.time()
     last_counts = {}
 
@@ -105,7 +112,12 @@ def _report(
             last_counts = current_counts
             last_change_time = time.time()
         elif time.time() - last_change_time > warn_seconds:
-            msg = f"\nWARNING: No progress observed for {warn_seconds} seconds. Currently at: Prompt {current_counts['prompt']}, Gen {current_counts['gen']}, Exec {current_counts['exec']}, Score {current_counts['score']} / {progress_reporting['total']}\n"
+            msg = (
+                f"\nWARNING: No progress observed for {warn_seconds} seconds."
+                f" Currently at: Prompt {current_counts['prompt']}, Gen"
+                f" {current_counts['gen']}, Exec {current_counts['exec']}, Score"
+                f" {current_counts['score']} / {progress_reporting['total']}\n"
+            )
             if tmp_buffer:
                 _ORIGINAL_STDOUT.write(msg)
                 _ORIGINAL_STDOUT.flush()
@@ -129,12 +141,15 @@ def _colab_progress(progress_reporting):
     prompt_done = (
         progress_reporting["prompt_i"].value / progress_reporting["total"]
     ) * 100
-    gen_done = (progress_reporting["gen_i"].value /
-                progress_reporting["total"]) * 100
-    exec_done = (progress_reporting["exec_i"].value /
-                 progress_reporting["total"]) * 100
+    gen_done = (
+        progress_reporting["gen_i"].value / progress_reporting["total_trials"]
+    ) * 100
+    exec_done = (
+        progress_reporting["exec_i"].value / progress_reporting["total_trials"]
+    ) * 100
     score_done = (
-        progress_reporting["score_i"].value / progress_reporting["total"]
+        progress_reporting["score_i"].value /
+        progress_reporting["total_scoring"]
     ) * 100
     return HTML(  # type: ignore
         """
@@ -187,6 +202,8 @@ def _print_report(progress_reporting, tmp_buffer):
     exec_i = progress_reporting["exec_i"].value
     score_i = progress_reporting["score_i"].value
     dataset_len = progress_reporting["total"]
+    total_trials = progress_reporting["total_trials"]
+    total_scoring = progress_reporting["total_scoring"]
     databases = progress_reporting["total_dbs"]
 
     if tmp_buffer:
@@ -204,19 +221,16 @@ def _print_report(progress_reporting, tmp_buffer):
         setup_i, databases, prefix="DBs Setup:", suffix="Complete", length=50
     )
     report_progress(
-        prompt_i,
-        dataset_len,
-        prefix="Prompts:  ",
-        suffix="Complete",
-        length=50)
-    report_progress(
-        gen_i, dataset_len, prefix="SQLGen:   ", suffix="Complete", length=50
+        prompt_i, dataset_len, prefix="Prompts:  ", suffix="Complete", length=50
     )
     report_progress(
-        exec_i, dataset_len, prefix="SQLExec:  ", suffix="Complete", length=50
+        gen_i, total_trials, prefix="SQLGen:   ", suffix="Complete", length=50
     )
     report_progress(
-        score_i, dataset_len, prefix="Scoring:  ", suffix="Complete", length=50
+        exec_i, total_trials, prefix="SQLExec:  ", suffix="Complete", length=50
+    )
+    report_progress(
+        score_i, total_scoring, prefix="Scoring:  ", suffix="Complete", length=50
     )
     _ORIGINAL_STDOUT.flush()
 
@@ -275,9 +289,8 @@ def record_successful_setup(progress_reporting):
 
 
 def cleanup_progress_reporting(
-        progress_report,
-        tmp_buffer,
-        colab_progress_report):
+    progress_report, tmp_buffer, colab_progress_report
+):
     if not progress_report:
         return
     if _IN_COLAB:
@@ -305,14 +318,15 @@ def report_progress(
     fill="█",
     printEnd="\n",
 ):
-    """
-    Call in a loop to create terminal progress bar
+    """Call in a loop to create terminal progress bar
+
     @params:
         iteration   - Required  : current iteration (Int)
         total       - Required  : total iterations (Int)
         prefix      - Optional  : prefix string (Str)
         suffix      - Optional  : suffix string (Str)
-        decimals    - Optional  : positive number of decimals in percent complete (Int)
+        decimals    - Optional  : positive number of decimals in percent complete
+        (Int)
         length      - Optional  : character length of bar (Int)
         fill        - Optional  : bar fill character (Str)
         printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)

@@ -10,57 +10,106 @@ def analyze_one_metric(
     metric_score: int,
     execution: bool = False,
     num_scorers: int = 1,
+    num_prompts: int = None,
+    num_trials: int = None,
 ) -> dict:
     """Analyze one metric from dataframe with flexibility."""
     num_scorers = max(1, num_scorers)
-    original_df_size = int(len(df) / num_scorers)
 
-    df = df[df["generated_sql"].notna()]
+    if num_prompts is not None:
+        original_df_size = (
+            num_prompts * num_trials
+            if (execution and num_trials is not None)
+            else num_prompts
+        )
+    elif "prompt_id" in df.columns and not df["prompt_id"].isna().all():
+        original_df_size = len(df["prompt_id"].dropna().unique())
+    else:
+        original_df_size = int(len(df) / num_scorers)
+
     if execution:
-        if "returned_sql" in df["comparator"].values:
+        df_exec = df[df["generated_sql"].notna()]
+
+        # Use prompt_id to count unique successful prompts if available
+        if "prompt_id" in df_exec.columns and not df_exec["prompt_id"].isna().all():
+            id_col = "prompt_id"
+        else:
+            id_col = "id"
+
+        if "returned_sql" in df_exec["comparator"].values:
             correct_results_count = len(
-                df[
-                    (df["generated_error"].isna())
-                    & (df["comparator"] == "returned_sql")
-                    & (df["score"] == 100)
-                ]["id"].drop_duplicates()
+                df_exec[
+                    (df_exec["generated_error"].isna())
+                    & (df_exec["comparator"] == "returned_sql")
+                    & (df_exec["score"] == 100)
+                ][id_col]
+                .dropna()
+                .drop_duplicates()
             )
         else:
             correct_results_count = len(
-                df[(df["generated_error"].isna())]["id"].drop_duplicates()
+                df_exec[(df_exec["generated_error"].isna())][id_col]
+                .dropna()
+                .drop_duplicates()
             )
     else:
-        df = df[df["comparator"] == metric_name]
-        non_binary_metrics = [
-            "turn_count",
-            "end_to_end_latency",
-            "tool_call_latency",
-            "token_consumption",
-        ]
-        if metric_name in non_binary_metrics:
-            avg_val = df["score"].mean() if not df.empty else 0.0
-            total_sum = df["score"].sum() if not df.empty else 0.0
+        df_metric = df[df["comparator"] == metric_name]
 
-            unit = ""
-            if "latency" in metric_name:
-                unit = " ms"
-            elif "token" in metric_name:
-                unit = " tokens"
-            elif "turn" in metric_name:
-                unit = " turns"
+        if (
+            "prompt_id" in df_metric.columns
+            and not df_metric["prompt_id"].isna().all()
+        ):
+            # Aggregate at prompt level
+            prompt_scores = df_metric.groupby("prompt_id")["score"].min()
+            correct_results_count = len(
+                prompt_scores[prompt_scores == metric_score])
+            original_df_size = len(prompt_scores)
 
-            logging.info(f"{metric_name}: \tAverage = {avg_val:.2f}{unit}")
-            return {
-                "metric_name": metric_name,
-                "metric_score": avg_val,
-                "correct_results_count": total_sum,
-                "total_results_count": original_df_size,
-            }
+            if original_df_size == 0 and num_prompts is not None:
+                original_df_size = num_prompts
+        else:
+            original_df_size = len(df_metric)
+            if original_df_size == 0 and num_prompts is not None:
+                original_df_size = num_prompts
+            correct_results_count = len(
+                df_metric[df_metric["score"] == metric_score])
 
-        correct_results_count = len(df[df["score"] == metric_score])
+            non_binary_metrics = [
+                "turn_count",
+                "end_to_end_latency",
+                "tool_call_latency",
+                "token_consumption",
+            ]
+            if metric_name in non_binary_metrics:
+                avg_val = df_metric["score"].mean(
+                ) if not df_metric.empty else 0.0
+                total_sum = df_metric["score"].sum(
+                ) if not df_metric.empty else 0.0
 
-    percentage = (correct_results_count / original_df_size *
-                  100) if original_df_size > 0 else 0.0
+                unit = ""
+                if "latency" in metric_name:
+                    unit = " ms"
+                elif "token" in metric_name:
+                    unit = " tokens"
+                elif "turn" in metric_name:
+                    unit = " turns"
+
+                logging.info(f"{metric_name}: \tAverage = {avg_val:.2f}{unit}")
+                return {
+                    "metric_name": metric_name,
+                    "metric_score": avg_val,
+                    "correct_results_count": total_sum,
+                    "total_results_count": original_df_size,
+                }
+
+            correct_results_count = len(
+                df_metric[df_metric["score"] == metric_score])
+
+    percentage = (
+        (correct_results_count / original_df_size * 100)
+        if original_df_size > 0
+        else 0.0
+    )
     logging.info(
         f"{metric_name}: \t{correct_results_count}/{original_df_size} = "
         f"{round(percentage, 2)}%"
@@ -73,7 +122,12 @@ def analyze_one_metric(
     }
 
 
-def analyze_result(scores, experiment_config: dict[str, str]):
+def analyze_result(
+    scores,
+    experiment_config: dict[str, str],
+    num_prompts: int = None,
+    num_trials: int = None,
+):
     """Analyze accuracy result from dataframe."""
     summary_scores = []
     df = pd.DataFrame.from_dict(scores)
@@ -113,6 +167,8 @@ def analyze_result(scores, experiment_config: dict[str, str]):
             metric_name=metric_name,
             metric_score=metric_score,
             num_scorers=num_scorers,
+            num_prompts=num_prompts,
+            num_trials=num_trials,
         )
         summary_scores.append(summary)
 
@@ -122,6 +178,8 @@ def analyze_result(scores, experiment_config: dict[str, str]):
         metric_score=1,
         execution=True,
         num_scorers=num_scorers,
+        num_prompts=num_prompts,
+        num_trials=num_trials,
     )
 
     summary_scores.append(summary)

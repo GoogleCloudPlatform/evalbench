@@ -32,6 +32,7 @@ class StreamingOrchestrator(Orchestrator):
         self.run_time = datetime.datetime.now()
         self.total_eval_outputs = []
         self.total_scoring_results = []
+        self.total_multi_trial_scoring_results = []
         self.reporting_total_evals_done = 0
         self.report_progress = report_progress
 
@@ -46,7 +47,8 @@ class StreamingOrchestrator(Orchestrator):
         # Cache keyed by (dialect, database, query_type)
         self._db_queue_cache = {}
 
-        self._global_models = {"registered_models": {}, "lock": threading.Lock()}
+        self._global_models = {
+            "registered_models": {}, "lock": threading.Lock()}
         self._cache_lock = threading.Lock()
         self._results_lock = threading.Lock()
 
@@ -119,7 +121,7 @@ class StreamingOrchestrator(Orchestrator):
             return
 
         evaluator = Evaluator(self.config)
-        eval_outputs, scoring_results = evaluator.evaluate(
+        eval_outputs, scoring_results, multi_trial_scoring_results = evaluator.evaluate(
             [eval_input],
             db_queue,
             prompt_gen,
@@ -133,6 +135,8 @@ class StreamingOrchestrator(Orchestrator):
         with self._results_lock:
             self.total_eval_outputs.extend(eval_outputs)
             self.total_scoring_results.extend(scoring_results)
+            self.total_multi_trial_scoring_results.extend(
+                multi_trial_scoring_results)
 
     def _resolve_db_name(self, dialect, database):
         db_name_overrides = self.config.get("db_name_overrides", {})
@@ -181,9 +185,21 @@ class StreamingOrchestrator(Orchestrator):
                 self.total_scoring_results, f, sort_keys=True, indent=4, default=str
             )
             scores_tf = f.name
+        with tempfile.NamedTemporaryFile(
+            mode="w", delete=False, suffix=".json"
+        ) as f:
+            json.dump(
+                self.total_multi_trial_scoring_results,
+                f,
+                sort_keys=True,
+                indent=4,
+                default=str,
+            )
+            multi_trial_scores_tf = f.name
         return (
             self.job_id,
             self.run_time,
             results_tf,
             scores_tf,
+            multi_trial_scores_tf,
         )

@@ -1,23 +1,23 @@
 """EvalBench is a framework to measure the quality of a generative AI (GenAI) workflow."""
 
 from collections.abc import Sequence
-from absl import app
-from absl import flags
-from reporting import get_reporters
-from util.config import load_yaml_config, config_to_df
-from dataset.dataset import load_json, load_dataset_from_json, flatten_dataset
-from evaluator import get_orchestrator
-import reporting.report as report
-import reporting.analyzer as analyzer
 import logging
-from util.config import set_session_configs
-from util.service import load_session_configs
-from util.flags import EXPERIMENT_CONFIG
+import multiprocessing
 import os
 import sys
-import yaml
-import multiprocessing
+from absl import app
+from absl import flags
+from dataset.dataset import flatten_dataset, load_dataset_from_json, load_json
+from evaluator import get_orchestrator
+from reporting import get_reporters
+import reporting.analyzer as analyzer
+import reporting.report as report
+from util.config import config_to_df, load_yaml_config
+from util.config import set_session_configs
+from util.flags import EXPERIMENT_CONFIG
 from util.scriptrunner import run_script
+from util.service import load_session_configs
+import yaml
 
 try:
     import google.colab  # type: ignore
@@ -52,7 +52,8 @@ def eval(experiment_config: str):
         set_session_configs(session, parsed_config)
         # Load the configs
         config, db_configs, model_config, setup_config = load_session_configs(
-            session)
+            session
+        )
         logging.info("Loaded Configurations in %s", experiment_config)
 
         # Load the dataset
@@ -66,7 +67,9 @@ def eval(experiment_config: str):
         reporting_config = config.get("reporting") or {}
         csv_config = reporting_config.get("csv") or {}
         base_output_dir = csv_config.get("output_directory", "results")
-        session_dir = os.path.abspath(os.path.join(base_output_dir, evaluator.job_id))
+        session_dir = os.path.abspath(
+            os.path.join(base_output_dir, evaluator.job_id)
+        )
 
         set_up_script = config.get("set_up_script")
         if set_up_script:
@@ -74,24 +77,38 @@ def eval(experiment_config: str):
                 logging.info("Executing set_up_script '%s'", set_up_script)
                 run_script(set_up_script, session_dir, "setup")
             else:
-                logging.error("Cannot run set_up_script, file not found at '%s'", set_up_script)
+                logging.error(
+                    "Cannot run set_up_script, file not found at '%s'", set_up_script
+                )
 
         # Run evaluations
         evaluator.evaluate(flatten_dataset(dataset))
-        job_id, run_time, results_tf, scores_tf = evaluator.process()
+        job_id, run_time, results_tf, scores_tf, multi_trial_scores_tf = (
+            evaluator.process()
+        )
 
         # Create Dataframes for reporting
         if results_tf is not None and scores_tf is not None:
             reporters = get_reporters(
-                parsed_config.get("reporting"), job_id, run_time)
+                parsed_config.get("reporting"), job_id, run_time
+            )
             config_df = config_to_df(
-                job_id, run_time, config, model_config, db_configs)
+                job_id, run_time, config, model_config, db_configs
+            )
             results = load_json(results_tf)
             results_df = report.get_dataframe(results)
             report.quick_summary(results_df)
             scores = load_json(scores_tf)
+            if multi_trial_scores_tf:
+                multi_trial_scores = load_json(multi_trial_scores_tf)
+                if multi_trial_scores:
+                    scores.extend(multi_trial_scores)
+
+            num_prompts = len(flatten_dataset(dataset))
+            num_trials = config.get("num_trials", 1)
             scores_df, summary_scores_df = analyzer.analyze_result(
-                scores, config)
+                scores, config, num_prompts=num_prompts, num_trials=num_trials
+            )
             summary_scores_df["job_id"] = job_id
             summary_scores_df["run_time"] = run_time
         else:
@@ -117,10 +134,14 @@ def eval(experiment_config: str):
         tear_down_script = config.get("tear_down_script")
         if tear_down_script:
             if os.path.exists(tear_down_script):
-                logging.info("Executing tear_down_script '%s'", tear_down_script)
+                logging.info("Executing tear_down_script '%s'",
+                             tear_down_script)
                 run_script(tear_down_script, session_dir, "teardown")
             else:
-                logging.error("Cannot run tear_down_script, file not found at '%s'", tear_down_script)
+                logging.error(
+                    "Cannot run tear_down_script, file not found at '%s'",
+                    tear_down_script,
+                )
 
         return True
     except Exception as e:
@@ -129,7 +150,7 @@ def eval(experiment_config: str):
 
 
 def run_suite(suite_config_path: str) -> bool:
-    with open(suite_config_path, 'r') as f:
+    with open(suite_config_path, "r") as f:
         suite_conf = yaml.safe_load(f)
 
     runs = suite_conf.get("runs", [])
@@ -138,7 +159,8 @@ def run_suite(suite_config_path: str) -> bool:
         return False
 
     logging.info(
-        f"Starting EvalBench Suite: {suite_conf.get('name', 'Unnamed Suite')}")
+        f"Starting EvalBench Suite: {suite_conf.get('name', 'Unnamed Suite')}"
+    )
     logging.info(f"Total runs scheduled: {len(runs)}")
 
     results = []
@@ -153,7 +175,9 @@ def run_suite(suite_config_path: str) -> bool:
             continue
 
         logging.info(
-            f"\n{'=' * 50}\nExecuting Suite Run {i + 1}/{len(runs)}: {run_name}\nConfig: {config_path}\n{'=' * 50}")
+            f"\n{'=' * 50}\nExecuting Suite Run {i + 1}/{len(runs)}:"
+            f" {run_name}\nConfig: {config_path}\n{'=' * 50}"
+        )
 
         success = eval(config_path)
         results.append((run_name, success))
@@ -184,5 +208,6 @@ def main(argv: Sequence[str]):
 
 
 if __name__ == "__main__":
-    multiprocessing.freeze_support()  # Required for PyInstaller multiprocessing support
+    # Required for PyInstaller multiprocessing support
+    multiprocessing.freeze_support()
     app.run(main)
