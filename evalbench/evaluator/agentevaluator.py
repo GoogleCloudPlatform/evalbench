@@ -147,7 +147,7 @@ class AgentEvaluator:
                     )
                 try:
                     result = self.generator.safe_generate(cli_cmd)
-                    if isinstance(self.generator, ClaudeCodeGenerator) and result.stdout:
+                    if result.stdout:
                         parsed = self.generator.parse_response(result.stdout)
                         if parsed.get("session_id"):
                             session_id = parsed["session_id"]
@@ -246,7 +246,8 @@ class AgentEvaluator:
             "accumulated_tools": accumulated_tools,
             "accumulated_skills": accumulated_skills,
             "job_id": job_id,
-            "metadata": metadata
+            "metadata": metadata,
+            "fake_home": self.generator.fake_home if hasattr(self.generator, "fake_home") else None
         }
 
         score_work = AgentScoreWork(

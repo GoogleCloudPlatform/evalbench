@@ -20,6 +20,7 @@ from scorers import toolcalllatency
 from scorers import tokenconsumption
 from scorers import binaryrubricscorer
 from scorers import pythonscorer
+from scorers import dataformscorer
 from dataset.evaloutput import EvalOutput
 import logging
 import os
@@ -152,6 +153,14 @@ def compare(
                 if not custom_name:
                     custom_name = key
             comparators.append(pythonscorer.PythonScorer(scorer_config, name=custom_name))
+    if "dataform_compile" in scorers:
+        comparators.append(
+            dataformscorer.DataformCompileScorer(scorers["dataform_compile"])
+        )
+    if "dataform_run" in scorers:
+        comparators.append(
+            dataformscorer.DataformRunScorer(scorers["dataform_run"])
+        )
 
     for comp in comparators:
         score = 0

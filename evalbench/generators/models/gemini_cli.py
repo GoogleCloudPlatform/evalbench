@@ -6,6 +6,7 @@ import logging
 import re
 import shutil
 import sys
+from util.context import rpc_id_var
 
 
 class CLICommand:
@@ -29,7 +30,10 @@ class GeminiCliGenerator(QueryGenerator):
 
         # If running via eval_server.py (gRPC), use session-specific path in shared volume
         if sys.argv[0].endswith("eval_server.py"):
-            session_id = querygenerator_config.get("session_id", "default")
+            session_id = querygenerator_config.get("session_id")
+            if not session_id:
+                ctx_id = rpc_id_var.get()
+                session_id = ctx_id if ctx_id != "default" else "default"
             self.fake_home = os.path.join("/tmp_sessions", session_id, "fake_home")
         else:
             self.fake_home = os.path.abspath(os.path.join(".venv", "fake_home"))
@@ -784,7 +788,7 @@ class GeminiCliGenerator(QueryGenerator):
         self, command: list[str], env: dict[str, str] | None = None, cwd: str | None = None
     ) -> subprocess.CompletedProcess:
         try:
-            result = subprocess.run(command, capture_output=True, text=True, check=False, env=env, cwd=cwd)
+            result = subprocess.run(command, capture_output=True, text=True, check=False, env=env, cwd=cwd if cwd else self.fake_home)
             # Filter out benign schema warnings from json decoder from stderr to reduce noise
             if result.stderr:
                 result.stderr = "\n".join(
