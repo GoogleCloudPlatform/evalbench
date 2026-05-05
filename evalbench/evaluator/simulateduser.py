@@ -39,7 +39,7 @@ class SimulatedUser:
         if not self.model_generator:
             logging.error("Model generator not initialized.")
             return "TERMINATE"
-
+    
         payload = {
             "conversation_plan": conversation_plan,
             "history": history,
