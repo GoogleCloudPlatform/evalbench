@@ -1,6 +1,5 @@
 import json
 import copy
-from absl import logging
 
 
 class EvalCortadoRequest:

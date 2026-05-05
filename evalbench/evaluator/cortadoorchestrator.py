@@ -1,7 +1,6 @@
 from evaluator.orchestrator import Orchestrator
 import uuid
 import datetime
-import logging
 import tempfile
 import json
 from dataset.cortadoinput import EvalCortadoRequest
