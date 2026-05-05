@@ -1,0 +1,15 @@
+.pill-link {
+    display: inline-flex;
+    align-items: center;
+    background-color: #e0f2fe;
+    color: #0369a1;
+    border-radius: 9999px;
+    padding: 4px 12px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 12px;
+    font-family: monospace;
+}
+.pill-link:hover {
+    background-color: #bae6fd;
+}

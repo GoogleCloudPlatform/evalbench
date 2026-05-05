@@ -1,5 +1,94 @@
 # Changelog
 
+## [1.7.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.6.0...v1.7.0) (2026-05-05)
+
+
+### Features
+
+* add Dataform scorers and plumb isolated fake_home workspace directory tracking ([#349](https://github.com/GoogleCloudPlatform/evalbench/issues/349)) ([b4ddfda](https://github.com/GoogleCloudPlatform/evalbench/commit/b4ddfda9241eae431ea143ea87c5cb8a99cea989))
+* Add dbt Scorers for Agent Evaluations ([#367](https://github.com/GoogleCloudPlatform/evalbench/issues/367)) ([5496d59](https://github.com/GoogleCloudPlatform/evalbench/commit/5496d59948b6e6f86322c93e25aecc664ed5e73c))
+* Add GCS Artifacts Reporter for Agent Evaluations ([#366](https://github.com/GoogleCloudPlatform/evalbench/issues/366)) ([11def06](https://github.com/GoogleCloudPlatform/evalbench/commit/11def06bc3f7a68acf17c890127dda13c0ebe50c))
+* implement lifecycle execution for setup and teardown scripts ([#360](https://github.com/GoogleCloudPlatform/evalbench/issues/360)) ([9de38da](https://github.com/GoogleCloudPlatform/evalbench/commit/9de38da0fca549b8e160044efe6891e630607450))
+
+
+### Bug Fixes
+
+* correct indentation in eval_service.py to resolve SyntaxError ([8512441](https://github.com/GoogleCloudPlatform/evalbench/commit/851244137ddc01271216cfe44c5bc090e0ab5bac))
+* correct return signature in base Orchestrator.process() ([ad8228e](https://github.com/GoogleCloudPlatform/evalbench/commit/ad8228e0db3bea785b030da354020ebc8e6b83df))
+* correct return signature in remaining Orchestrators ([b78a9e9](https://github.com/GoogleCloudPlatform/evalbench/commit/b78a9e9759b364755b26898e459a1821cdae1b6f))
+* pass None for missing metrics parameter in AgentOrchestrator results initialization ([c72c758](https://github.com/GoogleCloudPlatform/evalbench/commit/c72c7580dedc3fdfe82121d229c2582680d13a4e))
+
+## [1.6.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.5.0...v1.6.0) (2026-04-30)
+
+
+### Features
+
+* add exponential backoff for Gemini 429 resource exhausted errors ([#352](https://github.com/GoogleCloudPlatform/evalbench/issues/352)) ([11d4236](https://github.com/GoogleCloudPlatform/evalbench/commit/11d423658a0b79385e5e05644cb614b32674b0dd))
+* allow execution of mixed DDL and DML statements in Spanner driver ([#351](https://github.com/GoogleCloudPlatform/evalbench/issues/351)) ([64c0b63](https://github.com/GoogleCloudPlatform/evalbench/commit/64c0b630ac95e9ad372afa516d6dc7b34be87ec9))
+* chunk Spanner DDL statements into groups of 10 to avoid limits ([#353](https://github.com/GoogleCloudPlatform/evalbench/issues/353)) ([306caad](https://github.com/GoogleCloudPlatform/evalbench/commit/306caad98bb5ee6825d834441edbf3a95067b030))
+* handle quoted fields in CSV setup data ([#350](https://github.com/GoogleCloudPlatform/evalbench/issues/350)) ([3ba2334](https://github.com/GoogleCloudPlatform/evalbench/commit/3ba2334d5a816fb4d4614a814e9c8a0a53ab1059))
+* handle recursive dependency cleanup in Spanner table drop ([#356](https://github.com/GoogleCloudPlatform/evalbench/issues/356)) ([3eb4d45](https://github.com/GoogleCloudPlatform/evalbench/commit/3eb4d45c2ecbc8bda538f5df7748f32e77ca0b17))
+* use parameterized queries for data insertion in MySQL, Postgres, and SQLite ([#358](https://github.com/GoogleCloudPlatform/evalbench/issues/358)) ([733724d](https://github.com/GoogleCloudPlatform/evalbench/commit/733724d9978b73c274dd0a489b1c35cd78c2cb75))
+
+
+### Bug Fixes
+
+* ensure setup and cleanup sql run for ddl and dml queries ([#354](https://github.com/GoogleCloudPlatform/evalbench/issues/354)) ([89b7c4d](https://github.com/GoogleCloudPlatform/evalbench/commit/89b7c4d438680cf3c96d6399d72fc46ff1ad6bdd))
+
+## [1.5.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.4.0...v1.5.0) (2026-04-26)
+
+
+### Features
+
+* add support for custom host configuration and insecure gRPC channels via environment variables ([#336](https://github.com/GoogleCloudPlatform/evalbench/issues/336)) ([05efee0](https://github.com/GoogleCloudPlatform/evalbench/commit/05efee0c3d4b9d81120fadccd5261be89ae8fd19))
+
+
+### Bug Fixes
+
+* **geminicli:** resolve extension names from local manifests to apply settings ([#338](https://github.com/GoogleCloudPlatform/evalbench/issues/338)) ([4d82afe](https://github.com/GoogleCloudPlatform/evalbench/commit/4d82afeb814c0221b75de94e208c15041f3d2b75))
+
+## [1.4.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.3.1...v1.4.0) (2026-04-15)
+
+
+### Features
+
+* **scorer/llmrater:** add fallback to SQL logic comparison for empty results ([#326](https://github.com/GoogleCloudPlatform/evalbench/issues/326)) ([d168ac0](https://github.com/GoogleCloudPlatform/evalbench/commit/d168ac0233eb2fad3fb26d01086ac262a916d9cd))
+
+## [1.3.1](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.3.0...v1.3.1) (2026-04-10)
+
+
+### Bug Fixes
+
+* **databases/alloydb:** restore correct use_adc flag behavior ([#315](https://github.com/GoogleCloudPlatform/evalbench/issues/315)) ([909e11d](https://github.com/GoogleCloudPlatform/evalbench/commit/909e11d29a095425b9f8247b4abcc9bc2fcb24d3))
+* **generators/query_data_api:** add retry support for transient API errors ([#317](https://github.com/GoogleCloudPlatform/evalbench/issues/317)) ([e5fdead](https://github.com/GoogleCloudPlatform/evalbench/commit/e5fdeadcbab141b0e3cbb69bff72c874cb289085))
+
+## [1.3.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.2.0...v1.3.0) (2026-04-09)
+
+
+### Features
+
+* Add summary_in_response and improve LLM rater resilience ([#311](https://github.com/GoogleCloudPlatform/evalbench/issues/311)) ([68b72ee](https://github.com/GoogleCloudPlatform/evalbench/commit/68b72ee375ac949e8601256125728b6dafc96622))
+
+## [1.2.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.1.0...v1.2.0) (2026-04-07)
+
+
+### Features
+
+* **adc:** support ADC for database authentication ([#306](https://github.com/GoogleCloudPlatform/evalbench/issues/306)) ([6cb05e6](https://github.com/GoogleCloudPlatform/evalbench/commit/6cb05e64e7993876971b465f7a8859ea5788e3ef))
+* add Cloud Run support with entrypoint script, custom CSS, and environment-based XSRF configuration ([82fdeca](https://github.com/GoogleCloudPlatform/evalbench/commit/82fdeca112220560e83c4f7ccde16b4598ef0e5c))
+* add UV_NO_SYNC support to run script and update Dockerfile and cloudbuild configuration accordingly ([43731f9](https://github.com/GoogleCloudPlatform/evalbench/commit/43731f90d138d920edf1e4ef6bf1000c0644ef3d))
+* allow database name mapping via config ([#303](https://github.com/GoogleCloudPlatform/evalbench/issues/303)) ([3e8d25a](https://github.com/GoogleCloudPlatform/evalbench/commit/3e8d25aced3403611e26465533faccfb2449ad4d))
+* **geminicli:** populate adc in fake home ([01c9c5b](https://github.com/GoogleCloudPlatform/evalbench/commit/01c9c5b7f1cc14861415f5aee8c3bb99da6ab2a0))
+* **geminicli:** populate adc in fake home ([ce06c9b](https://github.com/GoogleCloudPlatform/evalbench/commit/ce06c9b934ace4c3d7a45bb502a26961c36583df))
+* implement on_load logic to auto-select job directory from query parameters ([4691de4](https://github.com/GoogleCloudPlatform/evalbench/commit/4691de485c139c5a770e61161d3db7efa0b0e738))
+
+
+### Bug Fixes
+
+* consolidate experiment_config flag into util/flags.py ([#304](https://github.com/GoogleCloudPlatform/evalbench/issues/304)) ([432d11e](https://github.com/GoogleCloudPlatform/evalbench/commit/432d11e4813087f66a1b098bc4dbe8a57c4fb299))
+* handle empty queries safely, ensure golden execution, and parse config robustly ([#265](https://github.com/GoogleCloudPlatform/evalbench/issues/265)) ([9ba022b](https://github.com/GoogleCloudPlatform/evalbench/commit/9ba022be63d43fb66ff04771efa82fa8feb0c04d))
+* remove backticks from sanitized SQL strings ([#297](https://github.com/GoogleCloudPlatform/evalbench/issues/297)) ([4e4e201](https://github.com/GoogleCloudPlatform/evalbench/commit/4e4e2011fda461ef626648f4c0d67183064e1e9d))
+
 ## [1.1.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.0.0...v1.1.0) (2026-03-20)
 
 

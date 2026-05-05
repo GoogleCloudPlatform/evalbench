@@ -1,6 +1,7 @@
 """Multiprocessing runner."""
 
 import concurrent.futures
+import contextvars
 from typing import Any
 
 from work import work
@@ -20,9 +21,10 @@ def do_work(work_obj: work.Work, item_config: Any = None) -> Any:
 
 
 class MPRunner:
-    """Multi-processing class that implements the threadpool based execution of work.
+    """Multi-processing class that implements threadpool execution of work.
 
     Attributes:
+
       executor:
       futures:
     """
@@ -42,4 +44,5 @@ class MPRunner:
         Args:
           work_obj: The work object.
         """
-        self.futures.append(self.executor.submit(do_work, work_obj))
+        ctx = contextvars.copy_context()
+        self.futures.append(self.executor.submit(ctx.run, do_work, work_obj))

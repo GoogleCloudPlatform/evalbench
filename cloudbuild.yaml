@@ -1,13 +1,35 @@
 # Building deployer image
 steps:
+- name: 'python:3.11'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    $$HOME/.local/bin/uv run --with pytest pytest evalbench/test -vv
+  env:
+  - 'PYTHONPATH=evalbench:.'
+  - 'SKIP_CLOUD_TESTS=true'
 - name: 'gcr.io/cloud-builders/docker'
+
   args: ['build', '-t', 'us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:$COMMIT_SHA', '-f', 'evalbench_service/Dockerfile', '.']
 - name: 'us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:$COMMIT_SHA'
-  args: ['evalbench/run.sh']
+  dir: '/evalbench'
+  args: ['/evalbench/evalbench/run.sh']
   env:
   - 'EVAL_GCP_PROJECT_ID=${_VAR_PROJECT}'
   - 'EVAL_GCP_PROJECT_REGION=${_VAR_REGION}'
   - 'EVAL_CONFIG=${_VAR_EVAL_CONFIG}'
+  - 'UV_CACHE_DIR=/tmp/uv-cache'
+  volumes:
+  - name: 'eval_results'
+    path: '/evalbench/results'
+- name: 'us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:$COMMIT_SHA'
+  dir: '/evalbench'
+  args: ['python3', 'verifier/verify.py']
+  volumes:
+  - name: 'eval_results'
+    path: '/evalbench/results'
 images:
 - 'us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:$COMMIT_SHA'
 substitutions:

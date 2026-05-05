@@ -1,10 +1,12 @@
 import asyncio
-from google.adk.sessions import VertexAiSessionService
+
 from google.genai import types
 
 
 class EvalAgentEngineSessionMgr:
     def __init__(self, config):
+        # Import lazily to avoid blocking calls during module load in Cloud Build
+        from google.adk.sessions import VertexAiSessionService
         self.project_id = config.get("project_id")
         self.location = config.get("location")
         self.agent_engine_id = config.get("agent_engine_id")

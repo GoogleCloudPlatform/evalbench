@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import patch, MagicMock
 from generators.models.query_data_api import QueryDataAPIGenerator
+from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable, DeadlineExceeded
+from util.rate_limit import ResourceExhaustedError
 
 
 class TestQueryDataAPIGenerator(unittest.TestCase):
@@ -64,6 +66,48 @@ class TestQueryDataAPIGenerator(unittest.TestCase):
             generator.generate_internal("What is in test?")
 
         self.assertIn("API error", str(context.exception))
+
+    @patch('generators.models.query_data_api.gda')
+    def test_generate_internal_resource_exhausted(self, mock_gda):
+        mock_client_instance = MagicMock()
+        mock_gda.DataChatServiceClient.return_value = mock_client_instance
+        mock_client_instance.query_data.side_effect = ResourceExhausted("Quota exceeded")
+
+        config = {
+            "project_id": "test-project"
+        }
+        generator = QueryDataAPIGenerator(config)
+
+        with self.assertRaises(ResourceExhaustedError):
+            generator.generate_internal("What is in test?")
+
+    @patch('generators.models.query_data_api.gda')
+    def test_generate_internal_service_unavailable(self, mock_gda):
+        mock_client_instance = MagicMock()
+        mock_gda.DataChatServiceClient.return_value = mock_client_instance
+        mock_client_instance.query_data.side_effect = ServiceUnavailable("Service unavailable")
+
+        config = {
+            "project_id": "test-project"
+        }
+        generator = QueryDataAPIGenerator(config)
+
+        with self.assertRaises(ResourceExhaustedError):
+            generator.generate_internal("What is in test?")
+
+    @patch('generators.models.query_data_api.gda')
+    def test_generate_internal_deadline_exceeded(self, mock_gda):
+        mock_client_instance = MagicMock()
+        mock_gda.DataChatServiceClient.return_value = mock_client_instance
+        mock_client_instance.query_data.side_effect = DeadlineExceeded("Deadline exceeded")
+
+        config = {
+            "project_id": "test-project"
+        }
+        generator = QueryDataAPIGenerator(config)
+
+        with self.assertRaises(ResourceExhaustedError):
+            generator.generate_internal("What is in test?")
 
 
 if __name__ == "__main__":

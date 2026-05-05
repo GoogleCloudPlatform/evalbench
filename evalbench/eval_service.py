@@ -1,6 +1,8 @@
 """A gRPC servicer that handles EvalService requests."""
 
 import asyncio
+import json
+import os
 from collections.abc import AsyncIterator
 from typing import AsyncGenerator
 
@@ -12,13 +14,16 @@ import grpc
 import pathlib
 import queue
 from dataset.dataset import load_json
-from evaluator import get_orchestrator
+from dataset import evalinput
+from evaluator import get_orchestrator, get_streaming_orchestrator
 
 import reporting.report as report
 from reporting import get_reporters
 import reporting.analyzer as analyzer
 from util.config import update_google3_relative_paths, set_session_configs, config_to_df
 from util import get_SessionManager
+from util.scriptrunner import run_script
+from util.sessionmgr import SESSION_RESOURCES_PATH
 from dataset.dataset import load_dataset_from_json
 from evalproto import (
     eval_request_pb2,
@@ -32,10 +37,11 @@ from util.service import (
 from generators.models.grpc_proxy import PROXY_QUEUES
 
 import threading
+from util.context import rpc_id_var
+from util import get_SessionManager
 
 
 SESSIONMANAGER = get_SessionManager()
-rpc_id_var = contextvars.ContextVar("rpc_id", default="default")
 
 
 class SessionManagerInterceptor(grpc.aio.ServerInterceptor):
@@ -53,14 +59,9 @@ class SessionManagerInterceptor(grpc.aio.ServerInterceptor):
         _metadata = dict(handler_call_details.invocation_metadata)
         if rpc_id_var.get() == "default":
             _metadata = dict(handler_call_details.invocation_metadata)
-            rpc_id_var.set(self.decorate(_metadata["client-rpc-id"]))
+            rpc_id_var.set(_metadata["client-rpc-id"])
             SESSIONMANAGER.create_session(rpc_id_var.get())
-        else:
-            rpc_id_var.set(self.decorate(rpc_id_var.get()))
         return await continuation(handler_call_details)
-
-    def decorate(self, rpc_id: str):
-        return f"{self.tag}-{rpc_id}"
 
 
 class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
@@ -75,7 +76,8 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         request: eval_request_pb2.PingRequest,
         context: grpc.ServicerContext,
     ) -> eval_response_pb2.EvalResponse:
-        return eval_response_pb2.EvalResponse(response="ack")
+        session_id = rpc_id_var.get()
+        return eval_response_pb2.EvalResponse(response="ack", session_id=session_id)
 
     async def Connect(
         self,
@@ -94,13 +96,22 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         request,
         context,
     ) -> eval_response_pb2.EvalResponse:
-        experiment_config = yaml.safe_load(request.yaml_config.decode("utf-8"))
-        session = SESSIONMANAGER.get_session(rpc_id_var.get())
-        SESSIONMANAGER.write_resource_files(rpc_id_var.get(), request.resources)
         resource_map = {r.address: r.address for r in request.resources}
-        update_google3_relative_paths(experiment_config, rpc_id_var.get(), resource_map)
+        experiment_config = yaml.safe_load(request.yaml_config.decode("utf-8"))
+        update_google3_relative_paths(
+            experiment_config, rpc_id_var.get(), resource_map)
+        for resource in request.resources:
+            if resource.address.endswith(".yaml"):
+                yaml_config = yaml.safe_load(resource.content.decode("utf-8"))
+                update_google3_relative_paths(
+                    yaml_config, rpc_id_var.get(), resource_map)
+                resource.content = yaml.dump(yaml_config).encode("utf-8")
+        session = SESSIONMANAGER.get_session(rpc_id_var.get())
+        SESSIONMANAGER.write_resource_files(
+            rpc_id_var.get(), request.resources)
         set_session_configs(session, experiment_config)
-        return eval_response_pb2.EvalResponse(response="ack")
+        session_id = rpc_id_var.get()
+        return eval_response_pb2.EvalResponse(response="ack", session_id=session_id)
 
     async def ListEvalInputs(
         self,
@@ -123,52 +134,116 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         request_iterator: AsyncIterator[eval_request_pb2.EvalInputRequest],
         context: grpc.ServicerContext,
     ) -> eval_response_pb2.EvalResponse:
-        session_id = rpc_id_var.get()
-        session = SESSIONMANAGER.get_session(session_id)
+        try:
+            session_id = rpc_id_var.get()
+            session = SESSIONMANAGER.get_session(session_id)
+            config, db_configs, model_config, setup_config = load_session_configs(session)
+            if config is None:
+                context.set_code(grpc.StatusCode.FAILED_PRECONDITION)
+                context.set_details("Session not configured")
+                return eval_response_pb2.EvalResponse()
 
-        config, db_configs, model_config, setup_config = load_session_configs(
-            session)
-        if config is None:
-            context.set_code(grpc.StatusCode.FAILED_PRECONDITION)
-            context.set_details("Session not configured")
-            return eval_response_pb2.EvalResponse()
+            config["session_id"] = session_id
+            session_dir = os.path.join(SESSION_RESOURCES_PATH, session_id)
 
-        dataset = await get_dataset_from_request(request_iterator)
+            set_up_script = config.get("set_up_script")
+            if set_up_script:
+                if os.path.exists(set_up_script):
+                    logging.info(f"Eval: Executing set_up_script '{set_up_script}'")
+                    run_script(set_up_script, session_dir, "setup")
+                else:
+                    logging.error(f"Eval: Cannot run set_up_script, file not found at '{set_up_script}'")
 
-        evaluator = get_orchestrator(
-            config, db_configs, setup_config, report_progress=True
-        )
+            streaming_eval = session.get("streaming_eval", False) if session else False
+            loop = asyncio.get_event_loop()
 
-        streaming_eval = session.get(
-            "streaming_eval", False) if session else False
-        loop = asyncio.get_event_loop()
+            if streaming_eval:
+                evaluator = get_streaming_orchestrator(
+                    config, db_configs, setup_config, report_progress=True
+                )
+                logging.info(
+                    "Streaming eval mode: evaluating items as they arrive..."
+                )
+                tasks = []
+                async for request in request_iterator:
+                    eval_input = evalinput.EvalInputRequest.init_from_proto(
+                        request
+                    )
+                    ctx = contextvars.copy_context()
 
-        # Offload blocking evaluate call to a thread pool
-        logging.info("Offloading evaluation to thread pool...")
-        await loop.run_in_executor(None, evaluator.evaluate, dataset)
+                    task = loop.run_in_executor(
+                        None, ctx.run, evaluator.evaluate_item, eval_input
+                    )
+                    tasks.append(task)
+                await asyncio.gather(*tasks)
+            else:
+                dataset = await get_dataset_from_request(request_iterator)
+                evaluator = get_orchestrator(
+                    config, db_configs, setup_config, report_progress=True
+                )
+                logging.info("Batch eval mode: evaluating all items together...")
+                ctx = contextvars.copy_context()
+                await loop.run_in_executor(
+                    None, ctx.run, evaluator.evaluate, dataset
+                )
 
-        job_id, run_time, results_tf, scores_tf = evaluator.process()
-        reporters = get_reporters(config.get("reporting"), job_id, run_time)
+            job_id, run_time, results_tf, scores_tf, multi_trial_scores_tf = evaluator.process()
+            # Fallback to empty dict if reporting is present but null in YAML
+            reporters = get_reporters(
+                config.get("reporting") or {}, job_id, run_time
+            )
 
-        # Offload blocking results processing to a thread pool
-        logging.info("Offloading results processing to thread pool...")
-        await loop.run_in_executor(
-            None,
-            _process_results,
-            reporters,
-            job_id,
-            run_time,
-            results_tf,
-            scores_tf,
-            config,
-            model_config,
-            db_configs,
-        )
+            # Offload blocking results processing to a thread pool
+            logging.info("Offloading results processing to thread pool...")
+            ctx = contextvars.copy_context()
+            summary = await loop.run_in_executor(
+                None,
+                ctx.run,
+                _process_results,
+                reporters,
+                job_id,
+                run_time,
+                results_tf,
+                scores_tf,
+                multi_trial_scores_tf,
+                config,
+                model_config,
+                db_configs,
+            )
 
-        logging.info(
-            f"Finished Job ID {job_id} Thread count:{threading.active_count()}"
-        )
-        return eval_response_pb2.EvalResponse(response=f"{job_id}")
+            logging.info(
+                f"Finished Job ID {job_id} Thread count:{threading.active_count()}"
+            )
+
+            if config.get("summary_in_response"):
+                response = json.dumps({"job_id": job_id, "summary": summary})
+            else:
+                response = f"{job_id}"
+
+            tear_down_script = config.get("tear_down_script")
+            if tear_down_script:
+                if os.path.exists(tear_down_script):
+                    logging.info(f"Eval: Executing tear_down_script '{tear_down_script}'")
+                    run_script(tear_down_script, session_dir, "teardown")
+                else:
+                    logging.error(f"Eval: Cannot run tear_down_script, file not found at '{tear_down_script}'")
+
+            return eval_response_pb2.EvalResponse(response=response, session_id=session_id)
+
+        except Exception as e:
+            display_config = "Unknown"
+            # Attempt retrieval of configuration details if successfully loaded
+            try:
+                loaded_config = SESSIONMANAGER.get_session(rpc_id_var.get()).get("config", {})
+                cand = loaded_config.get("dataset_config", "Unknown")
+                g3_idx = cand.find("google3/")
+                display_config = cand[g3_idx:] if g3_idx != -1 else cand
+            except Exception as e_ctx:
+                # Best effort retrieval of metadata for tracing. Do not mask original fault.
+                logging.debug(f"Unable to determine active dataset path for log context: {e_ctx}")
+
+            logging.exception(f"gRPC Eval failed for config/dataset '{display_config}': {e}")
+            raise
 
     async def Interact(
         self,
@@ -335,7 +410,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
 
 
 def _process_results(
-    reporters, job_id, run_time, results_tf, scores_tf, config, model_config, db_configs
+    reporters, job_id, run_time, results_tf, scores_tf, multi_trial_scores_tf, config, model_config, db_configs
 ):
     config_df = config_to_df(
         job_id,
@@ -346,14 +421,20 @@ def _process_results(
     )
     results = load_json(results_tf)
     results_df = report.get_dataframe(results)
-    if results_df.empty:
-        logging.warning(
-            "There were no matching evals in this run. Returning empty set."
-        )
-        return eval_response_pb2.EvalResponse(response=f"{job_id}")
+    assert not results_df.empty, "There were no matching evals in this run."
     report.quick_summary(results_df)
     scores = load_json(scores_tf)
-    scores_df, summary_scores_df = analyzer.analyze_result(scores, config)
+    if multi_trial_scores_tf:
+        multi_trial_scores = load_json(multi_trial_scores_tf)
+        if multi_trial_scores:
+            scores.extend(multi_trial_scores)
+
+    num_prompts = len(set(r.get("prompt_id")
+                      for r in results if r.get("prompt_id")))
+    num_trials = config.get("num_trials", 1)
+    scores_df, summary_scores_df = analyzer.analyze_result(
+        scores, config, num_prompts=num_prompts, num_trials=num_trials
+    )
     summary_scores_df["job_id"] = job_id
     summary_scores_df["run_time"] = run_time
 
@@ -367,3 +448,25 @@ def _process_results(
     # k8s emptyDir /tmp does not auto cleanup, so we explicitly delete
     pathlib.Path(results_tf).unlink()
     pathlib.Path(scores_tf).unlink()
+    if multi_trial_scores_tf:
+        pathlib.Path(multi_trial_scores_tf).unlink()
+
+    # Build summary dict from summary_scores_df
+    summary = {"total": 0, "scores": {}}
+    for _, row in summary_scores_df.iterrows():
+        name = row.get("metric_name", "")
+        total = int(row.get("total_results_count", 0))
+        correct = int(row.get("correct_results_count", 0))
+        summary["total"] = total
+        summary["scores"][name] = correct
+
+    # Add generation latency percentiles
+    if "sql_generator_time" in results_df.columns:
+        latencies = results_df["sql_generator_time"].dropna().astype(float)
+        if not latencies.empty:
+            summary["generation_latency"] = {
+                "p50": round(latencies.quantile(0.5), 2),
+                "p90": round(latencies.quantile(0.9), 2),
+            }
+
+    return summary

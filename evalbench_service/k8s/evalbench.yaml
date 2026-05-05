@@ -18,7 +18,7 @@ spec:
         gke-gcsfuse/volumes: "true"
     spec:
       securityContext:
-        fsGroup: 65532
+        fsGroup: 0
       serviceAccountName: evalbench-ksa
       containers:
       - image: us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:latest
@@ -37,19 +37,16 @@ spec:
         name: evalbench-eval
         resources:
           requests:
-            cpu: "100m"
-            memory: "256Mi"
+            cpu: "20"
+            memory: "80Gi"
           limits:
-            cpu: "1000m"
-            memory: "1Gi"
+            cpu: "20"
+            memory: "80Gi"
         securityContext:
           allowPrivilegeEscalation: true
-          capabilities:
-            drop:
-            - ALL
           readOnlyRootFilesystem: false
-          runAsUser: 65532
-          runAsGroup: 65532
+          runAsUser: 0
+          runAsGroup: 0
           seccompProfile:
             type: RuntimeDefault
         ports:
@@ -69,6 +66,9 @@ spec:
           name: gcs-fuse-csi-vol
         - mountPath: /tmp_sessions
           name: evalbench-ssd-vol
+        - mountPath: /etc/evalbench-sa-key
+          name: evalbench-sa-key-vol
+          readOnly: true
       volumes:
       - name: tmp-volume
         emptyDir: {}
@@ -77,7 +77,11 @@ spec:
           driver: gcsfuse.csi.storage.gke.io
           volumeAttributes:
             bucketName: evalbench-sessions-cloud-db-nl2sql
-            mountOptions: "implicit-dirs,uid=65532,gid=65532"
+            mountOptions: "implicit-dirs,uid=0,gid=0"
       - name: evalbench-ssd-vol
         persistentVolumeClaim:
           claimName: evalbench-ssd-pvc
+      - name: evalbench-sa-key-vol
+        secret:
+          secretName: evalbench-sa-key
+          defaultMode: 0444

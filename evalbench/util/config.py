@@ -1,3 +1,4 @@
+import json
 import datetime
 import logging
 import os
@@ -31,13 +32,16 @@ def load_db_data_from_csvs(data_directory: str):
     current_directory = os.getcwd()
     if not os.path.isdir(os.path.join(current_directory, data_directory)):
         return tables
-    for filename in os.listdir(os.path.join(current_directory, data_directory)):
+    for filename in os.listdir(
+        os.path.join(
+            current_directory,
+            data_directory)):
         if filename.endswith(".csv"):
             table_name = filename[:-4]
             with open(
                 os.path.join(current_directory, data_directory, filename), "r"
             ) as csvfile:
-                reader = csv.reader(csvfile)
+                reader = csv.reader(csvfile, quotechar='"')
                 rows = []
                 for row in reader:
                     rows.append(row)
@@ -68,10 +72,10 @@ def load_setup_scripts(setup_scripts_directory_path: str):
         current_directory, setup_scripts_directory_path, "post_setup.json"
     )
     if os.path.exists(post_setup_json_path):
-        import json
 
         with open(post_setup_json_path, "r") as f:
-            # Load as list of dicts, then convert back to strings for batch_execute
+            # Load as list of dicts, then convert back to strings for
+            # batch_execute
             try:
                 data = json.load(f)
                 if isinstance(data, list):
@@ -83,8 +87,9 @@ def load_setup_scripts(setup_scripts_directory_path: str):
     else:
         post_setup = _load_setup_sql(
             os.path.join(
-                current_directory, setup_scripts_directory_path, "post_setup.sql"
-            ),
+                current_directory,
+                setup_scripts_directory_path,
+                "post_setup.sql"),
         )
     return (pre_setup, setup, post_setup)
 
@@ -125,40 +130,9 @@ def config_to_df(
             }
         )
     df = pd.DataFrame.from_dict(configs)
-    df[["job_id", "config", "value"]] = df[["job_id", "config", "value"]].astype(
-        "string"
-    )
+    df[["job_id", "config", "value"]] = df[[
+        "job_id", "config", "value"]].astype("string")
     return df
-
-
-def df_to_config(df: pd.DataFrame) -> dict:
-    import ast
-
-    original_dict = {}
-
-    for _, row in df.iterrows():
-        key_path = row["config"]
-        value_str = row["value"]
-
-        try:
-            if pd.isna(value_str):
-                value = None
-            else:
-                value = ast.literal_eval(value_str)
-        except (ValueError, SyntaxError, TypeError):
-            value = value_str
-
-        keys = key_path.split(".")
-
-        current_level = original_dict
-        for key in keys[:-1]:
-            if key not in current_level:
-                current_level[key] = {}
-            current_level = current_level[key]
-
-        current_level[keys[-1]] = value
-
-    return original_dict
 
 
 def update_google3_relative_paths(
@@ -171,7 +145,8 @@ def update_google3_relative_paths(
             elif isinstance(value, list):
                 values = []
                 for sub_value in value:
-                    if isinstance(sub_value, str) and sub_value.startswith("google3/"):
+                    if isinstance(sub_value,
+                                  str) and sub_value.startswith("google3/"):
                         values.append(get_google3_relative_path(
                             sub_value, session_id))
                     elif isinstance(sub_value, str) and sub_value in resource_map:
@@ -182,6 +157,13 @@ def update_google3_relative_paths(
                                 resource_map[sub_value],
                             )
                         )
+                    elif isinstance(sub_value, dict):
+                        for k, v in sub_value.items():
+                            if isinstance(v, str) and v.startswith("google3/"):
+                                sub_value[k] = get_google3_relative_path(
+                                    v, session_id
+                                )
+                        values.append(sub_value)
                     else:
                         values.append(sub_value)
                 experiment_config[key] = values
@@ -208,7 +190,12 @@ def get_google3_relative_path(value, session_id):
 def set_session_configs(session, experiment_config: dict):
     session["config"] = experiment_config
     if "dataset_config" in experiment_config and experiment_config["dataset_config"]:
-        session["dataset_config"] = experiment_config["dataset_config"]
+        # Handle both flat string paths and nested dicts (e.g. BIRD configs)
+        dc = experiment_config["dataset_config"]
+        if isinstance(dc, dict) and "prompts_file" in dc:
+            session["dataset_config"] = dc["prompts_file"]
+        else:
+            session["dataset_config"] = dc
     if (
         "database_configs" in experiment_config
         and experiment_config["database_configs"]
@@ -240,10 +227,10 @@ def breakdown_db_configs_by_dialect(db_configs: list[dict]):
     db_configs_by_dialect = {}
     for db_config_yaml in db_configs:
         db_config = load_yaml_config(db_config_yaml)
-        dialect = db_config.get("dialect")
-        if not dict:
+        if not db_config:
             continue
-        elif dialect in db_configs_by_dialect:
+        dialect = db_config.get("dialect")
+        if dialect in db_configs_by_dialect:
             db_configs_by_dialect[dialect].append(db_config)
         else:
             db_configs_by_dialect[dialect] = [db_config]

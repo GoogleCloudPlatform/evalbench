@@ -6,15 +6,17 @@ import logging
 import re
 import shutil
 import sys
+from util.context import rpc_id_var
 
 
 class CLICommand:
-    def __init__(self, cli, prompt, env=None, resume=False, yolo=True):
+    def __init__(self, cli, prompt, env=None, resume=False, yolo=True, cwd=None):
         self.cli = cli
         self.prompt = prompt
         self.env = env if env else {}
         self.resume = resume
         self.yolo = yolo
+        self.cwd = cwd
 
 
 class GeminiCliGenerator(QueryGenerator):
@@ -28,7 +30,10 @@ class GeminiCliGenerator(QueryGenerator):
 
         # If running via eval_server.py (gRPC), use session-specific path in shared volume
         if sys.argv[0].endswith("eval_server.py"):
-            session_id = querygenerator_config.get("session_id", "default")
+            session_id = querygenerator_config.get("session_id")
+            if not session_id:
+                ctx_id = rpc_id_var.get()
+                session_id = ctx_id if ctx_id != "default" else "default"
             self.fake_home = os.path.join("/tmp_sessions", session_id, "fake_home")
         else:
             self.fake_home = os.path.abspath(os.path.join(".venv", "fake_home"))
@@ -44,15 +49,24 @@ class GeminiCliGenerator(QueryGenerator):
         self.env = querygenerator_config.get("env", {})
         self.env["HOME"] = self.fake_home
 
-        if "GOOGLE_APPLICATION_CREDENTIALS" not in self.env:
-            default_adc = os.path.join(
+        adc_path = self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
+        if not adc_path:
+            adc_path = os.path.join(
                 self.real_home,
                 ".config",
                 "gcloud",
                 "application_default_credentials.json",
             )
-            if os.path.exists(default_adc):
-                self.env["GOOGLE_APPLICATION_CREDENTIALS"] = default_adc
+            if os.path.exists(adc_path):
+                self.env["GOOGLE_APPLICATION_CREDENTIALS"] = adc_path
+
+        if adc_path and os.path.exists(adc_path):
+            # Copy the ADC to fake_home
+            fake_gcloud_dir = os.path.join(self.fake_home, ".config", "gcloud")
+            os.makedirs(fake_gcloud_dir, exist_ok=True)
+            fake_adc_path = os.path.join(fake_gcloud_dir, "application_default_credentials.json")
+            if os.path.abspath(adc_path) != os.path.abspath(fake_adc_path):
+                shutil.copy2(adc_path, fake_adc_path)
 
         if "CLOUDSDK_CONFIG" not in self.env:
             self.env["CLOUDSDK_CONFIG"] = os.path.join(
@@ -62,9 +76,59 @@ class GeminiCliGenerator(QueryGenerator):
         self.gemini_cli_version = querygenerator_config.get(
             "gemini_cli_version", "gemini-cli"
         )
+        self._supports_skip_settings_cache = None
         self.setup_config = querygenerator_config.get("setup", {})
         if self.setup_config:
             self._setup()
+
+    # --skip-settings was added to `gemini extensions install` in v0.36.0
+    # (PR #17212, released 2026-04-01). Older versions reject the flag.
+    _SKIP_SETTINGS_MIN_VERSION = (0, 36, 0)
+
+    @staticmethod
+    def _parse_semver(version_str: str) -> tuple[int, int, int] | None:
+        match = re.search(r"(\d+)\.(\d+)\.(\d+)", version_str or "")
+        if not match:
+            return None
+        return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+
+    def _supports_skip_settings(self, install_env: dict) -> bool:
+        if self._supports_skip_settings_cache is not None:
+            return self._supports_skip_settings_cache
+
+        # Try parsing version directly from gemini_cli_version spec first
+        # (e.g. "@google/gemini-cli@0.36.0" or "gemini-cli@0.37.1").
+        parsed = self._parse_semver(self.gemini_cli_version)
+
+        if parsed is None:
+            try:
+                result = subprocess.run(
+                    [
+                        "npm",
+                        "exec",
+                        "--yes",
+                        self.gemini_cli_version,
+                        "--",
+                        "--version",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    env=install_env,
+                    timeout=60,
+                )
+                parsed = self._parse_semver(result.stdout)
+            except Exception as e:
+                logging.warning(f"Could not detect gemini-cli version: {e}")
+                parsed = None
+
+        supported = parsed is not None and parsed >= self._SKIP_SETTINGS_MIN_VERSION
+        self._supports_skip_settings_cache = supported
+        logging.info(
+            f"gemini-cli version {parsed}: --skip-settings "
+            f"{'supported' if supported else 'not supported'}"
+        )
+        return supported
 
     def _setup(self):
         """Performs initial setup for Gemini CLI."""
@@ -559,20 +623,24 @@ class GeminiCliGenerator(QueryGenerator):
             if extensions[ext] and "settings" in extensions[ext]:
                 current_ext_env.update(extensions[ext]["settings"])
 
+            install_cmd = [
+                "npm",
+                "exec",
+                "--yes",
+                self.gemini_cli_version,
+                "--",
+                "extensions",
+                "install",
+                ext,
+                "--consent",
+            ]
+            if self._supports_skip_settings(install_env):
+                install_cmd.append("--skip-settings")
+
             try:
                 # gemini extensions install <name_or_url> --consent
                 result = subprocess.run(
-                    [
-                        "npm",
-                        "exec",
-                        "--yes",
-                        self.gemini_cli_version,
-                        "--",
-                        "extensions",
-                        "install",
-                        ext,
-                        "--consent",
-                    ],
+                    install_cmd,
                     check=False,
                     capture_output=True,
                     text=True,
@@ -588,20 +656,110 @@ class GeminiCliGenerator(QueryGenerator):
                 else:
                     logging.info(f"Successfully installed extension: {ext}")
 
-                ext_name_match = re.search(r"([^/]+?)(?:\.git)?$", ext)
-                if ext_name_match:
-                    search_name = ext_name_match.group(1)
-                    if os.path.exists(self.extensions_dir):
-                        for item in os.listdir(self.extensions_dir):
-                            if search_name in item:
-                                self._patch_manifest_sensitive(
-                                    os.path.join(self.extensions_dir, item)
+                search_name = None
+                manifest_path = os.path.join(ext, "gemini-extension.json")
+                if os.path.exists(manifest_path):
+                    try:
+                        with open(manifest_path, "r") as f:
+                            manifest = json.load(f)
+                            search_name = manifest.get("name")
+                    except Exception as e:
+                        logging.warning(f"Failed to read local manifest at {manifest_path}: {e}")
+
+                if not search_name:
+                    ext_name_match = re.search(r"([^/]+?)(?:\.git)?$", ext)
+                    if ext_name_match:
+                        search_name = ext_name_match.group(1)
+
+                if search_name and os.path.exists(self.extensions_dir):
+                    for item in os.listdir(self.extensions_dir):
+                        if search_name in item:
+                            ext_dir = os.path.join(self.extensions_dir, item)
+                            self._patch_manifest_sensitive(ext_dir)
+                            # For gemini-cli >= 0.36.0, --skip-settings was used
+                            # so we must persist settings explicitly afterwards.
+                            if "--skip-settings" in install_cmd:
+                                settings_values = (
+                                    extensions[ext].get("settings", {})
+                                    if extensions[ext]
+                                    else {}
+                                )
+                                self._configure_extension_settings(
+                                    item, ext_dir, settings_values, install_env
                                 )
 
             except subprocess.TimeoutExpired:
                 logging.error(f"Installation of extension {ext} timed out.")
             except Exception as e:
                 logging.error(f"Failed to install extension {ext}: {e}")
+
+    def _configure_extension_settings(
+        self,
+        ext_name: str,
+        ext_path: str,
+        settings_values: dict,
+        install_env: dict,
+    ):
+        """Persists extension settings via `gemini extensions config`.
+
+        Required for gemini-cli >= 0.36.0 where install uses --skip-settings
+        and settings are not picked up from env vars alone at runtime.
+        """
+        manifest_path = os.path.join(ext_path, "gemini-extension.json")
+        if not os.path.exists(manifest_path):
+            return
+
+        try:
+            with open(manifest_path, "r") as f:
+                manifest = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logging.warning(f"Could not parse manifest {manifest_path}: {e}")
+            return
+
+        settings_schema = manifest.get("settings", [])
+        if not settings_schema:
+            return
+
+        for setting in settings_schema:
+            env_var = setting.get("envVar")
+            if not env_var:
+                continue
+            value = settings_values.get(env_var)
+            if value is None:
+                # Optional setting with no override provided; skip it.
+                continue
+
+            try:
+                result = subprocess.run(
+                    [
+                        "npm",
+                        "exec",
+                        "--yes",
+                        self.gemini_cli_version,
+                        "--",
+                        "extensions",
+                        "config",
+                        ext_name,
+                        env_var,
+                    ],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    input=str(value) + "\n",
+                    env=install_env,
+                    timeout=60,
+                )
+                if result.returncode != 0:
+                    logging.warning(
+                        f"Failed to configure {ext_name}.{env_var}: "
+                        f"{result.stderr or result.stdout}"
+                    )
+                else:
+                    logging.info(f"Configured extension setting {ext_name}.{env_var}")
+            except subprocess.TimeoutExpired:
+                logging.warning(f"Timeout configuring {ext_name}.{env_var}")
+            except Exception as e:
+                logging.warning(f"Error configuring {ext_name}.{env_var}: {e}")
 
     def _patch_manifest_sensitive(self, ext_path):
         """Patches extension manifest to disable keychain requirements."""
@@ -627,10 +785,10 @@ class GeminiCliGenerator(QueryGenerator):
         return self._run_gemini_cli(cli_cmd)
 
     def _execute_cli_command(
-        self, command: list[str], env: dict[str, str] | None = None
+        self, command: list[str], env: dict[str, str] | None = None, cwd: str | None = None
     ) -> subprocess.CompletedProcess:
         try:
-            result = subprocess.run(command, capture_output=True, text=True, check=False, env=env)
+            result = subprocess.run(command, capture_output=True, text=True, check=False, env=env, cwd=cwd if cwd else self.fake_home)
             # Filter out benign schema warnings from json decoder from stderr to reduce noise
             if result.stderr:
                 result.stderr = "\n".join(
@@ -684,7 +842,7 @@ class GeminiCliGenerator(QueryGenerator):
             ]
         )
 
-        result = self._execute_cli_command(command, env=env)
+        result = self._execute_cli_command(command, env=env, cwd=cli_cmd.cwd)
         if result.returncode == 0 and result.stdout:
             result.stdout = self._parse_stream_json(result.stdout)
 
@@ -851,6 +1009,27 @@ class GeminiCliGenerator(QueryGenerator):
             return list(output_json["stats"]["tools"]["byName"].keys())
         return []
 
+    def extract_skills(self, stdout: str) -> list[str]:
+        """Extracts activated skill names from the activate_skill tool's parameters.
+
+        In Gemini CLI, skills are invoked via the 'activate_skill' built-in tool.
+        This method extracts skill names from the parameters of activate_skill calls.
+        """
+        output_json = self.parse_response(stdout)
+        try:
+            by_name = output_json["stats"]["tools"]["byName"]
+            activate_calls = by_name.get("activate_skill", {})
+            parameters_list = activate_calls.get("parameters", [])
+            skills = []
+            for params in parameters_list:
+                # Try common parameter names for skill name
+                skill_name = params.get("skill_name") or params.get("skillName") or params.get("skill")
+                if skill_name and skill_name not in skills:
+                    skills.append(skill_name)
+            return skills
+        except (KeyError, TypeError):
+            return []
+
     def safe_generate(self, cli_cmd: CLICommand) -> subprocess.CompletedProcess:
         result = self.generate_internal(cli_cmd)
         if isinstance(result, str):
@@ -861,7 +1040,7 @@ class GeminiCliGenerator(QueryGenerator):
         return result
 
     def create_command(
-        self, cli: str, prompt: str, env: dict = None, resume: bool = False
+        self, cli: str, prompt: str, env: dict = None, resume: bool = False, cwd: str = None
     ) -> CLICommand:
         merged_env = self.env.copy()
 
@@ -872,4 +1051,4 @@ class GeminiCliGenerator(QueryGenerator):
 
         if env:
             merged_env.update(env)
-        return CLICommand(cli=cli, prompt=prompt, env=merged_env, resume=resume)
+        return CLICommand(cli=cli, prompt=prompt, env=merged_env, resume=resume, cwd=cwd)

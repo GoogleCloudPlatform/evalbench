@@ -46,16 +46,27 @@ class SQLExecWork(Work):
         golden_eval_result = None
         golden_error = None
 
+        query_type = self.eval_result["query_type"]
+        eval_query = self._get_eval_query()
+        preprocess_sql = self._get_preprocess_sql_query()
+        golden_sql = self._get_golden_sql()
+
+        if golden_sql:
+            golden_result, golden_eval_result, golden_error = (
+                self._evaluate_execution_results(
+                    golden_sql,
+                    preprocess_sql,
+                    eval_query,
+                    query_type,
+                    is_golden=True,
+                )
+            )
+
         if (
             self.eval_result["sql_generator_error"] is None
-            and self.eval_result["generated_sql"]
+            and self.eval_result.get("generated_sql")
         ):
-            query_type = self.eval_result["query_type"]
-            eval_query = self._get_eval_query()
             sanitized_generated_sql = self._sanitize_sql()
-            preprocess_sql = self._get_preprocess_sql_query()
-            golden_sql = self._get_golden_sql()
-
             if sanitized_generated_sql:
                 generated_result, generated_eval_result, generated_error = (
                     self._evaluate_execution_results(
@@ -66,15 +77,6 @@ class SQLExecWork(Work):
                         is_golden=False,
                     )
                 )
-            golden_result, golden_eval_result, golden_error = (
-                self._evaluate_execution_results(
-                    golden_sql,
-                    preprocess_sql,
-                    eval_query,
-                    query_type,
-                    is_golden=True,
-                )
-            )
 
         self.eval_result["generated_result"] = generated_result
         self.eval_result["eval_results"] = generated_eval_result
@@ -88,6 +90,10 @@ class SQLExecWork(Work):
     def _evaluate_execution_results(
         self, query, preprocess_sql, eval_query, query_type, is_golden=False
     ):
+        # Ensure query is a scalar string, joining if presented as a list
+        if isinstance(query, list):
+            query = "\n".join(str(q) for q in query)
+
         result = None
         eval_result = None
         error = None
@@ -96,23 +102,36 @@ class SQLExecWork(Work):
                 self.db.execute(preprocess_sql)
             except Exception as preprocess_error:
                 traceback.print_exc()
+
+        if not query or not query.strip():
+            return None, None, "list index out of range (empty query)"
+
         if query_type == "dql":
             try:
+                stmts = sqlparse.split(query)
+                if not stmts:
+                    return None, None, "list index out of range (empty query)"
                 result, _, error = self.db.execute(
-                    sqlparse.split(query)[0], use_cache=True, rollback=True
+                    stmts[0], use_cache=True, rollback=True
                 )
             except Exception as e:
                 error = str(e)
         elif query_type == "dml":
-            # self.db.execute(self.eval_result["setup_sql"])
+            self.db.execute(self.eval_result["setup_sql"])
             result, eval_result, error = self.db.execute(
                 query, eval_query, use_cache=False, rollback=True
             )
-            # self.db.execute(self.eval_result["cleanup_sql"])
+            self.db.execute(self.eval_result["cleanup_sql"])
         elif query_type == "ddl":
-            # self.db.execute(self.eval_result["setup_sql"])
             try:
-                self.db.resetup_database(force=True)
+                # self.db.resetup_database(force=True)
+                setup_sql = self.eval_result.get("setup_sql")
+                if isinstance(setup_sql, dict):
+                    setup_sql = setup_sql.get(self.db.dialect)
+                elif isinstance(setup_sql, list) and len(setup_sql) > 0:
+                    setup_sql = setup_sql[0]
+                if setup_sql:
+                    self.db.execute(setup_sql)
             except Exception as setup_error:
                 return (
                     None,
@@ -122,7 +141,13 @@ class SQLExecWork(Work):
                 )
             result, _, error = self.db.execute(query, use_cache=False)
             eval_result = self.db.get_metadata()
-            # self.db.execute(self.eval_result["cleanup_sql"])
+            cleanup_sql = self.eval_result.get("cleanup_sql")
+            if isinstance(cleanup_sql, dict):
+                cleanup_sql = cleanup_sql.get(self.db.dialect)
+            elif isinstance(cleanup_sql, list) and len(cleanup_sql) > 0:
+                cleanup_sql = cleanup_sql[0]
+            if cleanup_sql:
+                self.db.execute(cleanup_sql)
         return result, eval_result, error
 
     def _sanitize_sql(self):
@@ -135,7 +160,8 @@ class SQLExecWork(Work):
             ]
         else:
             self.eval_result["sanitized_sql"] = sanitize_sql(
-                self.eval_result["generated_sql"]
+                self.eval_result["generated_sql"],
+                dialect=self.experiment_config.get("dialect"),
             )
         return self.eval_result["sanitized_sql"]
 

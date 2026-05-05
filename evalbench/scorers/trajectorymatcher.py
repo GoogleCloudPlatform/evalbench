@@ -20,6 +20,7 @@ class TrajectoryMatcher(comparator.Comparator):
         self.name = "trajectory_matcher"
         self.config = config
         self.enforce_order = config.get("enforce_order", False)
+        self.generator = config.get("generator", "")
 
     def _levenshtein_distance(self, seq1: List[str], seq2: List[str]) -> int:
         n, m = len(seq1), len(seq2)
@@ -52,6 +53,30 @@ class TrajectoryMatcher(comparator.Comparator):
             return 1.0  # Both are empty
         return intersection / union
 
+    def _normalize_trajectory(self, trajectory: List[str]) -> List[str]:
+        if not trajectory:
+            return []
+
+        normalized = []
+        for tool in trajectory:
+            if self.generator == "claude_code":
+                if tool == "ToolSearch":
+                    continue
+                if tool.startswith("mcp__"):
+                    # Drop the prefix "mcp__<mcp_server>__"
+                    # Assuming the format is mcp__server_name__tool_name
+                    parts = tool.split("__", 2)
+                    if len(parts) == 3:
+                        normalized.append(parts[2])
+                    else:
+                        # If it doesn't match expected parts, just strip the prefix
+                        normalized.append(tool.replace("mcp__", "", 1))
+                else:
+                    normalized.append(tool)
+            else:
+                normalized.append(tool)
+        return normalized
+
     def compare(
         self,
         nl_prompt: str,
@@ -80,6 +105,9 @@ class TrajectoryMatcher(comparator.Comparator):
 
         expected = golden_execution_result or []
         actual = generated_execution_result or []
+
+        expected = self._normalize_trajectory(expected)
+        actual = self._normalize_trajectory(actual)
 
         if not isinstance(expected, list) or not isinstance(actual, list):
             return 0.0, "Trajectory data must be lists."

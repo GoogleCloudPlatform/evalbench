@@ -76,12 +76,14 @@ def conversations_component(
                             flex_direction="row",
                             gap="20px",
                             align_items="flex-start",
+                            flex_wrap="wrap",
                         )
                     ):
                         # --- Chat (left) ---
                         with me.box(
                             style=me.Style(
                                 flex="1",
+                                min_width="400px",
                                 display="flex",
                                 flex_direction="column",
                                 gap="16px",
@@ -145,37 +147,51 @@ def conversations_component(
                                                 width="100%",
                                             )
                                         ):
-                                            with me.tooltip(message=stats_str, position="right", disabled=not bool(stats_str)):
-                                                with me.box(
+                                            with me.box(
+                                                style=me.Style(
+                                                    background="#ffffff",
+                                                    color="#1f2937",
+                                                    padding=me.Padding.symmetric(
+                                                        vertical="12px",
+                                                        horizontal="16px",
+                                                    ),
+                                                    border_radius="12px",
+                                                    border=me.Border.all(
+                                                        me.BorderSide(
+                                                            width="1px",
+                                                            color="#e5e7eb",
+                                                            style="solid",
+                                                        )
+                                                    ),
+                                                    max_width="80%",
+                                                    box_shadow="0 1px 2px 0 rgba(0,0,0,0.05)",
+                                                    overflow_x="auto",
+                                                )
+                                            ):
+                                                me.text(
+                                                    "Agent",
                                                     style=me.Style(
-                                                        background="#ffffff",
-                                                        color="#1f2937",
-                                                        padding=me.Padding.symmetric(
-                                                            vertical="12px",
-                                                            horizontal="16px",
-                                                        ),
-                                                        border_radius="12px",
-                                                        border=me.Border.all(
-                                                            me.BorderSide(
-                                                                width="1px",
-                                                                color="#e5e7eb",
-                                                                style="solid",
-                                                            )
-                                                        ),
-                                                        max_width="80%",
-                                                        box_shadow="0 1px 2px 0 rgba(0,0,0,0.05)",
-                                                    )
-                                                ):
-                                                    me.text(
-                                                        "Agent",
-                                                        style=me.Style(
-                                                            font_weight="bold",
-                                                            font_size="12px",
-                                                            color="#6b7280",
-                                                            margin=me.Margin(bottom="4px"),
-                                                        ),
-                                                    )
+                                                        font_weight="bold",
+                                                        font_size="12px",
+                                                        color="#6b7280",
+                                                        margin=me.Margin(bottom="4px"),
+                                                    ),
+                                                )
+                                                if agent_content:
                                                     me.markdown(agent_content)
+                                                else:
+                                                    me.text(
+                                                        "Empty response",
+                                                        style=me.Style(
+                                                            color="#94a3b8",
+                                                            font_style="italic",
+                                                            font_size="14px",
+                                                        ),
+                                                    )
+                                                
+                                                if stats_str:
+                                                    with me.expansion_panel(title="Stats", expanded=False):
+                                                        me.code(stats_str)
                             except Exception as parse_e:
                                 me.text(f"Error parsing JSON: {parse_e}")
                                 me.code(history_str)
@@ -184,12 +200,34 @@ def conversations_component(
                         with me.box(
                             style=me.Style(
                                 width="40%",
+                                min_width="300px",
                                 flex_shrink="0",
                                 display="flex",
                                 flex_direction="column",
                                 gap="8px",
                             )
                         ):
+                            # Conversation Plan
+                            scenario_str = df["scenario"].iloc[idx] if "scenario" in df.columns else ""
+                            conversation_plan = ""
+                            if scenario_str and pd.notna(scenario_str):
+                                try:
+                                    scenario_data = json.loads(scenario_str)
+                                    conversation_plan = scenario_data.get("conversation_plan", "")
+                                except Exception:
+                                    try:
+                                        import ast
+                                        scenario_data = ast.literal_eval(scenario_str)
+                                        conversation_plan = scenario_data.get("conversation_plan", "")
+                                    except Exception as e:
+                                        logging.warning(f"Failed to parse scenario: {e}")
+                                        
+                            if conversation_plan:
+                                with me.expansion_panel(title="Conversation Plan", expanded=True):
+                                    if isinstance(conversation_plan, list):
+                                        conversation_plan = "\n".join([str(x) for x in conversation_plan])
+                                    me.markdown(str(conversation_plan))
+
                             scores_path = os.path.join(results_dir, "scores.csv")
                             if os.path.exists(scores_path):
                                 try:

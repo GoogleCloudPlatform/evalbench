@@ -8,6 +8,35 @@ from concurrent.futures import Future
 import unittest
 
 
+class TestExecutionBugs(unittest.TestCase):
+
+    def test_sqlexecwork_handles_empty_query_safely(self):
+        db = MagicMock()
+        db_queue = Queue()
+        eval_result = {
+            "sql_generator_error": None,
+            "generated_sql": "   ",
+            "query_type": "dql",
+            "eval_query": [],
+            "golden_sql": "",
+            "preprocess_sql": []
+        }
+        config = {
+            "prompt_generator": "NOOPGenerator",
+            "dialect": "sqlite"
+        }
+
+        work = SQLExecWork(db, config, eval_result, db_queue)
+
+        # Should not raise "list index out of range"
+        result = work.run()
+
+        self.assertIsNone(result.get("generated_result"))
+        self.assertEqual(
+            result.get("generated_error"),
+            "list index out of range (empty query)")
+
+
 class TestStability(unittest.TestCase):
 
     def test_rate_limit_guaranteed_release(self):
@@ -83,10 +112,19 @@ class TestEvaluatorRobustness(unittest.TestCase):
             "total": 10,
             "lock": MagicMock()}
 
+        mock_item = MagicMock()
+        mock_item.id = "test_id"
+        mock_item.dialects = ["sql"]
+        mock_item.database = "fake"
+        mock_item.query_type = "dql"
+
+        q = Queue()
+        q.put(MagicMock())
+
         with self.assertLogs('root', level='ERROR') as cm:
             self.evaluator.evaluate(
-                dataset=[MagicMock()],
-                db_queue=MagicMock(),
+                dataset=[mock_item],
+                db_queue=q,
                 prompt_generator=MagicMock(),
                 model_generator=MagicMock(),
                 job_id="test",
@@ -130,10 +168,19 @@ class TestEvaluatorRobustness(unittest.TestCase):
             "total": 10,
             "lock": MagicMock()}
 
+        mock_item = MagicMock()
+        mock_item.id = "test_id"
+        mock_item.dialects = ["sql"]
+        mock_item.database = "fake"
+        mock_item.query_type = "dql"
+
+        q = Queue()
+        q.put(MagicMock())
+
         with self.assertLogs('root', level='ERROR') as cm:
             self.evaluator.evaluate(
-                dataset=[MagicMock()],
-                db_queue=MagicMock(),
+                dataset=[mock_item],
+                db_queue=q,
                 prompt_generator=MagicMock(),
                 model_generator=MagicMock(),
                 job_id="test",

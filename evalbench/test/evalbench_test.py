@@ -26,7 +26,7 @@ class TestEvalbench(unittest.TestCase):
         mock_load_session.return_value = ({}, [{}], {}, {})
 
         mock_evaluator = MagicMock()
-        mock_evaluator.process.return_value = ("job123", "10s", None, None)
+        mock_evaluator.process.return_value = ("job123", "10s", None, None, None)
         mock_get_orch.return_value = mock_evaluator
 
         success = evalbench_eval("fake_config.yaml")

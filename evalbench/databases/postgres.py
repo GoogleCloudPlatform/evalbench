@@ -3,8 +3,10 @@ import sqlalchemy
 from sqlalchemy import text, MetaData
 from sqlalchemy.engine.base import Connection
 import logging
+import os
 from .db import DB
 from google.cloud.sql.connector import Connector
+from util.auth import get_adc_user_email
 from .util import (
     get_db_secret,
     with_cache_execute,
@@ -55,6 +57,10 @@ class PGDB(DB):
         # Normalize password for drivers that dislike None
         effective_password = self.password if self.password is not None else ""
 
+        self.use_adc = not self.username and not self.password
+        if self.use_adc:
+            self.username = get_adc_user_email()
+
         def get_conn():
             # Only used for Cloud SQL Connector path
             conn = CONNECTOR.connect(
@@ -63,6 +69,7 @@ class PGDB(DB):
                 user=self.username,
                 password=effective_password,
                 db=self.db_name,
+                enable_iam_auth=self.use_adc,
             )
             return conn
 
@@ -83,7 +90,6 @@ class PGDB(DB):
                 pass_str = effective_password if effective_password is not None else ""
 
                 # Check for local UNIX socket
-                import os
                 socket_path = "/var/run/postgresql/.s.PGSQL.5432"
                 if self.db_path == "localhost" and os.path.exists(socket_path):
                     args["connect_args"]["unix_sock"] = socket_path
@@ -180,7 +186,7 @@ class PGDB(DB):
                 self.max_attempts,
             )
         except ResourceExhaustedError as e:
-            logging.info(
+            logging.error(
                 "Resource Exhausted on Postgres DB. Giving up execution. Try reducing execs_per_minute."
             )
             return None, None, None
@@ -234,12 +240,9 @@ class PGDB(DB):
             self.tmp_dbs.remove(database_name)
         _, error = self._execute_auto_commit(f"DROP DATABASE {database_name};")
         if error:
-            logging.info(f"Could not delete database: {error}")
+            logging.error(f"Could not delete database: {error}")
 
     def ensure_database_exists(self, database_name: str) -> None:
-        from google.cloud.sql.connector import Connector
-        import sqlalchemy
-        from sqlalchemy import text
 
         connector = Connector()
         try:
@@ -262,24 +265,35 @@ class PGDB(DB):
         if error:
             raise RuntimeError(error)
 
-    def insert_data(
-        self, data: dict[str, List[str]], setup: Optional[List[str]] = None
-    ):
+    def insert_data(self, data: dict[str, List[str]], setup: Optional[List[str]] = None) -> None:
         if not data:
             return
-        insertion_statements = []
-        for table_name in data:
-            for row in data[table_name]:
-                inline_columns = ", ".join([f"{value}" for value in row])
-                insertion_statements.append(
-                    f"INSERT INTO public.{table_name} VALUES ({inline_columns});"
-                )
+
         try:
-            self.batch_execute(insertion_statements)
-        except RuntimeError as error:
+            with self.engine.begin() as connection:
+                for table_name in data:
+                    rows = data[table_name]
+                    if not rows:
+                        continue
+
+                    num_cols = len(rows[0])
+                    param_placeholders = ", ".join([f":v{i}" for i in range(num_cols)])
+                    stmt = text(f"INSERT INTO public.\"{table_name}\" VALUES ({param_placeholders})")
+
+                    params = []
+                    for row in rows:
+                        p = {}
+                        for i, val in enumerate(row):
+                            p[f"v{i}"] = self._clean_insert_value(val)
+                        params.append(p)
+
+                    connection.execute(stmt, params)
+        except Exception as error:
             raise RuntimeError(f"Could not insert data into database: {error}")
 
-    #####################################################
+    def _format_boolean_value(self, val: str) -> Any:
+        return val
+    ######################################################
     #####################################################
     # Database User Management
     #####################################################
@@ -301,7 +315,7 @@ class PGDB(DB):
             self.tmp_users.remove(username)
         _, _, error = self.execute(DELETE_USER_QUERY.format(USERNAME=username))
         if error:
-            logging.info(f"Could not delete tmp user due to {error}")
+            logging.error(f"Could not delete tmp user due to {error}")
 
     #####################################################
     #####################################################

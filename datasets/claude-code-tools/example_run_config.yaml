@@ -1,0 +1,40 @@
+############################################################
+### Dataset / Eval Items
+############################################################
+dataset_config: datasets/claude-code-tools/claude-code.evalset.json
+dataset_format: agent-format
+
+# Orchestrator Configuration
+# `agent` works for both Gemini CLI and Claude Code (alias of `geminicli`).
+orchestrator: agent
+model_config: datasets/model_configs/claude_code_model.yaml
+simulated_user_model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+
+# Concurrency: number of scenarios to run in parallel.
+# Set to 1 for sequential runs (easier to follow logs, avoids session conflicts).
+# Default is 10 (matches Gemini CLI).
+runners:
+  agent_runners: 1
+
+############################################################
+### Scorer Related Configs
+############################################################
+scorers:
+  trajectory_matcher: {}
+  goal_completion:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  behavioral_metrics:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  parameter_analysis:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  turn_count: {}
+  end_to_end_latency: {}
+  tool_call_latency: {}
+  token_consumption: {}
+
+############################################################
+### Reporting Related Configs
+############################################################
+reporting:
+  csv:
+    output_directory: 'results'

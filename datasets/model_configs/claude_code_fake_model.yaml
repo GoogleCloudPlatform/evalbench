@@ -1,0 +1,85 @@
+claude_code_version: "@anthropic-ai/claude-code@2.1.85"
+generator: claude_code
+model: "claude-opus-4-6"
+
+use_vertex: true
+vertex_project_id: "astana-evaluation"
+vertex_region: "us-east5"
+
+env:
+  GOOGLE_CLOUD_PROJECT: "astana-evaluation"
+setup:
+  mcp_servers:
+    "cloud-sql":
+      command: "python"
+      args:
+        - "evalbench/util/fake_mcp_server.py"
+        - "--server-name"
+        - "cloud-sql"
+        - "--config"
+        - "datasets/model_configs/claude_code_fake_model.yaml"
+
+fake_mcp_tools:
+  "cloud-sql":
+    - name: create_instance
+      description: "Creates a Cloud SQL instance"
+      parameters:
+        type: object
+        properties:
+          project_id:
+            type: string
+            description: "GCP project ID"
+          instance_name:
+            type: string
+            description: "Name for the new instance"
+        required: ["project_id", "instance_name"]
+      response:
+        status: "success"
+        message: "Instance created successfully"
+    - name: get_instance
+      description: "Gets details of a Cloud SQL instance"
+      parameters:
+        type: object
+        properties:
+          project_id:
+            type: string
+            description: "GCP project ID"
+          instance_name:
+            type: string
+            description: "Instance name"
+        required: ["project_id", "instance_name"]
+      response:
+        status: "failure"
+        error:
+          code: 404
+          message: "Instance not found or permission denied"
+    - name: list_instances
+      description: "Lists all Cloud SQL instances in a project"
+      parameters:
+        type: object
+        properties:
+          project_id:
+            type: string
+            description: "GCP project ID"
+        required: ["project_id"]
+      response:
+        status: "success"
+        instances:
+          - name: "nl2code"
+            state: "RUNNABLE"
+            databaseVersion: "POSTGRES_15"
+    - name: update_instance
+      description: "Updates a Cloud SQL instance"
+      parameters:
+        type: object
+        properties:
+          project_id:
+            type: string
+            description: "GCP project ID"
+          instance_name:
+            type: string
+            description: "Instance name"
+        required: ["project_id", "instance_name"]
+      response:
+        status: "success"
+        message: "Instance updated successfully"

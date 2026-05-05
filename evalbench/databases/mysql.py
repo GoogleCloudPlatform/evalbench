@@ -1,5 +1,5 @@
-import sqlalchemy
 import sqlparse
+import sqlalchemy
 import pymysql
 from sqlalchemy import text, MetaData
 from sqlalchemy.engine.base import Connection
@@ -7,6 +7,7 @@ import pymysql
 import logging
 from .db import DB
 from google.cloud.sql.connector import Connector
+from util.auth import get_adc_user_email
 from .util import (
     get_db_secret,
     with_cache_execute,
@@ -57,6 +58,10 @@ class MySQLDB(DB):
 
         self.connector = Connector() if self.use_cloud_sql else None
 
+        self.use_adc = not self.username and not self.password
+        if self.use_adc:
+            self.username = get_adc_user_email()
+
         def get_conn():
             """Callable for sqlalchemy 'creator' parameter."""
             if self.use_cloud_sql:
@@ -66,6 +71,7 @@ class MySQLDB(DB):
                     user=self.username,
                     password=self.password,
                     db=self.db_name,
+                    enable_iam_auth=self.use_adc,
                 )
             else:
                 # Local/Direct connection
@@ -215,7 +221,7 @@ class MySQLDB(DB):
                 self.max_attempts,
             )
         except ResourceExhaustedError as e:
-            logging.info(
+            logging.error(
                 "Resource Exhausted on MySQL DB. Giving up execution. Try reducing execs_per_minute."
             )
             return None, None, None
@@ -268,7 +274,7 @@ class MySQLDB(DB):
             self.tmp_dbs.remove(database_name)
         _, _, error = self.execute(f"DROP DATABASE {database_name};")
         if error:
-            logging.info(f"Could not delete database: {error}")
+            logging.error(f"Could not delete database: {error}")
 
     def ensure_database_exists(self, database_name: str) -> None:
         if getattr(self, "use_cloud_sql", False):
@@ -307,23 +313,35 @@ class MySQLDB(DB):
             DROP_ALL_TABLES_QUERY.format(DATABASE=self.db_name).split(";")
         )
 
-    def insert_data(self, data: dict[str, List[str]],
-                    setup: Optional[List[str]] = None):
+    def insert_data(self, data: dict[str, List[str]], setup: Optional[List[str]] = None) -> None:
         if not data:
             return
-        insertion_statements = []
-        for table_name in data:
-            for row in data[table_name]:
-                inline_columns = ", ".join([f"{value}" for value in row])
-                insertion_statements.append(
-                    f"INSERT INTO `{table_name}` VALUES ({inline_columns});"
-                )
+
         try:
-            self.batch_execute(insertion_statements)
-        except RuntimeError as error:
+            with self.engine.begin() as connection:
+                for table_name in data:
+                    rows = data[table_name]
+                    if not rows:
+                        continue
+
+                    num_cols = len(rows[0])
+                    param_placeholders = ", ".join([f":v{i}" for i in range(num_cols)])
+                    stmt = text(f"INSERT INTO `{table_name}` VALUES ({param_placeholders})")
+
+                    params = []
+                    for row in rows:
+                        p = {}
+                        for i, val in enumerate(row):
+                            p[f"v{i}"] = self._clean_insert_value(val)
+                        params.append(p)
+
+                    connection.execute(stmt, params)
+        except Exception as error:
             raise RuntimeError(f"Could not insert data into database: {error}")
 
-    #####################################################
+    def _format_boolean_value(self, val: str) -> Any:
+        return 1 if val == "true" else 0
+    ######################################################
     #####################################################
     # Database User Management
     #####################################################
@@ -351,4 +369,4 @@ class MySQLDB(DB):
             self.tmp_users.remove(username)
         _, _, error = self.execute(DELETE_USER_QUERY.format(USERNAME=username))
         if error:
-            logging.info(f"Could not delete tmp user due to {error}")
+            logging.error(f"Could not delete tmp user due to {error}")

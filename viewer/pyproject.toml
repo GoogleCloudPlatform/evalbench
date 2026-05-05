@@ -11,3 +11,6 @@ dependencies = [
     "pandas>=2.3.3",
     "pyaml>=26.2.1",
 ]
+
+[tool.setuptools]
+packages = []

@@ -10,7 +10,7 @@ def truncateExecutionOutputs(eval_output, config):
     ]:
         truncated_result_count = 250
         if (
-            "reporting" in config
+            config.get("reporting")
             and "truncate_execution_outputs" in config["reporting"]
         ):
             truncated_result_count = config["reporting"]["truncate_execution_outputs"]

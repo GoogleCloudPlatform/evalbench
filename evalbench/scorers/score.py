@@ -9,15 +9,22 @@ from scorers import llmrater
 from scorers import returnedsql
 from scorers import executablesql
 from scorers import trajectorymatcher
+from scorers import skillstrajectorymatcher
 from scorers import goalcompletionrate
 from scorers import behavioralmetrics
 from scorers import parameteranalysis
+from scorers import skillsbestpractices
 from scorers import turncount
 from scorers import endtoendlatency
 from scorers import toolcalllatency
 from scorers import tokenconsumption
+from scorers import binaryrubricscorer
+from scorers import pythonscorer
+from scorers import dataformscorer
+from scorers import dbtscorer
 from dataset.evaloutput import EvalOutput
 import logging
+import os
 
 
 def compare(
@@ -60,6 +67,16 @@ def compare(
         comparators.append(
             trajectorymatcher.TrajectoryMatcher(scorers["trajectory_matcher"])
         )
+    if "skills_trajectory" in scorers:
+        comparators.append(
+            skillstrajectorymatcher.SkillsTrajectoryMatcher(scorers["skills_trajectory"])
+        )
+    if "skills_best_practices" in scorers:
+        comparators.append(
+            skillsbestpractices.SkillsBestPractices(
+                scorers["skills_best_practices"], global_models
+            )
+        )
     if "goal_completion" in scorers:
         comparators.append(
             goalcompletionrate.GoalCompletionRate(
@@ -93,6 +110,65 @@ def compare(
     if "token_consumption" in scorers:
         comparators.append(
             tokenconsumption.TokenConsumption(scorers["token_consumption"])
+        )
+    if "binary_rubric_scorer" in scorers:
+        import json
+
+        context_str = eval_output_item.get("eval_results", "")
+        try:
+            if isinstance(context_str, dict):
+                context = context_str
+            else:
+                context = json.loads(context_str) if context_str else {}
+            rubric = context.get("scenario", {}).get("binary_rubric", [])
+            if rubric:
+                for index, criterion in enumerate(rubric):
+                    comparators.append(
+                        binaryrubricscorer.BinaryRubricScorer(
+                            scorers["binary_rubric_scorer"], global_models,
+                            criterion=criterion, index=index
+                        )
+                    )
+            else:
+                comparators.append(
+                    binaryrubricscorer.BinaryRubricScorer(
+                        scorers["binary_rubric_scorer"], global_models
+                    )
+                )
+        except Exception:
+
+            comparators.append(
+                binaryrubricscorer.BinaryRubricScorer(
+                    scorers["binary_rubric_scorer"], global_models
+                )
+            )
+    for key, scorer_config in scorers.items():
+        if key == "python_scorer":
+            custom_name = scorer_config.get("scorer_name")
+            if custom_name and isinstance(custom_name, str):
+                custom_name = custom_name.strip()
+            if not custom_name:
+                script_path = scorer_config.get("script_path")
+                if script_path and isinstance(script_path, str) and script_path.strip():
+                    custom_name = os.path.splitext(os.path.basename(script_path))[0].strip()
+                if not custom_name:
+                    custom_name = key
+            comparators.append(pythonscorer.PythonScorer(scorer_config, name=custom_name))
+    if "dataform_compile" in scorers:
+        comparators.append(
+            dataformscorer.DataformCompileScorer(scorers["dataform_compile"])
+        )
+    if "dataform_run" in scorers:
+        comparators.append(
+            dataformscorer.DataformRunScorer(scorers["dataform_run"])
+        )
+    if "dbt_compile" in scorers:
+        comparators.append(
+            dbtscorer.DbtCompileScorer(scorers["dbt_compile"])
+        )
+    if "dbt_run" in scorers:
+        comparators.append(
+            dbtscorer.DbtRunScorer(scorers["dbt_run"])
         )
 
     for comp in comparators:

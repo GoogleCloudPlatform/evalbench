@@ -120,9 +120,24 @@ def load_gemini_cli_json(json_file_path):
     with open(json_file_path, "r") as json_file:
         json_item = json_file.read()
         item = json.loads(json_item)
+
+        # Resolve work_dir for scenarios
+        scenarios = item.get("scenarios", [])
+        dataset_dir = os.path.dirname(json_file_path)
+        for scenario in scenarios:
+            if "work_dir" in scenario:
+                work_dir = scenario["work_dir"]
+                # Resolve relative to dataset file
+                if not os.path.isabs(work_dir):
+                    work_dir = os.path.abspath(os.path.join(dataset_dir, work_dir))
+                scenario["resolved_work_dir"] = work_dir
+
+        # Update payload with modified JSON
+        updated_json_item = json.dumps(item)
+
         eval_input = EvalGeminiCliRequest(
             id=item.get("id", "0"),
-            payload=json_item,
+            payload=updated_json_item,
         )
         all_items["gemini-cli-format"].extend([eval_input])
     return all_items
@@ -140,7 +155,7 @@ def load_dataset_from_json(json_file_path, config):
     dataset_format = config.get("dataset_format", "evalbench-standard-format")
     if dataset_format == "bird-interact-format":
         all_items = load_bird_interact_dataset(json_file_path, config)
-    elif dataset_format == "gemini-cli-format":
+    elif dataset_format in ("gemini-cli-format", "agent-format"):
         all_items = load_gemini_cli_json(json_file_path)
     elif dataset_format == "cortado-format":
         all_items = load_cortado_json(json_file_path)
@@ -157,16 +172,17 @@ def load_dataset_from_json(json_file_path, config):
         if "orchestrator" not in config:
             config["orchestrator"] = "interact"
         input_items = all_items
-    elif dataset_format == "gemini-cli-format":
-        config["orchestrator"] = "geminicli"
     elif dataset_format == "cortado-format":
         if "orchestrator" not in config:
             config["orchestrator"] = "cortado"
+    elif dataset_format in ("gemini-cli-format", "agent-format"):
+        if "orchestrator" not in config:
+            config["orchestrator"] = "agent" if dataset_format == "agent-format" else "geminicli"
         input_items = all_items
     else:
         raise ValueError("Dataset not in any of the recognised formats")
 
-    if dataset_format not in ["gemini-cli-format", "bird-interact-format", "cortado-format"]:
+    if dataset_format not in ["gemini-cli-format", "bird-interact-format", "agent-format", "cortado-format"]:
         totalEntries = sum(len(input_items.get(q, []))
                            for q in ["dql", "dml", "ddl"])
         logging.info(f"Converted {totalEntries} entries to EvalInput.")

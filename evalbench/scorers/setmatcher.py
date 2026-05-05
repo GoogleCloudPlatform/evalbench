@@ -6,8 +6,10 @@ Run configurations: None
 """
 
 from typing import Tuple
+from collections import Counter
 
 from scorers import comparator
+from scorers.util import make_hashable
 from scorers.comparator import convert_to_set
 
 
@@ -43,19 +45,34 @@ class SetMatcher(comparator.Comparator):
             return 0, None
         else:
             try:
-                # Current results are a list of Dict. Converting to Tuple for set comparison
-                golden_execution_result_tuple = [
-                    tuple(d.values()) for d in golden_execution_result
-                ]
-                generated_execution_result_tuple = [
-                    tuple(d.values()) for d in generated_execution_result
-                ]
-                score = (
-                    100
-                    if set(golden_execution_result_tuple)
-                    == set(generated_execution_result_tuple)
-                    else 0
-                )
+                def _is_document_structure(data):
+                    if not isinstance(data, list):
+                        return False
+                    for item in data:
+                        if isinstance(item, dict):
+                            for v in item.values():
+                                if isinstance(v, (dict, list)):
+                                    return True
+                    return False
+
+                if _is_document_structure(golden_execution_result) or _is_document_structure(generated_execution_result):
+                    h1 = [make_hashable(d) for d in golden_execution_result]
+                    h2 = [make_hashable(d) for d in generated_execution_result]
+                    score = 100 if Counter(h1) == Counter(h2) else 0
+                else:
+                    # SQL Model: flat primitives, ignore column names, remove duplicates
+                    golden_execution_result_tuple = [
+                        tuple(d.values()) for d in golden_execution_result
+                    ]
+                    generated_execution_result_tuple = [
+                        tuple(d.values()) for d in generated_execution_result
+                    ]
+                    score = (
+                        100
+                        if set(golden_execution_result_tuple)
+                        == set(generated_execution_result_tuple)
+                        else 0
+                    )
             except Exception as e:
                 return 0, str(e)
 

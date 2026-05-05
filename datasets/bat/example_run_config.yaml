@@ -3,6 +3,8 @@
 ############################################################
 # The JSON list of prompts / golden SQLs and eval attributes for the run
 dataset_config: datasets/bat/prompts.json
+# Number of trials for multi-trial evaluation
+num_trials: 2
 ### Database Info
 # List of paths to the YAML files that provide the database connection details
 database_configs:
@@ -42,6 +44,9 @@ scorers:
   returned_sql: null
   set_match: null
   executable_sql: null
+  exact_match_consistency: null
+  llm_consistency:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
 #
 #
 ############################################################
