@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.7.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.6.0...v1.7.0) (2026-05-05)
+
+
+### Features
+
+* add Dataform scorers and plumb isolated fake_home workspace directory tracking ([#349](https://github.com/GoogleCloudPlatform/evalbench/issues/349)) ([b4ddfda](https://github.com/GoogleCloudPlatform/evalbench/commit/b4ddfda9241eae431ea143ea87c5cb8a99cea989))
+* Add dbt Scorers for Agent Evaluations ([#367](https://github.com/GoogleCloudPlatform/evalbench/issues/367)) ([5496d59](https://github.com/GoogleCloudPlatform/evalbench/commit/5496d59948b6e6f86322c93e25aecc664ed5e73c))
+* Add GCS Artifacts Reporter for Agent Evaluations ([#366](https://github.com/GoogleCloudPlatform/evalbench/issues/366)) ([11def06](https://github.com/GoogleCloudPlatform/evalbench/commit/11def06bc3f7a68acf17c890127dda13c0ebe50c))
+* implement lifecycle execution for setup and teardown scripts ([#360](https://github.com/GoogleCloudPlatform/evalbench/issues/360)) ([9de38da](https://github.com/GoogleCloudPlatform/evalbench/commit/9de38da0fca549b8e160044efe6891e630607450))
+
+
+### Bug Fixes
+
+* correct indentation in eval_service.py to resolve SyntaxError ([8512441](https://github.com/GoogleCloudPlatform/evalbench/commit/851244137ddc01271216cfe44c5bc090e0ab5bac))
+* correct return signature in base Orchestrator.process() ([ad8228e](https://github.com/GoogleCloudPlatform/evalbench/commit/ad8228e0db3bea785b030da354020ebc8e6b83df))
+* correct return signature in remaining Orchestrators ([b78a9e9](https://github.com/GoogleCloudPlatform/evalbench/commit/b78a9e9759b364755b26898e459a1821cdae1b6f))
+* pass None for missing metrics parameter in AgentOrchestrator results initialization ([c72c758](https://github.com/GoogleCloudPlatform/evalbench/commit/c72c7580dedc3fdfe82121d229c2582680d13a4e))
+
 ## [1.6.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.5.0...v1.6.0) (2026-04-30)
 
 
