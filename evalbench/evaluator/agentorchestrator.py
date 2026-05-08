@@ -27,7 +27,7 @@ class AgentOrchestrator(Orchestrator):
         self.report_progress = report_progress
 
     def evaluate(self, dataset: list[EvalGeminiCliRequest]):
-        logging.info("Starting Gemini CLI evaluation")
+        logging.info("Starting agent CLI evaluation")
         evaluator = AgentEvaluator(self.config)
         eval_outputs, scoring_results = evaluator.evaluate(
             dataset, self.job_id, self.run_time
@@ -51,4 +51,5 @@ class AgentOrchestrator(Orchestrator):
             self.run_time,
             results_tf,
             scores_tf,
+            None,
         )

@@ -45,8 +45,15 @@ def eval(experiment_config: str):
         session: dict = {}
 
         parsed_config = load_yaml_config(experiment_config)
+
+        # Helper logic to generate clean display path
+        display_config = experiment_config
+        g3_idx = display_config.find("google3/")
+        if g3_idx != -1:
+            display_config = display_config[g3_idx:]
+
         if parsed_config == "":
-            logging.error("No Eval Config Found.")
+            logging.error(f"No Eval Config Found for '{display_config}'.")
             return
 
         set_session_configs(session, parsed_config)
@@ -113,7 +120,7 @@ def eval(experiment_config: str):
             summary_scores_df["run_time"] = run_time
         else:
             logging.warning(
-                "There were no matching evals in this run. Returning empty set."
+                f"There were no matching evals in run for config '{display_config}'. Returning empty set."
             )
             reporters = []
             config_df = None
@@ -145,7 +152,11 @@ def eval(experiment_config: str):
 
         return True
     except Exception as e:
-        logging.exception(e)
+        display_config = experiment_config
+        g3_idx = display_config.find("google3/")
+        if g3_idx != -1:
+            display_config = display_config[g3_idx:]
+        logging.exception(f"Evaluation failed for config '{display_config}': {e}")
         return False
 
 

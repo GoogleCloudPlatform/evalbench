@@ -90,6 +90,10 @@ class SQLExecWork(Work):
     def _evaluate_execution_results(
         self, query, preprocess_sql, eval_query, query_type, is_golden=False
     ):
+        # Ensure query is a scalar string, joining if presented as a list
+        if isinstance(query, list):
+            query = "\n".join(str(q) for q in query)
+
         result = None
         eval_result = None
         error = None

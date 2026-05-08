@@ -21,6 +21,7 @@ from scorers import tokenconsumption
 from scorers import binaryrubricscorer
 from scorers import pythonscorer
 from scorers import dataformscorer
+from scorers import dbtscorer
 from dataset.evaloutput import EvalOutput
 import logging
 import os
@@ -160,6 +161,14 @@ def compare(
     if "dataform_run" in scorers:
         comparators.append(
             dataformscorer.DataformRunScorer(scorers["dataform_run"])
+        )
+    if "dbt_compile" in scorers:
+        comparators.append(
+            dbtscorer.DbtCompileScorer(scorers["dbt_compile"])
+        )
+    if "dbt_run" in scorers:
+        comparators.append(
+            dbtscorer.DbtRunScorer(scorers["dbt_run"])
         )
 
     for comp in comparators:

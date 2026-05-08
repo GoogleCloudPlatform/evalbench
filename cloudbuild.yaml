@@ -1,6 +1,17 @@
 # Building deployer image
 steps:
+- name: 'python:3.11'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    $$HOME/.local/bin/uv run --with pytest pytest evalbench/test -vv
+  env:
+  - 'PYTHONPATH=evalbench:.'
+  - 'SKIP_CLOUD_TESTS=true'
 - name: 'gcr.io/cloud-builders/docker'
+
   args: ['build', '-t', 'us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:$COMMIT_SHA', '-f', 'evalbench_service/Dockerfile', '.']
 - name: 'us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:$COMMIT_SHA'
   dir: '/evalbench'

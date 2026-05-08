@@ -9,6 +9,7 @@ from dataset.evalgeminicliinput import EvalGeminiCliRequest
 from generators.models import get_generator
 from generators.models.gemini_cli import GeminiCliGenerator
 from generators.models.claude_code import ClaudeCodeGenerator
+from generators.models.codex_cli import CodexCliGenerator
 from mp import mprunner
 from work.agentgenwork import AgentGenWork
 from evaluator.simulateduser import SimulatedUser
@@ -40,10 +41,12 @@ class AgentEvaluator:
             self.agent_version = self.generator.claude_code_version
         elif isinstance(self.generator, GeminiCliGenerator):
             self.agent_version = self.generator.gemini_cli_version
+        elif isinstance(self.generator, CodexCliGenerator):
+            self.agent_version = self.generator.codex_cli_version
         else:
             raise ValueError(
-                f"AgentEvaluator only supports gemini_cli and claude_code generators, "
-                f"got {type(self.generator).__name__}")
+                f"AgentEvaluator only supports gemini_cli, claude_code, and "
+                f"codex_cli generators, got {type(self.generator).__name__}")
 
         runner_config = self.config.get("runners", {})
         self.agent_runners = runner_config.get("agent_runners", 10)
@@ -55,11 +58,11 @@ class AgentEvaluator:
         job_id: str,
         run_time: datetime.datetime,
     ):
-        if isinstance(self.generator, (GeminiCliGenerator, ClaudeCodeGenerator)):
+        if isinstance(self.generator, (GeminiCliGenerator, ClaudeCodeGenerator, CodexCliGenerator)):
             return self._evaluate_agent_cli(dataset, job_id, run_time)
         else:
             raise NotImplementedError(
-                "This evaluator currently only supports GeminiCliGenerator and ClaudeCodeGenerator")
+                "This evaluator currently only supports GeminiCliGenerator, ClaudeCodeGenerator and CodexCliGenerator")
 
     def _evaluate_agent_cli(
         self,
@@ -128,8 +131,8 @@ class AgentEvaluator:
         for turn in range(max_turns):
             logging.info(
                 f"Turn {turn + 1}/{max_turns} - Prompt: {current_prompt}")
-            if isinstance(self.generator, (GeminiCliGenerator, ClaudeCodeGenerator)):
-                if isinstance(self.generator, ClaudeCodeGenerator):
+            if isinstance(self.generator, (GeminiCliGenerator, ClaudeCodeGenerator, CodexCliGenerator)):
+                if isinstance(self.generator, (ClaudeCodeGenerator, CodexCliGenerator)):
                     cli_cmd = self.generator.create_command(
                         cli=self.agent_version,
                         prompt=current_prompt,
@@ -168,7 +171,7 @@ class AgentEvaluator:
             self._log_cli_result(turn, max_turns, result)
 
             tools = []
-            if isinstance(self.generator, (GeminiCliGenerator, ClaudeCodeGenerator)):
+            if isinstance(self.generator, (GeminiCliGenerator, ClaudeCodeGenerator, CodexCliGenerator)):
                 tools = self.generator.extract_tools(result.stdout)
             accumulated_tools.extend(tools)
 

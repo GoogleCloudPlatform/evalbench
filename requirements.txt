@@ -1,4 +1,4 @@
-# Package dependencies
+# Package dependencies (Mirrored from pyproject.toml)
 cloud-sql-python-connector[pg8000]
 google-cloud-alloydb-connector[pg8000]
 cloud-sql-python-connector[pytds]
@@ -17,8 +17,8 @@ pyarrow
 protobuf
 absl-py
 tabulate
-grpcio
-grpcio-tools
+grpcio>=1.80.0
+grpcio-tools>=1.80.0
 aiologger
 jsonschema
 ratelimit
@@ -35,3 +35,11 @@ google-adk
 mcp
 pytest
 mock
+google-cloud-storage
+google-cloud-geminidataanalytics>=0.11.0
+google-cloud-firestore
+google-cloud-iam
+google-cloud-storage
+dbt-core
+dbt-bigquery
+dbt-postgres

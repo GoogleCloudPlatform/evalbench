@@ -5,11 +5,13 @@ from util.config import load_db_data_from_csvs, load_setup_scripts
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import Optional
+import logging
 
 
 def build_db_queue(
     core_db: DB, db_name, db_config, setup_config, query_type: str, num_dbs: int
 ):
+    logging.info(f"Building DB queue (query_type='{query_type}') with {num_dbs} pools for {db_name}...")
     if query_type == "dql":
         return _prepare_db_queue_for_dql(
             core_db, db_name, db_config, setup_config, num_dbs
@@ -22,6 +24,8 @@ def build_db_queue(
         return _prepare_db_queue_for_ddl(
             core_db, db_name, db_config, setup_config, num_dbs
         )
+
+    logging.info(f"Finished building DB queue for query_type '{query_type}' on {db_name}")
     return Queue[DB]()
 
 
@@ -96,12 +100,15 @@ def _create_ddl_tmp_db(tmp_db, db_config, setup_scripts):
 
 def _get_setup_values(setup_config, db_name: str, db_type: str):
     try:
-        setup_scripts = load_setup_scripts(
-            setup_config["setup_directory"] + "/" + db_name + "/" + db_type
-        )
-        data = load_db_data_from_csvs(
-            setup_config["setup_directory"] + "/" + db_name + "/data"
-        )
+        scripts_path = setup_config["setup_directory"] + "/" + db_name + "/" + db_type
+        data_path = setup_config["setup_directory"] + "/" + db_name + "/data"
+
+        logging.info(f"Loading DB setup files from location: {scripts_path}")
+        setup_scripts = load_setup_scripts(scripts_path)
+
+        logging.info(f"Loading data populate files from location: {data_path}")
+        data = load_db_data_from_csvs(data_path)
+
         return setup_scripts, data
     except Exception as e:
         raise FileNotFoundError(

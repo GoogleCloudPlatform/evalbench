@@ -59,4 +59,13 @@ class Orchestrator:
             self.run_time,
             None,
             None,
+            None,
         )
+
+    def get_display_dataset_config(self) -> str:
+        """Returns a sanitized configuration name suitable for safe log outputs."""
+        cand = self.config.get("dataset_config", "Unknown config")
+        if not isinstance(cand, str):
+            return "Unknown config"
+        g3_idx = cand.find("google3/")
+        return cand[g3_idx:] if g3_idx != -1 else cand

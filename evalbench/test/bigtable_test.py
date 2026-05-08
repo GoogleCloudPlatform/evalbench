@@ -1,3 +1,4 @@
+import os
 import pytest
 
 from databases import get_database
@@ -27,6 +28,7 @@ def client():
     client.close_connections()
 
 
+@pytest.mark.skipif(os.environ.get("SKIP_CLOUD_TESTS") == "true", reason="Skipping cloud-dependent tests")
 class TestBigtable:
     """Test suite for the Bigtable database client."""
 
