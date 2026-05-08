@@ -137,6 +137,12 @@ def analyze_result(
         if col not in df.columns:
             df[col] = None
 
+    # Adjust num_prompts to the count of unique evaluated items if multiple scenarios were packed into one prompt.
+    if "id" in df.columns and not df["id"].isna().all():
+        unique_ids = len(df["id"].dropna().unique())
+        if num_prompts is None or unique_ids > num_prompts:
+            num_prompts = unique_ids
+
     scorers = experiment_config["scorers"]
     num_scorers = len(scorers)
     llm_metrics_list = [
