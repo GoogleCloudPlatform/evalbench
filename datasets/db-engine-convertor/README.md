@@ -35,11 +35,12 @@ This toolkit uses Google Gemini AI to automatically generate database-specific s
 
 ### Installation
 
-```bash
-# Install dependencies
-cd db-engine-convertor
-pip install -r requirements.txt
+EvalBench uses `uv` for dependency management. It is recommended to set up the environment from the project root.
 
+```bash
+# From the project root
+uv sync
+```
 # Set up environment variables
 cp .env.example .env
 # Edit .env with your database credentials and API keys

@@ -59,7 +59,6 @@ shell:
 		$(if $(filter docker,$(CONTAINER_ENGINE)),--net=host) \
 		--cap-add=SYS_PTRACE \
 		-v ~/.config/gcloud:/root/.config/gcloud \
-		-v $(PWD)/requirements.txt:/evalbench/requirements.txt \
 		-v $(PWD)/evalbench:/evalbench/evalbench \
 		-v $(PWD)/viewer:/evalbench/viewer \
 		-p 3000:3000 \

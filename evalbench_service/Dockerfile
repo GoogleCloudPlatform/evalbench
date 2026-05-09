@@ -19,20 +19,19 @@ RUN curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -
   apt-get update -y && \
   apt-get install -y google-cloud-cli 
 
-RUN uv pip install --system --break-system-packages grpcio-tools
 
-COPY . evalbench
-WORKDIR evalbench
-RUN uv pip install --system --break-system-packages -r requirements.txt
-RUN uv pip install --system --break-system-packages ./viewer
-RUN uv pip install --system --break-system-packages .
+
+WORKDIR /evalbench
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen
+COPY . .
 
 # Create a non-root user for Claude Code. It refuses
 # --dangerously-skip-permissions when running as root.
 RUN useradd -m -s /bin/bash claudeuser
 
 RUN ln -s /usr/bin/python3 /usr/bin/python
-RUN make proto -f ./Makefile
+RUN uv run make proto -f ./Makefile
 RUN mkdir -p /tmp_session_files /tmp_sessions /evalbench/results
 RUN cp /evalbench/evalbench_service/supervisord_evalbench.conf /evalbench/supervisord_evalbench.conf
 RUN cp /evalbench/evalbench_service/supervisord_cloudrun.conf /evalbench/supervisord_cloudrun.conf
