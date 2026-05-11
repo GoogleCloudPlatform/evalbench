@@ -23,6 +23,7 @@ RUN curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -
 
 WORKDIR /evalbench
 COPY pyproject.toml uv.lock ./
+COPY viewer/pyproject.toml viewer/
 RUN uv sync --frozen
 COPY . .
 

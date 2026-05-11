@@ -58,9 +58,7 @@ def eval(experiment_config: str):
 
         set_session_configs(session, parsed_config)
         # Load the configs
-        config, db_configs, model_config, setup_config = load_session_configs(
-            session
-        )
+        config, db_configs, model_config, setup_config = load_session_configs(session)
         logging.info("Loaded Configurations in %s", experiment_config)
 
         # Load the dataset
@@ -74,9 +72,7 @@ def eval(experiment_config: str):
         reporting_config = config.get("reporting") or {}
         csv_config = reporting_config.get("csv") or {}
         base_output_dir = csv_config.get("output_directory", "results")
-        session_dir = os.path.abspath(
-            os.path.join(base_output_dir, evaluator.job_id)
-        )
+        session_dir = os.path.abspath(os.path.join(base_output_dir, evaluator.job_id))
 
         set_up_script = config.get("set_up_script")
         if set_up_script:
@@ -96,12 +92,8 @@ def eval(experiment_config: str):
 
         # Create Dataframes for reporting
         if results_tf is not None and scores_tf is not None:
-            reporters = get_reporters(
-                parsed_config.get("reporting"), job_id, run_time
-            )
-            config_df = config_to_df(
-                job_id, run_time, config, model_config, db_configs
-            )
+            reporters = get_reporters(parsed_config.get("reporting"), job_id, run_time)
+            config_df = config_to_df(job_id, run_time, config, model_config, db_configs)
             results = load_json(results_tf)
             results_df = report.get_dataframe(results)
             report.quick_summary(results_df)
@@ -141,8 +133,7 @@ def eval(experiment_config: str):
         tear_down_script = config.get("tear_down_script")
         if tear_down_script:
             if os.path.exists(tear_down_script):
-                logging.info("Executing tear_down_script '%s'",
-                             tear_down_script)
+                logging.info("Executing tear_down_script '%s'", tear_down_script)
                 run_script(tear_down_script, session_dir, "teardown")
             else:
                 logging.error(
@@ -169,9 +160,7 @@ def run_suite(suite_config_path: str) -> bool:
         logging.error("No runs defined in suite config.")
         return False
 
-    logging.info(
-        f"Starting EvalBench Suite: {suite_conf.get('name', 'Unnamed Suite')}"
-    )
+    logging.info(f"Starting EvalBench Suite: {suite_conf.get('name', 'Unnamed Suite')}")
     logging.info(f"Total runs scheduled: {len(runs)}")
 
     results = []
@@ -180,8 +169,7 @@ def run_suite(suite_config_path: str) -> bool:
         config_path = run.get("config_path")
 
         if not config_path:
-            logging.error(
-                f"Run '{run_name}' is missing 'config_path'. Skipping.")
+            logging.error(f"Run '{run_name}' is missing 'config_path'. Skipping.")
             results.append((run_name, False))
             continue
 
@@ -216,6 +204,11 @@ def main(argv: Sequence[str]):
     if _IN_COLAB:
         return sys.exit(exit_code)
     return os._exit(exit_code)
+
+
+def run():
+    """Starting function for the uvx package entrypoint."""
+    app.run(main)
 
 
 if __name__ == "__main__":

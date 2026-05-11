@@ -904,7 +904,9 @@ dependencies = [
     { name = "google-genai" },
     { name = "grpcio" },
     { name = "grpcio-tools" },
+    { name = "gunicorn" },
     { name = "jsonschema" },
+    { name = "mesop" },
     { name = "mongomock" },
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas", version = "3.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -923,6 +925,7 @@ dependencies = [
     { name = "sqlglot" },
     { name = "sqlparse" },
     { name = "tabulate" },
+    { name = "viewer" },
 ]
 
 [package.dev-dependencies]
@@ -955,7 +958,9 @@ requires-dist = [
     { name = "google-genai" },
     { name = "grpcio", specifier = ">=1.80.0" },
     { name = "grpcio-tools", specifier = ">=1.80.0" },
+    { name = "gunicorn" },
     { name = "jsonschema" },
+    { name = "mesop" },
     { name = "mongomock" },
     { name = "pandas" },
     { name = "pandas-gbq" },
@@ -973,6 +978,7 @@ requires-dist = [
     { name = "sqlglot" },
     { name = "sqlparse" },
     { name = "tabulate" },
+    { name = "viewer", editable = "viewer" },
 ]
 
 [package.metadata.requires-dev]
@@ -4888,7 +4894,7 @@ wheels = [
 [[package]]
 name = "viewer"
 version = "0.1.0"
-source = { virtual = "viewer" }
+source = { editable = "viewer" }
 dependencies = [
     { name = "gevent" },
     { name = "gunicorn" },
