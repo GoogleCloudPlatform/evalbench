@@ -53,7 +53,7 @@ dependencies = [
 ]
 
 [project.scripts]
-evalbench = "evalbench.evalbench:run"
+google-evalbench = "evalbench.evalbench:run"
 
 [tool.setuptools.packages.find]
 include = ["evalbench*"]
