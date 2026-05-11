@@ -1,9 +1,9 @@
 import os
 import sys
 
-# Expose internal subdirectories to sys.path so legacy absolute imports
-# (e.g. 'from reporting.report import ...') resolve correctly when run globally.
-sys.path.insert(0, os.path.dirname(__file__))
+# Append package root to sys.path for legacy absolute imports.
+# Using append (rather than insert) prevents namespace collisions in spawned child processes.
+sys.path.append(os.path.dirname(__file__))
 
 
 from . import reporting
