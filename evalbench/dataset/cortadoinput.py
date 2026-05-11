@@ -9,22 +9,22 @@ class EvalCortadoRequest:
         """
         # Store the raw dictionary so process_scenario can read max_turns and the plan
         self.scenario = raw_dict
-        
+
         # Extract top-level identification
         self.id = str(raw_dict.get("id", "-1"))
         self.job_id = job_id
         self.trace_id = trace_id
-        
+
         # Evalbench core routing needs these to match the YAML
         self.dialect = raw_dict.get("dialect", "")
         self.dialects = [self.dialect]
         self.database = raw_dict.get("database", "")
         self.nl_prompt = raw_dict.get("starting_prompt", "")
-        
+
         # Ensure the stringified payload is ready for the gRPC Proxy
         self.payload_str = json.dumps(raw_dict)
         self.payload = self.payload_str
-        
+
         self.agent_results = []
         self.scoring_results = []
 
@@ -36,9 +36,9 @@ class EvalCortadoRequest:
             raw_dict = json.loads(payload_str)
         except json.JSONDecodeError:
             raw_dict = {}
-            
+
         raw_dict["id"] = str(getattr(proto, "id", "-1"))
-        
+
         return cls(
             raw_dict=raw_dict,
             job_id=getattr(proto, "job_id", ""),
@@ -49,12 +49,12 @@ class EvalCortadoRequest:
         """Packs the object into the Protobuf to send to Google3."""
         # Note: You must import eval_request_pb2 here to prevent circular dependencies
         from evalproto import eval_request_pb2
-        
+
         return eval_request_pb2.EvalInputRequest(
             id=int(self.id) if self.id.isdigit() else 0,
             payload=self.payload_str,
             # We map starting_prompt to nl_prompt for backwards compatibility
-            nl_prompt=self.nl_prompt 
+            nl_prompt=self.nl_prompt
         )
 
     def copy(self):
