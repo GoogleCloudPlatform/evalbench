@@ -91,7 +91,7 @@ class JetskiCliGenerator(QueryGenerator):
     def _setup_mcp_servers(self, mcp_servers_config: dict):
         """Configures MCP servers in ~/.gemini/jetski/mcp_config.json."""
         mcp_config_path = os.path.join(self.jetski_config_dir, "mcp_config.json")
-        
+
         current_mcp = {}
         if os.path.exists(mcp_config_path):
             try:
@@ -155,7 +155,7 @@ class JetskiCliGenerator(QueryGenerator):
         # If resuming a specific historical session
         if cli_cmd.resume and cli_cmd.session_id:
             command.extend(["--conversation", str(cli_cmd.session_id)])
-        
+
         # Model override if specified
         if self.model:
             command.extend(["--model", self.model])
@@ -183,7 +183,7 @@ class JetskiCliGenerator(QueryGenerator):
 
         # Robust parsing logic supporting both stream JSON lines and whole envelope JSON
         lines = stream_output.strip().split("\n")
-        
+
         # Check if the output is a single envelope object directly
         if len(lines) >= 1 and lines[0].strip().startswith("{") and lines[-1].strip().endswith("}"):
             try:
