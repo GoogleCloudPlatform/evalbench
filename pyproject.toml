@@ -52,6 +52,9 @@ dependencies = [
     "dbt-postgres",
 ]
 
+[project.scripts]
+evalbench = "evalbench.evalbench:run"
+
 [tool.setuptools.packages.find]
 include = ["evalbench*"]
 
