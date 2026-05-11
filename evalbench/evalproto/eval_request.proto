@@ -16,7 +16,6 @@ message DialectBasedSQLStatements {
 
 message EvalInputRequest {
   int64 id = 1;
-  string conversation_id = 18;
   string nl_prompt = 2;
   string query_type = 3;
   string database = 4;
@@ -30,10 +29,11 @@ message EvalInputRequest {
   string sql_generator_error = 12;
   float sql_generator_time = 13;
   string generated_sql = 14;
-  string generated_nl_response = 19;
   string job_id = 15;
   string trace_id = 16;
   string payload = 17;
+  string conversation_id = 18;
+  string generated_nl_response = 19;
 }
 
 message UserAction {

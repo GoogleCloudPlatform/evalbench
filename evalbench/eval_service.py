@@ -314,6 +314,13 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
 
         try:
             PROXY_QUEUES[session_id] = (in_queue, out_queue)
+            def _cleanup_on_drop(ctx):
+                if session_id in PROXY_QUEUES:
+                    PROXY_QUEUES.pop(session_id, None)
+                    logging.info(f"Cleaned up proxy queues for session {session_id} via disconnect callback")
+            
+            context.add_done_callback(_cleanup_on_drop)
+            
             eval_task = loop.run_in_executor(
                 None, ctx.run, orchestrator.evaluate, dataset
             )
@@ -346,6 +353,12 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                     except Exception as e:
                          logging.error("Orchestrator/Evaluator task failed: %s", e, exc_info=True)
                     break
+            
+                if SESSIONMANAGER.get_session(session_id) is None:
+                    logging.warning(f"Session {session_id} deleted. Terminating stream.")
+                    context.set_code(grpc.StatusCode.NOT_FOUND)
+                    context.set_details("Session deleted")
+                    return
 
                 try:
                     out_request: eval_request_pb2.EvalInputRequest = await asyncio.to_thread(out_queue.get, True, 1.0)
