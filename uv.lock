@@ -16,7 +16,7 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "evalbench",
+    "google-evalbench",
     "viewer",
 ]
 
@@ -876,115 +876,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b2/9d/c3b43da9515bd270df0f80548d9944e389870713cc1fe2b8fb35fe2bcefd/docstring_parser-0.17.0.tar.gz", hash = "sha256:583de4a309722b3315439bb31d64ba3eebada841f2e2cee23b99df001434c912", size = 27442, upload-time = "2025-07-21T07:35:01.868Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/55/e2/2537ebcff11c1ee1ff17d8d0b6f4db75873e3b0fb32c2d4a2ee31ecb310a/docstring_parser-0.17.0-py3-none-any.whl", hash = "sha256:cf2569abd23dce8099b300f9b4fa8191e9582dda731fd533daf54c4551658708", size = 36896, upload-time = "2025-07-21T07:35:00.684Z" },
-]
-
-[[package]]
-name = "evalbench"
-version = "1.7.1"
-source = { editable = "." }
-dependencies = [
-    { name = "absl-py" },
-    { name = "aiologger" },
-    { name = "anthropic", extra = ["vertex"] },
-    { name = "backoff" },
-    { name = "cloud-sql-python-connector", extra = ["pg8000", "pytds"] },
-    { name = "dbt-bigquery" },
-    { name = "dbt-core" },
-    { name = "dbt-postgres" },
-    { name = "gitpython" },
-    { name = "google-adk" },
-    { name = "google-cloud-alloydb-connector", extra = ["pg8000"] },
-    { name = "google-cloud-bigtable" },
-    { name = "google-cloud-firestore" },
-    { name = "google-cloud-geminidataanalytics" },
-    { name = "google-cloud-iam" },
-    { name = "google-cloud-secret-manager" },
-    { name = "google-cloud-spanner" },
-    { name = "google-cloud-storage" },
-    { name = "google-genai" },
-    { name = "grpcio" },
-    { name = "grpcio-tools" },
-    { name = "gunicorn" },
-    { name = "jsonschema" },
-    { name = "mesop" },
-    { name = "mongomock" },
-    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "pandas", version = "3.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "pandas-gbq" },
-    { name = "protobuf" },
-    { name = "pyaml-env" },
-    { name = "pyarrow" },
-    { name = "pymongo" },
-    { name = "pymysql" },
-    { name = "ratelimit" },
-    { name = "redis" },
-    { name = "rich" },
-    { name = "sqlalchemy" },
-    { name = "sqlalchemy-pytds" },
-    { name = "sqlalchemy-spanner" },
-    { name = "sqlglot" },
-    { name = "sqlparse" },
-    { name = "tabulate" },
-    { name = "viewer" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pycodestyle" },
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "absl-py" },
-    { name = "aiologger" },
-    { name = "anthropic", extras = ["vertex"] },
-    { name = "backoff" },
-    { name = "cloud-sql-python-connector", extras = ["pg8000"] },
-    { name = "cloud-sql-python-connector", extras = ["pytds"] },
-    { name = "dbt-bigquery" },
-    { name = "dbt-core" },
-    { name = "dbt-postgres" },
-    { name = "gitpython" },
-    { name = "google-adk" },
-    { name = "google-cloud-alloydb-connector", extras = ["pg8000"] },
-    { name = "google-cloud-bigtable" },
-    { name = "google-cloud-firestore" },
-    { name = "google-cloud-geminidataanalytics", specifier = ">=0.11.0" },
-    { name = "google-cloud-iam" },
-    { name = "google-cloud-secret-manager" },
-    { name = "google-cloud-spanner" },
-    { name = "google-cloud-storage" },
-    { name = "google-genai" },
-    { name = "grpcio", specifier = ">=1.80.0" },
-    { name = "grpcio-tools", specifier = ">=1.80.0" },
-    { name = "gunicorn" },
-    { name = "jsonschema" },
-    { name = "mesop" },
-    { name = "mongomock" },
-    { name = "pandas" },
-    { name = "pandas-gbq" },
-    { name = "protobuf" },
-    { name = "pyaml-env" },
-    { name = "pyarrow" },
-    { name = "pymongo" },
-    { name = "pymysql" },
-    { name = "ratelimit" },
-    { name = "redis" },
-    { name = "rich" },
-    { name = "sqlalchemy" },
-    { name = "sqlalchemy-pytds" },
-    { name = "sqlalchemy-spanner" },
-    { name = "sqlglot" },
-    { name = "sqlparse" },
-    { name = "tabulate" },
-    { name = "viewer", editable = "viewer" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pycodestyle", specifier = ">=2.14.0" },
-    { name = "pytest", specifier = ">=8.0.0" },
 ]
 
 [[package]]
@@ -1858,6 +1749,109 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/08/a5/7b059810934a09fb3ccb657e0843813c1fee1183d3bc2c8041800374aa2c/google_crc32c-1.8.0-cp314-cp314-win_amd64.whl", hash = "sha256:d511b3153e7011a27ab6ee6bb3a5404a55b994dc1a7322c0b87b29606d9790e2", size = 34878, upload-time = "2025-12-16T00:35:23.142Z" },
     { url = "https://files.pythonhosted.org/packages/52/c5/c171e4d8c44fec1422d801a6d2e5d7ddabd733eeda505c79730ee9607f07/google_crc32c-1.8.0-pp311-pypy311_pp73-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:87fa445064e7db928226b2e6f0d5304ab4cd0339e664a4e9a25029f384d9bb93", size = 28615, upload-time = "2025-12-16T00:40:29.298Z" },
     { url = "https://files.pythonhosted.org/packages/9c/97/7d75fe37a7a6ed171a2cf17117177e7aab7e6e0d115858741b41e9dd4254/google_crc32c-1.8.0-pp311-pypy311_pp73-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:f639065ea2042d5c034bf258a9f085eaa7af0cd250667c0635a3118e8f92c69c", size = 28800, upload-time = "2025-12-16T00:40:30.322Z" },
+]
+
+[[package]]
+name = "google-evalbench"
+version = "1.7.1"
+source = { editable = "." }
+dependencies = [
+    { name = "absl-py" },
+    { name = "aiologger" },
+    { name = "anthropic", extra = ["vertex"] },
+    { name = "backoff" },
+    { name = "cloud-sql-python-connector", extra = ["pg8000", "pytds"] },
+    { name = "dbt-bigquery" },
+    { name = "dbt-core" },
+    { name = "dbt-postgres" },
+    { name = "gitpython" },
+    { name = "google-adk" },
+    { name = "google-cloud-alloydb-connector", extra = ["pg8000"] },
+    { name = "google-cloud-bigtable" },
+    { name = "google-cloud-firestore" },
+    { name = "google-cloud-geminidataanalytics" },
+    { name = "google-cloud-iam" },
+    { name = "google-cloud-secret-manager" },
+    { name = "google-cloud-spanner" },
+    { name = "google-cloud-storage" },
+    { name = "google-genai" },
+    { name = "grpcio" },
+    { name = "grpcio-tools" },
+    { name = "jsonschema" },
+    { name = "mongomock" },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pandas", version = "3.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "pandas-gbq" },
+    { name = "protobuf" },
+    { name = "pyaml-env" },
+    { name = "pyarrow" },
+    { name = "pymongo" },
+    { name = "pymysql" },
+    { name = "ratelimit" },
+    { name = "redis" },
+    { name = "rich" },
+    { name = "sqlalchemy" },
+    { name = "sqlalchemy-pytds" },
+    { name = "sqlalchemy-spanner" },
+    { name = "sqlglot" },
+    { name = "sqlparse" },
+    { name = "tabulate" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pycodestyle" },
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "absl-py" },
+    { name = "aiologger" },
+    { name = "anthropic", extras = ["vertex"] },
+    { name = "backoff" },
+    { name = "cloud-sql-python-connector", extras = ["pg8000"] },
+    { name = "cloud-sql-python-connector", extras = ["pytds"] },
+    { name = "dbt-bigquery" },
+    { name = "dbt-core" },
+    { name = "dbt-postgres" },
+    { name = "gitpython" },
+    { name = "google-adk" },
+    { name = "google-cloud-alloydb-connector", extras = ["pg8000"] },
+    { name = "google-cloud-bigtable" },
+    { name = "google-cloud-firestore" },
+    { name = "google-cloud-geminidataanalytics", specifier = ">=0.11.0" },
+    { name = "google-cloud-iam" },
+    { name = "google-cloud-secret-manager" },
+    { name = "google-cloud-spanner" },
+    { name = "google-cloud-storage" },
+    { name = "google-genai" },
+    { name = "grpcio", specifier = ">=1.80.0" },
+    { name = "grpcio-tools", specifier = ">=1.80.0" },
+    { name = "jsonschema" },
+    { name = "mongomock" },
+    { name = "pandas" },
+    { name = "pandas-gbq" },
+    { name = "protobuf" },
+    { name = "pyaml-env" },
+    { name = "pyarrow" },
+    { name = "pymongo" },
+    { name = "pymysql" },
+    { name = "ratelimit" },
+    { name = "redis" },
+    { name = "rich" },
+    { name = "sqlalchemy" },
+    { name = "sqlalchemy-pytds" },
+    { name = "sqlalchemy-spanner" },
+    { name = "sqlglot" },
+    { name = "sqlparse" },
+    { name = "tabulate" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pycodestyle", specifier = ">=2.14.0" },
+    { name = "pytest", specifier = ">=8.0.0" },
 ]
 
 [[package]]
