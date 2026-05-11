@@ -41,9 +41,21 @@ class AgentGenWork(Work):
 
         try:
             eval_set = json.loads(eval_result.payload)
-            for scenario in eval_set.get("scenarios", []):
+
+            if "scenarios" in eval_set:
+                # Loop through the scenarios array
+                for scenario in eval_set["scenarios"]:
+                    self.processor(
+                        scenario,
+                        self.eval_result,
+                        self.job_id,
+                        self.metadata,
+                        self.simulated_user
+                    )
+            else:
+                # When payload is the scenario
                 self.processor(
-                    scenario,
+                    eval_set,
                     self.eval_result,
                     self.job_id,
                     self.metadata,
