@@ -17,6 +17,7 @@ from evalproto import eval_request_pb2
 
 PROXY_QUEUES = {}
 
+
 class GrpcProxyModel(QueryGenerator):
     def __init__(self, config):
         super().__init__(config)
@@ -45,25 +46,32 @@ class GrpcProxyModel(QueryGenerator):
             def get_val(obj, *keys, default=None):
                 for k in keys:
                     if hasattr(obj, "get") and callable(obj.get):
-                         val = obj.get(k)
-                         if val is not None: return val
+                        val = obj.get(k)
+                        if val is not None:
+                            return val
                     if hasattr(obj, k):
                         val = getattr(obj, k)
-                        if val is not None: return val
+                        if val is not None:
+                            return val
                 return default
 
             prompt_text = get_val(eval_output, "nl_prompt", default="")
-            database = get_val(eval_output, "database", "db_id", "database_name", default="")
+            database = get_val(eval_output, "database",
+                               "db_id", "database_name", default="")
             dialects = get_val(eval_output, "dialects", "dialect", default=[])
-            if isinstance(dialects, str): dialects = [dialects]
+            if isinstance(dialects, str):
+                dialects = [dialects]
             query_type = get_val(eval_output, "query_type", default="")
-            scenario_payload = get_val(eval_output, "payload_str", "payload", default="{}")
-            item_id_str = str(get_val(eval_output, "id", "eval_id", default=thread_id))
+            scenario_payload = get_val(
+                eval_output, "payload_str", "payload", default="{}")
+            item_id_str = str(
+                get_val(eval_output, "id", "eval_id", default=thread_id))
             conv_id = item_id_str
 
             thread_inbox = queue.Queue()
             if conv_id in in_queues_dict:
-                logging.warning(f"[TRACE] Proxy[Thread-{thread_id}]: WARNING: conv_id {conv_id} already exists in in_queue. Overwriting.")
+                logging.warning(
+                    f"[TRACE] Proxy[Thread-{thread_id}]: WARNING: conv_id {conv_id} already exists in in_queue. Overwriting.")
             in_queues_dict[conv_id] = thread_inbox
 
             outbound_req = eval_request_pb2.EvalInputRequest(
@@ -75,15 +83,20 @@ class GrpcProxyModel(QueryGenerator):
                 payload=scenario_payload
             )
 
-            logging.debug(f"[DEBUG] Routing prompt to client. conv_id: {conv_id}")
+            logging.debug(
+                f"[DEBUG] Routing prompt to client. conv_id: {conv_id}")
             out_queue.put(outbound_req)
 
-            logging.debug(f"[TRACE] Blocked and waiting for client reply on {conv_id}...")
-            inbound_response: eval_request_pb2.EvalInputRequest = thread_inbox.get(block=True, timeout=300.0)
-            logging.debug(f"[TRACE]  Received Reply from client for conv_id {conv_id}!")
+            logging.debug(
+                f"[TRACE] Blocked and waiting for client reply on {conv_id}...")
+            inbound_response: eval_request_pb2.EvalInputRequest = thread_inbox.get(
+                block=True, timeout=300.0)
+            logging.debug(
+                f"[TRACE]  Received Reply from client for conv_id {conv_id}!")
 
             # Extract fields from the received proto
-            nl_response = getattr(inbound_response, "generated_nl_response", "")
+            nl_response = getattr(
+                inbound_response, "generated_nl_response", "")
             sql_response = getattr(inbound_response, "generated_sql", "")
 
             # Update the eval_output object with the results from the client.
@@ -98,9 +111,11 @@ class GrpcProxyModel(QueryGenerator):
 
         except queue.Empty:
             logging.error(f"[ERROR] Client TIMEOUT on {conv_id}")
-            raise TimeoutError(f"Client disconnected or timed out on conv_id {conv_id}.")
+            raise TimeoutError(
+                f"Client disconnected or timed out on conv_id {conv_id}.")
         except Exception as e:
-            logging.error(f"[ERROR] crashed hard on conv_id {conv_id}: {e}\n{traceback.format_exc()}")
+            logging.error(
+                f"[ERROR] crashed hard on conv_id {conv_id}: {e}\n{traceback.format_exc()}")
             raise e
         finally:
             if in_queues_dict is not None and conv_id is not None:

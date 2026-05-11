@@ -137,7 +137,8 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         try:
             session_id = rpc_id_var.get()
             session = SESSIONMANAGER.get_session(session_id)
-            config, db_configs, model_config, setup_config = load_session_configs(session)
+            config, db_configs, model_config, setup_config = load_session_configs(
+                session)
             if config is None:
                 context.set_code(grpc.StatusCode.FAILED_PRECONDITION)
                 context.set_details("Session not configured")
@@ -149,12 +150,15 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             set_up_script = config.get("set_up_script")
             if set_up_script:
                 if os.path.exists(set_up_script):
-                    logging.info(f"Eval: Executing set_up_script '{set_up_script}'")
+                    logging.info(
+                        f"Eval: Executing set_up_script '{set_up_script}'")
                     run_script(set_up_script, session_dir, "setup")
                 else:
-                    logging.error(f"Eval: Cannot run set_up_script, file not found at '{set_up_script}'")
+                    logging.error(
+                        f"Eval: Cannot run set_up_script, file not found at '{set_up_script}'")
 
-            streaming_eval = session.get("streaming_eval", False) if session else False
+            streaming_eval = session.get(
+                "streaming_eval", False) if session else False
             loop = asyncio.get_event_loop()
 
             if streaming_eval:
@@ -181,7 +185,8 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                 evaluator = get_orchestrator(
                     config, db_configs, setup_config, report_progress=True
                 )
-                logging.info("Batch eval mode: evaluating all items together...")
+                logging.info(
+                    "Batch eval mode: evaluating all items together...")
                 ctx = contextvars.copy_context()
                 await loop.run_in_executor(
                     None, ctx.run, evaluator.evaluate, dataset
@@ -223,10 +228,12 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             tear_down_script = config.get("tear_down_script")
             if tear_down_script:
                 if os.path.exists(tear_down_script):
-                    logging.info(f"Eval: Executing tear_down_script '{tear_down_script}'")
+                    logging.info(
+                        f"Eval: Executing tear_down_script '{tear_down_script}'")
                     run_script(tear_down_script, session_dir, "teardown")
                 else:
-                    logging.error(f"Eval: Cannot run tear_down_script, file not found at '{tear_down_script}'")
+                    logging.error(
+                        f"Eval: Cannot run tear_down_script, file not found at '{tear_down_script}'")
 
             return eval_response_pb2.EvalResponse(response=response, session_id=session_id)
 
@@ -234,15 +241,18 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             display_config = "Unknown"
             # Attempt retrieval of configuration details if successfully loaded
             try:
-                loaded_config = SESSIONMANAGER.get_session(rpc_id_var.get()).get("config", {})
+                loaded_config = SESSIONMANAGER.get_session(
+                    rpc_id_var.get()).get("config", {})
                 cand = loaded_config.get("dataset_config", "Unknown")
                 g3_idx = cand.find("google3/")
                 display_config = cand[g3_idx:] if g3_idx != -1 else cand
             except Exception as e_ctx:
                 # Best effort retrieval of metadata for tracing. Do not mask original fault.
-                logging.debug(f"Unable to determine active dataset path for log context: {e_ctx}")
+                logging.debug(
+                    f"Unable to determine active dataset path for log context: {e_ctx}")
 
-            logging.exception(f"gRPC Eval failed for config/dataset '{display_config}': {e}")
+            logging.exception(
+                f"gRPC Eval failed for config/dataset '{display_config}': {e}")
             raise
 
     async def Interact(
@@ -314,13 +324,15 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
 
         try:
             PROXY_QUEUES[session_id] = (in_queue, out_queue)
+
             def _cleanup_on_drop(ctx):
                 if session_id in PROXY_QUEUES:
                     PROXY_QUEUES.pop(session_id, None)
-                    logging.info(f"Cleaned up proxy queues for session {session_id} via disconnect callback")
-            
+                    logging.info(
+                        f"Cleaned up proxy queues for session {session_id} via disconnect callback")
+
             context.add_done_callback(_cleanup_on_drop)
-            
+
             eval_task = loop.run_in_executor(
                 None, ctx.run, orchestrator.evaluate, dataset
             )
@@ -347,15 +359,18 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             # Yield Loop: Read from out_queue and yield to Google3
             while True:
                 if eval_task.done():
-                    logging.info("Evaluator task finished for session %s.", session_id)
+                    logging.info(
+                        "Evaluator task finished for session %s.", session_id)
                     try:
                         eval_task.result()  # Propagate exceptions
                     except Exception as e:
-                         logging.error("Orchestrator/Evaluator task failed: %s", e, exc_info=True)
+                        logging.error(
+                            "Orchestrator/Evaluator task failed: %s", e, exc_info=True)
                     break
-            
+
                 if SESSIONMANAGER.get_session(session_id) is None:
-                    logging.warning(f"Session {session_id} deleted. Terminating stream.")
+                    logging.warning(
+                        f"Session {session_id} deleted. Terminating stream.")
                     context.set_code(grpc.StatusCode.NOT_FOUND)
                     context.set_details("Session deleted")
                     return
@@ -363,14 +378,16 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                 try:
                     out_request: eval_request_pb2.EvalInputRequest = await asyncio.to_thread(out_queue.get, True, 1.0)
 
-                    logging.debug("Server-Outbound: Yielding to Google3 for conv_id %s", out_request.conversation_id)
+                    logging.debug(
+                        "Server-Outbound: Yielding to Google3 for conv_id %s", out_request.conversation_id)
                     yield out_request
 
                 except queue.Empty:
                     continue  # Loop back and check if eval_task is done
                 except Exception as e:
                     import traceback
-                    logging.error("Server-Outbound: Yield Loop error: %s", e, exc_info=True)
+                    logging.error(
+                        "Server-Outbound: Yield Loop error: %s", e, exc_info=True)
                     continue
 
             read_task.cancel()
@@ -407,7 +424,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             final_request = eval_request_pb2.EvalInputRequest()
             final_request.payload = json.dumps(
                 {"job_id": job_id, "summary": summary})
-            
+
             if dataset:
                 first_item = dataset[0]
                 conv_id = str(getattr(first_item, "id", ""))

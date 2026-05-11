@@ -55,7 +55,7 @@ class AgentGenWork(Work):
             else:
                 # When payload is the scenario
                 self.processor(
-                    eval_set, 
+                    eval_set,
                     self.eval_result,
                     self.job_id,
                     self.metadata,

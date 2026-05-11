@@ -14,6 +14,7 @@ from work.agentgenwork import AgentGenWork
 from evaluator.simulateduser import SimulatedUser
 from work.agentscorework import AgentScoreWork
 
+
 class CortadoEvaluator:
     def __init__(self, config):
         self.config = config
@@ -29,7 +30,8 @@ class CortadoEvaluator:
         if generator_type == "grpc_proxy":
             self.generator = GrpcProxyModel(model_config)
         else:
-            raise ValueError(f"CortadoEvaluator requires 'grpc_proxy' generator, got {generator_type}")
+            raise ValueError(
+                f"CortadoEvaluator requires 'grpc_proxy' generator, got {generator_type}")
 
         runner_config = self.config.get("runners", {})
         self.agent_runners = runner_config.get("agent_runners", 10)
@@ -62,13 +64,15 @@ class CortadoEvaluator:
 
         for future in concurrent.futures.as_completed(self.agentrunner.futures):
             try:
-                modified_item = future.result()  # This now contains the returned object from process_scenario
+                # This now contains the returned object from process_scenario
+                modified_item = future.result()
                 if hasattr(modified_item, "agent_results"):
                     eval_outputs.extend(modified_item.agent_results)
                 if hasattr(modified_item, "scoring_results"):
                     scoring_results.extend(modified_item.scoring_results)
             except Exception as e:
-                logging.error(f"Error getting result from future: {e}", exc_info=True)
+                logging.error(
+                    f"Error getting result from future: {e}", exc_info=True)
 
         return eval_outputs, scoring_results
 
@@ -90,7 +94,8 @@ class CortadoEvaluator:
         accumulated_skills = []
 
         for turn in range(max_turns):
-            logging.info(f"Turn {turn + 1}/{max_turns} - Prompt: {current_prompt}")
+            logging.info(
+                f"Turn {turn + 1}/{max_turns} - Prompt: {current_prompt}")
 
             # Inject the current prompt into the object
             eval_result.nl_prompt = current_prompt
@@ -111,7 +116,8 @@ class CortadoEvaluator:
                 last_sql_reply = ""
 
             last_agent_text = agent_text
-            logging.info(f"Turn {turn + 1}/{max_turns} - Agent Reply to Simulated User: {agent_text}")
+            logging.info(
+                f"Turn {turn + 1}/{max_turns} - Agent Reply to Simulated User: {agent_text}")
 
             # Log history
             conversation_history.append({
@@ -125,7 +131,8 @@ class CortadoEvaluator:
                     conversation_plan, conversation_history, agent_text
                 )
                 if "TERMINATE" in next_response:
-                    logging.info("Simulated user met the goal and terminated the conversation.")
+                    logging.info(
+                        "Simulated user met the goal and terminated the conversation.")
                     break
                 current_prompt = next_response
             else:
@@ -151,19 +158,19 @@ class CortadoEvaluator:
 
         eval_output_data = {
             "eval_id": scenario["id"],
-            "stdout": last_response, # This is the text seen by the simulated user
+            "stdout": last_response,  # This is the text seen by the simulated user
             "stderr": "",
             "returncode": 0 if not last_response.startswith("Error") else 1,
-            "prompt_generator_error": None, 
-            "generated_error": None, 
-            "sql_generator_error": None, 
-            "golden_error": None, 
-            "generated_sql": last_sql, 
+            "prompt_generator_error": None,
+            "generated_error": None,
+            "sql_generator_error": None,
+            "golden_error": None,
+            "generated_sql": last_sql,
             "prompt": scenario["starting_prompt"],
             "conversation_history": json.dumps(conversation_history, indent=2),
             "scenario": scenario,
-            "accumulated_tools": accumulated_tools, # Passes empty list for now
-            "accumulated_skills": accumulated_skills, # Passes empty list for now
+            "accumulated_tools": accumulated_tools,  # Passes empty list for now
+            "accumulated_skills": accumulated_skills,  # Passes empty list for now
             "job_id": job_id,
             "metadata": metadata
         }
