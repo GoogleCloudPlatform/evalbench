@@ -22,6 +22,8 @@ jobs:
       run: |
         curl -LsSf https://astral.sh/uv/install.sh | sh
         echo "$HOME/.local/bin" >> $GITHUB_PATH
+    - name: Generate Proto Files
+      run: uv run make proto
     - name: Run tests
       run: |
         uv run --with pytest pytest evalbench/test -vv
