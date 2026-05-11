@@ -211,7 +211,6 @@ def run():
     app.run(main)
 
 
-
 if __name__ == "__main__":
     # Required for PyInstaller multiprocessing support
     multiprocessing.freeze_support()
