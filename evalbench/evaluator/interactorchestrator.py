@@ -174,6 +174,7 @@ class InteractOrchestrator(Orchestrator):
             except Exception as e:
                 logging.error(
                     f"Skipping {query_type} queries as DB {database} "
+                    + f"(dataset: {self.get_display_dataset_config()}) "
                     + f"could not be setup properly in {dialect} due to {e}."
                 )
                 skip_database(
@@ -224,4 +225,5 @@ class InteractOrchestrator(Orchestrator):
             self.run_time,
             results_tf,
             scores_tf,
+            None,
         )

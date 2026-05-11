@@ -7,7 +7,7 @@ EvalBench is a flexible framework designed to measure the quality of generative 
 ## Getting Started &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/GoogleCloudPlatform/evalbench/blob/main/docs/examples/sqlite_example.ipynb)
 
 Follow the steps below to run EvalBench on your local VM:
-> *Note*: Evalbench requires python 3.10 or higher.
+> *Note*: Evalbench requires Python 3.10 or higher and **uv** for dependency management.
 
 ### 1. Clone the Repository
 
@@ -19,26 +19,21 @@ git clone git@github.com:GoogleCloudPlatform/evalbench.git
 
 ### 2. Set Up a Virtual Environment
 
-Navigate to the repository directory and create a virtual environment:
+Navigate to the repository directory and create a virtual environment using `uv`:
 
 ```bash
 cd evalbench
-python3 -m venv venv
-source venv/bin/activate
+uv venv
+source .venv/bin/activate
 ```
 
 ### 3. Install Dependencies
 
-Install the required Python dependencies:
+Install the required Python dependencies using `uv`:
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
-
-Due to proto conflict between google-cloud packages you may need to force install common-protos:
- ```
- pip install --force-reinstall googleapis-common-protos==1.64.0
- ```
 
 ### 4. Configure GCP Authentication (For Vertex AI | Gemini Examples)
 

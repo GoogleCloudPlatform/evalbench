@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "evalbench"
-version = "1.6.0"
+version = "1.7.1"
 requires-python = ">=3.10"
 description = "Evalbench - evaluation benchmarking framework"
 readme = "README.md"
@@ -46,6 +46,10 @@ dependencies = [
     "google-cloud-geminidataanalytics>=0.11.0",
     "google-cloud-firestore",
     "google-cloud-iam",
+    "google-cloud-storage",
+    "dbt-core",
+    "dbt-bigquery",
+    "dbt-postgres",
 ]
 
 [tool.setuptools.packages.find]
@@ -59,6 +63,7 @@ members = [
 [dependency-groups]
 dev = [
     "pycodestyle>=2.14.0",
+    "pytest>=8.0.0",
 ]
 
 [[tool.uv.index]]

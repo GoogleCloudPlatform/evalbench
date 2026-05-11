@@ -89,10 +89,10 @@ EvalBench's Gemini CLI integration enables automated, multi-turn evaluation of a
 
 ## Prerequisites
 
-1. **Python 3.10+** and project dependencies installed:
+1. **Python 3.10+** and project dependencies installed using `uv`:
    ```bash
    cd evalbench
-   pip install -r requirements.txt
+   uv sync
    ```
 
 2. **Node.js and npm** (for Gemini CLI execution)

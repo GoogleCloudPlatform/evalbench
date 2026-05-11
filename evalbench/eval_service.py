@@ -130,106 +130,116 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         request_iterator: AsyncIterator[eval_request_pb2.EvalInputRequest],
         context: grpc.ServicerContext,
     ) -> eval_response_pb2.EvalResponse:
-        session_id = rpc_id_var.get()
-        session = SESSIONMANAGER.get_session(session_id)
-        config, db_configs, model_config, setup_config = load_session_configs(
-            session)
-        if config is None:
-            context.set_code(grpc.StatusCode.FAILED_PRECONDITION)
-            context.set_details("Session not configured")
-            return eval_response_pb2.EvalResponse()
+        try:
+            session_id = rpc_id_var.get()
+            session = SESSIONMANAGER.get_session(session_id)
+            config, db_configs, model_config, setup_config = load_session_configs(session)
+            if config is None:
+                context.set_code(grpc.StatusCode.FAILED_PRECONDITION)
+                context.set_details("Session not configured")
+                return eval_response_pb2.EvalResponse()
 
-        config["session_id"] = session_id
-        session_dir = os.path.join(SESSION_RESOURCES_PATH, session_id)
+            config["session_id"] = session_id
+            session_dir = os.path.join(SESSION_RESOURCES_PATH, session_id)
 
-        set_up_script = config.get("set_up_script")
-        if set_up_script:
-            if os.path.exists(set_up_script):
-                logging.info(
-                    f"Eval: Executing set_up_script '{set_up_script}'")
-                run_script(set_up_script, session_dir, "setup")
-            else:
-                logging.error(
-                    f"Eval: Cannot run set_up_script, file not found at '{set_up_script}'")
+            set_up_script = config.get("set_up_script")
+            if set_up_script:
+                if os.path.exists(set_up_script):
+                    logging.info(f"Eval: Executing set_up_script '{set_up_script}'")
+                    run_script(set_up_script, session_dir, "setup")
+                else:
+                    logging.error(f"Eval: Cannot run set_up_script, file not found at '{set_up_script}'")
 
-        streaming_eval = session.get(
-            "streaming_eval", False) if session else False
-        loop = asyncio.get_event_loop()
+            streaming_eval = session.get("streaming_eval", False) if session else False
+            loop = asyncio.get_event_loop()
 
-        if streaming_eval:
-            evaluator = get_streaming_orchestrator(
-                config, db_configs, setup_config, report_progress=True
-            )
-            logging.info(
-                "Streaming eval mode: evaluating items as they arrive..."
-            )
-            tasks = []
-            async for request in request_iterator:
-                eval_input = evalinput.EvalInputRequest.init_from_proto(
-                    request
+            if streaming_eval:
+                evaluator = get_streaming_orchestrator(
+                    config, db_configs, setup_config, report_progress=True
                 )
+                logging.info(
+                    "Streaming eval mode: evaluating items as they arrive..."
+                )
+                tasks = []
+                async for request in request_iterator:
+                    eval_input = evalinput.EvalInputRequest.init_from_proto(
+                        request
+                    )
+                    ctx = contextvars.copy_context()
+
+                    task = loop.run_in_executor(
+                        None, ctx.run, evaluator.evaluate_item, eval_input
+                    )
+                    tasks.append(task)
+                await asyncio.gather(*tasks)
+            else:
+                dataset = await get_dataset_from_request(request_iterator)
+                evaluator = get_orchestrator(
+                    config, db_configs, setup_config, report_progress=True
+                )
+                logging.info("Batch eval mode: evaluating all items together...")
                 ctx = contextvars.copy_context()
-
-                task = loop.run_in_executor(
-                    None, ctx.run, evaluator.evaluate_item, eval_input
+                await loop.run_in_executor(
+                    None, ctx.run, evaluator.evaluate, dataset
                 )
-                tasks.append(task)
-            await asyncio.gather(*tasks)
-        else:
-            dataset = await get_dataset_from_request(request_iterator)
-            evaluator = get_orchestrator(
-                config, db_configs, setup_config, report_progress=True
+
+            job_id, run_time, results_tf, scores_tf, multi_trial_scores_tf = evaluator.process()
+            # Fallback to empty dict if reporting is present but null in YAML
+            reporters = get_reporters(
+                config.get("reporting") or {}, job_id, run_time
             )
-            logging.info("Batch eval mode: evaluating all items together...")
+
+            # Offload blocking results processing to a thread pool
+            logging.info("Offloading results processing to thread pool...")
             ctx = contextvars.copy_context()
-            await loop.run_in_executor(
-                None, ctx.run, evaluator.evaluate, dataset
+            summary = await loop.run_in_executor(
+                None,
+                ctx.run,
+                _process_results,
+                reporters,
+                job_id,
+                run_time,
+                results_tf,
+                scores_tf,
+                multi_trial_scores_tf,
+                config,
+                model_config,
+                db_configs,
             )
 
-        job_id, run_time, results_tf, scores_tf, multi_trial_scores_tf = evaluator.process()
-        # Fallback to empty dict if reporting is present but null in YAML
-        reporters = get_reporters(
-            config.get("reporting") or {}, job_id, run_time
-        )
+            logging.info(
+                f"Finished Job ID {job_id} Thread count:{threading.active_count()}"
+            )
 
-        # Offload blocking results processing to a thread pool
-        logging.info("Offloading results processing to thread pool...")
-        ctx = contextvars.copy_context()
-        summary = await loop.run_in_executor(
-            None,
-            ctx.run,
-            _process_results,
-            reporters,
-            job_id,
-            run_time,
-            results_tf,
-            scores_tf,
-            multi_trial_scores_tf,
-            config,
-            model_config,
-            db_configs,
-        )
-
-        logging.info(
-            f"Finished Job ID {job_id} Thread count:{threading.active_count()}"
-        )
-
-        if config.get("summary_in_response"):
-            response = json.dumps({"job_id": job_id, "summary": summary})
-        else:
-            response = f"{job_id}"
-
-        tear_down_script = config.get("tear_down_script")
-        if tear_down_script:
-            if os.path.exists(tear_down_script):
-                logging.info(
-                    f"Eval: Executing tear_down_script '{tear_down_script}'")
-                run_script(tear_down_script, session_dir, "teardown")
+            if config.get("summary_in_response"):
+                response = json.dumps({"job_id": job_id, "summary": summary})
             else:
-                logging.error(
-                    f"Eval: Cannot run tear_down_script, file not found at '{tear_down_script}'")
+                response = f"{job_id}"
 
-        return eval_response_pb2.EvalResponse(response=response, session_id=session_id)
+            tear_down_script = config.get("tear_down_script")
+            if tear_down_script:
+                if os.path.exists(tear_down_script):
+                    logging.info(f"Eval: Executing tear_down_script '{tear_down_script}'")
+                    run_script(tear_down_script, session_dir, "teardown")
+                else:
+                    logging.error(f"Eval: Cannot run tear_down_script, file not found at '{tear_down_script}'")
+
+            return eval_response_pb2.EvalResponse(response=response, session_id=session_id)
+
+        except Exception as e:
+            display_config = "Unknown"
+            # Attempt retrieval of configuration details if successfully loaded
+            try:
+                loaded_config = SESSIONMANAGER.get_session(rpc_id_var.get()).get("config", {})
+                cand = loaded_config.get("dataset_config", "Unknown")
+                g3_idx = cand.find("google3/")
+                display_config = cand[g3_idx:] if g3_idx != -1 else cand
+            except Exception as e_ctx:
+                # Best effort retrieval of metadata for tracing. Do not mask original fault.
+                logging.debug(f"Unable to determine active dataset path for log context: {e_ctx}")
+
+            logging.exception(f"gRPC Eval failed for config/dataset '{display_config}': {e}")
+            raise
 
 
 def _process_results(
