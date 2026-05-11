@@ -1023,7 +1023,7 @@ class GeminiCliGenerator(QueryGenerator):
             skills = []
             for params in parameters_list:
                 # Try common parameter names for skill name
-                skill_name = params.get("skill_name") or params.get("skillName") or params.get("skill")
+                skill_name = params.get("skill_name") or params.get("skillName") or params.get("skill") or params.get("name")
                 if skill_name and skill_name not in skills:
                     skills.append(skill_name)
             return skills

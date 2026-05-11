@@ -137,6 +137,14 @@ def analyze_result(
         if col not in df.columns:
             df[col] = None
 
+    # Adjust num_prompts to the count of unique evaluated items ONLY for agent/geminicli orchestrators where multiple scenarios are packed into one prompt.
+    orchestrator = experiment_config.get("orchestrator", "") if isinstance(experiment_config, dict) else ""
+    if orchestrator in ("agent", "geminicli"):
+        if "id" in df.columns and not df["id"].isna().all():
+            unique_ids = len(df["id"].dropna().unique())
+            if num_prompts is None or unique_ids > num_prompts:
+                num_prompts = unique_ids
+
     scorers = experiment_config["scorers"]
     num_scorers = len(scorers)
     llm_metrics_list = [

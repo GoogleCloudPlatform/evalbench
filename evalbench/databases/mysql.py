@@ -61,6 +61,8 @@ class MySQLDB(DB):
         self.use_adc = not self.username and not self.password
         if self.use_adc:
             self.username = get_adc_user_email()
+            if self.username and self.username.endswith(".gserviceaccount.com"):
+                self.username = self.username.replace(".gserviceaccount.com", "")
 
         def get_conn():
             """Callable for sqlalchemy 'creator' parameter."""

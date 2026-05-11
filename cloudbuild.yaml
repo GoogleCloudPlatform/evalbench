@@ -26,7 +26,7 @@ steps:
     path: '/evalbench/results'
 - name: 'us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:$COMMIT_SHA'
   dir: '/evalbench'
-  args: ['python3', 'verifier/verify.py']
+  args: ['uv', 'run', 'python', 'verifier/verify.py']
   volumes:
   - name: 'eval_results'
     path: '/evalbench/results'

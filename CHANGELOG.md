@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.7.0...v1.7.1) (2026-05-07)
+
+
+### Bug Fixes
+
+* trigger release-please for username/password issue ([#371](https://github.com/GoogleCloudPlatform/evalbench/issues/371)) ([506a717](https://github.com/GoogleCloudPlatform/evalbench/commit/506a71712062ded66108900460cbb73afc2a9a0c))
+
 ## [1.7.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.6.0...v1.7.0) (2026-05-05)
 
 
