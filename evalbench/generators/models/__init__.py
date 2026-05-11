@@ -8,6 +8,7 @@ from .querydata import QueryData
 from .query_data_api import QueryDataAPIGenerator
 from .gemini_cli import GeminiCliGenerator
 from .claude_code import ClaudeCodeGenerator
+from .codex_cli import CodexCliGenerator
 from .jetski_cli import JetskiCliGenerator
 from util.config import load_yaml_config
 
@@ -37,6 +38,8 @@ def get_generator(global_models, model_config_path: str, db: DB = None):
             model = GeminiCliGenerator(config)
         if config["generator"] == "claude_code":
             model = ClaudeCodeGenerator(config)
+        if config["generator"] == "codex_cli":
+            model = CodexCliGenerator(config)
         if config["generator"] == "jetski_cli":
             model = JetskiCliGenerator(config)
         if not model:
