@@ -1,0 +1,21 @@
+# Jetski CLI version.
+#   - Cloudtop/Linux default binary path: "/google/bin/releases/jetski-devs/tools/cli"
+#   - gMac default binary path: "/usr/local/bin/jetski"
+jetski_cli_version: "/google/bin/releases/jetski-devs/tools/cli"
+
+generator: jetski_cli
+
+# Model to use for the agent session
+model: "jetski-agent"
+
+env:
+  GOOGLE_CLOUD_PROJECT: "astana-evaluation"
+  GOOGLE_CLOUD_LOCATION: "us-central1"
+
+setup:
+  mcp_servers:
+    "cloud-sql":
+      httpUrl: "https://sqladmin.googleapis.com/mcp"
+      authProviderType: google_credentials
+      headers:
+        X-Goog-User-Project: astana-evaluation

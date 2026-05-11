@@ -1,0 +1,18 @@
+{
+  "scenarios": [
+    {
+      "id": "jetski-cloud-sql-debug-01",
+      "starting_prompt": "list all instances in project ext-test-cloud-sql-postgres",
+      "conversation_plan": "Ask the agent to list instances in project  ext-test-cloud-sql-postgres. Once all instances are listed if daily-ci-evals-db exist get its state and validate its RUNNABLE",
+      "expected_trajectory": [
+        "list_instances",
+        "get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "ext-test-cloud-sql-postgres"
+      },
+      "kind": "tools",
+      "max_turns": 3
+    }
+  ]
+}
