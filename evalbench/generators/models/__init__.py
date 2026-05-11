@@ -3,6 +3,7 @@ from databases import DB
 from generators.models.generator import QueryGenerator
 from .gemini import GeminiGenerator
 from .passthrough import NOOPGenerator
+from .grpc_proxy import GrpcProxyModel
 from .claude import ClaudeGenerator
 from .querydata import QueryData
 from .query_data_api import QueryDataAPIGenerator
@@ -33,6 +34,8 @@ def get_generator(global_models, model_config_path: str, db: DB = None):
             model = QueryData(config)
         if config["generator"] == "query_data_api":
             model = QueryDataAPIGenerator(config)
+        if config["generator"] == "grpc_proxy":
+            model = GrpcProxyModel(config)
         if config["generator"] == "gemini_cli":
             model = GeminiCliGenerator(config)
         if config["generator"] == "claude_code":

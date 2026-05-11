@@ -32,6 +32,8 @@ message EvalInputRequest {
   string job_id = 15;
   string trace_id = 16;
   string payload = 17;
+  string conversation_id = 18;
+  string generated_nl_response = 19;
 }
 
 message UserAction {
