@@ -5,6 +5,7 @@ import json
 import logging
 import shutil
 import sys
+import re
 from util.context import rpc_id_var
 
 
@@ -38,8 +39,10 @@ class JetskiCliGenerator(QueryGenerator):
             self.fake_home = os.path.abspath(os.path.join(".venv", "fake_home_jetski_cli"))
 
         self.jetski_config_dir = os.path.join(self.fake_home, ".gemini", "jetski")
+        self.plugins_dir = os.path.join(self.jetski_config_dir, "plugins")
         os.makedirs(self.fake_home, exist_ok=True)
         os.makedirs(self.jetski_config_dir, exist_ok=True)
+        os.makedirs(self.plugins_dir, exist_ok=True)
 
         self.env = querygenerator_config.get("env", {})
         self.env["HOME"] = self.fake_home
@@ -83,11 +86,103 @@ class JetskiCliGenerator(QueryGenerator):
             self._setup()
 
     def _setup(self):
-        """Performs initial setup for Jetski CLI, including MCP server configuration."""
+        """Performs initial setup for Jetski CLI."""
         mcp_servers_config = dict(self.setup_config.get("mcp_servers", {}))
         mcp_servers_config.update(self.setup_config.get("fake_mcp_servers", {}))
         if mcp_servers_config:
             self._setup_mcp_servers(mcp_servers_config)
+
+        settings_config = self.setup_config.get("settings", {})
+        if settings_config:
+            self._setup_settings(settings_config)
+
+        skills_config = list(self.setup_config.get("plugins", []))
+        skills_config.extend(self.setup_config.get("skills", []))
+        if skills_config:
+            self._setup_skills(skills_config)
+
+        skills_dir = self.setup_config.get("skills_dir") or self.setup_config.get("plugins_dir")
+        if skills_dir:
+            self._setup_skills_from_dir(skills_dir)
+
+    def _setup_settings(self, settings_config: dict):
+        """Writes declarative settings.json inside ~/.gemini/jetski/."""
+        settings_path = os.path.join(self.jetski_config_dir, "settings.json")
+        current_settings = {}
+        if os.path.exists(settings_path):
+            try:
+                with open(settings_path, "r") as f:
+                    current_settings = json.load(f)
+            except json.JSONDecodeError as e:
+                logging.warning(f"Invalid JSON in Jetski settings at {settings_path}: {e}")
+
+        current_settings.update(settings_config)
+        with open(settings_path, "w") as f:
+            json.dump(current_settings, f, indent=2)
+        logging.info(f"Jetski settings written to {settings_path}")
+
+    def _setup_skills_from_dir(self, skills_dir: str):
+        """Mirrors an entire local marketplace directory into plugins_dir."""
+        if not os.path.isdir(skills_dir):
+            logging.warning(f"Skills directory not found: {skills_dir}")
+            return
+        for entry in os.listdir(skills_dir):
+            full_path = os.path.join(skills_dir, entry)
+            if os.path.isdir(full_path):
+                target_dir = os.path.join(self.plugins_dir, entry)
+                logging.info(f"Syncing Jetski directory skill: {entry} from {full_path}")
+                if os.path.exists(target_dir):
+                    shutil.rmtree(target_dir)
+                try:
+                    shutil.copytree(full_path, target_dir)
+                except Exception as e:
+                    logging.error(f"Failed to copy directory skill {entry}: {e}")
+
+    def _setup_skills(self, skills_list: list):
+        """Sets up individual custom skills/plugins in ~/.gemini/jetski/plugins/."""
+        for item in skills_list:
+            path = None
+            name = None
+            url = None
+
+            if not isinstance(item, dict):
+                logging.warning(f"Unsupported skill config format (expected dict): {item}")
+                continue
+
+            if item.get("action") == "install_from_repo" or item.get("url"):
+                url = item.get("url")
+            else:
+                path = item.get("path")
+                name = item.get("name") or (os.path.basename(path.rstrip("/")) if path else "custom_plugin")
+
+            if url:
+                clone_url, _, version_tag = url.partition("#")
+                repo_name = re.sub(r"\.git$", "", clone_url.rstrip("/").split("/")[-1])
+                target_dir = os.path.join(self.plugins_dir, repo_name)
+                logging.info(f"Cloning remote Jetski plugin/skill from {url} into {target_dir}")
+                if os.path.exists(target_dir):
+                    shutil.rmtree(target_dir)
+
+                cmd = ["git", "clone", "--depth", "1"]
+                if version_tag:
+                    cmd.extend(["--branch", version_tag])
+                cmd.extend([clone_url, target_dir])
+                try:
+                    res = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=120)
+                    if res.returncode != 0:
+                        logging.error(f"Failed to clone plugin repository {url}: {res.stderr}")
+                except Exception as e:
+                    logging.error(f"Exception cloning plugin repository {url}: {e}")
+
+            elif path and os.path.exists(path):
+                target_dir = os.path.join(self.plugins_dir, name)
+                logging.info(f"Syncing Jetski plugin/skill: {name} from {path}")
+                if os.path.exists(target_dir):
+                    shutil.rmtree(target_dir)
+                try:
+                    shutil.copytree(path, target_dir)
+                except Exception as e:
+                    logging.error(f"Failed to copy plugin {name}: {e}")
 
     def _setup_mcp_servers(self, mcp_servers_config: dict):
         """Configures MCP servers in ~/.gemini/jetski/mcp_config.json."""

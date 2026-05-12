@@ -1,10 +1,12 @@
 jetski_cli_version: "/google/bin/releases/jetski-devs/tools/cli"
 generator: jetski_cli
-model: "jetski-agent"
+model: "gemini-2.5-pro"
 
 env:
   GOOGLE_CLOUD_PROJECT: "astana-evaluation"
   GOOGLE_CLOUD_LOCATION: "us-central1"
+  # Route backend model inference through Vertex AI endpoints (Model Garden)
+  GOOGLE_GENAI_USE_VERTEXAI: "true"
 
 setup:
   fake_mcp_servers:

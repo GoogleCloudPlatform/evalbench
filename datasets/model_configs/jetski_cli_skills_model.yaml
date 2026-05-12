@@ -1,0 +1,19 @@
+jetski_cli_version: "/google/bin/releases/jetski-devs/tools/cli"
+generator: jetski_cli
+model: "gemini-3-pro"
+
+env:
+  GOOGLE_CLOUD_PROJECT: "astana-evaluation"
+  GOOGLE_CLOUD_LOCATION: "us-central1"
+  # Route backend model inference through Vertex AI endpoints (Model Garden)
+  GOOGLE_GENAI_USE_VERTEXAI: "true"
+
+setup:
+  skills:
+    # Option 1: Clone remote repository skills (Highly portable for example configurations)
+    - action: install_from_repo
+      url: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git"
+
+    # Option 2: Link local development skill (Uncomment and modify path for local custom runs)
+    # - action: link
+    #   path: "/usr/local/google/home/prernakakkar/senseai/cloud-sql-postgresql/skills/cloudsql-postgres-admin"
