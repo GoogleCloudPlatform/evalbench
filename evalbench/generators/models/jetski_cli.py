@@ -84,7 +84,8 @@ class JetskiCliGenerator(QueryGenerator):
 
     def _setup(self):
         """Performs initial setup for Jetski CLI, including MCP server configuration."""
-        mcp_servers_config = self.setup_config.get("mcp_servers", {})
+        mcp_servers_config = dict(self.setup_config.get("mcp_servers", {}))
+        mcp_servers_config.update(self.setup_config.get("fake_mcp_servers", {}))
         if mcp_servers_config:
             self._setup_mcp_servers(mcp_servers_config)
 
@@ -380,7 +381,7 @@ class JetskiCliGenerator(QueryGenerator):
             for tool_name, stats in by_name.items():
                 if tool_name in ("activate_skill", "Skill"):
                     for params in stats.get("parameters", []):
-                        sname = params.get("skill_name") or params.get("skillName") or params.get("skill")
+                        sname = params.get("skill_name") or params.get("skillName") or params.get("skill") or params.get("name")
                         if sname and sname not in skills:
                             skills.append(sname)
             return skills
