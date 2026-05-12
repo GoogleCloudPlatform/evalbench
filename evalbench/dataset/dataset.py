@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from dataset.evalinput import EvalInputRequest
 from dataset.evalinteractinput import EvalInteractInputRequest
 from dataset.evalgeminicliinput import EvalGeminiCliRequest
+from dataset.cortadoinput import EvalCortadoRequest
 from itertools import chain
 import os
 
@@ -95,6 +96,23 @@ def load_bird_interact_dataset(json_file_path, config):
     return input_items
 
 
+def load_cortado_json(json_file_path):
+    all_items: dict[str, list[EvalCortadoRequest]] = {
+        "cortado-format": [],
+    }
+    with open(json_file_path, "r") as json_file:
+        data = json.load(json_file)
+
+        scenarios = data.get("scenarios", [])
+        for scenario in scenarios:
+            eval_input = EvalCortadoRequest(
+                raw_dict=scenario
+            )
+            all_items["cortado-format"].extend([eval_input])
+
+    return all_items
+
+
 def load_gemini_cli_json(json_file_path):
     all_items: dict[str, list[EvalGeminiCliRequest]] = {
         "gemini-cli-format": [],
@@ -139,6 +157,8 @@ def load_dataset_from_json(json_file_path, config):
         all_items = load_bird_interact_dataset(json_file_path, config)
     elif dataset_format in ("gemini-cli-format", "agent-format"):
         all_items = load_gemini_cli_json(json_file_path)
+    elif dataset_format == "cortado-format":
+        all_items = load_cortado_json(json_file_path)
     else:
         all_items = load_json(json_file_path)
 
@@ -152,6 +172,9 @@ def load_dataset_from_json(json_file_path, config):
         if "orchestrator" not in config:
             config["orchestrator"] = "interact"
         input_items = all_items
+    elif dataset_format == "cortado-format":
+        if "orchestrator" not in config:
+            config["orchestrator"] = "cortado"
     elif dataset_format in ("gemini-cli-format", "agent-format"):
         if "orchestrator" not in config:
             config["orchestrator"] = "agent" if dataset_format == "agent-format" else "geminicli"
@@ -159,7 +182,7 @@ def load_dataset_from_json(json_file_path, config):
     else:
         raise ValueError("Dataset not in any of the recognised formats")
 
-    if dataset_format not in ["gemini-cli-format", "agent-format", "bird-interact-format"]:
+    if dataset_format not in ["gemini-cli-format", "bird-interact-format", "agent-format", "cortado-format"]:
         totalEntries = sum(len(input_items.get(q, []))
                            for q in ["dql", "dml", "ddl"])
         logging.info(f"Converted {totalEntries} entries to EvalInput.")

@@ -6,7 +6,9 @@ steps:
   - '-c'
   - |
     curl -LsSf https://astral.sh/uv/install.sh | sh
-    $$HOME/.local/bin/uv run --with pytest pytest evalbench/test -vv
+    $$HOME/.local/bin/uv sync
+    $$HOME/.local/bin/uv run python -m grpc_tools.protoc --proto_path=evalbench/evalproto --python_out=evalbench/evalproto --pyi_out=evalbench/evalproto --grpc_python_out=evalbench/evalproto --experimental_editions evalbench/evalproto/*.proto
+    $$HOME/.local/bin/uv run pytest evalbench/test -vv
   env:
   - 'PYTHONPATH=evalbench:.'
   - 'SKIP_CLOUD_TESTS=true'

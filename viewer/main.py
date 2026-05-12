@@ -295,6 +295,7 @@ def status_component():
             buttons=[
                 me.ButtonToggleButton(label="Gemini", value="Gemini"),
                 me.ButtonToggleButton(label="Claude", value="Claude"),
+                me.ButtonToggleButton(label="Codex", value="Codex"),
             ],
             on_change=on_agent_tab_change,
         )
@@ -362,6 +363,10 @@ def status_component():
                 # Filter by agent tab
                 if state.status_agent_tab == "Gemini":
                     summary_df = summary_df[(summary_df['model_config.generator'] == 'gemini_cli') | (summary_df['model_config.generator'] == 'unknown') | (summary_df['model_config.generator'] == 'N/A') | summary_df['Product'].isin(default_products)]
+                elif state.status_agent_tab == "Claude":
+                    summary_df = summary_df[(summary_df['model_config.generator'] == 'claude_code') | (summary_df['model_config.generator'] == 'unknown') | (summary_df['model_config.generator'] == 'N/A')]
+                elif state.status_agent_tab == "Codex":
+                    summary_df = summary_df[(summary_df['model_config.generator'] == 'codex_cli')]
                 
                 # Render table similar to lists tab
                 with me.box(
@@ -574,6 +579,7 @@ def list_view_component(directories, results_dir):
             buttons=[
                 me.ButtonToggleButton(label="Gemini", value="Gemini"),
                 me.ButtonToggleButton(label="Claude", value="Claude"),
+                me.ButtonToggleButton(label="Codex", value="Codex"),
             ],
             on_change=on_list_agent_tab_change,
         )
@@ -739,6 +745,8 @@ def list_view_component(directories, results_dir):
                 summaries = [x for x in summaries if x.get("model_config.generator") == "gemini_cli" or x.get("model_config.generator") == "unknown" or x.get("model_config.generator") == "N/A" or x.get("product") in ['spanner', 'bigtable', 'alloydb', 'memorystore', 'dms', 'datastream']]
             elif state.list_agent_tab == "Claude":
                 summaries = [x for x in summaries if x.get("model_config.generator") == "claude_code" or (x.get("model_config.generator") == "unknown" and 'claude' in str(x.get("product")).lower())]
+            elif state.list_agent_tab == "Codex":
+                summaries = [x for x in summaries if x.get("model_config.generator") == "codex_cli"]
             logging.info(f"Number of summaries after tab filter: {len(summaries)}")
 
             if state.eval_id_filter:

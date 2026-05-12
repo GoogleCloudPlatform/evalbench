@@ -35,6 +35,11 @@ service EvalService {
     // option deadline = 1800;
   }
 
+  // MultiTurnEval. Bidirectional stream.
+  rpc Interact(stream EvalInputRequest) returns (stream EvalInputRequest) {
+    // option deadline = 1800;
+  }
+
   // PrepareCodeEvalInputs for NL2Code Evaluation
   rpc PrepareCodeEvalInputs(EvalCodeInputRequest) returns (stream EvalCodeInputRequest) {
     // option deadline = 1800;

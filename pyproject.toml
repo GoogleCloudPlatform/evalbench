@@ -50,7 +50,16 @@ dependencies = [
     "dbt-core",
     "dbt-bigquery",
     "dbt-postgres",
+    "mesop",
+    "gunicorn",
+    "viewer",
 ]
+
+[tool.uv.sources]
+viewer = { workspace = true }
+
+[project.scripts]
+google-evalbench = "evalbench.evalbench:run"
 
 [tool.setuptools.packages.find]
 include = ["evalbench*"]

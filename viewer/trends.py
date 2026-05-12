@@ -184,9 +184,12 @@ def trends_component():
         df = df[df['model_config.generator'].str.contains('gemini', case=False) | (df['model_config.generator'] == 'unknown') | (df['model_config.generator'] == 'N/A') | df['product'].isin(['spanner', 'bigtable', 'alloydb', 'memorystore', 'dms', 'datastream'])]
     elif state.trends_agent_tab == "Claude":
         df = df[df['model_config.generator'].str.contains('claude', case=False) | ((df['model_config.generator'] == 'unknown') & df['product'].str.contains('claude', case=False))]
+    elif state.trends_agent_tab == "Codex":
+        df = df[df['model_config.generator'].str.contains('codex', case=False)]
 
     # Extract unique products for dropdown
     all_products = sorted(df['product'].unique().tolist())
+    logging.info(f"All products found in trends: {all_products}")
     
     # Apply filter if selected
     if state.trends_product_filter:
@@ -229,6 +232,7 @@ def trends_component():
             buttons=[
                 me.ButtonToggleButton(label="Gemini", value="Gemini"),
                 me.ButtonToggleButton(label="Claude", value="Claude"),
+                me.ButtonToggleButton(label="Codex", value="Codex"),
             ],
             on_change=on_trends_agent_tab_change,
         )
@@ -245,8 +249,14 @@ def trends_component():
         def make_product_handler(val):
             def handler(e: me.ClickEvent):
                 st = me.state(State)
+                logging.info(f"Product handler triggered for: {val}")
                 st.trends_product_filter = val
                 st.open_dropdown = ""
+            
+            safe_val = str(val).replace(" ", "_").replace(".", "_").replace("-", "_")
+            handler_name = f"click_trends_prod_{safe_val}"
+            handler.__name__ = handler_name
+            globals()[handler_name] = handler
             return handler
             
         with me.box(style=me.Style(position="relative", width="300px")):
