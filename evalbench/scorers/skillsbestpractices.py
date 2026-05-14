@@ -40,17 +40,21 @@ class SkillsBestPractices(comparator.Comparator):
         # Claude Code sandbox path used by the generator.
         self.skills_dir = config.get("skills_dir") or ""
         if not self.skills_dir:
-            fake_home_skills = os.path.join(
-                ".venv", "fake_home_claude", ".claude", "skills")
-            if os.path.isdir(fake_home_skills):
-                self.skills_dir = os.path.abspath(fake_home_skills)
-                logging.info(
-                    f"Using fake_home skills directory: {self.skills_dir}")
+            for candidate in [
+                os.path.join(".venv", "fake_home_claude", ".claude", "skills"),
+                os.path.join(".venv", "fake_home_codex", ".codex", "skills"),
+                os.path.join(".venv", "fake_home", ".gemini", "skills"),
+            ]:
+                if os.path.isdir(candidate):
+                    self.skills_dir = os.path.abspath(candidate)
+                    logging.info(
+                        f"Using fake_home skills directory: {self.skills_dir}")
+                    break
 
         if not self.skills_dir:
             raise ValueError(
                 "skills_dir is required: set scorers.skills_best_practices.skills_dir, "
-                "or run the Claude Code generator first so .venv/fake_home_claude/.claude/skills exists."
+                "or run a generator first (Claude, Codex, or Gemini) to create the sandbox skills folder."
             )
 
     def _find_skill_md(self, skill_name: str) -> str | None:
