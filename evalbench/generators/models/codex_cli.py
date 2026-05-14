@@ -4,6 +4,7 @@ import os
 import json
 import logging
 import re
+import shutil
 import sys
 import threading
 import time
@@ -65,9 +66,11 @@ class CodexCliGenerator(QueryGenerator):
                 os.path.join(".venv", "fake_home_codex"))
 
         self.codex_config_dir = os.path.join(self.fake_home, ".codex")
+        self.skills_dir = os.path.join(self.codex_config_dir, "skills")
 
         os.makedirs(self.fake_home, exist_ok=True)
         os.makedirs(self.codex_config_dir, exist_ok=True)
+        os.makedirs(self.skills_dir, exist_ok=True)
 
         self.env = querygenerator_config.get("env", {})
         self.env["HOME"] = self.fake_home
@@ -233,6 +236,147 @@ class CodexCliGenerator(QueryGenerator):
         extra_config = dict(self._DEFAULT_TOP_LEVEL_CONFIG)
         extra_config.update(self.setup_config.get("config", {}))
         self._write_config_toml(mcp_servers_config, extra_config)
+
+        skills_config = self.setup_config.get("skills", [])
+        if skills_config:
+            self._setup_skills(skills_config)
+
+        skills_dir_path = self.setup_config.get("skills_dir")
+        if skills_dir_path:
+            self._setup_skills_from_dir(skills_dir_path)
+
+    def _setup_skills(self, skills: list):
+        """Sets up skills by copying them locally or executing non-interactive link commands.
+
+        Supports two paradigms:
+        1. Bare strings: Replicates custom skills directly from the host (~/.codex/skills/<name>)
+           into the sandboxed fake home path (.venv/fake_home_codex/.codex/skills/<name>).
+        2. Dictionaries: Supports precise linking (`action: link`) or external suite cloning
+           (`action: install_from_repo`) to map source repositories natively.
+        """
+        if not skills:
+            return
+
+        real_skills_dir = os.path.join(self.real_home, ".codex", "skills")
+
+        setup_env = os.environ.copy()
+        setup_env.update(self.env)
+
+        # Resolve base command prefix based on whether the version is pinned via npm package spec
+        base_cmd = []
+        if self.codex_cli_version.startswith("@") or "/" in self.codex_cli_version:
+            base_cmd = ["npm", "exec", "--yes", self.codex_cli_version, "--"]
+        else:
+            base_cmd = [self.codex_cli_version]
+
+        for skill_config in skills:
+            # Paradigm 1: Local Sandbox Replication
+            if isinstance(skill_config, str):
+                skill_name = skill_config
+                real_skill_path = os.path.join(real_skills_dir, skill_name)
+                fake_skill_path = os.path.join(self.skills_dir, skill_name)
+
+                if not os.path.exists(real_skill_path):
+                    logging.warning(
+                        f"Requested skill '{skill_name}' not found at {real_skill_path}."
+                    )
+                    continue
+
+                logging.info(f"Syncing skill: {skill_name}")
+                if os.path.exists(fake_skill_path):
+                    shutil.rmtree(fake_skill_path)
+                try:
+                    shutil.copytree(real_skill_path, fake_skill_path)
+                except Exception as e:
+                    logging.error(f"Failed to copy skill {skill_name}: {e}")
+
+            # Paradigm 2: Declarative Command Setup
+            elif isinstance(skill_config, dict):
+                action = skill_config.get("action")
+                path = skill_config.get("path")
+                name = skill_config.get("name")
+
+                cmd = None
+                if action == "link" and path:
+                    logging.info(f"Linking skill from path: {path}")
+                    # Force unattended consent override to prevent interactive terminal deadlocks
+                    cmd = base_cmd + ["skills", "link", path, "--consent"]
+                elif action == "install_from_repo":
+                    url = skill_config.get("url")
+                    if url:
+                        # Support version/branch pinning via URL fragments (<url>#<tag>)
+                        clone_url, _, version_tag = url.partition("#")
+                        repo_name = re.sub(r"\.git$", "", clone_url.rstrip("/").split("/")[-1])
+                        clone_target = os.path.join(self.fake_home, ".codex", "repos", repo_name)
+                        if os.path.exists(clone_target):
+                            shutil.rmtree(clone_target)
+                        os.makedirs(os.path.dirname(clone_target), exist_ok=True)
+
+                        git_cmd = ["git", "clone", "--depth", "1"]
+                        if version_tag:
+                            git_cmd.extend(["--branch", version_tag])
+                        git_cmd.extend([clone_url, clone_target])
+
+                        logging.info(f"Cloning skill repo '{url}' to {clone_target}")
+                        try:
+                            res = subprocess.run(git_cmd, capture_output=True, text=True, check=False, env=setup_env, timeout=120)
+                            if res.returncode == 0:
+                                # Automatically link the cloned repository source
+                                cmd = base_cmd + ["skills", "link", clone_target, "--consent"]
+                            else:
+                                logging.error(f"Failed to clone skill repo '{url}': {res.stderr.strip()}")
+                        except Exception as e:
+                            logging.error(f"Exception cloning skill repo '{url}': {e}")
+                    else:
+                        logging.warning(f"Missing 'url' for install_from_repo skill config: {skill_config}")
+                else:
+                    logging.warning(
+                        f"Unsupported or malformed skill config: {skill_config}"
+                    )
+
+                if cmd:
+                    try:
+                        result = subprocess.run(
+                            cmd,
+                            check=False,
+                            capture_output=True,
+                            text=True,
+                            env=setup_env,
+                        )
+                        if result.returncode != 0:
+                            logging.error(
+                                f"Failed to execute skill action '{action}'. Output: {result.stdout}, Error: {result.stderr}"
+                            )
+                    except Exception as e:
+                        logging.error(f"Failed to execute skill action '{action}': {e}")
+
+    def _setup_skills_from_dir(self, skills_dir_path: str):
+        """Registers a top-level local marketplace directory via native linking.
+
+        Matches Claude Code's `setup.skills_dir` configuration model, providing direct compatibility
+        for monolithic local suite directories.
+        """
+        if not os.path.isdir(skills_dir_path):
+            logging.warning(f"Skills directory not found: {skills_dir_path}")
+            return
+
+        setup_env = os.environ.copy()
+        setup_env.update(self.env)
+
+        base_cmd = []
+        if self.codex_cli_version.startswith("@") or "/" in self.codex_cli_version:
+            base_cmd = ["npm", "exec", "--yes", self.codex_cli_version, "--"]
+        else:
+            base_cmd = [self.codex_cli_version]
+
+        cmd = base_cmd + ["skills", "link", os.path.abspath(skills_dir_path), "--consent"]
+        logging.info(f"Linking skills directory: {skills_dir_path}")
+        try:
+            result = subprocess.run(cmd, check=False, capture_output=True, text=True, env=setup_env)
+            if result.returncode != 0:
+                logging.error(f"Failed to link skills directory '{skills_dir_path}': {result.stderr or result.stdout}")
+        except Exception as e:
+            logging.error(f"Exception linking skills directory '{skills_dir_path}': {e}")
 
     def _write_config_toml(self, mcp_servers_config: dict, extra_config: dict):
         """Writes Codex CLI's `config.toml` with MCP server declarations.
@@ -791,6 +935,113 @@ class CodexCliGenerator(QueryGenerator):
         ):
             return list(output_json["stats"]["tools"]["byName"].keys())
         return []
+
+    @staticmethod
+    def _collect_skills(skills_root: str, into: set):
+        """Recursively scans a target root directory and collects skill folders.
+
+        Subdirectories are added to the set to enable comprehensive trajectory matching.
+        """
+        if not os.path.isdir(skills_root):
+            return
+        for entry in os.listdir(skills_root):
+            full_p = os.path.join(skills_root, entry)
+            if os.path.isdir(full_p):
+                into.add(entry)
+
+    def _get_installed_skills(self) -> set[str]:
+        """Authoritatively aggregates all available skill folder basenames across multiple source locations.
+
+        Scans:
+        1. Sandboxed replication folders (.codex/skills).
+        2. Dynamic remote clones (.codex/repos).
+        3. Top-level monolithic skill directories (`skills_dir`).
+        4. Explicitly mapped local links (`action: link`).
+        """
+        installed = set()
+        # Source 1: Replicated host folders
+        if os.path.isdir(self.skills_dir):
+            for entry in os.listdir(self.skills_dir):
+                installed.add(entry)
+
+        # Source 2: Dynamically cloned remote marketplace suites
+        repos_dir = os.path.join(self.fake_home, ".codex", "repos")
+        if os.path.isdir(repos_dir):
+            for repo in os.listdir(repos_dir):
+                skills_sub = os.path.join(repos_dir, repo, "skills")
+                if os.path.isdir(skills_sub):
+                    self._collect_skills(skills_sub, installed)
+                else:
+                    self._collect_skills(os.path.join(repos_dir, repo), installed)
+
+        # Source 3: Top-level linked monolithic marketplace directories
+        skills_dir_path = (self.setup_config or {}).get("skills_dir")
+        if skills_dir_path:
+            skills_sub = os.path.join(skills_dir_path, "skills")
+            if os.path.isdir(skills_sub):
+                self._collect_skills(skills_sub, installed)
+            else:
+                self._collect_skills(skills_dir_path, installed)
+
+        # Source 4: Explicitly linked individual paths
+        for skill_cfg in (self.setup_config or {}).get("skills", []):
+            if isinstance(skill_cfg, dict) and skill_cfg.get("action") == "link":
+                link_p = skill_cfg.get("path")
+                if link_p and os.path.isdir(link_p):
+                    installed.add(os.path.basename(os.path.abspath(link_p)))
+
+        return installed
+
+    def extract_skills(self, stdout: str) -> list[str]:
+        """Extracts activated true skill names directly from the parsed tool trajectory.
+
+        Matches explicitly declared tool uses against the unified set of installed skills,
+        and intercepts parameters passed to dynamic activation tools (e.g., `activate_skill`).
+        """
+        output_json = self.parse_response(stdout)
+        try:
+            by_name = output_json["stats"]["tools"]["byName"]
+        except (KeyError, TypeError):
+            return []
+
+        installed_skills = self._get_installed_skills()
+        items = []
+
+        # Pattern 1: Direct tool exposure matching known skill suites
+        for tool_name in by_name:
+            if tool_name in installed_skills and tool_name not in items:
+                items.append(tool_name)
+
+        # Pattern 2: Built-in skill invocation wrappers
+        for t_key in ("activate_skill", "Skill"):
+            calls = by_name.get(t_key, {})
+            for params in calls.get("parameters", []):
+                name = params.get("skill_name") or params.get("skillName") or params.get("skill") or params.get("name")
+                if name and name not in items:
+                    items.append(name)
+
+        return items
+
+    def extract_skill_scripts(self, stdout: str) -> list[str]:
+        """Extracts underlying skill-script names (e.g., list_instances.js) from shell/bash execution tools.
+
+        Enables granular trajectory tracing by identifying invoked internal scripts inside tool argument commands.
+        """
+        output_json = self.parse_response(stdout)
+        try:
+            by_name = output_json["stats"]["tools"]["byName"]
+        except (KeyError, TypeError):
+            return []
+
+        scripts = []
+        for tool_name, tstat in by_name.items():
+            if tool_name.lower() in ("bash", "shell", "command_execution"):
+                for params in tstat.get("parameters", []) or []:
+                    command = params.get("command", "") if isinstance(params, dict) else ""
+                    match = re.search(r'/scripts/([a-zA-Z0-9_-]+\.[a-zA-Z0-9]+)', command)
+                    if match and match.group(1) not in scripts:
+                        scripts.append(match.group(1))
+        return scripts
 
     def safe_generate(self, cli_cmd: CLICommand) -> subprocess.CompletedProcess:
         result = self.generate_internal(cli_cmd)

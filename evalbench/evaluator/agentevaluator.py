@@ -176,7 +176,7 @@ class AgentEvaluator:
             accumulated_tools.extend(tools)
 
             # Extract skills from generator output
-            if isinstance(self.generator, (GeminiCliGenerator, ClaudeCodeGenerator)):
+            if isinstance(self.generator, (GeminiCliGenerator, ClaudeCodeGenerator, CodexCliGenerator)):
                 skills = self.generator.extract_skills(result.stdout)
                 accumulated_skills.extend(skills)
 

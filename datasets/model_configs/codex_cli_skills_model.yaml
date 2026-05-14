@@ -1,0 +1,30 @@
+# OpenAI Codex CLI with declarative Skills support.
+codex_cli_version: "@openai/codex@latest"
+
+generator: codex_cli
+
+model: "gpt-5.5"
+
+# openai_api_key_secret: "projects/393137573/secrets/OPENAI_API_KEY/versions/1"
+
+pricing:
+  input_per_million_usd:        1.25
+  cached_input_per_million_usd: 0.125
+  output_per_million_usd:       10.0
+
+env:
+  GOOGLE_CLOUD_PROJECT: "ext-test-cloud-sql-postgres"
+  GOOGLE_CLOUD_LOCATION: "us-central1"
+
+  OPENAI_API_KEY: "[ENCRYPTION_KEY]"
+
+setup:
+  skills:
+    # Example of cloning and linking a custom plugin marketplace repo
+    - action: install_from_repo
+      url: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql"
+
+
+    # Example of linking a custom local skill package
+    # - action: link
+    #   path: "/path/to/local/skill"
