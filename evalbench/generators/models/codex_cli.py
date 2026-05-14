@@ -298,6 +298,11 @@ class CodexCliGenerator(QueryGenerator):
 
                 cmd = None
                 if action == "link" and path:
+                    if not os.path.exists(path):
+                        logging.warning(
+                            f"Skill path to link '{path}' does not exist. Skipping link action."
+                        )
+                        continue
                     logging.info(f"Linking skill from path: {path}")
                     # Force unattended consent override to prevent interactive terminal deadlocks
                     cmd = base_cmd + ["skills", "link", path, "--consent"]
