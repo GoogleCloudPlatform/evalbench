@@ -5,7 +5,7 @@ generator: codex_cli
 
 model: "gpt-5.5"
 
-# openai_api_key_secret: "projects/393137573/secrets/OPENAI_API_KEY/versions/1"
+openai_api_key_secret: "projects/549584275235/secrets/OPENAI_API_KEY/versions/1"
 
 pricing:
   input_per_million_usd:        1.25
@@ -15,8 +15,6 @@ pricing:
 env:
   GOOGLE_CLOUD_PROJECT: "ext-test-cloud-sql-postgres"
   GOOGLE_CLOUD_LOCATION: "us-central1"
-
-  OPENAI_API_KEY: "[ENCRYPTION_KEY]"
 
 setup:
   skills:

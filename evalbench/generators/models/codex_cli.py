@@ -304,8 +304,7 @@ class CodexCliGenerator(QueryGenerator):
                         )
                         continue
                     logging.info(f"Linking skill from path: {path}")
-                    # Force unattended consent override to prevent interactive terminal deadlocks
-                    cmd = base_cmd + ["skills", "link", path, "--consent"]
+                    cmd = base_cmd + ["plugin", "marketplace", "add", os.path.abspath(path)]
                 elif action == "install_from_repo":
                     url = skill_config.get("url")
                     if url:
@@ -327,7 +326,7 @@ class CodexCliGenerator(QueryGenerator):
                             res = subprocess.run(git_cmd, capture_output=True, text=True, check=False, env=setup_env, timeout=120)
                             if res.returncode == 0:
                                 # Automatically link the cloned repository source
-                                cmd = base_cmd + ["skills", "link", clone_target, "--consent"]
+                                cmd = base_cmd + ["plugin", "marketplace", "add", clone_target]
                             else:
                                 logging.error(f"Failed to clone skill repo '{url}': {res.stderr.strip()}")
                         except Exception as e:
@@ -374,7 +373,7 @@ class CodexCliGenerator(QueryGenerator):
         else:
             base_cmd = [self.codex_cli_version]
 
-        cmd = base_cmd + ["skills", "link", os.path.abspath(skills_dir_path), "--consent"]
+        cmd = base_cmd + ["plugin", "marketplace", "add", os.path.abspath(skills_dir_path)]
         logging.info(f"Linking skills directory: {skills_dir_path}")
         try:
             result = subprocess.run(cmd, check=False, capture_output=True, text=True, env=setup_env)
