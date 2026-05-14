@@ -34,6 +34,7 @@ _SUITE_CONFIG = flags.DEFINE_string(
     None,
     "Path to a suite configuration file to run multiple experiments.",
 )
+flags.declare_key_flag('experiment_config')
 
 
 def eval(experiment_config: str):
@@ -208,6 +209,18 @@ def main(argv: Sequence[str]):
 
 def run():
     """Starting function for the uvx package entrypoint."""
+    # Fix absl help output when run via uvx/launcher
+    if '__main__' in sys.modules:
+        main_module = sys.modules['__main__']
+        if main_module.__doc__ and 'exec' in main_module.__doc__:
+            main_module.__doc__ = sys.modules[__name__].__doc__
+            # Clean up sys.argv[0] to hide the full temporary path
+            sys.argv[0] = os.path.basename(sys.argv[0])
+            # Register key flags for __main__ and sys.argv[0] so they show up in launcher's short help
+            flags.FLAGS.register_key_flag_for_module('__main__', flags.FLAGS['experiment_config'])
+            flags.FLAGS.register_key_flag_for_module('__main__', flags.FLAGS['suite_config'])
+            flags.FLAGS.register_key_flag_for_module(sys.argv[0], flags.FLAGS['experiment_config'])
+            flags.FLAGS.register_key_flag_for_module(sys.argv[0], flags.FLAGS['suite_config'])
     app.run(main)
 
 

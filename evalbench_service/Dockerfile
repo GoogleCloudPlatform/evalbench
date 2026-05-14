@@ -4,6 +4,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 ENV PYTHONPATH=/evalbench/evalbench/evalproto:.
 ENV HOME=/root
+ENV VIRTUAL_ENV=/evalbench/.venv
+ENV PATH=/evalbench/.venv/bin:$PATH
 ENV CLOUDSDK_CONFIG=/root/.config/gcloud
 ENV GCLOUD_CONFIG=/root/.config/gcloud
 
@@ -24,8 +26,9 @@ RUN curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -
 WORKDIR /evalbench
 COPY pyproject.toml uv.lock ./
 COPY viewer/pyproject.toml viewer/
-RUN uv sync --frozen
+RUN uv sync --frozen --all-packages
 COPY . .
+RUN uv sync --frozen --all-packages
 
 # Create a non-root user for Claude Code. It refuses
 # --dangerously-skip-permissions when running as root.
