@@ -82,6 +82,7 @@ class AgentEvaluator:
             "dialects": self.config.get("dialects", []),
             "database": self.config.get("database", "unknown"),
             "scorers": self.config.get("scorers", {}),
+            "generator": self.generator.name,
         }
 
         for item in dataset:

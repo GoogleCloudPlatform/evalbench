@@ -19,10 +19,10 @@ setup:
   # extensions:
   #   "https://github.com/gemini-cli-extensions/cloud-sql-postgresql":
   #     settings:
-  #       CLOUD_SQL_POSTGRES_PROJECT: "astana-evaluation"
-  #       CLOUD_SQL_POSTGRES_INSTANCE: "nl2code"
-  #       CLOUD_SQL_POSTGRES_REGION: "us-central1"
-  #       CLOUD_SQL_POSTGRES_DATABASE: "cymbalShop"
-  #       CLOUD_SQL_POSTGRES_USER: "app"
-  #       CLOUD_SQL_POSTGRES_PASSWORD: "Google123*"
+  #       CLOUD_SQL_POSTGRES_PROJECT: "your-gcp-project-id"
+  #       CLOUD_SQL_POSTGRES_INSTANCE: "your-instance-name"
+  #       CLOUD_SQL_POSTGRES_REGION: "your-region"
+  #       CLOUD_SQL_POSTGRES_DATABASE: "your-database-name"
+  #       CLOUD_SQL_POSTGRES_USER: "your-database-user"
+  #       CLOUD_SQL_POSTGRES_PASSWORD: "your-password"
   #       CLOUD_SQL_POSTGRES_IP_TYPE: "PUBLIC"

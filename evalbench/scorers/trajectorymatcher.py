@@ -61,14 +61,14 @@ class TrajectoryMatcher(comparator.Comparator):
         for tool in trajectory:
             if tool in ("ToolSearch", "update_topic"):
                 continue
-            if tool.startswith("mcp__"):
+            if self.generator == "claude_code" and tool.startswith("mcp__"):
                 # Claude Code style: mcp__<server_name>__<tool_name>
                 parts = tool.split("__", 2)
                 if len(parts) == 3:
                     normalized.append(parts[2])
                 else:
                     normalized.append(tool.replace("mcp__", "", 1))
-            elif tool.startswith("mcp_"):
+            elif self.generator == "gemini_cli" and tool.startswith("mcp_"):
                 # Gemini CLI style: mcp_<server_name>_<tool_name>
                 parts = tool.split("_", 2)
                 if len(parts) == 3 and parts[0] == "mcp":

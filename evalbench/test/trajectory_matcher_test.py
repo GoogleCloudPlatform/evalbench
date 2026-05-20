@@ -44,6 +44,16 @@ class TestTrajectoryMatcher(unittest.TestCase):
         score, explanation = matcher.compare(None, None, None, expected, None, None, None, actual, None, None)
         self.assertEqual(score, 100.0)
 
+    def test_gemini_behavior_strip_mcp_prefix(self):
+        config = {"generator": "gemini_cli"}
+        matcher = TrajectoryMatcher(config)
+
+        expected = ["mcp_server_toolA", "ToolB"]
+        actual = ["toolA", "ToolB"]
+
+        score, explanation = matcher.compare(None, None, None, expected, None, None, None, actual, None, None)
+        self.assertEqual(score, 100.0)
+
     def test_claude_behavior_strip_mcp_prefix(self):
         config = {"generator": "claude_code"}
         matcher = TrajectoryMatcher(config)

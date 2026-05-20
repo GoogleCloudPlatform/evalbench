@@ -64,8 +64,15 @@ def compare(
             executablesql.ExecutableGenerationScore(scorers["executable_sql"])
         )
     if "trajectory_matcher" in scorers:
+        traj_config = dict(scorers["trajectory_matcher"])
+        if "generator" not in traj_config:
+            eval_results = eval_output_item.get("eval_results", "")
+            if isinstance(eval_results, dict):
+                meta = eval_results.get("metadata", {})
+                if isinstance(meta, dict) and "generator" in meta:
+                    traj_config["generator"] = meta["generator"]
         comparators.append(
-            trajectorymatcher.TrajectoryMatcher(scorers["trajectory_matcher"])
+            trajectorymatcher.TrajectoryMatcher(traj_config)
         )
     if "skills_trajectory" in scorers:
         comparators.append(
