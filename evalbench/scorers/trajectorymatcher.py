@@ -59,20 +59,22 @@ class TrajectoryMatcher(comparator.Comparator):
 
         normalized = []
         for tool in trajectory:
-            if self.generator == "claude_code":
-                if tool == "ToolSearch":
-                    continue
-                if tool.startswith("mcp__"):
-                    # Drop the prefix "mcp__<mcp_server>__"
-                    # Assuming the format is mcp__server_name__tool_name
-                    parts = tool.split("__", 2)
-                    if len(parts) == 3:
-                        normalized.append(parts[2])
-                    else:
-                        # If it doesn't match expected parts, just strip the prefix
-                        normalized.append(tool.replace("mcp__", "", 1))
+            if tool in ("ToolSearch", "update_topic"):
+                continue
+            if tool.startswith("mcp__"):
+                # Claude Code style: mcp__<server_name>__<tool_name>
+                parts = tool.split("__", 2)
+                if len(parts) == 3:
+                    normalized.append(parts[2])
                 else:
-                    normalized.append(tool)
+                    normalized.append(tool.replace("mcp__", "", 1))
+            elif tool.startswith("mcp_"):
+                # Gemini CLI style: mcp_<server_name>_<tool_name>
+                parts = tool.split("_", 2)
+                if len(parts) == 3 and parts[0] == "mcp":
+                    normalized.append(parts[2])
+                else:
+                    normalized.append(tool.replace("mcp_", "", 1))
             else:
                 normalized.append(tool)
         return normalized
