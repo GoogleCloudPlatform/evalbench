@@ -51,6 +51,7 @@ EvalBench's Codex CLI integration enables automated, multi-turn evaluation of ag
 | Simulated user | **Same** (`simulated_user_model_config`) |
 | Reporting | **Same** (CSV / BigQuery) |
 | MCP server config | **Same** Gemini-style schema (`httpUrl`, `authProviderType: google_credentials`, `headers`) — auto-translated to Codex's TOML format |
+| Skills & Extensions | **Same** — supports installing skills from git repos or local directories in the sandboxed environment |
 
 ---
 
@@ -358,6 +359,30 @@ args = ["evalbench/util/fake_mcp_server.py", "--server-name", "cloud-sql", "--co
 2. `_write_codex_auth_json` writes the API key to `<fake_home>/.codex/auth.json`
 3. The CLI is invoked with `HOME=<fake_home>` so it loads only the configured servers (no host-machine pollution)
 4. Each scenario runs in a sandboxed `HOME` (`.venv/fake_home_codex/` locally, `/tmp_sessions/<session_id>/fake_home` in gRPC mode)
+
+---
+
+## Skills & Extensions
+
+Codex CLI evaluations support **Skills** and **Extensions** (plugins). These are installed during the setup phase into the sandboxed `~/.codex` directory.
+
+### Configuration
+
+You can specify skills to install in the `setup` section of your model configuration:
+
+```yaml
+setup:
+  skills:
+    - action: install_from_repo
+      url: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git"
+```
+
+The generator will:
+1. Clone the repository into `<fake_home>/.codex/plugins/`
+2. Register the plugin in `<fake_home>/.codex/plugins/marketplace.json`
+3. Install the individual skills into `<fake_home>/.codex/skills/`
+
+These skills are then available for the Codex agent to use during the evaluation turns.
 
 ---
 

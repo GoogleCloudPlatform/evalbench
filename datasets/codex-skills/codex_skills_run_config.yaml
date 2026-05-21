@@ -1,0 +1,23 @@
+dataset_config: datasets/codex-skills/codex-skills.evalset.json
+dataset_format: agent-format
+
+orchestrator: agent
+model_config: datasets/codex-skills/codex_skills_model.yaml
+simulated_user_model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+
+runners:
+  agent_runners: 1
+
+scorers:
+  skills_trajectory:
+    enforce_order: false
+  skills_best_practices:
+    model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+  goal_completion:
+    model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+  behavioral_metrics:
+    model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+  turn_count: {}
+  end_to_end_latency: {}
+  tool_call_latency: {}
+  token_consumption: {}

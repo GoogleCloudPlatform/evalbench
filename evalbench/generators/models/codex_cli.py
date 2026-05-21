@@ -4,6 +4,7 @@ import os
 import json
 import logging
 import re
+import shutil
 import sys
 import threading
 import time
@@ -65,12 +66,15 @@ class CodexCliGenerator(QueryGenerator):
                 os.path.join(".venv", "fake_home_codex"))
 
         self.codex_config_dir = os.path.join(self.fake_home, ".codex")
+        self.skills_dir = os.path.join(self.codex_config_dir, "skills")
 
         os.makedirs(self.fake_home, exist_ok=True)
         os.makedirs(self.codex_config_dir, exist_ok=True)
+        os.makedirs(self.skills_dir, exist_ok=True)
 
         self.env = querygenerator_config.get("env", {})
         self.env["HOME"] = self.fake_home
+        self.env["CODEX_HOME"] = self.codex_config_dir
 
         api_key = self._resolve_openai_api_key(querygenerator_config)
         if api_key:
@@ -228,11 +232,235 @@ class CodexCliGenerator(QueryGenerator):
             )
 
     def _setup(self):
-        """Performs initial setup for Codex CLI (writes ~/.codex/config.toml)."""
+        """Performs initial setup for Codex CLI.
+
+        Skills can be set up in two ways:
+        1. install_from_repo: Clone an extension/plugin repo and install its
+           `skills/*` folders into the sandboxed Codex skills directory.
+           Example: {action: "install_from_repo", url: "https://github.com/repo.git#v1.0.0"}
+        2. skills_dir: Copy skills from a local directory. The directory may
+           either be a repo with a `skills/` child or a single skill folder.
+        """
         mcp_servers_config = self.setup_config.get("mcp_servers", {})
         extra_config = dict(self._DEFAULT_TOP_LEVEL_CONFIG)
         extra_config.update(self.setup_config.get("config", {}))
         self._write_config_toml(mcp_servers_config, extra_config)
+
+        skills_config = self.setup_config.get("skills", [])
+        if skills_config:
+            self._setup_skills(skills_config)
+
+        skills_dir_path = self.setup_config.get("skills_dir")
+        if skills_dir_path:
+            self._setup_skills_from_dir(skills_dir_path)
+
+    def _setup_skills(self, skills: list):
+        """Installs Codex skills from repo or local path configs."""
+        setup_env = os.environ.copy()
+        setup_env.update(self.env)
+
+        plugins_dir = os.path.join(self.codex_config_dir, "plugins")
+        os.makedirs(plugins_dir, exist_ok=True)
+
+        for skill_config in skills:
+            if isinstance(skill_config, str):
+                self._setup_single_skill_from_path(skill_config)
+                continue
+            if not isinstance(skill_config, dict):
+                logging.warning(f"Unsupported skill config: {skill_config}")
+                continue
+
+            action = skill_config.get("action")
+            url = skill_config.get("url")
+            path = skill_config.get("path")
+
+            if action == "install_from_repo" and url:
+                repo_dir = self._clone_extension_repo(url, plugins_dir, setup_env)
+                if repo_dir:
+                    self._register_codex_plugin(repo_dir, skill_config)
+                    self._install_skills_from_source(repo_dir, skill_config)
+            elif action in ("copy", "link", "install") and path:
+                # Materialize the skill instead of symlinking so Codex sees a
+                # real SKILL.md inside the sandboxed home.
+                self._install_skills_from_source(path, skill_config)
+            else:
+                logging.warning(
+                    f"Unsupported skill config: {skill_config}. "
+                    "Use 'action: install_from_repo' with 'url', or 'action: copy' with 'path'.")
+
+    def _setup_skills_from_dir(self, skills_dir_path: str):
+        if not os.path.isdir(skills_dir_path):
+            logging.warning(f"Skills directory not found: {skills_dir_path}")
+            return
+        self._install_skills_from_source(skills_dir_path, {})
+
+    def _setup_single_skill_from_path(self, skill_path: str):
+        if os.path.isdir(skill_path):
+            self._install_skills_from_source(skill_path, {})
+            return
+
+        real_skill_path = os.path.join(
+            self.real_home, ".codex", "skills", skill_path)
+        if os.path.isdir(real_skill_path):
+            self._install_skills_from_source(real_skill_path, {})
+        else:
+            logging.warning(
+                f"Requested Codex skill '{skill_path}' was not found as a path "
+                f"or under {os.path.join(self.real_home, '.codex', 'skills')}.")
+
+    def _clone_extension_repo(
+        self, url: str, plugins_dir: str, env: dict
+    ) -> str | None:
+        """Clones an extension/plugin repo. Supports `<url>#<tag>`."""
+        clone_url, _, version_tag = url.partition("#")
+        repo_name = re.sub(r"\.git$", "", clone_url.rstrip("/").split("/")[-1])
+        clone_target = os.path.join(plugins_dir, repo_name)
+        if os.path.exists(clone_target):
+            shutil.rmtree(clone_target)
+
+        cmd = ["git", "clone", "--depth", "1"]
+        if version_tag:
+            cmd.extend(["--branch", version_tag])
+        cmd.extend([clone_url, clone_target])
+
+        try:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, check=False,
+                env=env, timeout=120,
+            )
+            if result.returncode != 0:
+                logging.error(
+                    f"Failed to clone repo '{url}': {result.stderr.strip()}")
+                return None
+            logging.info(f"Cloned Codex extension '{url}' to {clone_target}")
+            return clone_target
+        except subprocess.TimeoutExpired:
+            logging.error(f"Cloning repo '{url}' timed out")
+            return None
+
+    def _register_codex_plugin(self, repo_dir: str, skill_config: dict):
+        """Registers a local Codex plugin marketplace entry for cloned repos."""
+        plugin_name = skill_config.get("plugin_name") or self._read_codex_plugin_name(repo_dir)
+        if not plugin_name:
+            plugin_name = os.path.basename(os.path.abspath(repo_dir))
+
+        marketplace_name = skill_config.get(
+            "marketplace_name", "evalbench-local-marketplace")
+        display_name = skill_config.get(
+            "marketplace_display_name", "EvalBench Local Skills")
+
+        plugins_dir = os.path.join(self.codex_config_dir, "plugins")
+        os.makedirs(plugins_dir, exist_ok=True)
+        marketplace_path = os.path.join(plugins_dir, "marketplace.json")
+
+        marketplace = {
+            "name": marketplace_name,
+            "interface": {"displayName": display_name},
+            "plugins": [],
+        }
+        if os.path.exists(marketplace_path):
+            try:
+                with open(marketplace_path, "r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    marketplace.update(loaded)
+                    marketplace.setdefault("plugins", [])
+            except (json.JSONDecodeError, OSError) as e:
+                logging.warning(
+                    f"Failed to read Codex marketplace at {marketplace_path}: {e}")
+
+        entry = {
+            "name": plugin_name,
+            "source": {
+                "source": "local",
+                "path": os.path.abspath(repo_dir),
+            },
+            "policy": {
+                "installation": "AVAILABLE",
+                "authentication": "ON_INSTALL",
+            },
+            "category": skill_config.get("category", "Database"),
+        }
+
+        marketplace["plugins"] = [
+            p for p in marketplace.get("plugins", [])
+            if not isinstance(p, dict) or p.get("name") != plugin_name
+        ]
+        marketplace["plugins"].append(entry)
+
+        with open(marketplace_path, "w", encoding="utf-8") as f:
+            json.dump(marketplace, f, indent=2)
+
+        logging.info(
+            f"Registered Codex plugin '{plugin_name}' in {marketplace_path}")
+
+    @staticmethod
+    def _read_codex_plugin_name(repo_dir: str) -> str:
+        plugin_json_path = os.path.join(repo_dir, ".codex-plugin", "plugin.json")
+        if not os.path.exists(plugin_json_path):
+            return ""
+        try:
+            with open(plugin_json_path, "r", encoding="utf-8") as f:
+                plugin_data = json.load(f)
+            return plugin_data.get("name", "") if isinstance(plugin_data, dict) else ""
+        except (json.JSONDecodeError, OSError) as e:
+            logging.warning(f"Failed to read {plugin_json_path}: {e}")
+            return ""
+
+    def _install_skills_from_source(self, source_dir: str, skill_config: dict):
+        """Copies one or more SKILL.md folders into ~/.codex/skills."""
+        source_dir = os.path.abspath(source_dir)
+        skill_names = skill_config.get("skills") or skill_config.get("skill_names")
+        single_skill = skill_config.get("skill") or skill_config.get("name")
+        if single_skill and not skill_names:
+            skill_names = [single_skill]
+
+        candidates = self._find_skill_dirs(source_dir)
+        if skill_names:
+            wanted = set(skill_names)
+            candidates = [
+                path for path in candidates
+                if os.path.basename(path) in wanted
+            ]
+
+        if not candidates:
+            logging.warning(f"No Codex skills found in {source_dir}")
+            return
+
+        for skill_dir in candidates:
+            skill_name = os.path.basename(os.path.abspath(skill_dir))
+            destination = os.path.join(self.skills_dir, skill_name)
+            if os.path.exists(destination):
+                shutil.rmtree(destination)
+            try:
+                shutil.copytree(
+                    skill_dir,
+                    destination,
+                    ignore=shutil.ignore_patterns(".git", "__pycache__"),
+                )
+                logging.info(
+                    f"Installed Codex skill '{skill_name}' to {destination}")
+            except Exception as e:
+                logging.error(f"Failed to install Codex skill {skill_name}: {e}")
+
+    @staticmethod
+    def _find_skill_dirs(source_dir: str) -> list[str]:
+        if os.path.exists(os.path.join(source_dir, "SKILL.md")):
+            return [source_dir]
+
+        skills_root = os.path.join(source_dir, "skills")
+        if os.path.isdir(skills_root):
+            return [
+                os.path.join(skills_root, entry)
+                for entry in sorted(os.listdir(skills_root))
+                if os.path.exists(os.path.join(skills_root, entry, "SKILL.md"))
+            ]
+
+        return [
+            os.path.join(source_dir, entry)
+            for entry in sorted(os.listdir(source_dir))
+            if os.path.exists(os.path.join(source_dir, entry, "SKILL.md"))
+        ]
 
     def _write_config_toml(self, mcp_servers_config: dict, extra_config: dict):
         """Writes Codex CLI's `config.toml` with MCP server declarations.
@@ -791,6 +1019,86 @@ class CodexCliGenerator(QueryGenerator):
         ):
             return list(output_json["stats"]["tools"]["byName"].keys())
         return []
+
+    def _get_installed_skills(self) -> set[str]:
+        installed = set()
+        self._collect_skills(self.skills_dir, installed)
+
+        plugins_root = os.path.join(self.codex_config_dir, "plugins")
+        if os.path.isdir(plugins_root):
+            for plugin in os.listdir(plugins_root):
+                self._collect_skills(
+                    os.path.join(plugins_root, plugin, "skills"), installed)
+
+        skills_dir_path = (self.setup_config or {}).get("skills_dir")
+        if skills_dir_path:
+            self._collect_skills(skills_dir_path, installed)
+            self._collect_skills(os.path.join(skills_dir_path, "skills"), installed)
+
+        return installed
+
+    @staticmethod
+    def _collect_skills(skills_root: str, into: set):
+        if not os.path.isdir(skills_root):
+            return
+        for entry in os.listdir(skills_root):
+            if os.path.exists(os.path.join(skills_root, entry, "SKILL.md")):
+                into.add(entry)
+
+    def extract_skills(self, stdout: str) -> list[str]:
+        """Extracts Codex skill names from tool events and skill paths.
+
+        Codex skills are not MCP tools, so the most reliable signal is often
+        a shell command that runs a script from ~/.codex/skills/<skill_name>/...
+        This also handles explicit Skill/activate_skill-style events in case a
+        future CLI version emits them.
+        """
+        output_json = self.parse_response(stdout)
+        try:
+            by_name = output_json["stats"]["tools"]["byName"]
+        except (KeyError, TypeError):
+            return []
+
+        installed_skills = self._get_installed_skills()
+        items = []
+
+        if not installed_skills:
+            return []
+
+        def add_skill(name: str):
+            if name and name in installed_skills and name not in items:
+                items.append(name)
+
+        for tool_name in by_name:
+            if tool_name in installed_skills:
+                add_skill(tool_name)
+
+        for skill_tool_name in ("Skill", "activate_skill", "use_skill"):
+            skill_tool = by_name.get(skill_tool_name, {})
+            for params in skill_tool.get("parameters", []) or []:
+                if not isinstance(params, dict):
+                    continue
+                add_skill(
+                    params.get("skill")
+                    or params.get("name")
+                    or params.get("skill_name")
+                    or params.get("skillName")
+                )
+
+        shell_tool = by_name.get("shell", {}) or by_name.get("Bash", {})
+        for params in shell_tool.get("parameters", []) or []:
+            if not isinstance(params, dict):
+                continue
+            command = params.get("command", "") or params.get("cmd", "")
+            if not isinstance(command, str):
+                continue
+            for match in re.finditer(r"/skills/([^/\s'\"]+)/", command):
+                add_skill(match.group(1))
+            for skill_name in installed_skills:
+                if f"/{skill_name}/" in command:
+                    add_skill(skill_name)
+
+        return items
 
     def safe_generate(self, cli_cmd: CLICommand) -> subprocess.CompletedProcess:
         result = self.generate_internal(cli_cmd)

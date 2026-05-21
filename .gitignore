@@ -176,6 +176,7 @@ results/*
 evalbench/results/*
 db_connections/bat/db_blog.db
 datasets/bird-interact/livesqlbench-base-lite-dumps
+datasets/bird-interact/bird-interact-lite/
 datasets/bird/datasets/bird/prompts.json
 datasets/bird/db_connections/bird/california_schools.sqlite
 datasets/bird/db_connections/bird/card_games.sqlite

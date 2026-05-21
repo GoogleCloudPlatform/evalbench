@@ -151,6 +151,7 @@ def analyze_result(
         "goal_completion",
         "behavioral_metrics",
         "parameter_analysis",
+        "skills_best_practices",
     ]
 
     for metric_name in scorers:
@@ -167,7 +168,7 @@ def analyze_result(
                     logging.info(f"Error: {row['comparison_error']}")
                 else:
                     logging.info("No analysis provided.")
-            if metric_name != "goal_completion":
+            if metric_name not in ["goal_completion", "skills_best_practices"]:
                 continue
 
         summary = analyze_one_metric(

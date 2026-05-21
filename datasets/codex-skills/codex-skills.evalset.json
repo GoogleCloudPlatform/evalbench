@@ -1,0 +1,55 @@
+{
+  "scenarios": [
+    {
+      "id": "codex-cloud-sql-list-instances-01",
+      "starting_prompt": "list all Cloud SQL instances in project astana-evaluation",
+      "conversation_plan": "Ask the agent to list instances in project astana-evaluation. Once all instances are listed if nl2code exists get its state and validate it is RUNNABLE.",
+      "expected_trajectory": [
+        "list_instances.js",
+        "get_instance.js"
+      ],
+      "expected_skills": [
+        "cloud-sql-postgres-admin"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 3
+    },
+    {
+      "id": "codex-csql-create-ambiguous-multiturn-01",
+      "starting_prompt": "I need a database.",
+      "conversation_plan": "The user starts with a vague request. You want to CREATE a NEW Cloud SQL instance named 'my-pg-app'. If the agent offers to create one, say YES. When asked for details, provide 'my-pg-app' as the instance name and 'user_data' as the database name. Never claim to have an existing instance. The goal is for the agent to eventually create the database 'user_data' inside 'my-pg-app' in astana-evaluation project.",
+      "expected_trajectory": [
+        "list_instances.js",
+        "create_instance.js",
+        "create_database.js"
+      ],
+      "expected_skills": [
+        "cloud-sql-postgres-admin"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 6
+    },
+    {
+      "id": "codex-csql-instance-not-found-failure",
+      "starting_prompt": "Update the instance 'non-existent-db-123' to have 8 cores.",
+      "conversation_plan": "The user asks to interact with an instance named 'non-existent-db-123' in astana-evaluation project that doesn't exist. The agent should try to get the instance details or update it directly, fail to find it, and inform the user. The user will then ask to list instances to find the correct name.",
+      "expected_trajectory": [
+        "list_instances.js"
+      ],
+      "expected_skills": [
+        "cloud-sql-postgres-admin"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 4
+    }
+  ]
+}

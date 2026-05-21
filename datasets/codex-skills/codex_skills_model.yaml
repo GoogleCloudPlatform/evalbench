@@ -1,0 +1,22 @@
+codex_cli_version: "@openai/codex@latest"
+generator: codex_cli
+model: "gpt-5.5"
+openai_api_key_secret: "projects/393137573/secrets/OPENAI_API_KEY/versions/1"
+
+env:
+  GOOGLE_CLOUD_PROJECT: "astana-evaluation"
+  GOOGLE_CLOUD_LOCATION: "us-central1"
+    # Cloud SQL PostgreSQL skills configuration.
+    # Substitute the placeholders below with real values per scenario before running.
+  CLOUD_SQL_POSTGRES_PROJECT: "astana-evaluation"
+  CLOUD_SQL_POSTGRES_REGION: "us-central1"
+  CLOUD_SQL_POSTGRES_INSTANCE: <instance>
+  CLOUD_SQL_POSTGRES_DATABASE: <database>
+  CLOUD_SQL_POSTGRES_USER: <user>
+  CLOUD_SQL_POSTGRES_PASSWORD: <password>
+  CLOUD_SQL_POSTGRES_IP_TYPE: "PUBLIC"
+
+setup:
+  skills:
+    - action: install_from_repo
+      url: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git"

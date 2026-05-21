@@ -21,7 +21,7 @@ class SkillsBestPractices(comparator.Comparator):
 
     Configuration (under scorers.skills_best_practices in run YAML):
       model_config: path/to/model.yaml   (required)
-      skills_dir: /path/to/skills/dir    (optional; falls back to the Claude Code sandbox path)
+      skills_dir: /path/to/skills/dir    (optional; falls back to sandbox paths)
 
     The scorer iterates over all activated skills (from accumulated_skills),
     reads each skill's SKILL.md from skills_dir/<skill_name>/SKILL.md,
@@ -37,38 +37,27 @@ class SkillsBestPractices(comparator.Comparator):
 
         # Resolve where skill SKILL.md files live. Prefer an explicit
         # `skills_dir` in the scorer config; otherwise fall back to the
-        # Claude Code sandbox path used by the generator.
+        # sandbox paths used by the agent generators dynamically during comparison.
         self.skills_dir = config.get("skills_dir") or ""
-        if not self.skills_dir:
-            fake_home_skills = os.path.join(
-                ".venv", "fake_home_claude", ".claude", "skills")
-            if os.path.isdir(fake_home_skills):
-                self.skills_dir = os.path.abspath(fake_home_skills)
-                logging.info(
-                    f"Using fake_home skills directory: {self.skills_dir}")
 
-        if not self.skills_dir:
-            raise ValueError(
-                "skills_dir is required: set scorers.skills_best_practices.skills_dir, "
-                "or run the Claude Code generator first so .venv/fake_home_claude/.claude/skills exists."
-            )
-
-    def _find_skill_md(self, skill_name: str) -> str | None:
+    def _find_skill_md(self, skill_name: str, skills_dir: str) -> str | None:
         """Resolves the SKILL.md path for a given skill name.
 
-        Searches self.skills_dir for a subdirectory whose name matches skill_name,
+        Searches skills_dir for a subdirectory whose name matches skill_name,
         then returns the path to its SKILL.md. Returns None if not found.
         """
+        if not skills_dir:
+            return None
         # Direct match
-        candidate = os.path.join(self.skills_dir, skill_name, "SKILL.md")
+        candidate = os.path.join(skills_dir, skill_name, "SKILL.md")
         if os.path.exists(candidate):
             return candidate
         # Case-insensitive fallback
-        if os.path.isdir(self.skills_dir):
-            for entry in os.listdir(self.skills_dir):
+        if os.path.isdir(skills_dir):
+            for entry in os.listdir(skills_dir):
                 if entry.lower() == skill_name.lower():
                     candidate = os.path.join(
-                        self.skills_dir, entry, "SKILL.md"
+                        skills_dir, entry, "SKILL.md"
                     )
                     if os.path.exists(candidate):
                         return candidate
@@ -103,10 +92,10 @@ class SkillsBestPractices(comparator.Comparator):
                 return None
         return None
 
-    def _score_skill(self, skill_name: str) -> Tuple[float, str]:
-        skill_md_path = self._find_skill_md(skill_name)
+    def _score_skill(self, skill_name: str, skills_dir: str) -> Tuple[float, str]:
+        skill_md_path = self._find_skill_md(skill_name, skills_dir)
         if not skill_md_path:
-            return 0.0, f"SKILL.md not found for skill '{skill_name}' in {self.skills_dir}"
+            return 0.0, f"SKILL.md not found for skill '{skill_name}' in {skills_dir}"
 
         try:
             with open(skill_md_path, "r", encoding="utf-8") as f:
@@ -187,11 +176,40 @@ class SkillsBestPractices(comparator.Comparator):
         if not accumulated_skills:
             return 100.0, "No skills were activated; best practices check skipped."
 
+        # Resolve skills_dir dynamically if not explicitly set
+        skills_dir = self.skills_dir
+        if not skills_dir:
+            fake_home = context.get("fake_home")
+            if fake_home:
+                candidate_dirs = (
+                    os.path.join(fake_home, ".codex", "skills"),
+                    os.path.join(fake_home, ".gemini", "skills"),
+                    os.path.join(fake_home, ".claude", "skills"),
+                )
+                for d in candidate_dirs:
+                    if os.path.isdir(d):
+                        skills_dir = os.path.abspath(d)
+                        break
+
+            if not skills_dir:
+                # Fallback to hardcoded paths relative to CWD
+                fallback_skill_dirs = (
+                    os.path.join(".venv", "fake_home_claude", ".claude", "skills"),
+                    os.path.join(".venv", "fake_home_codex", ".codex", "skills"),
+                    os.path.join(".venv", "fake_home", ".gemini", "skills"),  # Fixed path
+                )
+                for d in fallback_skill_dirs:
+                    if os.path.isdir(d):
+                        skills_dir = os.path.abspath(d)
+                        break
+
         scores = []
         explanations = []
-        logging.info(f"Evaluating {len(accumulated_skills)} skill(s) for best practices: {accumulated_skills}")
+        logging.info(
+            f"Evaluating {len(accumulated_skills)} skill(s) "
+            f"for best practices: {accumulated_skills} using skills_dir: {skills_dir}")
         for skill_name in accumulated_skills:
-            score, explanation = self._score_skill(skill_name)
+            score, explanation = self._score_skill(skill_name, skills_dir)
             scores.append(score)
             explanations.append(f"[{skill_name}] Score={score:.0f}: {explanation[:300]}")
             logging.info(f"  {skill_name}: {score:.0f} - {explanation[:100]}")
