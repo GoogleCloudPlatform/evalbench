@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.8.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.7.1...v1.8.0) (2026-06-03)
+
+
+### Features
+
+* add Codex to agent filters in viewer ([a2be23c](https://github.com/GoogleCloudPlatform/evalbench/commit/a2be23caccb27a66d7a638063fc086445771a80b))
+* add Codex to agent filters in viewer ([#387](https://github.com/GoogleCloudPlatform/evalbench/issues/387)) ([2ac6c1f](https://github.com/GoogleCloudPlatform/evalbench/commit/2ac6c1f7cb493e919c97520736e34ad59ba61d3f))
+* add filter_native_tools option to trajectory_matcher to optionally ignore native harness tools during scoring ([2c34d94](https://github.com/GoogleCloudPlatform/evalbench/commit/2c34d94e13d71b2e491009f4858108388ea040de))
+* add packaged console script entrypoint to support `uvx` execution ([#385](https://github.com/GoogleCloudPlatform/evalbench/issues/385)) ([8ea07f8](https://github.com/GoogleCloudPlatform/evalbench/commit/8ea07f80fa8b58184b8677480dc886470c1e0662))
+* **dea:** define EvalDeaRequest input model for conversational evaluations ([#407](https://github.com/GoogleCloudPlatform/evalbench/issues/407)) ([04b91cf](https://github.com/GoogleCloudPlatform/evalbench/commit/04b91cfafa9c049122b5530e89f790572f479058))
+* opt-in function-calling for the Gemini SDK judge ([#409](https://github.com/GoogleCloudPlatform/evalbench/issues/409)) ([d97f511](https://github.com/GoogleCloudPlatform/evalbench/commit/d97f511770941c7cf1acf975ec38b52b5030f51b))
+* Rename package to google-evalbench and decouple viewer dependencies ([#390](https://github.com/GoogleCloudPlatform/evalbench/issues/390)) ([0d75811](https://github.com/GoogleCloudPlatform/evalbench/commit/0d758112ae9f6618a7c8058f032f44a440a381f8))
+* **scorers:** filter native tools in trajectory_matcher with opt-out flag ([2c1ab58](https://github.com/GoogleCloudPlatform/evalbench/commit/2c1ab58dee8e52ebdc8b39751032ca6ade0000d2))
+* stabilize Cloud Run deployment and polish standalone CLI UX ([#389](https://github.com/GoogleCloudPlatform/evalbench/issues/389)) ([4720eef](https://github.com/GoogleCloudPlatform/evalbench/commit/4720eefbebed97d9f21a01a6d4541d77267b443c))
+* support work_dir for claude code eval ([#403](https://github.com/GoogleCloudPlatform/evalbench/issues/403)) ([179e0d3](https://github.com/GoogleCloudPlatform/evalbench/commit/179e0d3f41584112e686675b68ee37a52bea3492))
+
+
+### Bug Fixes
+
+* add --no-sync flag to runtime uv run commands to prevent PyPI timeouts ([#392](https://github.com/GoogleCloudPlatform/evalbench/issues/392)) ([0c4783c](https://github.com/GoogleCloudPlatform/evalbench/commit/0c4783c2ca3d1c6a62d844faf9f359119c9dd6f1))
+* allow-list files in fake home directory for Gemini CLI ([#395](https://github.com/GoogleCloudPlatform/evalbench/issues/395)) ([734bc2a](https://github.com/GoogleCloudPlatform/evalbench/commit/734bc2a154a264e4066d4e826d51c44bcbc1c603))
+* fix Mesop event routing bug in trends dropdown ([023d150](https://github.com/GoogleCloudPlatform/evalbench/commit/023d1505a73e77835f75746dfc5624a921ce2832))
+* **gemini-cli:** support 'name' parameter key in skill extraction ([#378](https://github.com/GoogleCloudPlatform/evalbench/issues/378)) ([62400da](https://github.com/GoogleCloudPlatform/evalbench/commit/62400daf314926a0cd7bfd916997e9203e91f8b5))
+* patch absl help output when running via uvx/launcher ([85048e2](https://github.com/GoogleCloudPlatform/evalbench/commit/85048e2760d7951351423facbf0c6fa2106b439e))
+* prevent silent errors on DB query timeouts and extend deadline ([#406](https://github.com/GoogleCloudPlatform/evalbench/issues/406)) ([fbbd31d](https://github.com/GoogleCloudPlatform/evalbench/commit/fbbd31d42a3af782411ae1e0c131f4ef2beef143))
+* surface eval failures instead of silently terminating or crashing ([#398](https://github.com/GoogleCloudPlatform/evalbench/issues/398)) ([9c36108](https://github.com/GoogleCloudPlatform/evalbench/commit/9c361083f53ae3b8ae622aafedd7d483701ca413))
+
 ## [1.7.1](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.7.0...v1.7.1) (2026-05-07)
 
 
