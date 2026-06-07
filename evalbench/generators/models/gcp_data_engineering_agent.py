@@ -11,6 +11,9 @@ from google.auth.transport.requests import Request
 from .generator import QueryGenerator
 
 
+logger = logging.getLogger(__name__)
+
+
 class GcpAdcCredentialService(CredentialService):
     """GCP Application Default Credentials (ADC) service for A2A SDK.
 
@@ -75,26 +78,48 @@ class DataEngineeringAgentGenerator(QueryGenerator):
     def __init__(self, querygenerator_config: dict[str, Any]):
         super().__init__(querygenerator_config)
         self.name = "data_engineering_agent"
-        self.endpoint = querygenerator_config.get("endpoint", "")
+        gcp_project_id = querygenerator_config.get("gcp_project_id", "")
+        gcp_region = querygenerator_config.get("gcp_region", "")
+
+        if not gcp_project_id:
+            raise ValueError(
+                "Configuration key 'gcp_project_id' is required for "
+                "DataEngineeringAgentGenerator."
+            )
+        if not gcp_region:
+            raise ValueError(
+                "Configuration key 'gcp_region' is required for "
+                "DataEngineeringAgentGenerator."
+            )
+
+        self.endpoint = (
+            f"https://geminidataanalytics.googleapis.com/v1/a2a/projects/"
+            f"{gcp_project_id}/locations/{gcp_region}/"
+            f"agents/dataengineeringagent"
+        )
         self.target_workspace = querygenerator_config.get(
             "target_workspace", ""
         )
 
-        if not self.endpoint:
-            raise ValueError(
-                "Configuration key 'endpoint' is required for "
-                "DataEngineeringAgentGenerator."
-            )
         if not self.target_workspace:
             raise ValueError(
                 "Configuration key 'target_workspace' is required for "
                 "DataEngineeringAgentGenerator."
             )
 
-        self.logger = logging.getLogger(__name__)
+        workspace_chars = (
+            self.target_workspace.replace("/", "")
+            .replace("-", "")
+            .replace("_", "")
+        )
+        if not workspace_chars.isalnum():
+            raise ValueError(
+                "Configuration key 'target_workspace' contains invalid "
+                f"characters: '{self.target_workspace}'"
+            )
 
         self.auth_interceptor = AuthInterceptor(GcpAdcCredentialService())
-        self.logger.info(
+        logger.info(
             "A2A AuthInterceptor successfully configured with "
             "GcpAdcCredentialService."
         )
