@@ -1,0 +1,13 @@
+orchestrator: dea
+dataset_format: dea-format
+model_config: datasets/model_configs/gcp_data_engineering_agent_model.yaml
+simulated_user_model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+dataset_config: datasets/dea-tools/dea-live-conversational.evalset.json
+scorers:
+  binary_rubric_scorer:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+reporting:
+  csv:
+    output_directory: results
+runners:
+  agent_runners: 1

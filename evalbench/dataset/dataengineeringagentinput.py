@@ -7,7 +7,8 @@ class EvalDeaRequest:
         """
         Initializes an EvalDeaRequest from a parsed JSON dictionary.
         """
-        # Store the raw dictionary so process_scenario can read max_turns and the plan
+        # Store the raw dictionary so process_scenario can read max_turns
+        # and the plan
         self.scenario = raw_dict
 
         # Extract top-level identification
@@ -43,7 +44,8 @@ class EvalDeaRequest:
 
     def to_proto(self):
         """Packs the object into the Protobuf to send to Google3."""
-        # Note: You must import eval_request_pb2 here to prevent circular dependencies
+        # Note: You must import eval_request_pb2 here to prevent circular
+        # dependencies
         from evalproto import eval_request_pb2
 
         return eval_request_pb2.EvalInputRequest(
