@@ -1,6 +1,8 @@
 import asyncio
+import collections.abc
 import concurrent.futures
 import datetime
+import json
 import logging
 import threading
 import uuid
@@ -116,6 +118,74 @@ class GcpAdcCredentialService(CredentialService):
                 )
 
             return token_val
+
+
+def _extract_message_text(msg: Any) -> str:
+    """Extracts agent message text from a single Message object."""
+    if getattr(msg, "role", None) != pb.ROLE_AGENT:
+        return ""
+
+    msg_level = ""
+    if hasattr(msg, "metadata") and MESSAGE_LEVEL_URI in msg.metadata:
+        msg_level = msg.metadata[MESSAGE_LEVEL_URI]
+
+    if msg_level in ["DEBUG", "WARNING", "INFO"]:
+        return ""
+
+    text = ""
+    if hasattr(msg, "parts"):
+        for part in msg.parts:
+            if getattr(part, "text", None):
+                text += part.text
+    return text
+
+
+def _find_agent_text_recursive(obj: Any) -> str:
+    """Recursively searches obj to find the first valid agent text."""
+    text = _extract_message_text(obj)
+    if text:
+        return text
+
+    # 1. Handle dict-like mappings by traversing their values
+    if isinstance(obj, collections.abc.Mapping):
+        for val in obj.values():
+            text = _find_agent_text_recursive(val)
+            if text:
+                return text
+
+    # 2. Handle iterables (exclude string/bytes)
+    is_iterable = False
+    if not isinstance(obj, (str, bytes)):
+        try:
+            iter(obj)
+            is_iterable = True
+        except TypeError as e:
+            logger.info("Object is not iterable: %s", e)
+
+    if is_iterable:
+        for item in obj:
+            text = _find_agent_text_recursive(item)
+            if text:
+                return text
+
+    # 3. Handle standard Protobuf Messages via ListFields
+    elif hasattr(obj, "ListFields"):
+        try:
+            for field_desc, field_value in obj.ListFields():
+                text = _find_agent_text_recursive(field_value)
+                if text:
+                    return text
+        except Exception:
+            pass
+
+    # 4. Fallback for other standard objects
+    elif hasattr(obj, "__dict__"):
+        for val in obj.__dict__.values():
+            text = _find_agent_text_recursive(val)
+            if text:
+                return text
+
+    return ""
 
 
 class DataEngineeringAgentGenerator(QueryGenerator):
@@ -286,7 +356,7 @@ class DataEngineeringAgentGenerator(QueryGenerator):
                 ):
                     new_token = resp.task.metadata[CONVERSATION_TOKEN_URI]
         except Exception as e:
-            logger.exception("A2A SDK messaging error")
+            self._log_api_error_details(e)
             raise
         finally:
             await client.close()
@@ -326,22 +396,48 @@ class DataEngineeringAgentGenerator(QueryGenerator):
         Filters out internal logs.
         """
         try:
-            if not (resp.HasField("task") and resp.task.history):
-                return ""
-            reply_text = ""
-
-            for msg in resp.task.history:
-                if msg.role == pb.ROLE_AGENT:
-                    msg_level = ""
-                    if MESSAGE_LEVEL_URI in msg.metadata:
-                        msg_level = msg.metadata[MESSAGE_LEVEL_URI]
-                    if msg_level not in ["DEBUG", "WARNING", "INFO"]:
-                        for part in msg.parts:
-                            if part.text:
-                                reply_text += part.text
-            return reply_text
+            return _find_agent_text_recursive(resp)
         except Exception as e:
             logger.exception(
                 "Failed to parse message text from response: %s", e
             )
             return ""
+
+    @staticmethod
+    def _log_api_error_details(e: Exception) -> None:
+        """Extracts and logs detailed error messages from API exceptions."""
+        try:
+            if hasattr(e, "response") and e.response is not None:
+                response = e.response
+                status_code = getattr(response, "status_code", "unknown")
+                response_text = getattr(response, "text", "")
+
+                error_msg = f"API Error (Status {status_code})"
+                if response_text:
+                    try:
+                        body = json.loads(response_text)
+                        if isinstance(body, dict):
+                            inner_error = body.get("error")
+                            if (
+                                isinstance(inner_error, dict)
+                                and "message" in inner_error
+                            ):
+                                error_msg += f": {inner_error['message']}"
+                            elif "message" in body:
+                                error_msg += f": {body['message']}"
+                            elif "error_description" in body:
+                                error_msg += f": {body['error_description']}"
+                            else:
+                                error_msg += f": {response_text}"
+                        else:
+                            error_msg += f": {response_text}"
+                    except json.JSONDecodeError:
+                        error_msg += f": {response_text}"
+                logger.exception(error_msg)
+                return
+
+            logger.exception("API Unexpected connection error: %s", e)
+        except Exception as parse_err:
+            logger.exception(
+                "Failed to parse API error details: %s", parse_err
+            )

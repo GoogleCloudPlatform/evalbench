@@ -33,6 +33,7 @@ from generators.models.gcp_data_engineering_agent import (  # noqa: E402
     GcpAdcCredentialService,
     CONVERSATION_TOKEN_URI,
     MESSAGE_LEVEL_URI,
+    _find_agent_text_recursive,
 )
 
 
@@ -436,3 +437,39 @@ def test_orchestrator_process():
 
     os.unlink(results_tf)
     os.unlink(scores_tf)
+
+
+@patch("generators.models.gcp_data_engineering_agent.logger")
+def test_log_api_error_details_httpx_json(mock_logger):
+    # Mock httpx-style exception with JSON error message
+    mock_response = MagicMock()
+    mock_response.status_code = 403
+    mock_response.text = '{"error": {"message": "GCP Permission Denied"}}'
+
+    mock_exception = Exception("HTTP Error")
+    mock_exception.response = mock_response
+
+    DataEngineeringAgentGenerator._log_api_error_details(mock_exception)
+
+    mock_logger.exception.assert_called_once_with(
+        "API Error (Status 403): GCP Permission Denied"
+    )
+
+
+def test_extract_reply_text_heuristic_standard_node():
+    resp = pb.SendMessageResponse()
+    resp.message.role = pb.ROLE_AGENT
+    resp.message.parts.append(pb.Part(text="Direct message text"))
+
+    assert (
+        DataEngineeringAgentGenerator._extract_reply_text(resp)
+        == "Direct message text"
+    )
+
+
+def test_extract_reply_text_heuristic_recursive_fallback():
+    nested_msg = pb.Message(role=pb.ROLE_AGENT)
+    nested_msg.parts.append(pb.Part(text="Nested message text"))
+
+    container = [{"some_key": "some_value"}, [nested_msg]]
+    assert _find_agent_text_recursive(container) == "Nested message text"
