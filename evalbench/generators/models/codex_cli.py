@@ -781,7 +781,9 @@ class CodexCliGenerator(AgentCliGenerator):
         """
         tool_durations = tool_durations or {}
 
-        final_obj = {"session_id": "", "response": "", "stats": {}}
+        final_obj = {"session_id": "", "response": "", "stats": {}, "tool_calls": []}
+        tool_calls = final_obj["tool_calls"]
+        calls_by_id = {}
         tool_uses: dict[str, dict] = {}
         tool_results: dict[str, dict] = {}
         usage: dict = {}
@@ -853,8 +855,24 @@ class CodexCliGenerator(AgentCliGenerator):
                 # can compare across harnesses without per-generator logic.
                 server = payload.get("server", "")
                 tool = payload.get("tool", "unknown")
+                tname = canonical_tool_name(server, tool)
+
+                if item_id not in calls_by_id:
+                    call = {
+                        "tool_id": item_id,
+                        "tool_name": tname,
+                        "parameters": self._coerce_json(payload.get("arguments", {})),
+                        "status": None,
+                        "response": None,
+                    }
+                    tool_calls.append(call)
+                    calls_by_id[item_id] = call
+                else:
+                    call = calls_by_id[item_id]
+                    call["parameters"] = self._coerce_json(payload.get("arguments", {}))
+
                 tool_uses[item_id] = {
-                    "tool_name": canonical_tool_name(server, tool),
+                    "tool_name": tname,
                     "server": server,
                     "parameters": self._coerce_json(payload.get("arguments", {})),
                 }
@@ -863,44 +881,100 @@ class CodexCliGenerator(AgentCliGenerator):
                     is_error = bool(payload.get("error")) or status not in (
                         "", "completed", "success", "ok",
                     )
+                    tstatus = "error" if is_error else "success"
                     tool_results[item_id] = {
-                        "status": "error" if is_error else "success",
+                        "status": tstatus,
                         "content": payload.get("result", ""),
                     }
+                    call["status"] = tstatus
+                    call["response"] = payload.get("result", "")
 
             elif kind == "command_execution":
+                cmd = payload.get("command", "")
+                if item_id not in calls_by_id:
+                    call = {
+                        "tool_id": item_id,
+                        "tool_name": "shell",
+                        "parameters": {"command": cmd},
+                        "status": None,
+                        "response": None,
+                    }
+                    tool_calls.append(call)
+                    calls_by_id[item_id] = call
+                else:
+                    call = calls_by_id[item_id]
+                    call["parameters"] = {"command": cmd}
+
                 tool_uses[item_id] = {
                     "tool_name": "shell",
-                    "parameters": {"command": payload.get("command", "")},
+                    "parameters": {"command": cmd},
                 }
                 if event_type == self._EV_ITEM_COMPLETED:
                     exit_code = payload.get("exit_code")
                     is_error = bool(exit_code) and exit_code != 0
+                    tstatus = "error" if is_error else "success"
                     tool_results[item_id] = {
-                        "status": "error" if is_error else "success",
+                        "status": tstatus,
                         "content": payload.get("aggregated_output", ""),
                     }
+                    call["status"] = tstatus
+                    call["response"] = payload.get("aggregated_output", "")
 
             elif kind == "web_search":
+                q = payload.get("query", "")
+                if item_id not in calls_by_id:
+                    call = {
+                        "tool_id": item_id,
+                        "tool_name": "web_search",
+                        "parameters": {"query": q},
+                        "status": None,
+                        "response": None,
+                    }
+                    tool_calls.append(call)
+                    calls_by_id[item_id] = call
+                else:
+                    call = calls_by_id[item_id]
+                    call["parameters"] = {"query": q}
+
                 tool_uses[item_id] = {
                     "tool_name": "web_search",
-                    "parameters": {"query": payload.get("query", "")},
+                    "parameters": {"query": q},
                 }
                 if event_type == self._EV_ITEM_COMPLETED:
                     tool_results[item_id] = {"status": "success", "content": ""}
+                    call["status"] = "success"
+                    call["response"] = ""
 
             elif kind == "file_change":
+                changes = payload.get("changes", [])
+                if item_id not in calls_by_id:
+                    call = {
+                        "tool_id": item_id,
+                        "tool_name": "file_change",
+                        "parameters": {"changes": changes},
+                        "status": None,
+                        "response": None,
+                    }
+                    tool_calls.append(call)
+                    calls_by_id[item_id] = call
+                else:
+                    call = calls_by_id[item_id]
+                    call["parameters"] = {"changes": changes}
+
                 tool_uses[item_id] = {
                     "tool_name": "file_change",
-                    "parameters": {"changes": payload.get("changes", [])},
+                    "parameters": {"changes": changes},
                 }
                 if event_type == self._EV_ITEM_COMPLETED:
                     status = payload.get("status", "")
                     is_error = status not in ("", "completed", "success", "ok")
+                    tstatus = "error" if is_error else "success"
                     tool_results[item_id] = {
-                        "status": "error" if is_error else "success",
+                        "status": tstatus,
                         "content": "",
                     }
+                    call["status"] = tstatus
+                    call["response"] = ""
 
         input_tokens = int(usage.get("input_tokens", 0) or 0)
         output_tokens = int(usage.get("output_tokens", 0) or 0)

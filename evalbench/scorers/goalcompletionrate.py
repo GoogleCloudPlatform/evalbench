@@ -3,6 +3,7 @@ import logging
 from scorers import comparator
 from generators.models import get_generator
 from .prompt.goalcompletion import GOAL_COMPLETION_PROMPT
+from scorers.util import format_conversation_history
 import json
 
 
@@ -17,6 +18,7 @@ class GoalCompletionRate(comparator.Comparator):
         if not self.model_config:
             raise ValueError("model_config is required for GoalCompletionRate")
         self.model = get_generator(global_models, self.model_config)
+        self.include_tool_calls = config.get("include_tool_calls", False)
 
     def compare(
         self,
@@ -48,9 +50,13 @@ class GoalCompletionRate(comparator.Comparator):
         scenario = context.get("scenario", {})
         conversation_plan = scenario.get("conversation_plan", "")
 
+        formatted_history = format_conversation_history(
+            conversation_history, include_tool_calls=self.include_tool_calls
+        )
+
         prompt = GOAL_COMPLETION_PROMPT.format(
             conversation_plan=conversation_plan,
-            conversation_history=conversation_history
+            conversation_history=formatted_history
         )
 
         try:
@@ -58,10 +64,11 @@ class GoalCompletionRate(comparator.Comparator):
             response_text = getattr(
                 response, 'stdout', response) if response else ""
             if isinstance(response_text, str):
-                first_line = response_text.strip().split('\\n')[0].upper()
+                first_line = response_text.strip().split('\n')[0].upper()
                 score = 100.0 if "PASS" in first_line else 0.0
                 return score, response_text
             return 0.0, "Failed to parse LLM evaluation response."
         except Exception as e:
             logging.error(f'GoalCompletionRate generation failed: {e}')
             return 0.0, f"Error calling model: {e}"
+

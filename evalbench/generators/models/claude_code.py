@@ -478,7 +478,9 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         """Parses Claude Code stream-json output into a normalized format
         compatible with the eval pipeline."""
 
-        final_obj = {"session_id": "", "response": "", "stats": {}}
+        final_obj = {"session_id": "", "response": "", "stats": {}, "tool_calls": []}
+        tool_calls = final_obj["tool_calls"]
+        calls_by_id = {}
         tool_uses = {}
         tool_results = {}
         # Fall back to the configured model if the stream's `system` init
@@ -516,18 +518,33 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                             # trajectory matcher can compare across
                             # harnesses without per-generator logic.
                             raw_name = block.get("name", "unknown")
+                            tname = canonicalize_claude_tool_name(raw_name)
                             tool_uses[tool_id] = {
-                                "tool_name": canonicalize_claude_tool_name(raw_name),
+                                "tool_name": tname,
                                 "parameters": block.get("input", {}),
                             }
+                            call = {
+                                "tool_id": tool_id,
+                                "tool_name": tname,
+                                "parameters": block.get("input", {}),
+                                "status": None,
+                                "response": None,
+                            }
+                            tool_calls.append(call)
+                            calls_by_id[tool_id] = call
 
                 elif event_type == "tool_result":
                     tool_id = event.get("tool_use_id") or event.get("id", "")
                     is_error = event.get("is_error", False)
+                    status = "error" if is_error else "success"
                     tool_results[tool_id] = {
-                        "status": "error" if is_error else "success",
+                        "status": status,
                         "content": event.get("content", ""),
                     }
+                    if tool_id in calls_by_id:
+                        call = calls_by_id[tool_id]
+                        call["status"] = status
+                        call["response"] = event.get("content", "")
 
                 elif event_type == "result":
                     if "session_id" in event:

@@ -878,7 +878,9 @@ class GeminiCliGenerator(AgentCliGenerator):
     def _parse_stream_json(self, stream_output: str) -> str:
         import dateutil.parser
 
-        final_obj = {"session_id": "", "response": "", "stats": {}}
+        final_obj = {"session_id": "", "response": "", "stats": {}, "tool_calls": []}
+        tool_calls = final_obj["tool_calls"]
+        calls_by_id = {}
         tool_uses = {}
         tool_results = {}
         model_name = "gemini-2.5-flash"
@@ -899,10 +901,24 @@ class GeminiCliGenerator(AgentCliGenerator):
                     tool_id = event.get("tool_id")
                     if tool_id:
                         tool_uses[tool_id] = event
+                        tname = canonicalize_gemini_tool_name(event.get("tool_name", "unknown"))
+                        call = {
+                            "tool_id": tool_id,
+                            "tool_name": tname,
+                            "parameters": event.get("parameters", {}),
+                            "status": None,
+                            "response": None,
+                        }
+                        tool_calls.append(call)
+                        calls_by_id[tool_id] = call
                 elif t == "tool_result":
                     tool_id = event.get("tool_id")
                     if tool_id:
                         tool_results[tool_id] = event
+                        if tool_id in calls_by_id:
+                            call = calls_by_id[tool_id]
+                            call["status"] = event.get("status")
+                            call["response"] = event.get("result") or event.get("content") or event.get("output")
                 elif t == "result":
                     s = event.get("stats", {})
                     total_duration = s.get("duration_ms", 0)

@@ -27,15 +27,30 @@ class SimulatedUserPromptGenerator(PromptGenerator):
         pass
 
     def generate(self, item):
+        import json
         # item is the payload dictionary
         plan = item.get("conversation_plan", "")
         history_list = item.get("history", [])
         last_reply = item.get("last_agent_reply", "")
 
+        try:
+            parsed_last_reply = json.loads(last_reply)
+            if isinstance(parsed_last_reply, dict) and "response" in parsed_last_reply:
+                last_reply = parsed_last_reply["response"]
+        except Exception:
+            pass
+
         # Format history
         history_str = ""
         for turn in history_list:
-            history_str += f"User: {turn['user']}\nAgent: {turn['agent']}\n"
+            agent_content = turn.get("agent", "")
+            try:
+                parsed_agent = json.loads(agent_content)
+                if isinstance(parsed_agent, dict) and "response" in parsed_agent:
+                    agent_content = parsed_agent["response"]
+            except Exception:
+                pass
+            history_str += f"User: {turn.get('user', '')}\nAgent: {agent_content}\n"
 
         prompt = self.prompt_template.replace(
             "[[conversation_plan]]", str(plan))

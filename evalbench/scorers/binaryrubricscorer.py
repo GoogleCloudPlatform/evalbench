@@ -3,6 +3,7 @@ import logging
 from scorers import comparator
 from generators.models import get_generator
 from scorers.prompt.binaryrubricscorer import BINARY_RUBRIC_EVAL_PROMPT
+from scorers.util import format_conversation_history
 import re
 import json
 
@@ -21,6 +22,7 @@ class BinaryRubricScorer(comparator.Comparator):
         if not self.model_config:
             raise ValueError("model_config is required for BinaryRubricScorer")
         self.model = get_generator(global_models, self.model_config)
+        self.include_tool_calls = config.get("include_tool_calls", False)
 
     def compare(
         self,
@@ -61,9 +63,13 @@ class BinaryRubricScorer(comparator.Comparator):
                 "No rubric defined for this scenario. Defaulting to PASS."
             )
 
+        formatted_history = format_conversation_history(
+            conversation_history, include_tool_calls=self.include_tool_calls
+        )
+
         prompt = BINARY_RUBRIC_EVAL_PROMPT.format(
             rubric_item=criterion_to_evaluate,
-            conversation_history=conversation_history
+            conversation_history=formatted_history
         )
 
         try:
@@ -85,3 +91,4 @@ class BinaryRubricScorer(comparator.Comparator):
         except Exception as e:
             logging.error(f'BinaryRubricScorer generation failed: {e}')
             return 0.0, f"Error calling model: {e}"
+

@@ -337,3 +337,38 @@ def test_setup_skill_dict_disable(
         "my-skill",
     ]
     assert expected_cmd in calls
+
+
+def test_parse_stream_json(monkeypatch):
+    monkeypatch.setenv("HOME", "/fake/home")
+    with (
+        patch('generators.models.gemini_cli.os.path.exists', return_value=False),
+        patch('generators.models.gemini_cli.os.makedirs'),
+        patch('generators.models.gemini_cli.open', create=True),
+    ):
+        generator = GeminiCliGenerator({})
+
+    stream_output = "\n".join([
+        '{"type": "init", "session_id": "session_123", "model": "gemini-2.5-pro"}',
+        '{"type": "message", "role": "assistant", "content": "Hello "}',
+        '{"type": "tool_use", "tool_id": "call_abc", "tool_name": "mcp_myserver_mytool", "parameters": {"arg1": "val1"}}',
+        '{"type": "message", "role": "assistant", "content": "world!"}',
+        '{"type": "tool_result", "tool_id": "call_abc", "status": "success", "result": "tool-result-output"}',
+        '{"type": "result", "stats": {"duration_ms": 1500, "input_tokens": 10, "output_tokens": 20, "total_tokens": 30, "cached": 5}}'
+    ])
+
+    parsed_raw = generator._parse_stream_json(stream_output)
+    import json
+    parsed = json.loads(parsed_raw)
+
+    assert parsed["session_id"] == "session_123"
+    assert parsed["response"] == "Hello world!"
+    assert len(parsed["tool_calls"]) == 1
+    
+    call = parsed["tool_calls"][0]
+    assert call["tool_id"] == "call_abc"
+    assert call["tool_name"] == "myserver__mytool"
+    assert call["parameters"] == {"arg1": "val1"}
+    assert call["status"] == "success"
+    assert call["response"] == "tool-result-output"
+

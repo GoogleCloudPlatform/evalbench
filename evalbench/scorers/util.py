@@ -61,3 +61,54 @@ def make_hashable(value):
     elif isinstance(value, dict):
         return frozenset((k, make_hashable(v)) for k, v in value.items())
     return value
+
+
+def format_conversation_history(history: Any, include_tool_calls: bool = False) -> str:
+    import json
+
+    if not history:
+        return "[]"
+
+    try:
+        history_list = (
+            json.loads(history) if isinstance(history, str) else history
+        )
+    except Exception:
+        return str(history)
+
+    if not isinstance(history_list, list):
+        return str(history)
+
+    history_str = ""
+    for turn in history_list:
+        user_msg = turn.get("user", "")
+        agent_raw = turn.get("agent", "")
+
+        agent_content = agent_raw
+        tool_calls = []
+        try:
+            parsed_agent = (
+                json.loads(agent_raw) if isinstance(agent_raw, str) else agent_raw
+            )
+            if isinstance(parsed_agent, dict):
+                agent_content = parsed_agent.get("response", "")
+                tool_calls = parsed_agent.get("tool_calls", [])
+        except Exception:
+            pass
+
+        history_str += f"User: {user_msg}\n"
+
+        if include_tool_calls and tool_calls:
+            for call in tool_calls:
+                name = call.get("tool_name") or call.get("name") or "unknown_tool"
+                args = call.get("parameters") or call.get("args") or {}
+                status = call.get("status") or "executed"
+                resp = call.get("response") or ""
+                history_str += (
+                    f"Agent invoked {name}({args}) -> {status.upper()}:\n  {resp}\n"
+                )
+
+        history_str += f"Agent: {agent_content}\n"
+
+    return history_str
+
