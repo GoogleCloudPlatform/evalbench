@@ -894,7 +894,8 @@ def test_verify_mcp_runtime_unreadable_probe_log_does_not_mask_failure(
 
 def test_translate_mcp_config_maps_httpurl_to_serverurl():
     """The gemini-style ``httpUrl`` alias is rewritten to agy's ``serverUrl``
-    (a wrong URL field attaches a transportless server with zero tools)."""
+    (left untranslated, agy ignores it and attaches a transportless server
+    with zero tools)."""
     out = AgyCliGenerator._translate_mcp_config({"httpUrl": "https://x/mcp"})
 
     assert out == {"serverUrl": "https://x/mcp"}

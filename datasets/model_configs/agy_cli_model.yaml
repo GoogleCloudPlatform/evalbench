@@ -21,12 +21,12 @@ env:
 setup:
   mcp_servers:
     "cloud-sql":
-      # agy's MCP schema names the HTTP endpoint field "serverUrl" (the
-      # Windsurf/cortex lineage), not gemini's "httpUrl". The binary's
-      # config struct has no httpUrl field, so an httpUrl value is parsed
-      # to a nil ServerUrl -- no transport, no tools, silent fallback to
-      # gcloud shell-outs. authProviderType/oauth/headers are all native
-      # agy fields, so Google auth works without Bearer-header injection.
+      # agy's native HTTP endpoint field is "serverUrl"; "url" also works
+      # as of v1.0.5. A gemini-style "httpUrl" is auto-translated to
+      # "serverUrl" by the harness (_translate_mcp_config), so it works
+      # too -- but prefer "serverUrl" here. authProviderType/oauth/headers
+      # are native agy fields, so Google auth works without Bearer-header
+      # injection.
       serverUrl: "https://sqladmin.googleapis.com/mcp"
       authProviderType: google_credentials
       oauth:

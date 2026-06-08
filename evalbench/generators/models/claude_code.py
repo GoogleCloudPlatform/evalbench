@@ -1,4 +1,4 @@
-from .generator import QueryGenerator
+from .agent_cli import AgentCliGenerator
 from .tool_naming import canonicalize_claude_tool_name
 import subprocess
 import os
@@ -22,7 +22,7 @@ class CLICommand:
         self.cwd = cwd
 
 
-class ClaudeCodeGenerator(QueryGenerator):
+class ClaudeCodeGenerator(AgentCliGenerator):
     """Generator queries using Claude Code CLI."""
 
     def __init__(self, querygenerator_config):
@@ -690,6 +690,10 @@ class ClaudeCodeGenerator(QueryGenerator):
                 logging.debug(f"Failed to parse stream JSON line: {e}")
 
         return json.dumps(final_obj, indent=2)
+
+    @property
+    def version(self) -> str:
+        return self.claude_code_version
 
     def parse_response(self, stdout: str) -> dict:
         if not stdout:

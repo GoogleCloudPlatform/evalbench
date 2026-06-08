@@ -1,4 +1,4 @@
-from .generator import QueryGenerator
+from .agent_cli import AgentCliGenerator
 from .tool_naming import canonicalize_gemini_tool_name
 import subprocess
 import os
@@ -20,7 +20,7 @@ class CLICommand:
         self.cwd = cwd
 
 
-class GeminiCliGenerator(QueryGenerator):
+class GeminiCliGenerator(AgentCliGenerator):
     """Generator queries using Gemini CLI."""
 
     def __init__(self, querygenerator_config):
@@ -1025,6 +1025,10 @@ class GeminiCliGenerator(QueryGenerator):
 
         return json.dumps(final_obj, indent=2)
 
+    @property
+    def version(self) -> str:
+        return self.gemini_cli_version
+
     def parse_response(self, stdout: str) -> dict:
         if not stdout:
             return {}
@@ -1083,7 +1087,8 @@ class GeminiCliGenerator(QueryGenerator):
         return result
 
     def create_command(
-        self, cli: str, prompt: str, env: dict = None, resume: bool = False, cwd: str = None
+        self, cli: str, prompt: str, env: dict = None, resume: bool = False,
+        session_id: str = None, cwd: str = None,
     ) -> CLICommand:
         merged_env = self.env.copy()
 

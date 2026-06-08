@@ -7,10 +7,7 @@ import threading
 
 from dataset.evalgeminicliinput import EvalGeminiCliRequest
 from generators.models import get_generator
-from generators.models.gemini_cli import GeminiCliGenerator
-from generators.models.claude_code import ClaudeCodeGenerator
-from generators.models.codex_cli import CodexCliGenerator
-from generators.models.agy_cli import AgyCliGenerator
+from generators.models.agent_cli import AgentCliGenerator
 from mp import mprunner
 from work.agentgenwork import AgentGenWork
 from evaluator.simulateduser import SimulatedUser
@@ -38,19 +35,12 @@ class AgentEvaluator:
         }
         self.generator = get_generator(global_models, model_config_path)
 
-        if isinstance(self.generator, ClaudeCodeGenerator):
-            self.agent_version = self.generator.claude_code_version
-        elif isinstance(self.generator, GeminiCliGenerator):
-            self.agent_version = self.generator.gemini_cli_version
-        elif isinstance(self.generator, CodexCliGenerator):
-            self.agent_version = self.generator.codex_cli_version
-        elif isinstance(self.generator, AgyCliGenerator):
-            self.agent_version = self.generator.agy_cli_version
-        else:
+        if not isinstance(self.generator, AgentCliGenerator):
             raise ValueError(
-                f"AgentEvaluator only supports gemini_cli, claude_code, "
-                f"codex_cli, and agy_cli generators, got "
+                f"AgentEvaluator only supports agent CLI generators "
+                f"(gemini_cli, claude_code, codex_cli, agy_cli), got "
                 f"{type(self.generator).__name__}")
+        self.agent_version = self.generator.version
 
         runner_config = self.config.get("runners", {})
         self.agent_runners = runner_config.get("agent_runners", 10)
@@ -62,7 +52,7 @@ class AgentEvaluator:
         job_id: str,
         run_time: datetime.datetime,
     ):
-        if isinstance(self.generator, (GeminiCliGenerator, ClaudeCodeGenerator, CodexCliGenerator, AgyCliGenerator)):
+        if isinstance(self.generator, AgentCliGenerator):
             return self._evaluate_agent_cli(dataset, job_id, run_time)
         else:
             raise NotImplementedError(
@@ -135,32 +125,15 @@ class AgentEvaluator:
         for turn in range(max_turns):
             logging.info(
                 f"Turn {turn + 1}/{max_turns} - Prompt: {current_prompt}")
-            if isinstance(self.generator, (GeminiCliGenerator, ClaudeCodeGenerator, CodexCliGenerator, AgyCliGenerator)):
-                if isinstance(self.generator, ClaudeCodeGenerator):
-                    cli_cmd = self.generator.create_command(
-                        cli=self.agent_version,
-                        prompt=current_prompt,
-                        env=env,
-                        resume=(turn > 0),
-                        session_id=session_id,
-                        cwd=resolved_work_dir,
-                    )
-                elif isinstance(self.generator, CodexCliGenerator):
-                    cli_cmd = self.generator.create_command(
-                        cli=self.agent_version,
-                        prompt=current_prompt,
-                        env=env,
-                        resume=(turn > 0),
-                        session_id=session_id
-                    )
-                else:
-                    cli_cmd = self.generator.create_command(
-                        cli=self.agent_version,
-                        prompt=current_prompt,
-                        env=env,
-                        resume=(turn > 0),
-                        cwd=resolved_work_dir
-                    )
+            if isinstance(self.generator, AgentCliGenerator):
+                cli_cmd = self.generator.create_command(
+                    cli=self.agent_version,
+                    prompt=current_prompt,
+                    env=env,
+                    resume=(turn > 0),
+                    session_id=session_id,
+                    cwd=resolved_work_dir,
+                )
                 try:
                     result = self.generator.safe_generate(cli_cmd)
                     if result.stdout:
@@ -184,12 +157,12 @@ class AgentEvaluator:
             self._log_cli_result(turn, max_turns, result)
 
             tools = []
-            if isinstance(self.generator, (GeminiCliGenerator, ClaudeCodeGenerator, CodexCliGenerator, AgyCliGenerator)):
+            if isinstance(self.generator, AgentCliGenerator):
                 tools = self.generator.extract_tools(result.stdout)
             accumulated_tools.extend(tools)
 
             # Extract skills from generator output
-            if isinstance(self.generator, (GeminiCliGenerator, ClaudeCodeGenerator, CodexCliGenerator, AgyCliGenerator)):
+            if isinstance(self.generator, AgentCliGenerator):
                 skills = self.generator.extract_skills(result.stdout)
                 accumulated_skills.extend(skills)
 

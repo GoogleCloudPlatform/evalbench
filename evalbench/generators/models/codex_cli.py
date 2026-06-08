@@ -1,4 +1,4 @@
-from .generator import QueryGenerator
+from .agent_cli import AgentCliGenerator
 from .tool_naming import canonical_tool_name
 import subprocess
 import os
@@ -49,7 +49,7 @@ class CLICommand:
         self.session_id = session_id
 
 
-class CodexCliGenerator(QueryGenerator):
+class CodexCliGenerator(AgentCliGenerator):
     """Generator queries using OpenAI Codex CLI (`codex exec`)."""
 
     def __init__(self, querygenerator_config):
@@ -1007,6 +1007,10 @@ class CodexCliGenerator(QueryGenerator):
                 return {"raw": value}
         return value or {}
 
+    @property
+    def version(self) -> str:
+        return self.codex_cli_version
+
     def parse_response(self, stdout: str) -> dict:
         if not stdout:
             return {}
@@ -1123,7 +1127,7 @@ class CodexCliGenerator(QueryGenerator):
 
     def create_command(
         self, cli: str, prompt: str, env: dict = None, resume: bool = False,
-        session_id: str = None,
+        session_id: str = None, cwd: str = None,
     ) -> CLICommand:
         merged_env = self.env.copy()
         if env:
