@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import threading
 from typing import Any
 
 from a2a.client import ClientCallContext
@@ -17,13 +18,16 @@ logger = logging.getLogger(__name__)
 class GcpAdcCredentialService(CredentialService):
     """GCP Application Default Credentials (ADC) service for A2A SDK.
 
-    This provider only services OAuth/OAuth2 schemes.
+    Thread-safe and Loop-safe implementation utilizing standard threading.Lock
+    and a fast-path check to avoid thread pool overhead for valid tokens.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
+        super().__init__()
         self.logger = logging.getLogger(__name__)
         self.credentials = None
-        self._lock = None
+        # Thread-safe lock for cross-thread/cross-loop synchronization
+        self._lock = threading.Lock()
 
     async def get_credentials(
         self,
@@ -36,40 +40,42 @@ class GcpAdcCredentialService(CredentialService):
                 f"schemes, got '{security_scheme_name}'"
             )
 
-        if self._lock is None:
-            self._lock = asyncio.Lock()
+        # 1. Fast Path (Lock-free, Thread-free):
+        # If credentials already exist and are valid, return the cached token immediately.
+        # This avoids the CPU/latency overhead of asyncio.to_thread and lock acquisition.
+        creds = self.credentials
+        if creds is not None and creds.valid:
+            token = creds.token
+            if token is not None:
+                return token
 
+        # 2. Slow Path (Thread-safe):
+        # Offload the synchronized load/refresh to a worker thread.
+        # This blocks the background worker thread, NOT the asyncio event loop.
         try:
-            async with self._lock:
-                if self.credentials is None:
-                    credentials, _ = await asyncio.to_thread(
-                        google.auth.default,
-                        scopes=[
-                            "https://www.googleapis.com/auth/cloud-platform"
-                        ]
-                    )
-                    self.credentials = credentials
-
-                if not self.credentials.valid:
-                    await asyncio.to_thread(
-                        self.credentials.refresh, Request()
-                    )
-
-                self.logger.debug("Retrieved GCP ADC token successfully.")
-                return self.credentials.token
-
-        except (DefaultCredentialsError, RefreshError) as e:
-            self.logger.error(
-                "Failed to retrieve or refresh GCP Application Default "
-                "Credentials: %s",
-                e,
-            )
-            raise
+            return await asyncio.to_thread(self._get_and_refresh_token)
         except Exception as e:
-            self.logger.exception(
-                "Unexpected error while fetching GCP ADC credentials: %s", e
-            )
+            self.logger.error("Failed to retrieve GCP ADC credentials: %s", e)
             raise
+
+    def _get_and_refresh_token(self) -> str:
+        with self._lock:
+            # Double-Checked Locking: Check again inside the lock
+            if self.credentials is None:
+                self.logger.info("Initializing GCP Application Default Credentials.")
+                credentials, _ = google.auth.default(
+                    scopes=["https://www.googleapis.com/auth/cloud-platform"]
+                )
+                self.credentials = credentials
+
+            if not self.credentials.valid:
+                self.logger.info("GCP ADC token is invalid or expired. Refreshing...")
+                self.credentials.refresh(Request())
+
+            if not self.credentials.token:
+                raise ValueError("GCP ADC token is empty after retrieval/refresh.")
+
+            return self.credentials.token
 
 
 class DataEngineeringAgentGenerator(QueryGenerator):
