@@ -8,7 +8,7 @@ from dataset.evalinput import EvalInputRequest
 from dataset.evalinteractinput import EvalInteractInputRequest
 from dataset.evalgeminicliinput import EvalGeminiCliRequest
 from dataset.cortadoinput import EvalCortadoRequest
-from dataset.deainput import EvalDeaRequest
+from dataset.dataengineeringagentinput import EvalDeaRequest
 from itertools import chain
 import os
 import re

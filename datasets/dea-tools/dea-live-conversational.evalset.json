@@ -1,0 +1,17 @@
+{
+  "scenarios": [
+    {
+      "id": "dea-programmatic-scenario-0",
+      "starting_prompt": "Please read the schema of the BigQuery table bigquery-public-data.ml_datasets.penguins. Don't be chatty, just go straight to the answer.",
+      "max_turns": 2,
+      "conversation_plan": [
+        "Verify that on the first turn the agent listed the table columns species, island, culmen_length_mm, culmen_depth_mm, flipper_length_mm, body_mass_g, sex.",
+        "Ask the agent to show the table schema columns again, but reversed in a pure conversational text/markdown table format. Explicitly instruct the agent NOT to generate or offer any SQL views or queries, but strictly show the schema table in text. Tell the agent not to be chatty and go straight to the answer."
+      ],
+      "binary_rubric": [
+        "Verify that on the first turn the agent listed the table columns species, island, culmen_length_mm, culmen_depth_mm, flipper_length_mm, body_mass_g, sex.",
+        "Verify that on the second turn the agent successfully reversed the columns order in a conversational text/table format, showing sex first and species last."
+      ]
+    }
+  ]
+}
