@@ -1,17 +1,27 @@
+import asyncio
+import concurrent.futures.thread
+import logging
 import os
 import sys
+import threading
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
 from google.auth.exceptions import DefaultCredentialsError, RefreshError
 
+from a2a.client.base_client import BaseClient
+from a2a.client.transports.base import ClientTransport
 from a2a.types import a2a_pb2 as pb
 from a2a.utils import TransportProtocol
-from dataset.dataengineeringagentinput import EvalDeaRequest
 
 # Add generators path to system path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from dataset.dataengineeringagentinput import EvalDeaRequest
+from evaluator.dataengineeringagentorchestrator import (
+    DataEngineeringAgentOrchestrator,
+)
 from generators.models import get_generator
 from generators.models.gcp_data_engineering_agent import (
     DataEngineeringAgentGenerator,
@@ -209,3 +219,121 @@ async def test_generate_internal_uses_minimal_agent_card(
 
     # Assert it has the default minimal capabilities
     assert called_card.capabilities.extended_agent_card is True
+
+
+@patch("evaluator.dataengineeringagentevaluator.SimulatedUser")
+@patch("evaluator.dataengineeringagentevaluator.AgentScoreWork")
+@patch("google.auth.default")
+@patch("generators.models.gcp_data_engineering_agent.create_client")
+def test_parallel_runners_deadlock(
+    mock_create_client, mock_auth_default, mock_score_work, mock_simulated_user
+):
+    # 1. Mock credentials to make refresh slow (guarantee lock contention)
+    mock_creds = MagicMock()
+    mock_creds.valid = False
+    mock_creds.token = "stub-token"
+
+    def slow_refresh(*args, **kwargs):
+        time.sleep(0.5)  # Block the thread to simulate work
+        mock_creds.valid = True
+
+    mock_creds.refresh.side_effect = slow_refresh
+    mock_auth_default.return_value = (mock_creds, "test-project")
+
+    # 2. Mock A2A client transport to avoid real network calls
+    mock_transport = MagicMock(spec=ClientTransport)
+
+    async def mock_send_message(*args, **kwargs):
+        resp = pb.SendMessageResponse()
+        resp.message.role = pb.ROLE_AGENT
+        resp.message.parts.append(pb.Part(text="Mocked Response"))
+        return resp
+
+    mock_transport.send_message.side_effect = mock_send_message
+
+    async def mock_close():
+        pass
+
+    mock_transport.close.side_effect = mock_close
+
+    # Fake create_client that returns BaseClient with mock_transport
+    async def fake_create_client(
+        agent_card, client_config, interceptors, **kwargs
+    ):
+        return BaseClient(
+            card=agent_card,
+            config=client_config,
+            transport=mock_transport,
+            interceptors=interceptors or [],
+        )
+
+    mock_create_client.side_effect = fake_create_client
+
+    # 3. Setup mock config with 2 runners
+    config = {
+        "generator": "data_engineering_agent",
+        "gcp_project_id": "test-project",
+        "gcp_region": "us-west4",
+        "target_workspace": (
+            "projects/test/locations/us-west4/repositories/"
+            "test-repo/workspaces/test-workspace"
+        ),
+        "runners": {"agent_runners": 2},
+    }
+
+    # 4. Setup mock dataset with 2 scenarios
+    dataset = [
+        EvalDeaRequest({
+            "id": "scenario-0",
+            "starting_prompt": "Prompt 0",
+            "max_turns": 1,
+            "conversation_plan": ["Verify 0"],
+            "binary_rubric": ["Rubric 0"],
+        }),
+        EvalDeaRequest({
+            "id": "scenario-1",
+            "starting_prompt": "Prompt 1",
+            "max_turns": 1,
+            "conversation_plan": ["Verify 1"],
+            "binary_rubric": ["Rubric 1"],
+        }),
+    ]
+
+    orchestrator = DataEngineeringAgentOrchestrator(config)
+
+    # Patch threading.Thread to default to daemon=True
+    # This will affect threads created by MPRunner (ThreadPoolExecutor) inside evaluate.
+    test_logger = logging.getLogger("test_debug")
+    original_thread = threading.Thread
+    def daemon_thread_factory(*args, **kwargs):
+        name = kwargs.get('name', 'Unnamed')
+        target = kwargs.get('target', None)
+        test_logger.info(f"Creating thread: name={name}, target={target}, daemon={kwargs.get('daemon', None)}")
+        if 'daemon' not in kwargs:
+            kwargs['daemon'] = True
+            test_logger.info(f"Forced daemon=True for {name}")
+        return original_thread(*args, **kwargs)
+
+    # Run evaluate in a daemon thread with timeout
+    def run_evaluate():
+        with patch("threading.Thread", side_effect=daemon_thread_factory):
+            orchestrator.evaluate(dataset)
+
+    t = threading.Thread(target=run_evaluate, daemon=True)
+    t.start()
+
+    # Wait for it. If it hangs, it will time out.
+    # If it were thread-safe, it should take ~0.5s (parallel) or ~1.0s (sequential).
+    # Since it is buggy, it will hang indefinitely.
+    t.join(timeout=3.0)
+
+    # If it is still alive, it hung
+    if t.is_alive():
+        # Unregister ThreadPoolExecutor's exit handler to prevent hang at exit
+        for item in list(threading._threading_atexits):
+            if item.__closure__:
+                for cell in item.__closure__:
+                    if cell.cell_contents is concurrent.futures.thread._python_exit:
+                        threading._threading_atexits.remove(item)
+                        break
+        assert False, "Orchestrator hung (concurrency lock issue detected)"
