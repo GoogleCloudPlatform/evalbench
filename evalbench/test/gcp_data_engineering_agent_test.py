@@ -1,5 +1,8 @@
+import asyncio
 import os
 import sys
+import threading
+import time
 from unittest.mock import MagicMock, patch
 import pytest
 from google.auth.exceptions import DefaultCredentialsError, RefreshError
@@ -120,3 +123,50 @@ def test_generator_setup_invalid_workspace_characters():
         assert "target_workspace' contains invalid characters" in str(
             excinfo.value
         )
+
+
+@pytest.mark.anyio
+async def test_gcp_adc_credential_service_concurrency():
+    service = GcpAdcCredentialService()
+    mock_creds = MagicMock()
+    mock_creds.valid = False
+    mock_creds.token = "stub-token"
+
+    def slow_refresh(*args, **kwargs):
+        time.sleep(0.2)
+        mock_creds.valid = True
+
+    mock_creds.refresh.side_effect = slow_refresh
+
+    with patch("google.auth.default") as mock_auth_default:
+        mock_auth_default.return_value = (mock_creds, "test-project")
+
+        results = []
+        errors = []
+
+        def run_in_thread():
+            try:
+                token = asyncio.run(service.get_credentials("oauth", None))
+                results.append(token)
+            except Exception as e:
+                errors.append(e)
+
+        num_threads = 3
+        threads = [
+            threading.Thread(target=run_in_thread, daemon=True)
+            for _ in range(num_threads)
+        ]
+        for t in threads:
+            t.start()
+
+        for t in threads:
+            t.join(timeout=3.0)
+            if t.is_alive():
+                pytest.fail("Deadlock detected in credential service")
+
+        if errors:
+            pytest.fail(f"Threads raised errors: {errors}")
+
+        assert len(results) == num_threads
+        assert all(t == "stub-token" for t in results)
+        assert mock_creds.refresh.call_count == 1

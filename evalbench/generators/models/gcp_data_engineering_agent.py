@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import threading
 from typing import Any
 
 from a2a.client import ClientCallContext
@@ -18,12 +19,13 @@ class GcpAdcCredentialService(CredentialService):
     """GCP Application Default Credentials (ADC) service for A2A SDK.
 
     This provider only services OAuth/OAuth2 schemes.
+    Thread-safe and Loop-safe implementation utilizing standard threading.Lock
+    and a fast-path check to avoid thread pool overhead for valid tokens.
     """
 
     def __init__(self):
-        self.logger = logging.getLogger(__name__)
         self.credentials = None
-        self._lock = None
+        self._lock = threading.Lock()
 
     async def get_credentials(
         self,
@@ -36,40 +38,41 @@ class GcpAdcCredentialService(CredentialService):
                 f"schemes, got '{security_scheme_name}'"
             )
 
-        if self._lock is None:
-            self._lock = asyncio.Lock()
-
         try:
-            async with self._lock:
-                if self.credentials is None:
-                    credentials, _ = await asyncio.to_thread(
-                        google.auth.default,
-                        scopes=[
-                            "https://www.googleapis.com/auth/cloud-platform"
-                        ]
-                    )
-                    self.credentials = credentials
-
-                if not self.credentials.valid:
-                    await asyncio.to_thread(
-                        self.credentials.refresh, Request()
-                    )
-
-                self.logger.debug("Retrieved GCP ADC token successfully.")
-                return self.credentials.token
-
+            return await asyncio.to_thread(self._get_and_refresh_token)
         except (DefaultCredentialsError, RefreshError) as e:
-            self.logger.error(
-                "Failed to retrieve or refresh GCP Application Default "
-                "Credentials: %s",
-                e,
-            )
+            logger.error("GCP ADC authentication failed: %s", e)
             raise
         except Exception as e:
-            self.logger.exception(
-                "Unexpected error while fetching GCP ADC credentials: %s", e
+            logger.exception(
+                "Unexpected error while retrieving GCP ADC credentials: %s", e
             )
             raise
+
+    def _get_and_refresh_token(self) -> str:
+        with self._lock:
+            if self.credentials is None:
+                logger.debug(
+                    "Initializing GCP Application Default Credentials."
+                )
+                credentials, _ = google.auth.default(
+                    scopes=["https://www.googleapis.com/auth/cloud-platform"]
+                )
+                self.credentials = credentials
+
+            if not self.credentials.valid:
+                logger.debug(
+                    "GCP ADC token is invalid or expired. Refreshing..."
+                )
+                self.credentials.refresh(Request())
+
+            token_val = self.credentials.token
+            if not token_val:
+                raise ValueError(
+                    "GCP ADC token is empty after retrieval/refresh."
+                )
+
+            return token_val
 
 
 class DataEngineeringAgentGenerator(QueryGenerator):
