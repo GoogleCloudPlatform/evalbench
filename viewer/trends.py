@@ -152,7 +152,7 @@ def trends_component():
                         'requester': requester,
                         'product': product,
                         'dataset': dataset,
-                        'generator': generator,
+                        'model_config.generator': generator,
                         'latency': latency,
                         'tokens': tokens,
                         'trajectory': trajectory,
@@ -186,6 +186,8 @@ def trends_component():
         df = df[df['model_config.generator'].str.contains('claude', case=False) | ((df['model_config.generator'] == 'unknown') & df['product'].str.contains('claude', case=False))]
     elif state.trends_agent_tab == "Codex":
         df = df[df['model_config.generator'].str.contains('codex', case=False)]
+    elif state.trends_agent_tab == "Antigravity":
+        df = df[df['model_config.generator'].str.contains('agy', case=False)]
 
     # Extract unique products for dropdown
     all_products = sorted(df['product'].unique().tolist())
@@ -233,6 +235,7 @@ def trends_component():
                 me.ButtonToggleButton(label="Gemini", value="Gemini"),
                 me.ButtonToggleButton(label="Claude", value="Claude"),
                 me.ButtonToggleButton(label="Codex", value="Codex"),
+                me.ButtonToggleButton(label="Antigravity", value="Antigravity"),
             ],
             on_change=on_trends_agent_tab_change,
         )

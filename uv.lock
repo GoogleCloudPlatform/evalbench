@@ -1800,7 +1800,7 @@ wheels = [
 
 [[package]]
 name = "google-evalbench"
-version = "1.7.1"
+version = "1.8.0"
 source = { editable = "." }
 dependencies = [
     { name = "a2a-sdk" },
@@ -1835,6 +1835,7 @@ dependencies = [
     { name = "pyarrow" },
     { name = "pymongo" },
     { name = "pymysql" },
+    { name = "pyopenssl" },
     { name = "ratelimit" },
     { name = "redis" },
     { name = "rich" },
@@ -1886,6 +1887,7 @@ requires-dist = [
     { name = "pyarrow" },
     { name = "pymongo" },
     { name = "pymysql" },
+    { name = "pyopenssl", specifier = "<26.2" },
     { name = "ratelimit" },
     { name = "redis" },
     { name = "rich" },

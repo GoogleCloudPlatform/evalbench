@@ -296,6 +296,7 @@ def status_component():
                 me.ButtonToggleButton(label="Gemini", value="Gemini"),
                 me.ButtonToggleButton(label="Claude", value="Claude"),
                 me.ButtonToggleButton(label="Codex", value="Codex"),
+                me.ButtonToggleButton(label="Antigravity", value="Antigravity"),
             ],
             on_change=on_agent_tab_change,
         )
@@ -367,6 +368,8 @@ def status_component():
                     summary_df = summary_df[(summary_df['model_config.generator'] == 'claude_code') | (summary_df['model_config.generator'] == 'unknown') | (summary_df['model_config.generator'] == 'N/A')]
                 elif state.status_agent_tab == "Codex":
                     summary_df = summary_df[(summary_df['model_config.generator'] == 'codex_cli')]
+                elif state.status_agent_tab == "Antigravity":
+                    summary_df = summary_df[(summary_df['model_config.generator'] == 'agy_cli')]
                 
                 # Render table similar to lists tab
                 with me.box(
@@ -580,6 +583,7 @@ def list_view_component(directories, results_dir):
                 me.ButtonToggleButton(label="Gemini", value="Gemini"),
                 me.ButtonToggleButton(label="Claude", value="Claude"),
                 me.ButtonToggleButton(label="Codex", value="Codex"),
+                me.ButtonToggleButton(label="Antigravity", value="Antigravity"),
             ],
             on_change=on_list_agent_tab_change,
         )
@@ -747,6 +751,8 @@ def list_view_component(directories, results_dir):
                 summaries = [x for x in summaries if x.get("model_config.generator") == "claude_code" or (x.get("model_config.generator") == "unknown" and 'claude' in str(x.get("product")).lower())]
             elif state.list_agent_tab == "Codex":
                 summaries = [x for x in summaries if x.get("model_config.generator") == "codex_cli"]
+            elif state.list_agent_tab == "Antigravity":
+                summaries = [x for x in summaries if x.get("model_config.generator") == "agy_cli"]
             logging.info(f"Number of summaries after tab filter: {len(summaries)}")
 
             if state.eval_id_filter:
@@ -2221,7 +2227,13 @@ def render_app_content():
                             
                         product = get_val('experiment_config.product_name')
                         requester = get_val('experiment_config.experiment_config.guitar_requester')
-                        cli_version = get_val('model_config.gemini_cli_version')
+                        cli_version = (
+                            get_val('model_config.gemini_cli_version')
+                            or get_val('model_config.claude_code_version')
+                            or get_val('model_config.codex_cli_version')
+                        )
+                        if not cli_version and get_val('model_config.generator') == 'agy_cli':
+                            cli_version = 'agy (latest)'
                         orchestrator = get_val('experiment_config.orchestrator')
                         eval_group = get_val('experiment_config.eval_group')
                         

@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.9.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.8.0...v1.9.0) (2026-06-11)
+
+
+### Features
+
+* add AgyCliGenerator support to evaluator and models, including test suite and configuration datasets ([9e6d71f](https://github.com/GoogleCloudPlatform/evalbench/commit/9e6d71fb88fd652acb3d1e1ff2109b8a7e92f3bc))
+* add AgyCliGenerator support to evaluator and models, including test suite and configuration datasets ([9e6d71f](https://github.com/GoogleCloudPlatform/evalbench/commit/9e6d71fb88fd652acb3d1e1ff2109b8a7e92f3bc))
+* add Antigravity agent tab and update CLI version retrieval logic ([fe1a0ae](https://github.com/GoogleCloudPlatform/evalbench/commit/fe1a0ae2415a87bd090d18c0cde5548030c9e439))
+* add Antigravity agent tab and update CLI version retrieval logic ([147680b](https://github.com/GoogleCloudPlatform/evalbench/commit/147680b34e375aa9c2d33e7cf6a8d1e197ce0553))
+* **dea:** support YAML-only configuration and penguins dataset for DEA conversational evaluation ([#410](https://github.com/GoogleCloudPlatform/evalbench/issues/410)) ([2e37c1c](https://github.com/GoogleCloudPlatform/evalbench/commit/2e37c1ca804fe51a21d824892c9c6dd67821c406))
+* recover resolved model label from agy cli logs for statistics bucket tagging ([ee7635f](https://github.com/GoogleCloudPlatform/evalbench/commit/ee7635f8d6f89647cef9bc66b79f637c83c30b2d))
+* update MCP config translation to support both serverUrl and url fields in agy cli ([685b1b2](https://github.com/GoogleCloudPlatform/evalbench/commit/685b1b2c6b2699a6b87749e03a55b60e0ff0d7ed))
+
+
+### Bug Fixes
+
+* **dea:** resolve concurrency deadlock in GcpAdcCredentialService ([#422](https://github.com/GoogleCloudPlatform/evalbench/issues/422)) ([6619ae5](https://github.com/GoogleCloudPlatform/evalbench/commit/6619ae50d18c5a2d096ad4c2293dd9502683dcda))
+* pin pyopenssl&lt;26.2 to avoid google-auth mTLS regression ([#424](https://github.com/GoogleCloudPlatform/evalbench/issues/424)) ([c8916ae](https://github.com/GoogleCloudPlatform/evalbench/commit/c8916aeac729d2cf5da81838001195ec04a05d2a))
+* update error message to list supported AgentCliGenerator subclasses ([dfe1e8e](https://github.com/GoogleCloudPlatform/evalbench/commit/dfe1e8e27063208f710666f3634624050a527813))
+* update generator key path in trends data mapping to model_config.generator ([3739f9d](https://github.com/GoogleCloudPlatform/evalbench/commit/3739f9dd3dd7d5f8b5038f8b51b2bceb396e7a06))
+
 ## [1.8.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.7.1...v1.8.0) (2026-06-03)
 
 
