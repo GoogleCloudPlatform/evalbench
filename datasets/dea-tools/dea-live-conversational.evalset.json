@@ -17,6 +17,17 @@
       "binary_rubric": [
         "Verify that the agent successfully reversed the columns order in a conversational text/table format, showing sex first and species last."
       ]
+    },
+    {
+      "id": "dea-programmatic-scenario-2",
+      "starting_prompt": "In my Dataform workspace, create a new SQLX view called `simple_constant_view` that selects a constant value (1 as value). Put it in `definitions/simple_constant_view.sqlx` and write it to the workspace. Go straight to the answer.",
+      "max_turns": 1,
+      "conversation_plan": [
+        "Verify that the agent confirms it has written the file simple_constant_view.sqlx."
+      ],
+      "binary_rubric": [
+        "Verify that the agent's response indicates it has created the file successfully in the workspace."
+      ]
     }
   ]
 }

@@ -6,6 +6,18 @@ dataset_config: datasets/dea-tools/dea-live-conversational.evalset.json
 scorers:
   binary_rubric_scorer:
     model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  dataform_cloud_compile:
+    gcp_project_id: !ENV ${EVAL_GCP_PROJECT_ID}
+    gcp_region: !ENV ${EVAL_GCP_PROJECT_REGION}
+    dataform_repository: !ENV ${EVAL_DEA_REPOSITORY_ID}
+    dataform_workspace: !ENV ${EVAL_DEA_WORKSPACE_ID}
+    timeout_seconds: 300
+  dataform_cloud_run:
+    gcp_project_id: !ENV ${EVAL_GCP_PROJECT_ID}
+    gcp_region: !ENV ${EVAL_GCP_PROJECT_REGION}
+    dataform_repository: !ENV ${EVAL_DEA_REPOSITORY_ID}
+    dataform_workspace: !ENV ${EVAL_DEA_WORKSPACE_ID}
+    timeout_seconds: 300
 reporting:
   csv:
     output_directory: results

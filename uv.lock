@@ -1518,6 +1518,23 @@ wheels = [
 ]
 
 [[package]]
+name = "google-cloud-dataform"
+version = "0.11.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "google-api-core", extra = ["grpc"] },
+    { name = "google-auth" },
+    { name = "grpc-google-iam-v1" },
+    { name = "grpcio" },
+    { name = "proto-plus" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f9/0d/d35fab6a002cbb53d5eb942feb8f724467ecd8fe672db32b69ec345d5053/google_cloud_dataform-0.11.0.tar.gz", hash = "sha256:6a8a571817c227552f28df4f6ed67edd6b678032ee076fc47acfd825f72f8165", size = 480687, upload-time = "2026-06-03T15:27:58.84Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/85/62/142feecfb1fb78a30d45f326b89f0e43d5135de1168445484b9f6648892e/google_cloud_dataform-0.11.0-py3-none-any.whl", hash = "sha256:f5a1961873f14e44893dae5d99934b355417e3d9d31786a39cb9925c1d0a1e7c", size = 316440, upload-time = "2026-06-03T15:27:07.475Z" },
+]
+
+[[package]]
 name = "google-cloud-dataplex"
 version = "2.18.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1833,6 +1850,7 @@ dependencies = [
     { name = "google-adk" },
     { name = "google-cloud-alloydb-connector", extra = ["pg8000"] },
     { name = "google-cloud-bigtable" },
+    { name = "google-cloud-dataform" },
     { name = "google-cloud-firestore" },
     { name = "google-cloud-geminidataanalytics" },
     { name = "google-cloud-iam" },
@@ -1886,6 +1904,7 @@ requires-dist = [
     { name = "google-adk" },
     { name = "google-cloud-alloydb-connector", extras = ["pg8000"] },
     { name = "google-cloud-bigtable" },
+    { name = "google-cloud-dataform" },
     { name = "google-cloud-firestore" },
     { name = "google-cloud-geminidataanalytics", specifier = ">=0.11.0" },
     { name = "google-cloud-iam" },
