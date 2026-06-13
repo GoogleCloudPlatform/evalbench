@@ -1,5 +1,6 @@
 generator: "data_engineering_agent"
 gcp_project_id: !ENV ${EVAL_GCP_PROJECT_ID}
 gcp_region: !ENV ${EVAL_GCP_PROJECT_REGION:us-west4}
-target_workspace: !ENV ${EVAL_DEA_WORKSPACE:projects/<GCP_PROJECT_ID>/locations/<LOCATION>/repositories/<REPO_NAME>/workspaces/<WORKSPACE_NAME>}
+dataform_repository: !ENV ${EVAL_DEA_REPOSITORY}
+dataform_workspace: !ENV ${EVAL_DEA_WORKSPACE}
 execs_per_minute: 10

@@ -47,26 +47,47 @@ async def test_get_credentials_invalid_scheme():
     assert "only services 'oauth' or 'oauth2'" in str(excinfo.value)
 
 
-def test_generator_setup_missing_project_id():
-    config = {
+@pytest.fixture
+def valid_config():
+    return {
         "generator": "data_engineering_agent",
-        "gcp_region": "us-west4",
-        "target_workspace": "projects/test-workspace",
+        "gcp_project_id": "test-project-123",
+        "gcp_region": "us-east1",
+        "dataform_repository": "test-repo",
+        "dataform_workspace": "test-workspace",
     }
+
+
+def test_generator_setup_missing_project_id(valid_config):
+    config = valid_config.copy()
+    del config["gcp_project_id"]
     with pytest.raises(ValueError) as excinfo:
         DataEngineeringAgentGenerator(config)
     assert "gcp_project_id' is required" in str(excinfo.value)
 
 
-def test_generator_setup_missing_workspace():
-    config = {
-        "generator": "data_engineering_agent",
-        "gcp_project_id": "test",
-        "gcp_region": "us-west4",
-    }
+def test_generator_setup_missing_region(valid_config):
+    config = valid_config.copy()
+    del config["gcp_region"]
     with pytest.raises(ValueError) as excinfo:
         DataEngineeringAgentGenerator(config)
-    assert "target_workspace' is required" in str(excinfo.value)
+    assert "gcp_region' is required" in str(excinfo.value)
+
+
+def test_generator_setup_missing_repository(valid_config):
+    config = valid_config.copy()
+    del config["dataform_repository"]
+    with pytest.raises(ValueError) as excinfo:
+        DataEngineeringAgentGenerator(config)
+    assert "dataform_repository' is required" in str(excinfo.value)
+
+
+def test_generator_setup_missing_workspace(valid_config):
+    config = valid_config.copy()
+    del config["dataform_workspace"]
+    with pytest.raises(ValueError) as excinfo:
+        DataEngineeringAgentGenerator(config)
+    assert "dataform_workspace' is required" in str(excinfo.value)
 
 
 @pytest.mark.anyio
@@ -95,23 +116,16 @@ async def test_get_credentials_error_resiliency_refresh(mock_auth_default):
         await service.get_credentials("oauth", None)
 
 
-def test_generator_setup_invalid_workspace_characters():
-    config = {
-        "generator": "data_engineering_agent",
-        "gcp_project_id": "test-project-123",
-        "gcp_region": "us-east1",
-        "target_workspace": (
-            "projects/test-project/locations/us-east1/repositories/test-repo/"
-            "workspaces/test-workspace; rm -rf /"
-        ),
-    }
+def test_generator_setup_invalid_workspace_characters(valid_config):
+    config = valid_config.copy()
+    config["dataform_workspace"] = "test-workspace; rm -rf /"
     with patch("google.auth.default") as mock_auth_default:
         mock_creds = MagicMock()
         mock_auth_default.return_value = (mock_creds, "test-project")
 
         with pytest.raises(ValueError) as excinfo:
             DataEngineeringAgentGenerator(config)
-        assert "target_workspace' contains invalid characters" in str(
+        assert "target_workspace path contains invalid characters" in str(
             excinfo.value
         )
 
@@ -163,24 +177,14 @@ async def test_gcp_adc_credential_service_concurrency():
         assert mock_creds.refresh.call_count == 1
 
 
-def test_data_engineering_agent_generator_setup():
-    config = {
-        "generator": "data_engineering_agent",
-        "gcp_project_id": "test-project-123",
-        "gcp_region": "us-east1",
-        "target_workspace": (
-            "projects/diff-project-abc/locations/diff-region-xyz/repositories/"
-            "test-repo/workspaces/test-workspace"
-        ),
-    }
-
+def test_data_engineering_agent_generator_setup(valid_config):
     # Mock google.auth.default during initialization
     with patch("google.auth.default") as mock_auth_default:
         mock_creds = MagicMock()
         mock_creds.valid = True
         mock_auth_default.return_value = (mock_creds, "test-project")
 
-        generator = DataEngineeringAgentGenerator(config)
+        generator = DataEngineeringAgentGenerator(valid_config)
 
         assert generator.name == "data_engineering_agent"
         expected_endpoint = (
@@ -188,7 +192,10 @@ def test_data_engineering_agent_generator_setup():
             "test-project-123/locations/us-east1/agents/dataengineeringagent"
         )
         assert generator.endpoint == expected_endpoint
-        assert generator.target_workspace == config["target_workspace"]
+        assert generator.target_workspace == (
+            "projects/test-project-123/locations/us-east1/repositories/"
+            "test-repo/workspaces/test-workspace"
+        )
         assert generator.auth_interceptor is not None
 
 
@@ -196,7 +203,7 @@ def test_data_engineering_agent_generator_setup():
 @patch("google.auth.default")
 @patch("generators.models.gcp_data_engineering_agent.create_client")
 async def test_generate_internal_conversation_token_caching(
-    mock_create_client, mock_auth_default
+    mock_create_client, mock_auth_default, valid_config
 ):
     mock_creds = MagicMock()
     mock_creds.valid = True
@@ -219,12 +226,9 @@ async def test_generate_internal_conversation_token_caching(
     mock_client.close.side_effect = lambda *a, **k: asyncio.sleep(0)
     mock_create_client.return_value = mock_client
 
-    config = {
-        "generator": "data_engineering_agent",
-        "gcp_project_id": "test",
-        "gcp_region": "us-west4",
-        "target_workspace": "test-workspace",
-    }
+    config = valid_config.copy()
+    config["gcp_project_id"] = "test"
+    config["gcp_region"] = "us-west4"
     generator = DataEngineeringAgentGenerator(config)
 
     # First call: no token cached yet
@@ -263,7 +267,7 @@ async def test_generate_internal_conversation_token_caching(
 @patch("google.auth.default")
 @patch("generators.models.gcp_data_engineering_agent.create_client")
 async def test_generate_internal_uses_minimal_agent_card(
-    mock_create_client, mock_auth_default
+    mock_create_client, mock_auth_default, valid_config
 ):
     mock_creds = MagicMock()
     mock_creds.valid = True
@@ -292,15 +296,9 @@ async def test_generate_internal_uses_minimal_agent_card(
     mock_client.close.side_effect = mock_close
     mock_create_client.return_value = mock_client
 
-    config = {
-        "generator": "data_engineering_agent",
-        "gcp_project_id": "test",
-        "gcp_region": "us-west4",
-        "target_workspace": (
-            "projects/test/locations/us-west4/repositories/"
-            "test-repo/workspaces/test-workspace"
-        ),
-    }
+    config = valid_config.copy()
+    config["gcp_project_id"] = "test"
+    config["gcp_region"] = "us-west4"
 
     generator = DataEngineeringAgentGenerator(config)
     req = EvalDeaRequest({
@@ -328,7 +326,7 @@ async def test_generate_internal_uses_minimal_agent_card(
 @patch("evaluator.dataengineeringagentevaluator.AgentScoreWork")
 @patch("evaluator.dataengineeringagentevaluator.SimulatedUser")
 def test_evaluator_process_scenario(
-    mock_sim_user_class, mock_score_work_class
+    mock_sim_user_class, mock_score_work_class, valid_config
 ):
     mock_sim_user = MagicMock()
     mock_sim_user.get_next_response.side_effect = [
@@ -340,12 +338,8 @@ def test_evaluator_process_scenario(
     mock_score_work = MagicMock()
     mock_score_work_class.return_value = mock_score_work
 
-    config = {
-        "generator": "data_engineering_agent",
-        "gcp_project_id": "test-project",
-        "gcp_region": "us-east1",
-        "target_workspace": "test-workspace",
-    }
+    config = valid_config.copy()
+    config["gcp_project_id"] = "test-project"
     evaluator = DataEngineeringAgentEvaluator(config)
 
     mock_generator = MagicMock()

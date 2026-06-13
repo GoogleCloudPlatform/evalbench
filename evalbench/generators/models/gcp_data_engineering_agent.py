@@ -202,6 +202,8 @@ class DataEngineeringAgentGenerator(QueryGenerator):
         self.name = "data_engineering_agent"
         gcp_project_id = querygenerator_config.get("gcp_project_id", "")
         gcp_region = querygenerator_config.get("gcp_region", "")
+        repository = querygenerator_config.get("dataform_repository", "")
+        workspace = querygenerator_config.get("dataform_workspace", "")
 
         if not gcp_project_id:
             raise ValueError(
@@ -213,21 +215,26 @@ class DataEngineeringAgentGenerator(QueryGenerator):
                 "Configuration key 'gcp_region' is required for "
                 "DataEngineeringAgentGenerator."
             )
+        if not repository:
+            raise ValueError(
+                "Configuration key 'dataform_repository' is required for "
+                "DataEngineeringAgentGenerator."
+            )
+        if not workspace:
+            raise ValueError(
+                "Configuration key 'dataform_workspace' is required for "
+                "DataEngineeringAgentGenerator."
+            )
 
         self.endpoint = (
             f"https://geminidataanalytics.googleapis.com/v1/a2a/projects/"
             f"{gcp_project_id}/locations/{gcp_region}/"
             f"agents/dataengineeringagent"
         )
-        self.target_workspace = querygenerator_config.get(
-            "target_workspace", ""
+        self.target_workspace = (
+            f"projects/{gcp_project_id}/locations/{gcp_region}/"
+            f"repositories/{repository}/workspaces/{workspace}"
         )
-
-        if not self.target_workspace:
-            raise ValueError(
-                "Configuration key 'target_workspace' is required for "
-                "DataEngineeringAgentGenerator."
-            )
 
         workspace_chars = (
             self.target_workspace.replace("/", "")
@@ -236,7 +243,7 @@ class DataEngineeringAgentGenerator(QueryGenerator):
         )
         if not workspace_chars.isalnum():
             raise ValueError(
-                "Configuration key 'target_workspace' contains invalid "
+                "Constructed target_workspace path contains invalid "
                 f"characters: '{self.target_workspace}'"
             )
 

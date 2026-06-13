@@ -128,12 +128,10 @@ def load_dea_json(json_file_path):
         content = json_file.read()
         data = json.loads(content)
 
-        scenarios = data.get("scenarios", [])
-        for scenario in scenarios:
-            eval_input = EvalDeaRequest(
-                raw_dict=scenario
-            )
-            all_items["dea-format"].extend([eval_input])
+        eval_input = EvalDeaRequest(
+            raw_dict=data
+        )
+        all_items["dea-format"].append(eval_input)
 
     return all_items
 

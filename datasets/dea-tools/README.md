@@ -19,14 +19,16 @@ To run the evaluation, make sure you are in the root directory of the `evalbench
 PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python \
 EVAL_GCP_PROJECT_ID=<YOUR_GCP_PROJECT_ID> \
 EVAL_GCP_PROJECT_REGION=<YOUR_GCP_REGION> \
-EVAL_DEA_WORKSPACE="projects/<YOUR_GCP_PROJECT_ID>/locations/<YOUR_GCP_REGION>/repositories/<YOUR_REPO_NAME>/workspaces/<YOUR_WORKSPACE_NAME>" \
+EVAL_DEA_REPOSITORY=<YOUR_REPO_NAME> \
+EVAL_DEA_WORKSPACE=<YOUR_WORKSPACE_NAME> \
 .venv/bin/python3 evalbench/evalbench.py --experiment_config=datasets/dea-tools/example_run_config.yaml
 ```
 
 ### Key Environment Variables:
 *   `EVAL_GCP_PROJECT_ID`: The GCP Project ID where your DEA agent is deployed.
 *   `EVAL_GCP_PROJECT_REGION`: The GCP Region (e.g., `us-west4`) of the agent.
-*   `EVAL_DEA_WORKSPACE`: The fully qualified resource path to the Dataform workspace where the agent will execute actions.
+*   `EVAL_DEA_REPOSITORY`: The target Dataform repository name.
+*   `EVAL_DEA_WORKSPACE`: The target Dataform workspace name.
 
 ## 4. Inspect Results
 Upon completion, results will be generated under the `results/` folder:
