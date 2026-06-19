@@ -1,0 +1,9 @@
+{
+  "endpoints": [
+    {
+      "id": "cloud-sql-managed",
+      "transport": "http",
+      "url": "https://sqladmin.googleapis.com/mcp"
+    }
+  ]
+}

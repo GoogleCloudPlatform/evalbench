@@ -23,6 +23,8 @@ from scorers import pythonscorer
 from scorers import dataformscorer
 from scorers import dataformcloudscorer
 from scorers import dbtscorer
+from scorers import mcpcompliancecheck
+from scorers import mcptokencost
 from dataset.evaloutput import EvalOutput
 import logging
 import os
@@ -112,6 +114,12 @@ def compare(
         comparators.append(
             tokenconsumption.TokenConsumption(scorers["token_consumption"])
         )
+    if "mcp_compliance_check" in scorers:
+        comparators.append(
+            mcpcompliancecheck.McpComplianceCheck(scorers["mcp_compliance_check"])
+        )
+    if "mcp_token_cost" in scorers:
+        comparators.append(mcptokencost.McpTokenCost(scorers["mcp_token_cost"]))
     if "binary_rubric_scorer" in scorers:
         import json
 

@@ -4,6 +4,7 @@ from evaluator.cortadoorchestrator import CortadoOrchestrator
 from evaluator.interactorchestrator import InteractOrchestrator
 from evaluator.dataagentorchestrator import DataAgentOrchestrator
 from evaluator.agentorchestrator import AgentOrchestrator
+from evaluator.compliancecheckorchestrator import ComplianceCheckOrchestrator
 from evaluator.streamingorchestrator import StreamingOrchestrator
 from evaluator.dataengineeringagentorchestrator import (
     DataEngineeringAgentOrchestrator,
@@ -21,6 +22,10 @@ def get_orchestrator(config, db_configs, setup_config, report_progress=False):
         return DataAgentOrchestrator(config, db_configs, setup_config, report_progress)
     elif orchestrator_type in ("geminicli", "agent"):
         return AgentOrchestrator(config, db_configs, setup_config, report_progress)
+    elif orchestrator_type == "mcp_compliance":
+        return ComplianceCheckOrchestrator(
+            config, db_configs, setup_config, report_progress
+        )
     elif orchestrator_type == "cortado":
         return CortadoOrchestrator(config, db_configs, setup_config, report_progress)
     elif orchestrator_type == "dea":

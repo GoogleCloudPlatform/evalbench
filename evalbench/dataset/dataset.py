@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from dataset.evalinput import EvalInputRequest
 from dataset.evalinteractinput import EvalInteractInputRequest
 from dataset.evalgeminicliinput import EvalGeminiCliRequest
+from dataset.evalmcpendpointinput import EvalMcpEndpointRequest
 from dataset.cortadoinput import EvalCortadoRequest
 from dataset.dataengineeringagentinput import EvalDeaRequest
 from itertools import chain
@@ -184,6 +185,37 @@ def load_gemini_cli_json(json_file_path):
     return all_items
 
 
+def load_mcp_compliance_json(json_file_path):
+    """Loads an MCP-compliance dataset (a list of endpoints to probe).
+
+    Expected file shape::
+
+        {
+          "endpoints": [
+            {"id": "...", "transport": "http", "url": "...", "auth": {...}},
+            {"id": "...", "transport": "stdio", "command": "...", "args": [...]}
+          ]
+        }
+
+    The whole JSON is wrapped in a single ``EvalMcpEndpointRequest`` — the
+    compliance evaluator iterates the endpoint list itself.
+    """
+    all_items: dict[str, list[EvalMcpEndpointRequest]] = {
+        "mcp-compliance-format": [],
+    }
+    with open(json_file_path, "r") as json_file:
+        raw = json_file.read()
+        raw = _expand_env_placeholders(raw, json_file_path)
+        item = json.loads(raw)
+
+    eval_input = EvalMcpEndpointRequest(
+        id=item.get("id", "0"),
+        payload=json.dumps(item),
+    )
+    all_items["mcp-compliance-format"].append(eval_input)
+    return all_items
+
+
 def load_json(json_file_path):
     all_items = []
     with open(json_file_path, "r") as json_file:
@@ -198,6 +230,8 @@ def load_dataset_from_json(json_file_path, config):
         all_items = load_bird_interact_dataset(json_file_path, config)
     elif dataset_format in ("gemini-cli-format", "agent-format"):
         all_items = load_gemini_cli_json(json_file_path)
+    elif dataset_format == "mcp-compliance-format":
+        all_items = load_mcp_compliance_json(json_file_path)
     elif dataset_format == "cortado-format":
         all_items = load_cortado_json(json_file_path)
     elif dataset_format == "dea-format":
@@ -226,10 +260,14 @@ def load_dataset_from_json(json_file_path, config):
         if "orchestrator" not in config:
             config["orchestrator"] = "agent" if dataset_format == "agent-format" else "geminicli"
         input_items = all_items
+    elif dataset_format == "mcp-compliance-format":
+        if "orchestrator" not in config:
+            config["orchestrator"] = "mcp_compliance"
+        input_items = all_items
     else:
         raise ValueError("Dataset not in any of the recognised formats")
 
-    if dataset_format not in ["gemini-cli-format", "bird-interact-format", "agent-format", "cortado-format"]:
+    if dataset_format not in ["gemini-cli-format", "bird-interact-format", "agent-format", "cortado-format", "mcp-compliance-format"]:
         totalEntries = sum(len(input_items.get(q, []))
                            for q in ["dql", "dml", "ddl"])
         logging.info(f"Converted {totalEntries} entries to EvalInput.")

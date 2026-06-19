@@ -1,0 +1,34 @@
+############################################################
+### Dataset / Eval Items
+############################################################
+dataset_config: datasets/mcp-compliance/example_endpoints.json
+dataset_format: mcp-compliance-format
+orchestrator: mcp_compliance
+
+############################################################
+### Probe Settings
+############################################################
+probe:
+  list_tools_timeout_s: 30
+  fail_on_unreachable: false
+
+############################################################
+### Judge (LLM call lives in the evaluator — one call per endpoint)
+############################################################
+judge:
+  model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  readability_guide: datasets/mcp-compliance/readability_guide.md
+
+############################################################
+### Scorers
+############################################################
+scorers:
+  mcp_compliance_check: {}     # thin extractor; phase 6 fills in real findings
+  mcp_token_cost: {}           # deterministic: len(yaml) // 4
+
+############################################################
+### Reporting
+############################################################
+reporting:
+  csv:
+    output_directory: results
