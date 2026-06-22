@@ -3,6 +3,7 @@
 from typing import Any, Optional
 import json
 import logging
+import fnmatch
 from collections.abc import Sequence
 from dataset.evalinput import EvalInputRequest
 from dataset.evalinteractinput import EvalInteractInputRequest
@@ -120,13 +121,22 @@ def load_bird_interact_dataset(json_file_path, config):
     return input_items
 
 
-def load_dea_json(json_file_path):
+def load_dea_json(json_file_path, config):
     all_items: dict[str, list[EvalDeaRequest]] = {
         "dea-format": [],
     }
     with open(json_file_path, "r") as json_file:
         content = json_file.read()
         data = json.loads(content)
+
+        # Filter scenarios
+        scenarios = data.get("scenarios", [])
+        filtered_scenarios = _filter_scenarios(scenarios, config)
+        if scenarios and not filtered_scenarios:
+            return all_items
+
+        if "scenarios" in data:
+            data["scenarios"] = filtered_scenarios
 
         eval_input = EvalDeaRequest(
             raw_dict=data
@@ -136,7 +146,39 @@ def load_dea_json(json_file_path):
     return all_items
 
 
-def load_cortado_json(json_file_path):
+def _filter_scenarios(scenarios: list[dict], config: dict) -> list[dict]:
+    """Filters a list of scenarios based on explicit IDs or glob pattern in config."""
+    scenarios_to_run = config.get("scenarios", [])
+    if isinstance(scenarios_to_run, str):
+        scenarios_to_run = [s.strip() for s in scenarios_to_run.split(",") if s.strip()]
+
+    scenario_pattern = config.get("scenario_pattern", None)
+
+    # If no filters are specified, return the original list (run all)
+    if not scenarios_to_run and not scenario_pattern:
+        return scenarios
+
+    filtered_scenarios = []
+    for scenario in scenarios:
+        scenario_id = scenario.get("id")
+        if not scenario_id:
+            continue
+
+        # Match explicit list of IDs
+        if scenarios_to_run and scenario_id not in scenarios_to_run:
+            continue
+
+        # Match glob pattern
+        if scenario_pattern:
+            if not fnmatch.fnmatch(scenario_id, scenario_pattern):
+                continue
+
+        filtered_scenarios.append(scenario)
+
+    return filtered_scenarios
+
+
+def load_cortado_json(json_file_path, config):
     all_items: dict[str, list[EvalCortadoRequest]] = {
         "cortado-format": [],
     }
@@ -144,7 +186,8 @@ def load_cortado_json(json_file_path):
         data = json.load(json_file)
 
         scenarios = data.get("scenarios", [])
-        for scenario in scenarios:
+        filtered_scenarios = _filter_scenarios(scenarios, config)
+        for scenario in filtered_scenarios:
             eval_input = EvalCortadoRequest(
                 raw_dict=scenario
             )
@@ -153,7 +196,7 @@ def load_cortado_json(json_file_path):
     return all_items
 
 
-def load_gemini_cli_json(json_file_path):
+def load_gemini_cli_json(json_file_path, config):
     all_items: dict[str, list[EvalGeminiCliRequest]] = {
         "gemini-cli-format": [],
     }
@@ -162,10 +205,17 @@ def load_gemini_cli_json(json_file_path):
         json_item = _expand_env_placeholders(json_item, json_file_path)
         item = json.loads(json_item)
 
-        # Resolve work_dir for scenarios
+        # Filter scenarios
         scenarios = item.get("scenarios", [])
+        filtered_scenarios = _filter_scenarios(scenarios, config)
+        if scenarios and not filtered_scenarios:
+            return all_items
+
+        item["scenarios"] = filtered_scenarios
+
+        # Resolve work_dir for scenarios
         dataset_dir = os.path.dirname(json_file_path)
-        for scenario in scenarios:
+        for scenario in item["scenarios"]:
             if "work_dir" in scenario:
                 work_dir = scenario["work_dir"]
                 # Resolve relative to dataset file
@@ -197,11 +247,11 @@ def load_dataset_from_json(json_file_path, config):
     if dataset_format == "bird-interact-format":
         all_items = load_bird_interact_dataset(json_file_path, config)
     elif dataset_format in ("gemini-cli-format", "agent-format"):
-        all_items = load_gemini_cli_json(json_file_path)
+        all_items = load_gemini_cli_json(json_file_path, config)
     elif dataset_format == "cortado-format":
-        all_items = load_cortado_json(json_file_path)
+        all_items = load_cortado_json(json_file_path, config)
     elif dataset_format == "dea-format":
-        all_items = load_dea_json(json_file_path)
+        all_items = load_dea_json(json_file_path, config)
     else:
         all_items = load_json(json_file_path)
 
@@ -218,6 +268,7 @@ def load_dataset_from_json(json_file_path, config):
     elif dataset_format == "cortado-format":
         if "orchestrator" not in config:
             config["orchestrator"] = "cortado"
+        input_items = all_items
     elif dataset_format == "dea-format":
         if "orchestrator" not in config:
             config["orchestrator"] = "dea"
