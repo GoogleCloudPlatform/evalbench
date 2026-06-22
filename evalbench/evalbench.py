@@ -29,6 +29,16 @@ except ImportError:
 logging.getLogger().setLevel(logging.INFO)
 
 
+_SCENARIOS = flags.DEFINE_list(
+    "scenarios",
+    [],
+    "List of scenario IDs to run. Defaults to empty (runs all scenarios).",
+)
+_SCENARIO_PATTERN = flags.DEFINE_string(
+    "scenario_pattern",
+    None,
+    "Glob pattern of scenario IDs to run. Defaults to None (runs all scenarios).",
+)
 _SUITE_CONFIG = flags.DEFINE_string(
     "suite_config",
     None,
@@ -56,6 +66,22 @@ def eval(experiment_config: str):
         if parsed_config == "":
             logging.error(f"No Eval Config Found for '{display_config}'.")
             return
+
+        # 1. Merge Environment Variables (overrides YAML)
+        env_scenarios = os.environ.get("EVAL_SCENARIOS")
+        if env_scenarios:
+            parsed_config["scenarios"] = [s.strip() for s in env_scenarios.split(",") if s.strip()]
+
+        env_pattern = os.environ.get("EVAL_SCENARIO_PATTERN")
+        if env_pattern:
+            parsed_config["scenario_pattern"] = env_pattern
+
+        # 2. Merge CLI Flags (overrides Environment Variables and YAML)
+        if flags.FLAGS.is_parsed():
+            if _SCENARIOS.value:
+                parsed_config["scenarios"] = _SCENARIOS.value
+            if _SCENARIO_PATTERN.value:
+                parsed_config["scenario_pattern"] = _SCENARIO_PATTERN.value
 
         set_session_configs(session, parsed_config)
         # Load the configs

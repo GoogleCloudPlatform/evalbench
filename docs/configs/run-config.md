@@ -14,7 +14,9 @@ This section defines the primary resources used during evaluation, including the
 | `databases`         | Optional          | Specifies the databases (e.g., `db_blog`, `california_schools`, etc.). This filters the dataset to the provided list of databases and ignores all other evals. If not provided, all databases found in the dataset_config json file will be tried. |
 | `query_types`         | Optional          | Specifies the query_types (`dql`, `dml`, `dd`). This filters the dataset to the list of evals that are of the query_types provided. If not provided, all eval types (dql, dml and ddl) found in the dataset_config json file will be tried. |
 | `dataset_format`      | Conditional (if needed) | Defines the dataset format, with `evalbench-standard-format` as the default. For BIRD datasets, it must be set to `bird-standard-format`.|
-| `num_trials`      | Optional     | Number of trials to run for each prompt. 
+| `num_trials`      | Optional     | Number of trials to run for each prompt. |
+| `scenarios`      | Optional     | A list of specific scenario IDs to run (only applies to scenario-based agentic datasets like `gemini-cli-format` or `cortado-format`). Defaults to empty (runs all scenarios). |
+| `scenario_pattern` | Optional     | A glob pattern of scenario IDs to run (only applies to scenario-based agentic datasets). Defaults to None (runs all scenarios). |
 ---
 
 ## 2. Prompt and Generation Modules
