@@ -38,8 +38,13 @@ build-test:
 	$(CONTAINER_ENGINE) build -t evalbench-test -f evalbench_service/Dockerfile .
 
 container:
-	$(CONTAINER_ENGINE) stop evalbench_server || true
-	$(CONTAINER_ENGINE) rm evalbench_server || true
+	$(CONTAINER_ENGINE) rm -f evalbench_server 2>/dev/null || true; \
+	retries=60; \
+	while $(CONTAINER_ENGINE) ps -a --format '{{.Names}}' | grep -qx evalbench_server; do \
+		sleep 0.5; \
+		retries=$$((retries - 1)); \
+		if [ $$retries -le 0 ]; then echo "Timeout waiting for evalbench_server removal" >&2; exit 1; fi; \
+	done
 	$(CONTAINER_ENGINE) run --rm --name=evalbench_server \
 		$(if $(filter podman,$(CONTAINER_ENGINE)),--sysctl net.ipv6.conf.all.disable_ipv6=1) \
 		$(if $(filter docker,$(CONTAINER_ENGINE)),--net=host) \
@@ -53,8 +58,13 @@ container:
 		-e TYPE=$(TYPE) evalbench:latest
 
 shell:
-	$(CONTAINER_ENGINE) stop evalbench_server || true
-	$(CONTAINER_ENGINE) rm evalbench_server || true
+	$(CONTAINER_ENGINE) rm -f evalbench_server 2>/dev/null || true; \
+	retries=60; \
+	while $(CONTAINER_ENGINE) ps -a --format '{{.Names}}' | grep -qx evalbench_server; do \
+		sleep 0.5; \
+		retries=$$((retries - 1)); \
+		if [ $$retries -le 0 ]; then echo "Timeout waiting for evalbench_server removal" >&2; exit 1; fi; \
+	done
 	$(CONTAINER_ENGINE) run -ti --rm --name=evalbench_server \
 		$(if $(filter podman,$(CONTAINER_ENGINE)),--sysctl net.ipv6.conf.all.disable_ipv6=1) \
 		$(if $(filter docker,$(CONTAINER_ENGINE)),--net=host) \
