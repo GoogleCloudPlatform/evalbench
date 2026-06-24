@@ -12,6 +12,7 @@ from .claude_code import ClaudeCodeGenerator
 from .codex_cli import CodexCliGenerator
 from .gcp_data_engineering_agent import DataEngineeringAgentGenerator
 from .agy_cli import AgyCliGenerator
+from .mcp_tools import McpToolsGenerator
 from util.config import load_yaml_config
 
 
@@ -36,6 +37,7 @@ def get_generator(global_models, model_config_path: str, db: DB = None):
             "codex_cli": lambda: CodexCliGenerator(config),
             "data_engineering_agent": lambda: DataEngineeringAgentGenerator(config),
             "agy_cli": lambda: AgyCliGenerator(config),
+            "mcp_tools": lambda: McpToolsGenerator(config),
         }
         generator = config["generator"]
         if generator not in generators:

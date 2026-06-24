@@ -64,6 +64,10 @@ dependencies = [
     # (urllib3.contrib.pyopenssl.inject_into_urllib3). Lift when google-auth
     # stops using the deprecated inject pattern.
     "pyOpenSSL<26.2",
+    # MCP readability check: official MCP SDK + async HTTP transport.
+    "mcp",
+    "httpx",
+    "anyio",
 ]
 
 [tool.uv.sources]

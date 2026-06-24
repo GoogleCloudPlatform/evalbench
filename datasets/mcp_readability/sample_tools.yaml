@@ -1,0 +1,37 @@
+# Sample MCP tools spec for offline, deterministic testing of the readability
+# check (tools_source.type: file). Intentionally mixes good and bad style so the
+# LLM has something to flag.
+tools:
+  - name: list_datasets
+    description: "List all BigQuery datasets in the given project. Use this to discover available datasets before querying."
+    inputSchema:
+      type: object
+      properties:
+        project_id:
+          type: string
+          description: "The Google Cloud project ID to list datasets from."
+      required: ["project_id"]
+
+  - name: RunQuery
+    description: "runs sql"
+    inputSchema:
+      type: object
+      properties:
+        q:
+          type: string
+
+  - name: delete_table
+    description: "Deletes a table."
+    inputSchema:
+      type: object
+      properties:
+        project_id:
+          type: string
+          description: "Project ID."
+        dataset_id:
+          type: string
+          description: "Dataset ID."
+        table_id:
+          type: string
+          description: "Table ID."
+      required: ["project_id", "dataset_id", "table_id"]

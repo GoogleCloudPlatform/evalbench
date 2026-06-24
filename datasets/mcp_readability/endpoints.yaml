@@ -1,0 +1,124 @@
+# MCP endpoints to check against the Data Cloud MCP style guide.
+#
+# Mirrors cloud/databases/mcp/readability/monitored_endpoints.textproto
+# (EndpointList). The proto `type` maps to `environment`; all live endpoints are
+# fetched via the `mcp` source over Streamable HTTP using ADC auth.
+#
+# `defaults` provides values shared by all endpoints; each endpoint may override
+# any of them. `tools_source.type` makes the tool listing pluggable:
+#   - mcp:  fetch tools/list from a live MCP server (official mcp SDK). Needs
+#           network access and (for these googleapis.com endpoints) ADC auth.
+#   - file: read a local YAML/JSON tools spec (offline / deterministic).
+
+defaults:
+  token_budget: 200000
+  endpoint_type: REMOTE       # EndpointType: REMOTE | LOCAL
+  tools_source:
+    type: mcp                 # mcp | file
+    auth: google_credentials  # ADC bearer + x-goog-user-project
+
+endpoints:
+  - product_name: "AlloyDB for PostgreSQL"
+    endpoint_url: "https://alloydb.us-central1.rep.googleapis.com/mcp"
+    environment: PROD
+
+  - product_name: "BigQuery"
+    endpoint_url: "https://bigquery.googleapis.com/mcp"
+    environment: PROD
+
+  - product_name: "BigQuery Data Transfer Service"
+    endpoint_url: "https://bigquerydatatransfer.googleapis.com/mcp"
+    environment: PROD
+
+  - product_name: "BigQuery Migration Service"
+    endpoint_url: "https://bigquerymigration.googleapis.com/mcp"
+    environment: PROD
+
+  - product_name: "Bigtable"
+    endpoint_url: "https://bigtableadmin.googleapis.com/mcp"
+    environment: PROD
+
+  - product_name: "Cloud SQL"
+    endpoint_url: "https://sqladmin.googleapis.com/mcp"
+    environment: PROD
+
+  - product_name: "Firestore"
+    endpoint_url: "https://firestore.googleapis.com/mcp"
+    environment: PROD
+
+  - product_name: "Spanner"
+    endpoint_url: "https://spanner.googleapis.com/mcp"
+    environment: PROD
+
+  - product_name: "Data Migration Service"
+    endpoint_url: "https://datamigration.googleapis.com/mcp"
+    environment: PROD
+
+  - product_name: "Datastream"
+    endpoint_url: "https://datastream.googleapis.com/mcp"
+    environment: PROD
+
+  - product_name: "Oracle Database"
+    endpoint_url: "https://oracledatabase.googleapis.com/mcp"
+    environment: PROD
+
+  - product_name: "Memory store for Redis/Redis Cluster"
+    endpoint_url: "https://redis.googleapis.com/mcp"
+    environment: PROD
+
+  - product_name: "Memory store for Valkey"
+    endpoint_url: "https://memorystore.googleapis.com/mcp"
+    environment: PROD
+
+  - product_name: "Pub/Sub"
+    endpoint_url: "https://pubsub.googleapis.com/mcp"
+    environment: PROD
+
+  - product_name: "Managed Kafka"
+    endpoint_url: "https://managedkafka.us-central1.rep.googleapis.com/mcp"
+    environment: PROD
+
+  - product_name: "Cloud Composer"
+    endpoint_url: "https://us-central1-staging-composer.sandbox.googleapis.com/mcp"
+    environment: STAGING
+  - product_name: "Cloud Composer"
+    endpoint_url: "https://composer.us-central1.rep.googleapis.com/mcp"
+    environment: PROD
+
+  - product_name: "Knowledge Catalog"
+    endpoint_url: "https://dataplex.googleapis.com/mcp"
+    environment: PROD
+
+  - product_name: "Knowledge Catalog Data Products"
+    endpoint_url: "https://staging-dataplex.sandbox.googleapis.com/mcp"
+    environment: STAGING
+
+  - product_name: "Database Insights (EGO for AlloyDB Tools)"
+    endpoint_url: "https://autopush-databaseinsights.sandbox.googleapis.com/mcp"
+    environment: AUTOPUSH
+
+  - product_name: "DB: AI Assisted Troubleshooting"
+    endpoint_url: "https://databaseinsights.googleapis.com/mcp"
+    environment: PROD
+
+  - product_name: "Cloud Storage MCP Server"
+    endpoint_url: "https://storage.googleapis.com/storage/mcp"
+    environment: PROD
+
+  - product_name: "Database Center API for MCP"
+    endpoint_url: "https://databasecenter.googleapis.com/mcp"
+    environment: PROD
+
+  - product_name: "Dataproc"
+    endpoint_url: "https://dataproc.googleapis.com/mcp"
+    environment: PROD
+
+  # --- Offline / deterministic sample (no network or auth) ------------------
+  # Uncomment to smoke-test the pipeline without hitting live endpoints.
+  # - product_name: "Sample Data Cloud MCP (local file)"
+  #   endpoint_url: "file://datasets/mcp_readability/sample_tools.yaml"
+  #   endpoint_type: LOCAL
+  #   environment: DEV
+  #   tools_source:
+  #     type: file
+  #     path: datasets/mcp_readability/sample_tools.yaml

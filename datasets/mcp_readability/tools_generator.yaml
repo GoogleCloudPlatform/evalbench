@@ -1,0 +1,7 @@
+# Generator that fetches/normalizes each endpoint's tools.yaml.
+# Per-endpoint `tools_source` (in endpoints.yaml) overrides drive actual fetch
+# behavior; these are just defaults for the generator itself.
+generator: mcp_tools
+timeout: 30
+headers: {}
+# auth: google_credentials   # default auth for endpoints that don't set their own

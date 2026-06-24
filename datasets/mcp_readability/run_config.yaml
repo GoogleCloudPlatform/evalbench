@@ -1,0 +1,43 @@
+############################################################
+### MCP Style-Guide Compliance (Readability) Run Config
+############################################################
+# Drives the `mcp_readability` orchestrator: fetch each endpoint's tools (man-page
+# markup), evaluate it against the style guide with an LLM, and write a compliance
+# CSV (and optionally append the rows to the eval BigQuery table).
+
+orchestrator: mcp_readability
+
+# Inputs
+endpoints_config: datasets/mcp_readability/endpoints.yaml
+style_guide: datasets/mcp_readability/style_guide.md
+exceptions_config: datasets/mcp_readability/exceptions.yaml          # optional
+tools_generator_config: datasets/mcp_readability/tools_generator.yaml
+
+# Default token budget for token_budget_used_percent (endpoints may override).
+token_budget: 200000
+
+# Optional: path to a prior compliance CSV; prior feedback is fed to the LLM to
+# keep findings consistent run-to-run.
+previous_results_csv: null
+
+# Optional: only check endpoints whose environment is in this list, e.g. [PROD].
+environments: []
+
+# LLM used by the compliance scorer.
+scorers:
+  mcp_style_compliance:
+    model_config: datasets/mcp_readability/model_configs/gemini_2.5_pro_model.yaml
+
+# Endpoint check concurrency.
+runners:
+  endpoint_runners: 4
+
+# Output: results/<job_id>/mcp_readability_compliance.csv
+# Add a `bigquery` block to also append the compliance rows to the standard eval
+# table (<gcp_project_id>.evalbench.results); the schema auto-evolves to add the
+# compliance columns. No new dataset/table is created.
+reporting:
+  csv:
+    output_directory: 'results'
+  # bigquery:
+  #   gcp_project_id: senseai-team

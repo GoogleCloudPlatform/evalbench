@@ -88,8 +88,13 @@ def eval(experiment_config: str):
         config, db_configs, model_config, setup_config = load_session_configs(session)
         logging.info("Loaded Configurations in %s", experiment_config)
 
-        # Load the dataset
-        dataset = load_dataset_from_json(session["dataset_config"], config)
+        # Load the dataset. Some orchestrators (e.g. mcp_readability) drive their
+        # work from the run config itself rather than a prompt dataset, so
+        # dataset_config is optional; flatten_dataset({}) yields [].
+        if session.get("dataset_config"):
+            dataset = load_dataset_from_json(session["dataset_config"], config)
+        else:
+            dataset = {}
         # Load the evaluator
         evaluator = get_orchestrator(
             config, db_configs, setup_config, report_progress=True
@@ -137,6 +142,17 @@ def eval(experiment_config: str):
             )
             summary_scores_df["job_id"] = job_id
             summary_scores_df["run_time"] = run_time
+        elif config.get("orchestrator") == "mcp_readability":
+            # This orchestrator writes its own compliance CSV in process() and
+            # intentionally returns no NL2SQL results/scores temp files.
+            logging.info(
+                f"Finished MCP readability run for config '{display_config}'."
+            )
+            reporters = []
+            config_df = None
+            results_df = None
+            scores_df = None
+            summary_scores_df = None
         else:
             logging.warning(
                 f"There were no matching evals in run for config '{display_config}'. Returning empty set."

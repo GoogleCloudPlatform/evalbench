@@ -1,0 +1,24 @@
+# Style-rule exceptions (waivers).
+#
+# Each entry waives one style `rule_id` for the endpoints it matches. A waived
+# rule is NOT counted toward p0/p1/p2 issues and is reported separately under
+# "waived" in the LLM feedback.
+#
+# Matchers (all that are present must match; an absent field or "*" = match-all):
+#   - endpoint_url
+#   - product_name
+#   - environment
+
+# `rule_id` should match the style guide's section heading text (the scorer uses
+# headings as rule IDs), e.g. "Tool Names", "Concise Descriptions",
+# "Use Enums", "Limit Options".
+exceptions:
+  # Example: waive the tool-naming rule for one specific endpoint.
+  - product_name: "Sample Data Cloud MCP (local file)"
+    rule_id: "Tool Names"
+    reason: "Sample fixture intentionally uses a non-compliant tool name (RunQuery)."
+
+  # Example: waive the enum rule for every autopush endpoint.
+  - environment: AUTOPUSH
+    rule_id: "Use Enums"
+    reason: "Autopush builds defer enum constraints until promotion to prod."

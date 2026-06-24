@@ -1,0 +1,4 @@
+generator: gcp_vertex_gemini
+vertex_model: gemini-2.5-pro
+base_prompt: ""
+execs_per_minute: 5
