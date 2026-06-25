@@ -120,6 +120,17 @@ class GcpAdcCredentialService(CredentialService):
             return token_val
 
 
+def _is_iterable(obj: Any) -> bool:
+    """Safely checks if an object is iterable, excluding strings and bytes."""
+    if isinstance(obj, (str, bytes)):
+        return False
+    try:
+        iter(obj)
+        return True
+    except TypeError:
+        return False
+
+
 def _extract_message_text(msg: Any) -> str:
     """Extracts agent message text from a single Message object."""
     if getattr(msg, "role", None) != pb.ROLE_AGENT:
@@ -141,32 +152,28 @@ def _extract_message_text(msg: Any) -> str:
 
 
 def _find_agent_text_recursive(obj: Any) -> str:
-    """Recursively searches obj to find the first valid agent text."""
-    text = _extract_message_text(obj)
-    if text:
-        return text
+    """Recursively searches obj to find and accumulate agent texts."""
+    texts = []
+
+    self_text = _extract_message_text(obj)
+    if self_text:
+        texts.append(self_text)
 
     # 1. Handle dict-like mappings by traversing their values
     if isinstance(obj, collections.abc.Mapping):
         for val in obj.values():
             text = _find_agent_text_recursive(val)
             if text:
-                return text
+                texts.append(text)
+        return "\n\n".join(texts)
 
     # 2. Handle iterables (exclude string/bytes)
-    is_iterable = False
-    if not isinstance(obj, (str, bytes)):
-        try:
-            iter(obj)
-            is_iterable = True
-        except TypeError as e:
-            logger.info("Object is not iterable: %s", e)
-
-    if is_iterable:
+    if _is_iterable(obj):
         for item in obj:
             text = _find_agent_text_recursive(item)
             if text:
-                return text
+                texts.append(text)
+        return "\n\n".join(texts)
 
     # 3. Handle standard Protobuf Messages via ListFields
     elif hasattr(obj, "ListFields"):
@@ -174,18 +181,20 @@ def _find_agent_text_recursive(obj: Any) -> str:
             for field_desc, field_value in obj.ListFields():
                 text = _find_agent_text_recursive(field_value)
                 if text:
-                    return text
+                    texts.append(text)
         except Exception:
             pass
+        return "\n\n".join(texts)
 
     # 4. Fallback for other standard objects
     elif hasattr(obj, "__dict__"):
         for val in obj.__dict__.values():
             text = _find_agent_text_recursive(val)
             if text:
-                return text
+                texts.append(text)
+        return "\n\n".join(texts)
 
-    return ""
+    return "\n\n".join(texts)
 
 
 class DataEngineeringAgentGenerator(QueryGenerator):
@@ -336,7 +345,7 @@ class DataEngineeringAgentGenerator(QueryGenerator):
             message_req.metadata[CONVERSATION_TOKEN_URI] = token
 
         context = ClientCallContext(
-            timeout=180.0,
+            timeout=300.0,
             service_parameters={
                 "A2A-Extensions": ALL_EXTENSIONS
             }
