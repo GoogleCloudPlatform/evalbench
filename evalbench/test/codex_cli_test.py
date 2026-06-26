@@ -2,11 +2,9 @@ import os
 import sys
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from generators.models.codex_cli import CodexCliGenerator, CLICommand
+from generators.models.codex_cli import CodexCliGenerator
 
 
 @patch('generators.models.codex_cli.subprocess.Popen')
