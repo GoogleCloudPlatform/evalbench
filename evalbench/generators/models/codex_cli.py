@@ -114,6 +114,8 @@ class CodexCliGenerator(AgentCliGenerator):
 
         self.setup_config = querygenerator_config.get("setup", {})
         self.config_path = os.path.join(self.codex_config_dir, "config.toml")
+        self.inline_mcp_servers = {}
+        self.enabled_plugins = {}
         self._setup()
 
     @staticmethod
@@ -248,9 +250,10 @@ class CodexCliGenerator(AgentCliGenerator):
            either be a repo with a `skills/` child or a single skill folder.
         """
         mcp_servers_config = self.setup_config.get("mcp_servers", {})
-        extra_config = dict(self._DEFAULT_TOP_LEVEL_CONFIG)
-        extra_config.update(self.setup_config.get("config", {}))
-        self._write_config_toml(mcp_servers_config, extra_config)
+        if isinstance(mcp_servers_config, list):
+            self._install_mcp_servers_from_repo(mcp_servers_config)
+        elif isinstance(mcp_servers_config, dict):
+            self.inline_mcp_servers.update(mcp_servers_config)
 
         skills_config = self.setup_config.get("skills", [])
         if skills_config:
@@ -259,6 +262,8 @@ class CodexCliGenerator(AgentCliGenerator):
         skills_dir_path = self.setup_config.get("skills_dir")
         if skills_dir_path:
             self._setup_skills_from_dir(skills_dir_path)
+
+        self._write_config_toml()
 
     def _setup_skills(self, skills: list):
         """Installs Codex skills from repo or local path configs."""
@@ -284,6 +289,12 @@ class CodexCliGenerator(AgentCliGenerator):
                 repo_dir = self._clone_extension_repo(url, plugins_dir, setup_env)
                 if repo_dir:
                     self._register_codex_plugin(repo_dir, skill_config)
+                    plugin_name = skill_config.get("plugin_name") or skill_config.get("plugin") or self._read_codex_plugin_name(repo_dir)
+                    if not plugin_name:
+                        plugin_name = os.path.basename(os.path.abspath(repo_dir))
+                    marketplace_name = skill_config.get("marketplace_name", "evalbench-local-marketplace")
+                    plugin_id = f"{plugin_name}@{marketplace_name}"
+                    self.enabled_plugins.setdefault(plugin_id, {}).update(skill_config.get("config", {}) or {})
                     self._install_skills_from_source(repo_dir, skill_config)
             elif action in ("copy", "link", "install") and path:
                 # Materialize the skill instead of symlinking so Codex sees a
@@ -346,7 +357,7 @@ class CodexCliGenerator(AgentCliGenerator):
 
     def _register_codex_plugin(self, repo_dir: str, skill_config: dict):
         """Registers a local Codex plugin marketplace entry for cloned repos."""
-        plugin_name = skill_config.get("plugin_name") or self._read_codex_plugin_name(repo_dir)
+        plugin_name = skill_config.get("plugin_name") or skill_config.get("plugin") or self._read_codex_plugin_name(repo_dir)
         if not plugin_name:
             plugin_name = os.path.basename(os.path.abspath(repo_dir))
 
@@ -355,7 +366,7 @@ class CodexCliGenerator(AgentCliGenerator):
         display_name = skill_config.get(
             "marketplace_display_name", "EvalBench Local Skills")
 
-        plugins_dir = os.path.join(self.codex_config_dir, "plugins")
+        plugins_dir = os.path.join(self.fake_home, ".agents", "plugins")
         os.makedirs(plugins_dir, exist_ok=True)
         marketplace_path = os.path.join(plugins_dir, "marketplace.json")
 
@@ -375,11 +386,16 @@ class CodexCliGenerator(AgentCliGenerator):
                 logging.warning(
                     f"Failed to read Codex marketplace at {marketplace_path}: {e}")
 
+        # Compute path relative to fake_home so that it works as a local marketplace source
+        rel_path = os.path.relpath(os.path.abspath(repo_dir), self.fake_home)
+        if not (rel_path.startswith("./") or rel_path.startswith("../") or rel_path.startswith("/")):
+            rel_path = f"./{rel_path}"
+
         entry = {
             "name": plugin_name,
             "source": {
                 "source": "local",
-                "path": os.path.abspath(repo_dir),
+                "path": rel_path,
             },
             "policy": {
                 "installation": "AVAILABLE",
@@ -399,6 +415,17 @@ class CodexCliGenerator(AgentCliGenerator):
 
         logging.info(
             f"Registered Codex plugin '{plugin_name}' in {marketplace_path}")
+
+        # Install the plugin via Codex CLI so it changes status from 'not installed' to 'installed, enabled'
+        cmd = ["npm", "exec", "--yes", self.codex_cli_version, "--", "plugin", "add", f"{plugin_name}@{marketplace_name}"]
+        try:
+            result = subprocess.run(cmd, env=self.env, check=False, capture_output=True, text=True)
+            if result.returncode == 0:
+                logging.info(f"Successfully installed Codex plugin '{plugin_name}@{marketplace_name}'")
+            else:
+                logging.error(f"Failed to install Codex plugin '{plugin_name}@{marketplace_name}': {result.stderr.strip()}")
+        except Exception as e:
+            logging.error(f"Error executing plugin installation command: {e}")
 
     @staticmethod
     def _read_codex_plugin_name(repo_dir: str) -> str:
@@ -468,7 +495,39 @@ class CodexCliGenerator(AgentCliGenerator):
             if os.path.exists(os.path.join(source_dir, entry, "SKILL.md"))
         ]
 
-    def _write_config_toml(self, mcp_servers_config: dict, extra_config: dict):
+    def _install_mcp_servers_from_repo(self, mcp_servers: list):
+        """Clones plugin repositories that bundle MCP servers and enables them."""
+        setup_env = os.environ.copy()
+        setup_env.update(self.env)
+
+        plugins_dir = os.path.join(self.codex_config_dir, "plugins")
+        os.makedirs(plugins_dir, exist_ok=True)
+
+        for mcp_config in mcp_servers:
+            if not isinstance(mcp_config, dict):
+                logging.warning(f"Unsupported MCP server config: {mcp_config}")
+                continue
+            action = mcp_config.get("action")
+            url = mcp_config.get("url")
+            if action != "install_from_repo" or not url:
+                logging.warning(
+                    f"Unsupported MCP server config: {mcp_config}. When "
+                    "'mcp_servers' is a list, each entry must use "
+                    "'action: install_from_repo' with 'url'.")
+                continue
+            repo_dir = self._clone_extension_repo(url, plugins_dir, setup_env)
+            if repo_dir:
+                plugin_name = mcp_config.get("plugin") or self._read_codex_plugin_name(repo_dir)
+                if not plugin_name:
+                    plugin_name = os.path.basename(os.path.abspath(repo_dir))
+                self._register_codex_plugin(repo_dir, mcp_config)
+                self._install_skills_from_source(repo_dir, mcp_config)
+
+                marketplace_name = mcp_config.get("marketplace_name", "evalbench-local-marketplace")
+                plugin_id = f"{plugin_name}@{marketplace_name}"
+                self.enabled_plugins.setdefault(plugin_id, {}).update(mcp_config.get("config", {}) or {})
+
+    def _write_config_toml(self):
         """Writes Codex CLI's `config.toml` with MCP server declarations.
 
         Accepts the same Gemini-style MCP shape the rest of evalbench uses
@@ -486,16 +545,26 @@ class CodexCliGenerator(AgentCliGenerator):
         """
         lines: list[str] = []
 
+        extra_config = dict(self._DEFAULT_TOP_LEVEL_CONFIG)
+        extra_config.update(self.setup_config.get("config", {}))
+
         for key, value in extra_config.items():
             lines.append(f"{key} = {self._toml_value(value)}")
         if extra_config:
             lines.append("")
 
-        for server_name, config in mcp_servers_config.items():
+        for server_name, config in self.inline_mcp_servers.items():
             translated = self._translate_mcp_config(server_name, dict(config))
             lines.append(f"[mcp_servers.{self._toml_key(server_name)}]")
             for key, value in translated.items():
                 lines.append(f"{key} = {self._toml_value(value)}")
+            lines.append("")
+
+        for plugin_id, options in self.enabled_plugins.items():
+            lines.append(f'[plugins."{plugin_id}"]')
+            lines.append("enabled = true")
+            if options:
+                lines.append(f"options = {self._toml_value(options)}")
             lines.append("")
 
         with open(self.config_path, "w") as f:
