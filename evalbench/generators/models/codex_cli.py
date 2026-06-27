@@ -41,12 +41,13 @@ def _fetch_secret_manager(path: str) -> str:
 
 
 class CLICommand:
-    def __init__(self, cli, prompt, env=None, resume=False, session_id=None):
+    def __init__(self, cli, prompt, env=None, resume=False, session_id=None, cwd=None):
         self.cli = cli
         self.prompt = prompt
         self.env = env if env else {}
         self.resume = resume
         self.session_id = session_id
+        self.cwd = cwd
 
 
 class CodexCliGenerator(AgentCliGenerator):
@@ -588,7 +589,7 @@ class CodexCliGenerator(AgentCliGenerator):
     )
 
     def _execute_cli_command(
-        self, command: list[str], env: dict[str, str] | None = None,
+        self, command: list[str], env: dict[str, str] | None = None, cwd: str | None = None,
     ) -> tuple[subprocess.CompletedProcess, dict[str, int]]:
         """Runs the Codex CLI with line-streamed stdout so we can stamp the
         wall-clock time at which each NDJSON event arrives.
@@ -601,7 +602,7 @@ class CodexCliGenerator(AgentCliGenerator):
         """
         try:
             proc = subprocess.Popen(
-                command, env=env, text=True,
+                command, env=env, cwd=cwd or self.fake_home, text=True,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -728,7 +729,7 @@ class CodexCliGenerator(AgentCliGenerator):
         logging.info(f"Running Codex CLI: {' '.join(command)}")
 
         start_ms = time.monotonic()
-        result, tool_durations = self._execute_cli_command(command, env=env)
+        result, tool_durations = self._execute_cli_command(command, env=env, cwd=cli_cmd.cwd)
         duration_ms = int((time.monotonic() - start_ms) * 1000)
         if result.stdout:
             result.stdout = self._parse_stream_json(
@@ -1173,5 +1174,5 @@ class CodexCliGenerator(AgentCliGenerator):
             merged_env.update(env)
         return CLICommand(
             cli=cli, prompt=prompt, env=merged_env,
-            resume=resume, session_id=session_id,
+            resume=resume, session_id=session_id, cwd=cwd,
         )
