@@ -27,6 +27,9 @@ class BQDB(DB):
         self.client = bigquery.Client(project=self.project_id)
         self.tmp_users = []
 
+    def ensure_database_exists(self):
+        pass
+
     #####################################################
     #####################################################
     # Database Specific Execution Logic and Handling

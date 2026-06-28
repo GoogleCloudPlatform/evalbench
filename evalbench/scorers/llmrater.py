@@ -21,7 +21,7 @@ from generators.models import get_generator
 from scorers import setmatcher
 import logging
 
-from scorers import comparator
+from scorers import comparator, sqlite_bridge
 from .util import make_hashable, with_cache_execute
 from databases.util import get_cache_client
 
@@ -252,7 +252,15 @@ class LLMRater(comparator.Comparator):
             return 100, "Skipped. Exact Match was found."
 
         if golden_error:
-            return 0, "Golden query failed to execute."
+            # If using hybrid judge, fetch ground truth from SQLite when BQ
+            # fails on golden query syntax (e.g. SQLite functions in reference
+            # queries).
+            if sqlite_bridge.is_hybrid_cross_db_enabled():
+                golden_execution_result = (
+                    sqlite_bridge.get_sqlite_ground_truth(golden_query)
+                )
+            else:
+                return 0, "Golden query failed to execute."
         if generated_error:
             return 0, "Generated query failed to execute."
 
