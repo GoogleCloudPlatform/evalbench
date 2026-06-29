@@ -5,6 +5,7 @@ from databases import DB
 from work import Work
 from util.sanitizer import sanitize_sql
 from queue import Queue
+import logging
 import sqlparse
 import traceback
 
@@ -116,6 +117,14 @@ class SQLExecWork(Work):
                 )
             except Exception as e:
                 error = str(e)
+            if is_golden and error:
+                logging.warning(
+                    "Golden SQL exec failed (id=%s db=%s): %s\nSQL: %s",
+                    self.eval_result.get("id"),
+                    getattr(self.db, "database", None),
+                    error,
+                    query,
+                )
         elif query_type == "dml":
             self.db.execute(self.eval_result["setup_sql"])
             result, eval_result, error = self.db.execute(
