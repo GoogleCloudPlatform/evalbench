@@ -20,9 +20,12 @@ endpoints:
     endpoint_type: DEV
     tools_source:
       type: stdio
+      # MCP Toolbox for Databases, run over stdio via its npm wrapper.
       command: "npx"
-      args: ["-y", "<toolbox-package>", "--prebuilt", "bigquery", "--stdio"]
-      # env: { ... }                   # optional process env (creds, config)
+      args: ["-y", "@toolbox-sdk/server", "--prebuilt=bigquery", "--stdio"]
+      # Needs BigQuery credentials in the environment (ADC + project), e.g.:
+      # env:
+      #   BIGQUERY_PROJECT: "your-gcp-project"
 
   - product_name: "Sample (offline)"
     endpoint_type: DEV
