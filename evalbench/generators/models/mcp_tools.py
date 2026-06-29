@@ -8,10 +8,9 @@ readability *scorer* then evaluates against the style guide.
 The source is pluggable per endpoint via ``tools_source.type``. The type names
 the *transport*, not the protocol -- ``http`` and ``stdio`` both speak MCP:
   - ``http``: live MCP ``tools/list`` over Streamable HTTP using the official
-    ``mcp`` Python SDK. The fetch URL is ``tools_source.url`` (falling back to
-    the endpoint's ``endpoint_url``). No authentication is configured -- the
-    public endpoints are reached unauthenticated; auth can be added back later
-    if a future endpoint requires it.
+    ``mcp`` Python SDK. The fetch URL is ``tools_source.url``. No authentication
+    is configured -- the public endpoints are reached unauthenticated; auth can
+    be added back later if a future endpoint requires it.
   - ``stdio``: launch a local MCP server via a command and speak MCP over its
     stdio pipes (official ``mcp`` SDK). The process is started before fetching,
     ``tools/list`` is called, then it is shut down. For local / command-launched
@@ -74,7 +73,7 @@ class McpToolsGenerator(QueryGenerator):
         if source_type == "file":
             tools = self._from_file(source)
         elif source_type == "http":
-            tools = self._from_http(source, endpoint)
+            tools = self._from_http(source)
         elif source_type == "stdio":
             tools = self._from_stdio(source)
         else:
@@ -112,12 +111,10 @@ class McpToolsGenerator(QueryGenerator):
     # ------------------------------------------------------------------
     # http source (official SDK over Streamable HTTP, no auth)
     # ------------------------------------------------------------------
-    def _from_http(self, source: dict, endpoint: dict) -> list[mcp_types.Tool]:
-        raw_url = source.get("url") or endpoint.get("endpoint_url")
+    def _from_http(self, source: dict) -> list[mcp_types.Tool]:
+        raw_url = source.get("url")
         if not raw_url:
-            raise McpToolsError(
-                "tools_source.type 'http' requires a 'url' (or endpoint_url)"
-            )
+            raise McpToolsError("tools_source.type 'http' requires a 'url'")
         url = self.sanitize_url(raw_url)
         try:
             return anyio.run(functools.partial(self._async_fetch_tools, url))

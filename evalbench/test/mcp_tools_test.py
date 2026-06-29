@@ -107,18 +107,20 @@ class McpToolsGeneratorTest(unittest.TestCase):
         )
 
     # ---- http source (mocked, no network) -----------------------------
-    def test_http_source_defaults_url_to_endpoint_url(self):
+    def test_http_source_uses_tools_source_url(self):
         captured = {}
 
-        def fake_from_http(source, endpoint):
-            captured["url"] = source.get("url") or endpoint.get("endpoint_url")
+        def fake_from_http(source):
+            captured["url"] = source.get("url")
             return [
                 mcp_types.Tool(name="t", description="d", inputSchema={})
             ]
 
         endpoint = {
-            "endpoint_url": "https://svc.googleapis.com/mcp",
-            "tools_source": {"type": "http"},
+            "tools_source": {
+                "type": "http",
+                "url": "https://svc.googleapis.com/mcp",
+            },
         }
         with patch.object(self.gen, "_from_http", side_effect=fake_from_http):
             tools, man_page = self.gen.fetch_tools(endpoint)
