@@ -128,11 +128,16 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                     # Explicitly set GOOGLE_APPLICATION_CREDENTIALS for Claude if secret is mounted
                     self.env["GOOGLE_APPLICATION_CREDENTIALS"] = "/etc/evalbench-sa-key/key.json"
 
-        # Copy Claude Code auth credentials from real home to fake home
-        # so the CLI can authenticate in the sandboxed environment
+        # Copy Claude Code auth credentials from real home to fake home so the
+        # CLI can authenticate in the sandboxed environment. Restricted to a
+        # tight allowlist of auth-only files: copying everything (e.g.
+        # settings.json, CLAUDE.md) silently overrides the eval's model config
+        # — settings.json `env`, `model`, and `enabledPlugins` would leak the
+        # local developer's setup into the run.
+        _AUTH_FILE_ALLOWLIST = {".credentials.json"}
         real_claude_dir = os.path.join(self.real_home, ".claude")
         if os.path.exists(real_claude_dir):
-            for fname in os.listdir(real_claude_dir):
+            for fname in _AUTH_FILE_ALLOWLIST:
                 src = os.path.join(real_claude_dir, fname)
                 dst = os.path.join(self.claude_config_dir, fname)
                 if os.path.isfile(src) and not os.path.exists(dst):
