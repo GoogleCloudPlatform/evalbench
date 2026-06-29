@@ -48,6 +48,8 @@ flags.declare_key_flag('experiment_config')
 
 
 def eval(experiment_config: str):
+    config = None
+    session_dir = None
     try:
         logging.info("EvalBench v1.0.0")
         logging.getLogger("google_genai.models").setLevel(logging.WARNING)
@@ -157,17 +159,6 @@ def eval(experiment_config: str):
 
         print(f"Finished Job ID {job_id}")
 
-        tear_down_script = config.get("tear_down_script")
-        if tear_down_script:
-            if os.path.exists(tear_down_script):
-                logging.info("Executing tear_down_script '%s'", tear_down_script)
-                run_script(tear_down_script, session_dir, "teardown")
-            else:
-                logging.error(
-                    "Cannot run tear_down_script, file not found at '%s'",
-                    tear_down_script,
-                )
-
         return True
     except Exception as e:
         display_config = experiment_config
@@ -176,6 +167,18 @@ def eval(experiment_config: str):
             display_config = display_config[g3_idx:]
         logging.exception(f"Evaluation failed for config '{display_config}': {e}")
         return False
+    finally:
+        if config and session_dir:
+            tear_down_script = config.get("tear_down_script")
+            if tear_down_script:
+                if os.path.exists(tear_down_script):
+                    logging.info("Executing tear_down_script '%s'", tear_down_script)
+                    run_script(tear_down_script, session_dir, "teardown")
+                else:
+                    logging.error(
+                        "Cannot run tear_down_script, file not found at '%s'",
+                        tear_down_script,
+                    )
 
 
 def run_suite(suite_config_path: str) -> bool:
