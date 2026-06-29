@@ -1,0 +1,51 @@
+{
+  "tools": [
+    {
+      "name": "list_datasets",
+      "description": "List all BigQuery datasets in the given project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "The Google Cloud project ID."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Maximum number of datasets to return.",
+            "default": 50
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Opaque token from a previous response for the next page."
+          }
+        },
+        "required": ["project_id"]
+      }
+    },
+    {
+      "name": "get_job_state",
+      "description": "Return the current state of a BigQuery job.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "The Google Cloud project ID."
+          },
+          "job_id": {
+            "type": "string",
+            "description": "The BigQuery job identifier."
+          },
+          "view": {
+            "type": "string",
+            "description": "How much job detail to return.",
+            "enum": ["BASIC", "FULL"],
+            "default": "BASIC"
+          }
+        },
+        "required": ["project_id", "job_id"]
+      }
+    }
+  ]
+}
