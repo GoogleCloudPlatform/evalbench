@@ -1,0 +1,34 @@
+# Sample MCP endpoints. Each entry has: product_name, endpoint_type
+# (PROD | AUTOPUSH | STAGING | DEV), and a pluggable tools_source.
+#
+# An endpoint's identity for reporting is (product_name, endpoint_type). The
+# source is defined entirely by tools_source — there is no top-level endpoint_url.
+# tools_source.type selects how tools are obtained (independent of endpoint_type,
+# which is just the deployment channel / reporting metadata):
+#   http  - live tools/list over Streamable HTTP; url is the endpoint address
+#   stdio - launch a local MCP server and speak MCP over its stdio pipes
+#   file  - read a raw tools/list JSON dump (offline / deterministic)
+
+endpoints:
+  - product_name: "Cloud SQL"
+    endpoint_type: PROD
+    tools_source:
+      type: http
+      url: "https://sqladmin.googleapis.com/mcp"
+
+  - product_name: "MCP Toolbox (BigQuery)"
+    endpoint_type: DEV
+    tools_source:
+      type: stdio
+      # MCP Toolbox for Databases, run over stdio via its npm wrapper.
+      command: "npx"
+      args: ["-y", "@toolbox-sdk/server", "--prebuilt=bigquery", "--stdio"]
+      # Needs BigQuery credentials in the environment (ADC + project), e.g.:
+      # env:
+      #   BIGQUERY_PROJECT: "your-gcp-project"
+
+  - product_name: "Sample (offline)"
+    endpoint_type: DEV
+    tools_source:
+      type: file
+      path: datasets/mcp_readability/sample_tools.json

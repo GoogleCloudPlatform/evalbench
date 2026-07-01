@@ -1,0 +1,44 @@
+############################################################
+### MCP Readability — sample run config
+############################################################
+# Drives the `mcp_readability` orchestrator: for each endpoint, fetch its tools
+# (rendered as a man-page), score them against the style guide with an LLM, and
+# emit one result row per endpoint to the shared EvalBench reporters.
+#
+# NOTE: this is a sample/illustrative config. The `mcp_tools` generator (this PR)
+# already consumes `endpoints.yaml` and each entry's `tools_source`. The
+# `mcp_readability` orchestrator and the LLM judge referenced below land in a
+# follow-up PR.
+
+orchestrator: mcp_readability
+
+# Inputs (paths relative to the repo root / run cwd).
+endpoints_config: datasets/mcp_readability/endpoints.yaml
+exceptions_config: datasets/mcp_readability/exceptions.yaml          # optional
+tools_generator_config: datasets/mcp_readability/tools_generator.yaml
+
+# Token budget for token_budget_used_percent (endpoints may override per-entry).
+token_budget: 200000
+
+# Optional filter: only check endpoints whose endpoint_type is in this list.
+# Empty = check all. e.g. [PROD]
+endpoint_types: []
+
+# LLM judge: consumes a model config and the style-guide path. Reuses the
+# shared repo model config.
+readability_judge:
+  model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  style_guide: datasets/mcp_readability/style_guide.md
+
+# Per-endpoint check concurrency.
+runners:
+  endpoint_runners: 4
+
+# Shared EvalBench reporters. CSV writes results/<job_id>/evals.csv; uncomment
+# bigquery to also append rows to <gcp_project_id>.evalbench.results
+# (schema auto-evolves).
+reporting:
+  csv:
+    output_directory: 'results'
+  # bigquery:
+  #   gcp_project_id: your-gcp-project

@@ -1,0 +1,4 @@
+# Config for the mcp_tools generator (the system-under-test fetcher).
+# Selected by `tools_generator_config` in the run config; built via get_generator.
+generator: mcp_tools
+timeout: 30
