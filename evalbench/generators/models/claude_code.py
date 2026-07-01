@@ -260,6 +260,7 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                     marketplace_dir,
                     plugin_name=mcp_config.get("plugin"),
                     plugin_config=mcp_config.get("config"),
+                    env=setup_env,
                 )
 
     def _translate_mcp_config(self, server_name: str, config: dict) -> dict:
@@ -359,7 +360,7 @@ class ClaudeCodeGenerator(AgentCliGenerator):
             marketplace_dir = self._clone_marketplace_repo(
                 url, marketplaces_dir, setup_env)
             if marketplace_dir:
-                self._register_marketplace_plugin(marketplace_dir)
+                self._register_marketplace_plugin(marketplace_dir, env=setup_env)
 
     def _setup_skills_from_dir(self, skills_dir_path: str):
         """Registers a local plugin marketplace directory in settings.json."""
@@ -400,7 +401,7 @@ class ClaudeCodeGenerator(AgentCliGenerator):
 
     def _register_marketplace_plugin(
         self, marketplace_dir: str, plugin_name: str | None = None,
-        plugin_config: dict | None = None,
+        plugin_config: dict | None = None, env: dict | None = None,
     ):
         """Reads marketplace.json and updates settings.json so Claude Code
         auto-loads a marketplace plugin at startup.
@@ -478,6 +479,37 @@ class ClaudeCodeGenerator(AgentCliGenerator):
             f"Registered plugin '{plugin_id}' "
             f"(directory source: {marketplace_dir})"
             + (f" with userConfig {list(plugin_config)}" if plugin_config else ""))
+
+        self._install_plugin(plugin_id, env)
+
+    def _install_plugin(self, plugin_id: str, env: dict | None = None):
+        """Forces synchronous installation of a registered plugin."""
+        if not env:
+            env = os.environ.copy()
+            env.update(self.env)
+
+        cli = self.claude_code_version
+        if cli.startswith("@") or "/" in cli:
+            cli_base_cmd = ["npm", "exec", "--yes", cli, "--"]
+        else:
+            cli_base_cmd = [cli]
+
+        # Run a dummy command to force initialization of projects/sessions
+        # and plugin manager state. Ignore the failure (it will fail with
+        # auth error if credentials are not ready, which is expected).
+        init_command = cli_base_cmd + ["-p", "initialize_session"]
+        logging.info(f"Initializing Claude Code state: {' '.join(init_command)}")
+        self._execute_cli_command(init_command, env=env)
+
+        # Now run the actual install command
+        install_command = cli_base_cmd + ["plugins", "install", plugin_id]
+        logging.info(f"Synchronously installing plugin: {' '.join(install_command)}")
+
+        result = self._execute_cli_command(install_command, env=env)
+        if result.returncode != 0:
+            logging.error(f"Failed to install plugin '{plugin_id}': {result.stderr}")
+        else:
+            logging.info(f"Successfully installed plugin '{plugin_id}'")
 
     def generate_internal(self, cli_cmd):
         if not isinstance(cli_cmd, CLICommand):
