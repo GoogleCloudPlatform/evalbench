@@ -23,6 +23,7 @@ import logging
 
 from scorers import comparator, sqlite_bridge
 from .util import make_hashable, with_cache_execute
+from util.config import load_yaml_config
 from databases.util import get_cache_client
 
 ERROR_CATEGORIZATION_PROMPT = """
@@ -166,6 +167,15 @@ class LLMRater(comparator.Comparator):
         if not self.model_config:
             raise ValueError("model_config is required for LLM Rater")
         self.model = get_generator(global_models, self.model_config)
+        self.hybrid_ground_truth = config.get("hybrid_ground_truth", False)
+
+        # Derive SQLite database directory from database_configs list.
+        self.sqlite_db_dir = ""
+        for db_cfg_path in config.get("database_configs", []):
+            db_cfg = load_yaml_config(db_cfg_path)
+            if db_cfg and db_cfg.get("db_type") == "sqlite":
+                self.sqlite_db_dir = db_cfg.get("database_path", "")
+                break
 
     def _is_exact_match(
         self,
@@ -234,6 +244,8 @@ class LLMRater(comparator.Comparator):
         generated_execution_result: list,
         generated_eval_result: str,
         generated_error: str,
+        database: str = "",
+        **kwargs,
     ) -> Tuple[float, str]:
         is_empty_results = len(golden_execution_result) == 0 and len(generated_execution_result) == 0
 
@@ -255,9 +267,16 @@ class LLMRater(comparator.Comparator):
             # If using hybrid judge, fetch ground truth from SQLite when BQ
             # fails on golden query syntax (e.g. SQLite functions in reference
             # queries).
-            if sqlite_bridge.is_hybrid_cross_db_enabled():
+            if self.hybrid_ground_truth:
+                logging.info(
+                    "Hybrid ground truth: BQ golden query failed, resolving "
+                    "from SQLite reference. query=%s",
+                    golden_query,
+                )
                 golden_execution_result = (
-                    sqlite_bridge.get_sqlite_ground_truth(golden_query)
+                    sqlite_bridge.get_sqlite_ground_truth(
+                        golden_query, database, self.sqlite_db_dir
+                    )
                 )
             else:
                 return 0, "Golden query failed to execute."

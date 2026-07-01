@@ -6,6 +6,9 @@ import json
 import os
 
 
+from util.config import load_yaml_config
+
+
 class PythonScorer(comparator.Comparator):
     """
     A general scorer that delegates to an external Python script via `uv run`.
@@ -17,6 +20,14 @@ class PythonScorer(comparator.Comparator):
         self.script_path = config.get("script_path")
         if not self.script_path:
             raise ValueError("script_path is required for PythonScorer")
+
+        # Derive SQLite database directory from database_configs list.
+        self.sqlite_db_dir = ""
+        for db_cfg_path in config.get("database_configs", []):
+            db_cfg = load_yaml_config(db_cfg_path)
+            if db_cfg and db_cfg.get("db_type") == "sqlite":
+                self.sqlite_db_dir = db_cfg.get("database_path", "")
+                break
 
     def compare(
         self,
@@ -30,6 +41,8 @@ class PythonScorer(comparator.Comparator):
         generated_execution_result: Any,
         generated_eval_result: Any,
         generated_error: Any,
+        database: str = "",
+        **kwargs,
     ) -> Tuple[float, str]:
 
         # Prepare input data
@@ -44,6 +57,8 @@ class PythonScorer(comparator.Comparator):
             "generated_execution_result": generated_execution_result,
             "generated_eval_result": generated_eval_result,
             "generated_error": generated_error,
+            "database": database,
+            "sqlite_db_dir": self.sqlite_db_dir,
         }
 
         try:

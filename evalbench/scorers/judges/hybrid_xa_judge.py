@@ -2,18 +2,39 @@
 
 from decimal import Decimal
 import json
+import os
 import sqlite3
 import sys
+from typing import List, Optional
 
 import pandas as pd
 
-from evalbench.scorers.sqlite_bridge import get_sqlite_ground_truth
+
+def get_sqlite_ground_truth(
+    query: str,
+    database: str,
+    db_dir: str = "",
+) -> list:
+    """Resolves candidate SQLite database files and executes query."""
+
+    sqlite_path = os.path.join(db_dir, f"{database}.sqlite")
+    if not os.path.exists(sqlite_path):
+        return []
+    conn = sqlite3.connect(sqlite_path)
+    try:
+        return pd.read_sql_query(query, conn).to_dict(orient="records")
+    finally:
+        conn.close()
 
 
-def compare_result_sets(
-    df_bq: pd.DataFrame, df_sqlite: pd.DataFrame
-) -> bool:
-    """Compares two DataFrames ignoring column names and row order."""
+def compare_result_sets(df_bq: pd.DataFrame, df_sqlite: pd.DataFrame) -> bool:
+    """Compares two DataFrames ignoring column names and row order.
+
+    Normalization rules:
+    1. Floats are rounded to 4 decimal places for cross-engine consistency.
+    2. Rows are sorted lexicographically by string representation.
+    3. Trailing '.0' suffixes are stripped from stringified numeric values.
+    """
     if df_bq is None or df_sqlite is None:
         return False
 
@@ -66,10 +87,14 @@ def compare_result_sets(
 def main():
     try:
         input_data = json.load(sys.stdin)
+        database = input_data.get("database", "")
         pred_rows = input_data.get("generated_execution_result")
         ref_sql = input_data.get("golden_query", "")
 
-        sqlite_records = get_sqlite_ground_truth(ref_sql)
+        sqlite_db_dir = input_data.get("sqlite_db_dir", "")
+        sqlite_records = get_sqlite_ground_truth(
+            ref_sql, database, sqlite_db_dir
+        )
         df_sqlite = pd.DataFrame(sqlite_records)
         sqlite_res_str = json.dumps(sqlite_records)
 

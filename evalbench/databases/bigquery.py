@@ -27,7 +27,8 @@ class BQDB(DB):
         self.client = bigquery.Client(project=self.project_id)
         self.tmp_users = []
 
-    def ensure_database_exists(self):
+    def ensure_database_exists(self, database_name: str) -> None:
+        # BigQuery datasets are project-scoped; no per-database creation needed.
         pass
 
     #####################################################
