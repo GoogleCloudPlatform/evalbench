@@ -90,10 +90,14 @@ RULES & RELAXED EVALUATION CRITERIA - These MUST be strictly followed:
 2. The mapped column names/aliases might differ, do not make any assumptions based on them.
 3. Do NOT penalize the Generated SQL if it differs from the Golden SQL for ANY of the following reasons:
     - Column/Row Order: Differences in column names, column order, or row order when no requirements are specified in the QUESTION.
+    - Distinct vs. All: The QUESTION asks for a count but doesn't specify (and it isn't obvious/implicit) whether it should be all instances or only unique instances, leading one query to count 'distinct' and the other to count all, as long as all other logic is valid.
     - Rounding: Differences in integer/decimal rounding or precision when the QUESTION lacks specific guidelines.
     - Ambiguous Limit: The QUESTION asks for "top/highest" or "bottom/lowest" entries but doesn't specify a concrete limit, leading to different numbers of entries.
+    - Ambiguous Ordering: The QUESTION requests the 'first'/'top' X entries but doesn't specify the field to use for ordering.
     - Entity Representation: The QUESTION asks for a list of items but doesn't specify IDs or names, leading one output to return IDs and the other names.
+    - Null/NA Handling: The QUESTION doesn't specify whether to include or exclude 'null'/'NA' values.
     - Extra Columns: The Generated SQL has a small number of extra columns that are not explicitly excluded and don't render the overall result incorrect.
+    - Relative Time/Date: The QUESTION requests data relative to the current time/date (e.g. "the last two years") and the difference is only due to the queries being run at different times.
 
 FINAL QUESTION: Is the Generated SQL logically equivalent to the Golden SQL?
 FINAL ANSWER: Choose ONLY ONE
@@ -120,6 +124,16 @@ OUTPUT #2 (Generated Result):
 {generated_execution_result}
 
 
+OUTPUT #2 is considered correct if it correctly addresses the QUESTION and the
+key outcomes present in OUTPUT #1 (the ground truth) are also present in OUTPUT
+#2, even if OUTPUT #1 and OUTPUT #2 do not match exactly.
+
+Data-result presence rules (apply these first):
+- If OUTPUT #1 contains a non-null data result but OUTPUT #2 does not contain a
+  data result (it is empty/null), then OUTPUT #2 is INCORRECT.
+- If OUTPUT #1 does not contain a data result but OUTPUT #2 does contain a data
+  result, then OUTPUT #2 is INCORRECT.
+
 Thinking step by step, compare the two outputs and look for differences in data and presentation.
 Here are steps to follow:
 
@@ -135,10 +149,18 @@ RULES & RELAXED EVALUATION CRITERIA - These MUST be strictly followed:
 2. The mapped column names might differ, do not make any assumptions based on them.
 3. Do NOT penalize OUTPUT #2 if it differs from OUTPUT #1 for ANY of the following reasons:
     - Column/Row Order: Differences in column names, column order, or row order when no requirements are specified in the QUESTION.
+    - Distinct vs. All: The QUESTION asks for a count but doesn't specify (and it isn't obvious/implicit) whether it should be all instances or only unique instances, leading one output to count 'distinct' and the other to count all, as long as all other logic is valid.
     - Rounding: Differences in integer/decimal rounding or precision when the QUESTION lacks specific guidelines.
     - Ambiguous Limit: The QUESTION asks for "top/highest" or "bottom/lowest" entries but doesn't specify a concrete limit, leading to different numbers of entries.
+    - Ambiguous Ordering: The QUESTION requests the 'first'/'top' X entries but doesn't specify the field to use for ordering, causing the two outputs to contain different subsets derived from different orderings.
+    - Fewer Than N: The QUESTION requests the 'first'/'top' X entries but fewer than X entries are featured because fewer than X meet the criteria.
     - Entity Representation: The QUESTION asks for a list of items but doesn't specify IDs or names, leading one output to return IDs and the other names.
+    - Null/NA Handling: The QUESTION doesn't specify whether to include or exclude 'null'/'NA' values, causing the two outputs to differ on whether they include vs. exclude nulls/NAs.
     - Extra Columns: OUTPUT #2 has a small number of extra columns that are not explicitly excluded and don't render the overall result incorrect.
+    - Formatting / Type Representation: The same underlying value is presented differently, e.g. 42 vs 42.0, '2024-01-01' vs '2024-01-01 00:00:00', 'TRUE' vs true, differences in thousands separators, currency symbols, leading/trailing whitespace, or numeric vs string encodings of the same value.
+    - Equivalent Categorical Values: Semantically equivalent categorical/label values, e.g. 'M' vs 'Male', differences in case, singular vs plural, or other clearly synonymous enum/label representations of the same category.
+    - Truncation: The two outputs are truncated from different numbers of rows for display (e.g. one truncated from 3000 to 50 rows, the other from 1000 to 50), or have different numbers of rows after truncation, or (when no ordering is specified) contain a different subset of data due to truncation.
+    - Relative Time/Date: The QUESTION requests data relative to the current time/date (e.g. "the last two years"), all logic to obtain OUTPUT #2 is valid, but the outputs differ because the golden query was run at a different time.
 
 FINAL QUESTION: Does OUTPUT #2 provide the same information as OUTPUT #1?
 FINAL ANSWER: Choose ONLY ONE
@@ -256,14 +278,13 @@ class LLMRater(comparator.Comparator):
         if generated_error:
             return 0, "Generated query failed to execute."
 
-        only_first_n = 50
+        # Truncate to the first N rows (no de-duplication) to mirror the agent /
+        # Brewmax data-result truncation. The Macchiato agent caps data results
+        # at MAX_DATA_ROWS = 1000, so match that here.
+        only_first_n = 1000
 
-        golden_execution_result = self.take_n_uniques(
-            golden_execution_result, only_first_n
-        )
-        generated_execution_result = self.take_n_uniques(
-            generated_execution_result, only_first_n
-        )
+        golden_execution_result = golden_execution_result[:only_first_n]
+        generated_execution_result = generated_execution_result[:only_first_n]
 
         if is_empty_results:
             prompt = SQL_LOGIC_COMPARISON_PROMPT.format(
