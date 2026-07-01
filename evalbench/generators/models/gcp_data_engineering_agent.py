@@ -211,8 +211,6 @@ class DataEngineeringAgentGenerator(QueryGenerator):
         self.name = "data_engineering_agent"
         gcp_project_id = querygenerator_config.get("gcp_project_id", "")
         gcp_region = querygenerator_config.get("gcp_region", "")
-        repository = querygenerator_config.get("dataform_repository", "")
-        workspace = querygenerator_config.get("dataform_workspace", "")
 
         if not gcp_project_id:
             raise ValueError(
@@ -224,37 +222,12 @@ class DataEngineeringAgentGenerator(QueryGenerator):
                 "Configuration key 'gcp_region' is required for "
                 "DataEngineeringAgentGenerator."
             )
-        if not repository:
-            raise ValueError(
-                "Configuration key 'dataform_repository' is required for "
-                "DataEngineeringAgentGenerator."
-            )
-        if not workspace:
-            raise ValueError(
-                "Configuration key 'dataform_workspace' is required for "
-                "DataEngineeringAgentGenerator."
-            )
 
         self.endpoint = (
             f"https://geminidataanalytics.googleapis.com/v1/a2a/projects/"
             f"{gcp_project_id}/locations/{gcp_region}/"
             f"agents/dataengineeringagent"
         )
-        self.target_workspace = (
-            f"projects/{gcp_project_id}/locations/{gcp_region}/"
-            f"repositories/{repository}/workspaces/{workspace}"
-        )
-
-        workspace_chars = (
-            self.target_workspace.replace("/", "")
-            .replace("-", "")
-            .replace("_", "")
-        )
-        if not workspace_chars.isalnum():
-            raise ValueError(
-                "Constructed target_workspace path contains invalid "
-                f"characters: '{self.target_workspace}'"
-            )
 
         self.auth_interceptor = AuthInterceptor(GcpAdcCredentialService())
 
@@ -272,8 +245,20 @@ class DataEngineeringAgentGenerator(QueryGenerator):
         """Entry point that integrates with DataEngineeringAgentEvaluator."""
         prompt_text = prompt.nl_prompt
         conversation_id = prompt.id
+        target_workspace = getattr(prompt, "gcp_resource_id", None)
 
-        coro = self._run_client(prompt_text, conversation_id=conversation_id)
+        if not target_workspace:
+            raise ValueError(
+                "gcp_resource_id is missing from prompt object. "
+                "Ensure Dataform workspace coordinates are configured "
+                "in the evaluator."
+            )
+
+        coro = self._run_client(
+            prompt_text,
+            conversation_id=conversation_id,
+            target_workspace=target_workspace,
+        )
 
         try:
             prompt.generated_nl_response = self.run_async(coro)
@@ -283,7 +268,10 @@ class DataEngineeringAgentGenerator(QueryGenerator):
         return prompt
 
     async def _run_client(
-        self, prompt: str, conversation_id: str | None
+        self,
+        prompt: str,
+        conversation_id: str | None,
+        target_workspace: str,
     ) -> str:
         """Core asynchronous A2A SDK connection loop."""
         # Configure Client in standard Non-Streaming Mode
@@ -334,7 +322,7 @@ class DataEngineeringAgentGenerator(QueryGenerator):
 
         # Configure GCP Resource extension
         message_req.metadata[GCP_RESOURCE_URI] = {
-            "gcpResourceId": self.target_workspace
+            "gcpResourceId": target_workspace
         }
 
         # Handle ConversationToken state memory thread-safely
