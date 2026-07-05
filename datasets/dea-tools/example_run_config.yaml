@@ -21,5 +21,7 @@ scorers:
 reporting:
   csv:
     output_directory: results
+  bigquery:
+    gcp_project_id: !ENV ${EVAL_GCP_PROJECT_ID}
 runners:
   agent_runners: 1

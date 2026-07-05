@@ -7,6 +7,7 @@ import pickle
 import redis
 import re
 from dataclasses import dataclass, field
+from util.safe_pickle import safe_pickle_loads
 
 # CLIENT is initialized lazily to avoid blocking network calls during module import,
 # which can cause hangs in restricted environments like Cloud Build.
@@ -125,7 +126,7 @@ def with_cache_execute(
         cached_result = cache_client.get(query_hash)
         if cached_result:
             logging.debug(f"Using cached result for query: {query}")
-            return pickle.loads(cached_result), None, None
+            return safe_pickle_loads(cached_result), None, None
     except Exception as e:
         logging.warning(f"Failed to retrieve query from cache: {e}")
 

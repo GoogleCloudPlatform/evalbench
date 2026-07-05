@@ -1,0 +1,14 @@
+# Per-endpoint rule waivers (sample). A waived rule is excluded from the
+# P0/P1/P2 counts and reported separately under "waived". Matchers (all present
+# must match; absent field or "*" = match-all):
+#   product_name, endpoint_type.
+# rule_id references a style-guide rule's {#tag} anchor.
+
+exceptions:
+  - product_name: "Cloud SQL"          # waive one rule for one product
+    rule_id: "tool-names"
+    reason: "Legacy tool names retained for backward compatibility."
+
+  - endpoint_type: AUTOPUSH            # waive a rule across a whole channel
+    rule_id: "use-enums"
+    reason: "Autopush builds defer enum constraints until promotion to prod."

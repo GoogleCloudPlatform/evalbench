@@ -71,12 +71,12 @@ class BehavioralMetrics(comparator.Comparator):
                 clarifications = 0
 
                 hallucination_match = re.search(
-                    r'Hallucination Count:\s*(\\d+)', response_text)
+                    r'Hallucination Count:\s*(\d+)', response_text)
                 if hallucination_match:
                     hallucinations = int(hallucination_match.group(1))
 
                 clarification_match = re.search(
-                    r'Clarification Count:\s*(\\d+)', response_text)
+                    r'Clarification Count:\s*(\d+)', response_text)
                 if clarification_match:
                     clarifications = int(clarification_match.group(1))
 

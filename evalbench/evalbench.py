@@ -29,6 +29,16 @@ except ImportError:
 logging.getLogger().setLevel(logging.INFO)
 
 
+_SCENARIOS = flags.DEFINE_list(
+    "scenarios",
+    [],
+    "List of scenario IDs to run. Defaults to empty (runs all scenarios).",
+)
+_SCENARIO_PATTERN = flags.DEFINE_string(
+    "scenario_pattern",
+    None,
+    "Glob pattern of scenario IDs to run. Defaults to None (runs all scenarios).",
+)
 _SUITE_CONFIG = flags.DEFINE_string(
     "suite_config",
     None,
@@ -38,6 +48,8 @@ flags.declare_key_flag('experiment_config')
 
 
 def eval(experiment_config: str):
+    config = None
+    session_dir = None
     try:
         logging.info("EvalBench v1.0.0")
         logging.getLogger("google_genai.models").setLevel(logging.WARNING)
@@ -56,6 +68,22 @@ def eval(experiment_config: str):
         if parsed_config == "":
             logging.error(f"No Eval Config Found for '{display_config}'.")
             return
+
+        # 1. Merge Environment Variables (overrides YAML)
+        env_scenarios = os.environ.get("EVAL_SCENARIOS")
+        if env_scenarios:
+            parsed_config["scenarios"] = [s.strip() for s in env_scenarios.split(",") if s.strip()]
+
+        env_pattern = os.environ.get("EVAL_SCENARIO_PATTERN")
+        if env_pattern:
+            parsed_config["scenario_pattern"] = env_pattern
+
+        # 2. Merge CLI Flags (overrides Environment Variables and YAML)
+        if flags.FLAGS.is_parsed():
+            if _SCENARIOS.value:
+                parsed_config["scenarios"] = _SCENARIOS.value
+            if _SCENARIO_PATTERN.value:
+                parsed_config["scenario_pattern"] = _SCENARIO_PATTERN.value
 
         set_session_configs(session, parsed_config)
         # Load the configs
@@ -131,17 +159,6 @@ def eval(experiment_config: str):
 
         print(f"Finished Job ID {job_id}")
 
-        tear_down_script = config.get("tear_down_script")
-        if tear_down_script:
-            if os.path.exists(tear_down_script):
-                logging.info("Executing tear_down_script '%s'", tear_down_script)
-                run_script(tear_down_script, session_dir, "teardown")
-            else:
-                logging.error(
-                    "Cannot run tear_down_script, file not found at '%s'",
-                    tear_down_script,
-                )
-
         return True
     except Exception as e:
         display_config = experiment_config
@@ -150,6 +167,18 @@ def eval(experiment_config: str):
             display_config = display_config[g3_idx:]
         logging.exception(f"Evaluation failed for config '{display_config}': {e}")
         return False
+    finally:
+        if config and session_dir:
+            tear_down_script = config.get("tear_down_script")
+            if tear_down_script:
+                if os.path.exists(tear_down_script):
+                    logging.info("Executing tear_down_script '%s'", tear_down_script)
+                    run_script(tear_down_script, session_dir, "teardown")
+                else:
+                    logging.error(
+                        "Cannot run tear_down_script, file not found at '%s'",
+                        tear_down_script,
+                    )
 
 
 def run_suite(suite_config_path: str) -> bool:

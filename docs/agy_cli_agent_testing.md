@@ -255,26 +255,27 @@ supported:
 setup:
   skills:
     # String form: an install target passed straight to
-    # `agy plugin install`. May be a local plugin directory, a
-    # `plugin@marketplace` spec, or a git URL (cloned first).
-    - "cloud-sql-postgresql@gemini-cli-extensions"
+    # `agy plugin install`. May be a local plugin directory or a git URL
+    # (cloned first). `agy plugin install` requires the target to resolve
+    # to a directory, so a bare git URL is cloned before install.
+    - "/path/to/a/local/plugin"
 
     # Dict form: same, via an explicit target. Git URLs (scheme:// or
     # trailing .git) are cloned first, then the clone dir is installed;
-    # local paths and marketplace specs are installed in place. `url:`
-    # is conventional; `path:` is accepted as a synonym. Append
-    # `#<branch-or-tag>` to a git URL to pin a version -- the clone uses
-    # `git clone --branch`, which resolves branch and tag names only, not
-    # raw commit SHAs.
+    # local paths are installed in place. `url:` is conventional; `path:`
+    # is accepted as a synonym. Append `#<branch-or-tag>` to a git URL to
+    # pin a version -- the clone uses `git clone --branch`, which resolves
+    # branch and tag names only, not raw commit SHAs.
     - action: install_from_repo
       url: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git#v1.2.3"
 ```
 
 > [!NOTE]
-> Legacy dict actions (`link`, `install`, `enable`, `disable`,
-> `uninstall`) that the gemini-cli generator supports are **not**
-> supported here. Use a string target or `install_from_repo`.
-> Unsupported entries are logged and skipped.
+> A `plugin@marketplace` spec is not a reliable target (unlike `claude_code`/
+> `gemini_cli`); use a git URL or local directory. Legacy dict actions
+> (`link`, `install`, `enable`, `disable`, `uninstall`) that the gemini-cli
+> generator supports are **not** supported here either -- use a string target
+> or `install_from_repo`. Unsupported entries are logged and skipped.
 
 ### Fake MCP Servers (Testing)
 

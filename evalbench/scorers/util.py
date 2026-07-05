@@ -4,6 +4,7 @@ from typing import Any
 import logging
 import hashlib
 import pickle
+from util.safe_pickle import safe_pickle_loads
 
 
 def with_cache_execute(
@@ -33,7 +34,7 @@ def with_cache_execute(
         cached_result = cache_client.get(query_hash)
         if cached_result is not None:  # Ensure the result is valid
             logging.debug("Found cached result for comparing prompt")
-            return pickle.loads(cached_result)
+            return safe_pickle_loads(cached_result)
     except Exception as e:
         logging.warning(f"Failed to retrieve query from cache: {e}")
 

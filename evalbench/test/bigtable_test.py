@@ -6,16 +6,21 @@ from util import get_SessionManager
 
 
 TABLE_ID = "unit_test_table"
+# Override via env vars when the defaults below don't match your project.
+_DEFAULT_PROJECT = "cloud-db-nl2sql"
+_DEFAULT_INSTANCE = "evalbench-ci"
 
 
 @pytest.fixture(scope="session")
 def client():
     """Creates a Bigtable client for testing."""
     db_config = {
-        "gcp_project_id": "cloud-db-nl2sql",
+        "gcp_project_id": os.environ.get(
+            "EVALBENCH_BIGTABLE_PROJECT", _DEFAULT_PROJECT),
         "db_type": "bigtable",
         "database_path": "",
-        "instance_id": "evalbench",
+        "instance_id": os.environ.get(
+            "EVALBENCH_BIGTABLE_INSTANCE", _DEFAULT_INSTANCE),
         "table_name": TABLE_ID,
         "max_executions_per_minute": 100,
         "secret_manager_path": "",

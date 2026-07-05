@@ -128,11 +128,16 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                     # Explicitly set GOOGLE_APPLICATION_CREDENTIALS for Claude if secret is mounted
                     self.env["GOOGLE_APPLICATION_CREDENTIALS"] = "/etc/evalbench-sa-key/key.json"
 
-        # Copy Claude Code auth credentials from real home to fake home
-        # so the CLI can authenticate in the sandboxed environment
+        # Copy Claude Code auth credentials from real home to fake home so the
+        # CLI can authenticate in the sandboxed environment. Restricted to a
+        # tight allowlist of auth-only files: copying everything (e.g.
+        # settings.json, CLAUDE.md) silently overrides the eval's model config
+        # — settings.json `env`, `model`, and `enabledPlugins` would leak the
+        # local developer's setup into the run.
+        _AUTH_FILE_ALLOWLIST = {".credentials.json"}
         real_claude_dir = os.path.join(self.real_home, ".claude")
         if os.path.exists(real_claude_dir):
-            for fname in os.listdir(real_claude_dir):
+            for fname in _AUTH_FILE_ALLOWLIST:
                 src = os.path.join(real_claude_dir, fname)
                 dst = os.path.join(self.claude_config_dir, fname)
                 if os.path.isfile(src) and not os.path.exists(dst):
@@ -177,16 +182,33 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         if skills_dir_path:
             self._setup_skills_from_dir(skills_dir_path)
 
-    def _setup_mcp_servers(self, mcp_servers_config: dict):
-        """Configures MCP servers in a JSON config file for Claude Code.
+    def _setup_mcp_servers(self, mcp_servers_config):
+        """Configures MCP servers for Claude Code.
 
-        Supports the same config shape as Gemini CLI for HTTP MCP servers:
-          httpUrl:           URL (translated to Claude Code's `url` + `type: "http"`)
-          authProviderType:  "google_credentials" -> injects `gcloud auth print-access-token` as Bearer
-          headers:           passed through as-is
+        Two forms are supported:
 
-        Stdio servers (command/args) are passed through unchanged.
+        1. Inline servers (dict): ``{server_name: config, ...}``. Written to
+           ``mcp_servers.json`` and passed via ``--mcp-config``. Supports the
+           same config shape as Gemini CLI for HTTP MCP servers:
+             httpUrl:           URL (translated to Claude Code's `url` + `type: "http"`)
+             authProviderType:  "google_credentials" -> injects `gcloud auth print-access-token` as Bearer
+             headers:           passed through as-is
+           Stdio servers (command/args) are passed through unchanged.
+
+        2. Install from repo (list): ``[{action: "install_from_repo", url: ...}, ...]``.
+           Clones a Claude Code plugin marketplace repo whose plugin bundles MCP
+           servers (`.mcp.json` / `mcpServers` in plugin.json) and enables it in
+           settings.json. Claude Code starts the bundled MCP servers
+           automatically when the plugin is enabled -- mirroring the `skills`
+           install_from_repo flow. Each entry may also carry `plugin` (enable a
+           specific plugin instead of the marketplace's first) and `config`
+           (values for the plugin's `userConfig`, so `${user_config.*}`
+           placeholders in the bundled MCP config resolve non-interactively).
         """
+        if isinstance(mcp_servers_config, list):
+            self._install_mcp_servers_from_repo(mcp_servers_config)
+            return
+
         mcp_config = {"mcpServers": {}}
 
         for server_name, config in mcp_servers_config.items():
@@ -200,6 +222,46 @@ class ClaudeCodeGenerator(AgentCliGenerator):
             json.dump(mcp_config, f, indent=2)
 
         logging.info(f"MCP server config written to {self.mcp_config_path}")
+
+    def _install_mcp_servers_from_repo(self, mcp_servers: list):
+        """Clones plugin marketplace repos that bundle MCP servers and enables them.
+
+        Each entry: ``{action: "install_from_repo", url: "<git-url>[#tag]",
+        plugin: "<optional-plugin-name>", config: {<userConfig values>}}``.
+        Reuses the same marketplace clone/register machinery as `skills`
+        install_from_repo: the repo's `.claude-plugin/marketplace.json` is
+        registered as a `directory` source and the target plugin enabled via
+        `enabledPlugins`, so Claude Code auto-starts the plugin's bundled MCP
+        servers at startup.
+        """
+        setup_env = os.environ.copy()
+        setup_env.update(self.env)
+
+        marketplaces_dir = os.path.join(
+            self.claude_config_dir, "plugins", "marketplaces")
+        os.makedirs(marketplaces_dir, exist_ok=True)
+
+        for mcp_config in mcp_servers:
+            if not isinstance(mcp_config, dict):
+                logging.warning(f"Unsupported MCP server config: {mcp_config}")
+                continue
+            action = mcp_config.get("action")
+            url = mcp_config.get("url")
+            if action != "install_from_repo" or not url:
+                logging.warning(
+                    f"Unsupported MCP server config: {mcp_config}. When "
+                    "'mcp_servers' is a list, each entry must use "
+                    "'action: install_from_repo' with 'url'.")
+                continue
+            marketplace_dir = self._clone_marketplace_repo(
+                url, marketplaces_dir, setup_env)
+            if marketplace_dir:
+                self._register_marketplace_plugin(
+                    marketplace_dir,
+                    plugin_name=mcp_config.get("plugin"),
+                    plugin_config=mcp_config.get("config"),
+                    env=setup_env,
+                )
 
     def _translate_mcp_config(self, server_name: str, config: dict) -> dict:
         """Translates a Gemini-style MCP server config into Claude Code format."""
@@ -298,7 +360,7 @@ class ClaudeCodeGenerator(AgentCliGenerator):
             marketplace_dir = self._clone_marketplace_repo(
                 url, marketplaces_dir, setup_env)
             if marketplace_dir:
-                self._register_marketplace_plugin(marketplace_dir)
+                self._register_marketplace_plugin(marketplace_dir, env=setup_env)
 
     def _setup_skills_from_dir(self, skills_dir_path: str):
         """Registers a local plugin marketplace directory in settings.json."""
@@ -337,9 +399,20 @@ class ClaudeCodeGenerator(AgentCliGenerator):
             logging.error(f"Cloning repo '{url}' timed out")
             return None
 
-    def _register_marketplace_plugin(self, marketplace_dir: str):
+    def _register_marketplace_plugin(
+        self, marketplace_dir: str, plugin_name: str | None = None,
+        plugin_config: dict | None = None, env: dict | None = None,
+    ):
         """Reads marketplace.json and updates settings.json so Claude Code
-        auto-loads the marketplace's first plugin at startup."""
+        auto-loads a marketplace plugin at startup.
+
+        By default the marketplace's first plugin is enabled; pass
+        ``plugin_name`` to enable a specific plugin instead (used by the
+        MCP-from-repo flow when the MCP-bundling plugin isn't listed first).
+        ``plugin_config`` supplies values for the plugin's ``userConfig``,
+        written to ``pluginConfigs[<plugin-id>].options`` so ``${user_config.*}``
+        placeholders in bundled MCP/hook configs resolve non-interactively.
+        """
         marketplace_json_path = os.path.join(
             marketplace_dir, ".claude-plugin", "marketplace.json")
         if not os.path.exists(marketplace_json_path):
@@ -362,8 +435,17 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                 f"marketplace.json missing 'name' or 'plugins': {marketplace_json_path}")
             return
 
-        first = plugins[0]
-        plugin_name = first.get("name") if isinstance(first, dict) else str(first)
+        plugin_names = [
+            (p.get("name") if isinstance(p, dict) else str(p)) for p in plugins
+        ]
+        if plugin_name:
+            if plugin_name not in plugin_names:
+                logging.warning(
+                    f"Plugin '{plugin_name}' not found in {marketplace_json_path}; "
+                    f"available: {plugin_names}")
+                return
+        else:
+            plugin_name = plugin_names[0]
         if not plugin_name:
             logging.warning(f"First plugin entry has no name in {marketplace_json_path}")
             return
@@ -377,20 +459,57 @@ class ClaudeCodeGenerator(AgentCliGenerator):
             except json.JSONDecodeError:
                 settings = {}
 
+        plugin_id = f"{plugin_name}@{marketplace_name}"
+
         settings.setdefault("extraKnownMarketplaces", {})[marketplace_name] = {
             "source": {
                 "source": "directory",
                 "path": os.path.abspath(marketplace_dir),
             }
         }
-        settings.setdefault("enabledPlugins", {})[
-            f"{plugin_name}@{marketplace_name}"] = True
+        settings.setdefault("enabledPlugins", {})[plugin_id] = True
+
+        if plugin_config:
+            settings.setdefault("pluginConfigs", {}).setdefault(
+                plugin_id, {}).setdefault("options", {}).update(plugin_config)
 
         with open(settings_path, "w") as f:
             json.dump(settings, f, indent=2)
         logging.info(
-            f"Registered plugin '{plugin_name}@{marketplace_name}' "
-            f"(directory source: {marketplace_dir})")
+            f"Registered plugin '{plugin_id}' "
+            f"(directory source: {marketplace_dir})"
+            + (f" with userConfig {list(plugin_config)}" if plugin_config else ""))
+
+        self._install_plugin(plugin_id, env)
+
+    def _install_plugin(self, plugin_id: str, env: dict | None = None):
+        """Forces synchronous installation of a registered plugin."""
+        if not env:
+            env = os.environ.copy()
+            env.update(self.env)
+
+        cli = self.claude_code_version
+        if cli.startswith("@") or "/" in cli:
+            cli_base_cmd = ["npm", "exec", "--yes", cli, "--"]
+        else:
+            cli_base_cmd = [cli]
+
+        # Run a dummy command to force initialization of projects/sessions
+        # and plugin manager state. Ignore the failure (it will fail with
+        # auth error if credentials are not ready, which is expected).
+        init_command = cli_base_cmd + ["-p", "initialize_session"]
+        logging.info(f"Initializing Claude Code state: {' '.join(init_command)}")
+        self._execute_cli_command(init_command, env=env)
+
+        # Now run the actual install command
+        install_command = cli_base_cmd + ["plugins", "install", plugin_id]
+        logging.info(f"Synchronously installing plugin: {' '.join(install_command)}")
+
+        result = self._execute_cli_command(install_command, env=env)
+        if result.returncode != 0:
+            logging.error(f"Failed to install plugin '{plugin_id}': {result.stderr}")
+        else:
+            logging.info(f"Successfully installed plugin '{plugin_id}'")
 
     def generate_internal(self, cli_cmd):
         if not isinstance(cli_cmd, CLICommand):

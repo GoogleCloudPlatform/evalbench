@@ -1,0 +1,52 @@
+# Claude Code CLI version.
+#   - Globally installed binary:  "claude"
+#   - Pin to a specific npm version (uses `npm exec --yes` like Gemini CLI):
+#       "@anthropic-ai/claude-code@2.1.156"
+claude_code_version: "@anthropic-ai/claude-code@2.1.156"
+
+generator: claude_code
+
+model: "claude-opus-4-8"
+
+use_vertex: true
+env:
+  ANTHROPIC_VERTEX_PROJECT_ID: "<project>"
+  CLOUD_ML_REGION: "global"
+
+setup:
+  # MCP servers can be set up in two ways:
+  #
+  # 1. Inline (dict): declare server configs directly. Written to
+  #    mcp_servers.json and passed via --mcp-config.
+  #
+  #      mcp_servers:
+  #        "cloud-sql":
+  #          httpUrl: "https://sqladmin.googleapis.com/mcp"
+  #          authProviderType: google_credentials
+  #          headers:
+  #            X-Goog-User-Project: astana-evaluation
+  #
+  # 2. Install from repo (list): clone a Claude Code plugin marketplace repo
+  #    whose plugin bundles MCP servers (.mcp.json / mcpServers in plugin.json).
+  #    The marketplace is registered as a `directory` source and the plugin
+  #    enabled, so Claude Code auto-starts the bundled MCP servers -- mirroring
+  #    the `skills` install_from_repo flow.
+  #      - url:    git URL; append `#tag` to pin a version
+  #      - plugin: optional; enable a specific plugin (defaults to the
+  #                marketplace's first)
+  #      - config: optional; values for the plugin's `userConfig`, written to
+  #                pluginConfigs[<plugin-id>].options so `${user_config.*}`
+  #                placeholders in the bundled MCP config resolve non-interactively
+  #
+  # The data-agent-kit-starter-pack plugin ("dak") bundles 19 skills and 11 MCP
+  # servers (bigquery, spanner, cloud-sql-postgresql, dataproc, ...). Its MCP
+  # servers reference ${user_config.PROJECT_ID}, ${user_config.GCP_REGION}, and
+  # ${user_config.BIGQUERY_LOCATION}, supplied below via `config`.
+  mcp_servers:
+    - action: install_from_repo
+      url: "https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack.git"
+      plugin: "dak"
+      config:
+        PROJECT_ID: "<project>"
+        GCP_REGION: "us-central1"
+        BIGQUERY_LOCATION: "US"

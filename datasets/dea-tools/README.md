@@ -32,6 +32,13 @@ EVAL_DEA_WORKSPACE_ID=<YOUR_WORKSPACE_ID> \
 *   `EVAL_DEA_WORKSPACE_ID`: The target Dataform workspace ID (short name).
 
 ## 4. Inspect Results
-Upon completion, results will be generated under the `results/` folder:
+Upon completion, results will be generated in two locations:
+
+### Local Files (under the `results/` folder):
 *   `evals.csv`: Contains the full conversation history.
 *   `scores.csv`: Contains LLM-Judge scores and detailed reasoning for the rubric checks.
+
+### Google BigQuery (Cloud Database):
+If enabled in `example_run_config.yaml`, results are automatically uploaded to your GCP project under the table `<YOUR_GCP_PROJECT_ID>.evalbench.results`. 
+
+A clickable **Looker Studio Dashboard** link will be printed in the terminal console upon completion to visually inspect the conversation flows and scores.

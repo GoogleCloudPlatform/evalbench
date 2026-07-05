@@ -64,13 +64,13 @@ def _install_calls(mock_run):
 
 def test_setup_single_skill_string_runs_plugin_install(mock_run, sandbox):
     """A string entry is passed straight to ``agy plugin install``."""
-    target = "cloud-sql-postgresql@gemini-cli-extensions"
+    target = "/path/to/local-plugin"
     generator = AgyCliGenerator({"setup": {"skills": [target]}})
 
     calls = _install_calls(mock_run)
     assert len(calls) == 1
     assert list(calls[0].args[0]) == [
-        generator.agy_bin, "plugin", "install", "--", target,
+        generator.agy_bin, "plugin", "install", target,
     ]
 
 
@@ -99,7 +99,7 @@ def test_install_from_repo_local_path_installs_directly(
     calls = _install_calls(mock_run)
     assert len(calls) == 1
     assert list(calls[0].args[0]) == [
-        generator.agy_bin, "plugin", "install", "--", local_dir,
+        generator.agy_bin, "plugin", "install", local_dir,
     ]
 
 
@@ -125,7 +125,7 @@ def test_install_from_repo_git_url_clones_then_installs(mock_run, sandbox):
     calls = _install_calls(mock_run)
     assert len(calls) == 1
     assert list(calls[0].args[0]) == [
-        generator.agy_bin, "plugin", "install", "--", expected_clone,
+        generator.agy_bin, "plugin", "install", expected_clone,
     ]
 
 

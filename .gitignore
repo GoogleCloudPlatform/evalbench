@@ -196,11 +196,11 @@ viewer/version.txt
 .jetskicli/project.json
 
 # Local testing datasets/configs (do not commit)
-datasets/bqml/Bullseye_PCA.json
-datasets/bqml/Bullseye_PCA_config.yaml
+datasets/bqml/
 datasets/model_configs/gemini_cli_test_model.yaml
 datasets/model_configs/gemini_2.5_pro_test_model.yaml
 datasets/model_configs/gemini_3_flash_test_model.yaml
+datasets/model_configs/codex_cli_dak_model.yaml
 
 
 

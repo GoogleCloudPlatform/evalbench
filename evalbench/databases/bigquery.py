@@ -22,7 +22,7 @@ class BQDB(DB):
 
     def __init__(self, db_config):
         super().__init__(db_config)
-        self.project_id = get_gcp_project("")
+        self.project_id = get_gcp_project(db_config.get("gcp_project_id", ""))
         self.location = db_config.get("location", "US")
         self.client = bigquery.Client(project=self.project_id)
         self.tmp_users = []
@@ -179,6 +179,11 @@ class BQDB(DB):
         except Exception as e:
             print(f"Error generating DDL statements: {e}")
         return ddl_statements
+
+    def ensure_database_exists(self, database_name: str) -> None:
+        dataset_ref = bigquery.Dataset(f"{self.project_id}.{database_name}")
+        dataset_ref.location = self.location
+        self.client.create_dataset(dataset_ref, exists_ok=True)
 
     def create_tmp_database(self, database_name: str):
         dataset_ref = bigquery.Dataset(f"{self.project_id}.{database_name}")

@@ -8,6 +8,11 @@ from rich.markdown import Markdown
 from pprint import pprint
 from util.session import EvalAgentEngineSessionMgr
 
+# (connect, read) timeout in seconds. The read timeout is generous because the
+# data agent may take a while to produce a response, but it must be bounded so a
+# stalled server cannot block the evaluation indefinitely.
+_REQUEST_TIMEOUT_SECONDS = (10, 300)
+
 
 class QueryData(QueryGenerator):
     """A generator that implements QueryGenerator for QueryData."""
@@ -116,7 +121,10 @@ class QueryData(QueryGenerator):
             }
 
             response = requests.post(
-                self.adkapi_server_url + "/run", json=payload)
+                self.adkapi_server_url + "/run",
+                json=payload,
+                timeout=_REQUEST_TIMEOUT_SECONDS,
+            )
             response.raise_for_status()
             # self.session_mgr.delete_session("dataagent", "evalbench_user", session_id)
         except requests.exceptions.HTTPError as e:

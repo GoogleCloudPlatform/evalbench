@@ -5,6 +5,11 @@ from typing import Dict, Any
 from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable, DeadlineExceeded
 from util.rate_limit import ResourceExhaustedError
 
+# Per-call gRPC deadline in seconds. The API may take a while to respond, but it
+# must be bounded so a stalled server cannot block the evaluation indefinitely.
+# A breach surfaces as DeadlineExceeded, which is handled below.
+_REQUEST_TIMEOUT_SECONDS = 300.0
+
 
 class QueryDataAPIGenerator(QueryGenerator):
     """
@@ -57,7 +62,9 @@ class QueryDataAPIGenerator(QueryGenerator):
             )
 
             logger.info(f"Invoking QueryData API for project {self.project_id}")
-            response = self.client.query_data(request=request)
+            response = self.client.query_data(
+                request=request, timeout=_REQUEST_TIMEOUT_SECONDS
+            )
 
             # Extract fields safely
             generated_sql = getattr(response, "generated_query", None)

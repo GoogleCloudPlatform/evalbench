@@ -79,6 +79,63 @@ class TestEvalbench(unittest.TestCase):
 
         self.assertFalse(success)
 
+    @patch('evalbench.evalbench.run_script')
+    @patch('os.path.exists')
+    @patch('evalbench.evalbench.get_orchestrator')
+    @patch('evalbench.evalbench.load_yaml_config')
+    @patch('evalbench.evalbench.load_dataset_from_json')
+    @patch('evalbench.evalbench.set_session_configs')
+    @patch('evalbench.evalbench.load_session_configs')
+    @patch('evalbench.evalbench.get_reporters')
+    def test_eval_teardown_on_success(self, mock_get_reporters, mock_load_session, mock_set_session, mock_load_dataset, mock_load_yaml, mock_get_orch, mock_exists, mock_run_script):
+        mock_load_yaml.return_value = {"dummy": "config"}
+
+        def mock_set_session_fn(session, parsed_config):
+            session["dataset_config"] = "fake_ds.json"
+        mock_set_session.side_effect = mock_set_session_fn
+
+        mock_load_session.return_value = ({"tear_down_script": "teardown.sh"}, [{}], {}, {})
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.job_id = "job123"
+        mock_evaluator.process.return_value = ("job123", "10s", None, None, None)
+        mock_get_orch.return_value = mock_evaluator
+
+        mock_exists.return_value = True
+
+        success = evalbench_eval("fake_config.yaml")
+
+        self.assertTrue(success)
+        mock_run_script.assert_called_once_with("teardown.sh", os.path.abspath("results/job123"), "teardown")
+
+    @patch('evalbench.evalbench.run_script')
+    @patch('os.path.exists')
+    @patch('evalbench.evalbench.get_orchestrator')
+    @patch('evalbench.evalbench.load_yaml_config')
+    @patch('evalbench.evalbench.load_dataset_from_json')
+    @patch('evalbench.evalbench.set_session_configs')
+    @patch('evalbench.evalbench.load_session_configs')
+    def test_eval_teardown_on_error(self, mock_load_session, mock_set_session, mock_load_dataset, mock_load_yaml, mock_get_orch, mock_exists, mock_run_script):
+        mock_load_yaml.return_value = {"dummy": "config"}
+
+        def mock_set_session_fn(session, parsed_config):
+            session["dataset_config"] = "fake_ds.json"
+        mock_set_session.side_effect = mock_set_session_fn
+
+        mock_load_session.return_value = ({"tear_down_script": "teardown.sh"}, [{}], {}, {})
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.job_id = "job123"
+        mock_evaluator.evaluate.side_effect = Exception("Evaluation failed!")
+        mock_get_orch.return_value = mock_evaluator
+
+        mock_exists.return_value = True
+
+        success = evalbench_eval("fake_config.yaml")
+
+        self.assertFalse(success)
+        mock_run_script.assert_called_once_with("teardown.sh", os.path.abspath("results/job123"), "teardown")
+
 
 if __name__ == '__main__':
     unittest.main()

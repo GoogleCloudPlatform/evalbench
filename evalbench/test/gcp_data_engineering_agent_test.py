@@ -467,3 +467,41 @@ def test_extract_reply_text_heuristic_recursive_fallback():
 
     container = [{"some_key": "some_value"}, [nested_msg]]
     assert _find_agent_text_recursive(container) == "Nested message text"
+
+
+def test_find_agent_text_recursive_accumulation():
+    # 1. Test multiple agent messages are accumulated
+    # and joined by double newlines
+    nested_msg1 = pb.Message(role=pb.ROLE_AGENT)
+    nested_msg1.parts.append(pb.Part(text="Part 1 text"))
+    nested_msg2 = pb.Message(role=pb.ROLE_AGENT)
+    nested_msg2.parts.append(pb.Part(text="Part 2 text"))
+
+    container = [
+        nested_msg1,
+        {"some_other_key": nested_msg2},
+    ]
+    expected = "Part 1 text\n\nPart 2 text"
+    assert _find_agent_text_recursive(container) == expected
+
+    # 2. Test resilience against non-iterable primitives
+    # (should skip them and not crash)
+    class NonIterableObject:
+        pass
+
+    nested_msg3 = pb.Message(role=pb.ROLE_AGENT)
+    nested_msg3.parts.append(pb.Part(text="Valid text"))
+
+    mixed_container = {
+        "number": 42,
+        "flag": True,
+        "none_value": None,
+        "custom_obj": NonIterableObject(),
+        "nested": nested_msg3,
+    }
+    assert _find_agent_text_recursive(mixed_container) == "Valid text"
+
+    # 3. Test empty/edge cases return empty string
+    assert _find_agent_text_recursive(None) == ""
+    assert _find_agent_text_recursive([]) == ""
+    assert _find_agent_text_recursive({}) == ""

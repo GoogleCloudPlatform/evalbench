@@ -136,7 +136,7 @@ def _report(
 
 def _colab_progress(progress_reporting):
     setup_done = (
-        progress_reporting["setup_i"].value / progress_reporting["total_dbs"]
+        progress_reporting["setup_i"].value / (progress_reporting["total_dbs"] or 1)
     ) * 100
     prompt_done = (
         progress_reporting["prompt_i"].value / progress_reporting["total"]

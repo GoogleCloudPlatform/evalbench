@@ -540,29 +540,25 @@ class AgyCliGenerator(AgentCliGenerator):
             return False
         return isinstance(data, dict) and bool(data.get("name"))
 
-    # A target is a git URL (to be cloned) rather than a local path or a
-    # ``plugin@marketplace`` spec when it carries a remote scheme or ends
-    # in ``.git``.
+    # A target is a git URL (to be cloned) rather than a local path when it
+    # carries a remote scheme or ends in ``.git``.
     _GIT_URL_PATTERN = re.compile(r"^(https?|git|ssh)://|^git@|\.git(#.*)?$")
 
     def _setup_skills(self, skills: list):
         """Installs skill-bearing plugins via ``agy plugin install``.
 
-        Verified against agy v1.0.5: ``agy plugin install <target>`` reads
-        a plugin manifest (Claude/Gemini/Codex formats), processes any
-        bundled skills, materializes them under
-        ``<HOME>/.gemini/config/plugins/<name>/`` and records the install
-        in ``<HOME>/.gemini/config/import_manifest.json``. There is no
-        ``skill`` subcommand and dropping SKILL.md folders on disk
-        registers nothing.
+        Skills are delivered as plugins -- there is no ``agy skills``
+        subcommand -- so the harness shells out to ``agy plugin install``
+        for each entry. Two input shapes are supported, matching codex_cli
+        and claude_code:
 
-        Two input shapes are supported, matching the cross-CLI convention
-        used by codex_cli and claude_code:
-
-        * ``"<target>"`` -- a local plugin directory, a ``plugin@marketplace``
-          spec, or a git URL. Git URLs are cloned first, then installed.
+        * ``"<target>"`` -- a local plugin directory or a git URL (cloned
+          first; ``agy plugin install`` requires a directory target).
         * ``{"action": "install_from_repo", "url"|"path": "..."}`` -- same,
           via an explicit dict.
+
+        A ``plugin@marketplace`` spec is not a reliable target; use a git
+        URL or local directory. See docs/agy_cli_agent_testing.md.
         """
         if not skills:
             return
@@ -592,8 +588,8 @@ class AgyCliGenerator(AgentCliGenerator):
     def _resolve_skill_target(self, skill_config) -> str:
         """Maps a skills-config entry to an ``agy plugin install`` target.
 
-        Returns an install target (local dir, ``plugin@marketplace`` spec,
-        or git URL) or an empty string when the entry is unusable.
+        Returns an install target (local dir or git URL) or an empty
+        string when the entry is unusable.
         """
         if isinstance(skill_config, str):
             return skill_config
@@ -617,16 +613,8 @@ class AgyCliGenerator(AgentCliGenerator):
         return ""
 
     def _install_agy_plugin(self, target: str, env: dict) -> bool:
-        """Runs ``agy plugin install <target>``; returns True on success.
-
-        The ``--`` end-of-options delimiter precedes ``target`` so a
-        config-supplied value beginning with ``--`` is treated as the
-        positional install target rather than parsed as a flag. (There is no
-        shell-injection risk -- this is an argv list, not a shell string --
-        but the delimiter keeps a stray ``--`` value from changing the
-        command's meaning.)
-        """
-        cmd = [self.agy_bin, "plugin", "install", "--", target]
+        """Runs ``agy plugin install <target>``; returns True on success."""
+        cmd = [self.agy_bin, "plugin", "install", target]
         result = self._execute_cli_command(cmd, env=env, cwd=self.fake_home)
         if result.returncode != 0:
             logging.error(
@@ -649,14 +637,16 @@ class AgyCliGenerator(AgentCliGenerator):
                 self.plugin_manifest_path, e,
             )
             return
-        plugins = manifest.get("plugins", manifest)
-        if isinstance(plugins, dict):
-            names = sorted(plugins.keys())
-        elif isinstance(plugins, list):
+        # The manifest is ``{"imports": [{"name": ...}, ...]}``; older/other
+        # shapes may use a ``plugins`` list or a name-keyed dict.
+        plugins = manifest.get("imports", manifest.get("plugins", manifest))
+        if isinstance(plugins, list):
             names = sorted(
                 p.get("name", str(p)) if isinstance(p, dict) else str(p)
                 for p in plugins
             )
+        elif isinstance(plugins, dict):
+            names = sorted(plugins.keys())
         else:
             names = []
         logging.info("agy registered plugins: %s", names)

@@ -3,6 +3,7 @@ import datetime
 import concurrent.futures
 import logging
 import os
+import shutil
 import threading
 
 from dataset.evalgeminicliinput import EvalGeminiCliRequest
@@ -120,6 +121,25 @@ class AgentEvaluator:
         resolved_work_dir = scenario.get("resolved_work_dir")
         if resolved_work_dir:
             os.makedirs(resolved_work_dir, exist_ok=True)
+
+        # Copy declared env_files to fake_home
+        fake_home = getattr(self.generator, "fake_home", None)
+        if fake_home:
+            session_dir = os.path.dirname(fake_home)
+            env_files = scenario.get("env_files", [])
+            for env_file in env_files:
+                src_path = os.path.join(session_dir, "env_files", env_file)
+                dest_path = os.path.join(fake_home, env_file)
+                if os.path.exists(src_path):
+                    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                    shutil.copy2(src_path, dest_path)
+                    logging.info(
+                        "Natively copied env file to sandbox: %s", dest_path
+                    )
+                else:
+                    logging.warning(
+                        "Declared env file not found in session: %s", src_path
+                    )
 
         session_id = None
         for turn in range(max_turns):
