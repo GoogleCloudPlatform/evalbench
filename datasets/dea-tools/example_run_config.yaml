@@ -3,20 +3,18 @@ dataset_format: dea-format
 model_config: datasets/model_configs/gcp_data_engineering_agent_model.yaml
 simulated_user_model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
 dataset_config: datasets/dea-tools/dea-live-conversational.evalset.json
+env:
+  SCENARIO_ID: "dea-live-conversational"
 scorers:
   binary_rubric_scorer:
     model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
   dataform_cloud_compile:
     gcp_project_id: !ENV ${EVAL_GCP_PROJECT_ID}
     gcp_region: !ENV ${EVAL_GCP_PROJECT_REGION}
-    dataform_repository: !ENV ${EVAL_DEA_REPOSITORY_ID}
-    dataform_workspace: !ENV ${EVAL_DEA_WORKSPACE_ID}
     timeout_seconds: 300
   dataform_cloud_run:
     gcp_project_id: !ENV ${EVAL_GCP_PROJECT_ID}
     gcp_region: !ENV ${EVAL_GCP_PROJECT_REGION}
-    dataform_repository: !ENV ${EVAL_DEA_REPOSITORY_ID}
-    dataform_workspace: !ENV ${EVAL_DEA_WORKSPACE_ID}
     timeout_seconds: 300
 reporting:
   csv:
@@ -25,3 +23,5 @@ reporting:
     gcp_project_id: !ENV ${EVAL_GCP_PROJECT_ID}
 runners:
   agent_runners: 1
+set_up_script: datasets/dea-tools/scripts/setup_dataform.sh
+tear_down_script: datasets/dea-tools/scripts/teardown_dataform.sh

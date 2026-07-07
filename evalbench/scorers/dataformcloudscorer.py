@@ -6,6 +6,9 @@ from google.cloud import dataform_v1beta1
 import google.auth
 from google.api_core import exceptions as api_exceptions
 from scorers import comparator
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class DataformCloudBaseScorer(comparator.Comparator):
@@ -17,8 +20,6 @@ class DataformCloudBaseScorer(comparator.Comparator):
 
         project = config.get("gcp_project_id")
         location = config.get("gcp_region")
-        repository = config.get("dataform_repository")
-        workspace = config.get("dataform_workspace")
 
         if not project:
             raise ValueError(
@@ -30,22 +31,9 @@ class DataformCloudBaseScorer(comparator.Comparator):
                 "Configuration key 'gcp_region' is required for "
                 "DataformCloudBaseScorer."
             )
-        if not repository:
-            raise ValueError(
-                "Configuration key 'dataform_repository' is required for "
-                "DataformCloudBaseScorer."
-            )
-        if not workspace:
-            raise ValueError(
-                "Configuration key 'dataform_workspace' is required for "
-                "DataformCloudBaseScorer."
-            )
 
-        self.repo_name = (
-            f"projects/{project}/locations/{location}/"
-            f"repositories/{repository}"
-        )
-        self.workspace_name = f"{self.repo_name}/workspaces/{workspace}"
+        self.repo_name: str | None = None
+        self.workspace_name: str | None = None
         self.timeout_seconds = int(config.get("timeout_seconds"))
 
         # Setup client
@@ -102,16 +90,52 @@ class DataformCloudBaseScorer(comparator.Comparator):
         return state, invocation_name, failed_actions
 
     def run_dataform_cloud_command(
-        self, command: List[str]
+        self, command: List[str],
+        generated_eval_result: str | dict | None = None,
     ) -> Tuple[float, str]:
         """Executes a Dataform cloud command.
 
         Returns a score and analysis.
         """
+        if generated_eval_result:
+            try:
+                import json
+                if isinstance(generated_eval_result, dict):
+                    eval_data = generated_eval_result
+                else:
+                    eval_data = (
+                        json.loads(generated_eval_result)
+                        if generated_eval_result
+                        else {}
+                    )
+                repository_id = eval_data.get("dataform_repository")
+                workspace_id = eval_data.get("dataform_workspace")
+                if repository_id and repository_id != "N/A":
+                    project = self.config.get("gcp_project_id")
+                    location = self.config.get("gcp_region")
+                    self.repo_name = (
+                        f"projects/{project}/locations/{location}/"
+                        f"repositories/{repository_id}"
+                    )
+                    self.workspace_name = (
+                        f"{self.repo_name}/workspaces/{workspace_id}"
+                    )
+            except (json.JSONDecodeError, TypeError, AttributeError) as e:
+                logger.exception(
+                    "Failed to parse workspace id from generated_eval_result"
+                )
+                pass
+
+        if not self.repo_name or not self.workspace_name:
+            raise ValueError(
+                "Dynamic repository and workspace details are required for "
+                "DataformCloudBaseScorer. Make sure they are passed in "
+                "generated_eval_result."
+            )
+
         try:
-            # NOTE: When both dataform_cloud_compile and dataform_cloud_run scorers
-            # are enabled for an evaluation run, each scorer independently calls
-            # create_compilation_result, so the workspace compiles in the cloud twice.
+            # NOTE: When both compile and run scorers are enabled,
+            # each scorer independently compiles in the cloud.
             # This is a known redundancy in API billing spend.
 
             # Trigger compilation in the cloud (always required for both compile and run)
@@ -210,7 +234,9 @@ class DataformCloudCompileScorer(DataformCloudBaseScorer):
         generated_eval_result: str,
         generated_error: str,
     ) -> Tuple[float, str]:
-        return self.run_dataform_cloud_command(["dataform", "compile"])
+        return self.run_dataform_cloud_command(
+            ["dataform", "compile"], generated_eval_result
+        )
 
 
 class DataformCloudRunScorer(DataformCloudBaseScorer):
@@ -233,4 +259,6 @@ class DataformCloudRunScorer(DataformCloudBaseScorer):
         generated_eval_result: str,
         generated_error: str,
     ) -> Tuple[float, str]:
-        return self.run_dataform_cloud_command(["dataform", "run"])
+        return self.run_dataform_cloud_command(
+            ["dataform", "run"], generated_eval_result
+        )
