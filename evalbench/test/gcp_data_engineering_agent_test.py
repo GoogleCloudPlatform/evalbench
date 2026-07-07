@@ -74,22 +74,6 @@ def test_generator_setup_missing_region(valid_config):
     assert "gcp_region' is required" in str(excinfo.value)
 
 
-def test_generator_setup_missing_repository(valid_config):
-    config = valid_config.copy()
-    del config["dataform_repository"]
-    with pytest.raises(ValueError) as excinfo:
-        DataEngineeringAgentGenerator(config)
-    assert "dataform_repository' is required" in str(excinfo.value)
-
-
-def test_generator_setup_missing_workspace(valid_config):
-    config = valid_config.copy()
-    del config["dataform_workspace"]
-    with pytest.raises(ValueError) as excinfo:
-        DataEngineeringAgentGenerator(config)
-    assert "dataform_workspace' is required" in str(excinfo.value)
-
-
 @pytest.mark.anyio
 @patch("google.auth.default")
 async def test_get_credentials_error_resiliency_default(mock_auth_default):
@@ -114,20 +98,6 @@ async def test_get_credentials_error_resiliency_refresh(mock_auth_default):
 
     with pytest.raises(RefreshError):
         await service.get_credentials("oauth", None)
-
-
-def test_generator_setup_invalid_workspace_characters(valid_config):
-    config = valid_config.copy()
-    config["dataform_workspace"] = "test-workspace; rm -rf /"
-    with patch("google.auth.default") as mock_auth_default:
-        mock_creds = MagicMock()
-        mock_auth_default.return_value = (mock_creds, "test-project")
-
-        with pytest.raises(ValueError) as excinfo:
-            DataEngineeringAgentGenerator(config)
-        assert "target_workspace path contains invalid characters" in str(
-            excinfo.value
-        )
 
 
 @pytest.mark.anyio
@@ -192,10 +162,6 @@ def test_data_engineering_agent_generator_setup(valid_config):
             "test-project-123/locations/us-east1/agents/dataengineeringagent"
         )
         assert generator.endpoint == expected_endpoint
-        assert generator.target_workspace == (
-            "projects/test-project-123/locations/us-east1/repositories/"
-            "test-repo/workspaces/test-workspace"
-        )
         assert generator.auth_interceptor is not None
 
 
@@ -236,6 +202,10 @@ async def test_generate_internal_conversation_token_caching(
         "starting_prompt": "First message",
         "id": "conv-id-1",
     })
+    req1.gcp_resource_id = (
+        "projects/test/locations/us-west4/repositories/test-repo/"
+        "workspaces/test-workspace"
+    )
     generator.generate_internal(req1)
 
     assert CONVERSATION_TOKEN_URI not in sent_requests[0].metadata
@@ -246,6 +216,10 @@ async def test_generate_internal_conversation_token_caching(
         "starting_prompt": "Second message",
         "id": "conv-id-1",
     })
+    req2.gcp_resource_id = (
+        "projects/test/locations/us-west4/repositories/test-repo/"
+        "workspaces/test-workspace"
+    )
     generator.generate_internal(req2)
 
     assert (
@@ -258,6 +232,10 @@ async def test_generate_internal_conversation_token_caching(
         "starting_prompt": "First message for conv 2",
         "id": "conv-id-2",
     })
+    req3.gcp_resource_id = (
+        "projects/test/locations/us-west4/repositories/test-repo/"
+        "workspaces/test-workspace"
+    )
     generator.generate_internal(req3)
 
     assert CONVERSATION_TOKEN_URI not in sent_requests[2].metadata
@@ -305,6 +283,10 @@ async def test_generate_internal_uses_minimal_agent_card(
         "starting_prompt": "Please analyze table schema.",
         "id": "test-conv-id",
     })
+    req.gcp_resource_id = (
+        "projects/test/locations/us-west4/repositories/test-repo/"
+        "workspaces/test-workspace"
+    )
     result = generator.generate_internal(req)
 
     assert result.generated_nl_response == "Analysis complete."
