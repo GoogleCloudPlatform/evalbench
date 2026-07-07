@@ -8,6 +8,7 @@ from evaluator.streamingorchestrator import StreamingOrchestrator
 from evaluator.dataengineeringagentorchestrator import (
     DataEngineeringAgentOrchestrator,
 )
+from evaluator.mcp_readability import McpReadabilityOrchestrator
 import logging
 
 
@@ -25,6 +26,10 @@ def get_orchestrator(config, db_configs, setup_config, report_progress=False):
         return CortadoOrchestrator(config, db_configs, setup_config, report_progress)
     elif orchestrator_type == "dea":
         return DataEngineeringAgentOrchestrator(
+            config, db_configs, setup_config, report_progress
+        )
+    elif orchestrator_type == "mcp_readability":
+        return McpReadabilityOrchestrator(
             config, db_configs, setup_config, report_progress
         )
     else:
