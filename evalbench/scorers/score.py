@@ -1,4 +1,4 @@
-"""Performs the compare operation."""
+import inspect
 
 from scorers import comparator
 from scorers import exactmatcher
@@ -50,8 +50,11 @@ def compare(
     if "set_match" in scorers:
         comparators.append(setmatcher.SetMatcher(scorers["set_match"]))
     if "llmrater" in scorers:
-        comparators.append(llmrater.LLMRater(
-            scorers["llmrater"], global_models))
+        llmrater_config = scorers["llmrater"]
+        llmrater_config["database_configs"] = experiment_config.get(
+            "database_configs", []
+        )
+        comparators.append(llmrater.LLMRater(llmrater_config, global_models))
     if "regexp_matcher" in scorers:
         comparators.append(
             generatedqueryregexpmatcher.GeneratedQueryRegexpMatcher(
@@ -154,6 +157,9 @@ def compare(
                     custom_name = os.path.splitext(os.path.basename(script_path))[0].strip()
                 if not custom_name:
                     custom_name = key
+            scorer_config["database_configs"] = experiment_config.get(
+                "database_configs", []
+            )
             comparators.append(pythonscorer.PythonScorer(scorer_config, name=custom_name))
     if "dataform_compile" in scorers:
         comparators.append(
@@ -189,6 +195,15 @@ def compare(
         comparison_result = comparator.ComparisonResult(comp, 0)
         try:
             if eval_output_item["generated_sql"] is not None:
+                # Dynamically inspect signature to only pass the 'database'
+                # parameter to comparators that explicitly support it,
+                # preventing TypeError crashes in other framework scorers.
+                compare_signature = inspect.signature(comp.compare)
+                compare_kwargs = {}
+                if "database" in compare_signature.parameters:
+                    compare_kwargs["database"] = (
+                        eval_output_item.get("database", "")
+                    )
                 score, logs = comp.compare(
                     eval_output_item["nl_prompt"],
                     eval_output_item["golden_sql"],
@@ -200,6 +215,7 @@ def compare(
                     eval_output_item["generated_result"],
                     eval_output_item.get("eval_results", ""),
                     eval_output_item["generated_error"],
+                    **compare_kwargs,
                 )
                 comparison_result.score = score
                 comparison_result.comparison_logs = logs
