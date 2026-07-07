@@ -161,14 +161,14 @@ class DataformWorkspaceManager:
     def setup_workspace(
         self,
         job_id: str,
-        dataset_domain: str = "default",
+        scenario_id: str = "default",
         env_files_dir: str | None = None,
     ) -> str:
         """Dynamically creates a Dataform repository and workspace."""
         repository_id = f"evalbench-{job_id}"
         repository_path = self._create_repository(repository_id)
 
-        workspace_id = dataset_domain
+        workspace_id = scenario_id
         workspace_path = self._create_workspace(repository_id, workspace_id)
 
         if env_files_dir:

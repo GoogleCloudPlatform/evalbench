@@ -4,13 +4,20 @@ import sys
 from absl import logging
 
 
-def run_script(script_path: str, session_dir: str, label: str = "script") -> int:
+def run_script(
+    script_path: str,
+    session_dir: str,
+    label: str = "script",
+    env_updates: dict = None
+) -> int:
     """Runs a shell script, capturing and logging all output to stdout and a file.
 
     Args:
         script_path: The full path to the shell script file.
         session_dir: The directory where log output should be written.
         label: A descriptive name for the script (e.g. 'setup') to use in the log filename.
+        env_updates: Optional dictionary of environment variables to merge
+                     into the script's environment.
 
     Returns:
         The return code of the process, or -1 if execution failed.
@@ -33,14 +40,19 @@ def run_script(script_path: str, session_dir: str, label: str = "script") -> int
 
     try:
         with open(log_file_path, "w", encoding="utf-8") as log_file:
+
+            env = os.environ.copy()
+            if env_updates:
+                env.update(env_updates)
+
             # Use bash explicitly to execute the shell script
             # Merge stderr into stdout using STDOUT so all outputs are chronologically interleaved
             process = subprocess.Popen(
-                ["bash", script_path],
+                ["bash", script_path, session_dir],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                env=os.environ.copy(),
+                env=env,
                 bufsize=1,  # line buffered
             )
 
