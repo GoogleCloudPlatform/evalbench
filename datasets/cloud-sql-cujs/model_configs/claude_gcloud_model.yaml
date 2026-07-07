@@ -1,0 +1,11 @@
+claude_code_version: "@anthropic-ai/claude-code@latest"
+generator: claude_code
+model: "claude-opus-4-8"
+
+use_vertex: true
+vertex_project_id: "astana-evaluation"
+vertex_region: "global"
+
+env:
+  GOOGLE_CLOUD_PROJECT: "astana-evaluation"
+

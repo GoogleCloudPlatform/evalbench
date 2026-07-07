@@ -1,0 +1,35 @@
+# Claude + MCP Toolbox PREBUILT tools (googleapis/mcp-toolbox) served as an MCP
+# server over stdio. Uses the FULL 'cloud-sql-postgres' prebuilt toolset (~50
+# tools): control-plane (create/get/clone instance, create database/user, list
+# instances/databases, backups, wait_for_operation) PLUS data-plane
+# (execute_sql, list_tables/schemas/views/indexes, generate_query, query
+# plans/metrics) and observability. This supersedes 'cloud-sql-postgres-admin'
+# (the admin-only subset) and gives the agent typed data-plane tools too.
+claude_code_version: "@anthropic-ai/claude-code@latest"
+generator: claude_code
+model: "claude-opus-4-8"
+
+use_vertex: true
+vertex_project_id: "astana-evaluation"
+vertex_region: "global"
+
+env:
+  GOOGLE_CLOUD_PROJECT: "astana-evaluation"
+  CLOUD_SQL_POSTGRES_PROJECT: "astana-evaluation"
+  CLOUD_SQL_POSTGRES_REGION: "us-central1"
+  CLOUD_SQL_POSTGRES_INSTANCE: "my-pg-app-bbf9a3"
+  CLOUD_SQL_POSTGRES_DATABASE: "postgres"
+  CLOUD_SQL_POSTGRES_USER: "postgres"
+  CLOUD_SQL_POSTGRES_PASSWORD: "EvalBench-reset-2026!"
+  CLOUD_SQL_POSTGRES_IP_TYPE: "PUBLIC"
+
+setup:
+  mcp_servers:
+    "cloud-sql-postgres":
+      command: "npx"
+      args:
+        - "-y"
+        - "@toolbox-sdk/server"
+        - "--prebuilt"
+        - "cloud-sql-postgres"
+        - "--stdio"

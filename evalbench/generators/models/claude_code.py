@@ -649,9 +649,19 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         if model:
             command.extend(["--model", model])
 
-        # MCP server config
+        # MCP server config. Always pass an explicit --mcp-config and run with
+        # --strict-mcp-config so the agent uses ONLY the declared servers and
+        # never inherits MCP servers persisted in the (reused) fake-home or the
+        # user's real ~/.claude (which silently leaked the sqladmin MCP into
+        # gcloud-only runs). For configs with no MCP, an empty config => no MCP.
         if hasattr(self, "mcp_config_path") and os.path.exists(self.mcp_config_path):
             command.extend(["--mcp-config", self.mcp_config_path])
+        else:
+            empty_mcp = os.path.join(self.claude_config_dir, "mcp_empty.json")
+            with open(empty_mcp, "w") as f:
+                json.dump({"mcpServers": {}}, f)
+            command.extend(["--mcp-config", empty_mcp])
+        command.append("--strict-mcp-config")
 
         # Resume session: `--resume <session_id>` takes the UUID as its value.
         # `--fork-session` creates a new session ID from the resumed history,

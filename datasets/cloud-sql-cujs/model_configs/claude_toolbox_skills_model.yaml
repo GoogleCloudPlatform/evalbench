@@ -1,0 +1,26 @@
+# Claude + MCP Toolbox SKILLS (gemini-cli-extensions/cloud-sql-postgresql).
+# Installs the cloud-sql-postgresql agent skills (Admin, Data, Health, Lifecycle,
+# Monitor, Replication, View Config) which wrap the same toolbox under the hood,
+# delivered as SKILL.md + scripts rather than an MCP server.
+claude_code_version: "@anthropic-ai/claude-code@latest"
+generator: claude_code
+model: "claude-opus-4-8"
+
+use_vertex: true
+vertex_project_id: "astana-evaluation"
+vertex_region: "global"
+
+env:
+  GOOGLE_CLOUD_PROJECT: "astana-evaluation"
+  CLOUD_SQL_POSTGRES_PROJECT: "astana-evaluation"
+  CLOUD_SQL_POSTGRES_REGION: "us-central1"
+  CLOUD_SQL_POSTGRES_INSTANCE: "my-pg-app-bbf9a3"
+  CLOUD_SQL_POSTGRES_DATABASE: "postgres"
+  CLOUD_SQL_POSTGRES_USER: "postgres"
+  CLOUD_SQL_POSTGRES_PASSWORD: "EvalBench-reset-2026!"
+  CLOUD_SQL_POSTGRES_IP_TYPE: "PUBLIC"
+
+setup:
+  skills:
+    - action: install_from_repo
+      url: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git"

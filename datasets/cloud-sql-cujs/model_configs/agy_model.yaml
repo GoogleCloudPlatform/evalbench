@@ -1,0 +1,31 @@
+generator: agy_cli
+
+# Model to use. The harness passes this via agy's `--model` flag (agy
+# >=1.0.5). The value must be the exact agy UI label (NOT an API id like
+# "gemini-3.1-pro") -- list the valid labels with `agy models`. An unrecognized
+# label is silently ignored and agy falls back to its default model (Gemini 3.5 Flash (Medium)).
+# Omit this key to leave the flag off, so agy uses its own default.
+model: "Gemini 3.5 Flash (High)"
+
+env:
+  # Set to your project
+  GOOGLE_CLOUD_PROJECT: "astana-evaluation"
+  GOOGLE_CLOUD_LOCATION: "global"
+  GOOGLE_GENAI_USE_VERTEXAI: "true"
+
+setup:
+  mcp_servers:
+    "cloud-sql":
+      # agy's native HTTP endpoint field is "serverUrl"; "url" also works
+      # as of v1.0.5. A gemini-style "httpUrl" is auto-translated to
+      # "serverUrl" by the harness (_translate_mcp_config), so it works
+      # too -- but prefer "serverUrl" here. authProviderType/oauth/headers
+      # are native agy fields, so Google auth works without Bearer-header
+      # injection.
+      serverUrl: "https://sqladmin.googleapis.com/mcp"
+      authProviderType: google_credentials
+      oauth:
+        scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+      headers:
+        X-Goog-User-Project: astana-evaluation

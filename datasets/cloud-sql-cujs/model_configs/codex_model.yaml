@@ -1,0 +1,36 @@
+# OpenAI Codex CLI version.
+#   - Globally installed binary:  "codex"
+#   - Pin to a specific npm version (uses `npm exec --yes` like Gemini CLI):
+#       "@openai/codex@latest"
+codex_cli_version: "@openai/codex@latest"
+
+generator: codex_cli
+
+# Model to use. Pass any model id supported by your OpenAI account, e.g.
+# "gpt-5.5", "o4-mini", "gpt-4.1", etc.
+model: "gpt-5.5"
+
+# OPENAI_API_KEY is fetched from Google Secret Manager. Provide the resource
+# path; either the bare form or the `secret_manager://` URL form works.
+openai_api_key_secret: "projects/393137573/secrets/OPENAI_API_KEY/versions/1"
+
+# Codex's NDJSON has token counts but no cost. Provide rates here and
+# evalbench will compute `cost_usd` per turn. Update these to match the
+# model you set above; rates below are placeholder OpenAI list prices.
+# `cached_input_per_million_usd` is optional — defaults to 10% of input.
+pricing:
+  input_per_million_usd:        1.25
+  cached_input_per_million_usd: 0.125
+  output_per_million_usd:       10.0
+
+env:
+  GOOGLE_CLOUD_PROJECT: "astana-evaluation"
+  GOOGLE_CLOUD_LOCATION: "us-central1"
+
+setup:
+  mcp_servers:
+    "cloud-sql":
+      httpUrl: "https://sqladmin.googleapis.com/mcp"
+      authProviderType: google_credentials
+      headers:
+        X-Goog-User-Project: astana-evaluation

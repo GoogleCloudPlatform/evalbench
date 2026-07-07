@@ -1,0 +1,33 @@
+dataset_config: datasets/cloud-sql-cujs/cloud_sql_medium.json
+dataset_format: agent-format
+product_name: cloudsql
+eval_group: toolbox-skills
+orchestrator: agent
+model_config: datasets/cloud-sql-cujs/model_configs/claude_toolbox_skills_model.yaml
+simulated_user_model_config: datasets/cloud-sql-cujs/model_configs/gemini_3.1_pro_model.yaml
+
+runners:
+  agent_runners: 1
+
+scorers:
+  trajectory_matcher:
+    filter_native_tools: false
+  goal_completion:
+    model_config: datasets/cloud-sql-cujs/model_configs/gemini_3.1_pro_model.yaml
+  behavioral_metrics:
+    model_config: datasets/cloud-sql-cujs/model_configs/gemini_3.1_pro_model.yaml
+  parameter_analysis:
+    model_config: datasets/cloud-sql-cujs/model_configs/gemini_3.1_pro_model.yaml
+  turn_count: {}
+  end_to_end_latency: {}
+  tool_call_latency: {}
+  token_consumption: {}
+
+reporting:
+  bigquery:
+    gcp_project_id: cloud-db-nl2sql
+  csv:
+    output_directory: 'results'
+
+set_up_script: datasets/cloud-sql-cujs/scripts/teardown_evalset.sh
+tear_down_script: datasets/cloud-sql-cujs/scripts/teardown_evalset.sh

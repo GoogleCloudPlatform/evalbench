@@ -1,0 +1,15 @@
+generator: agy_cli
+
+# Model to use. The harness passes this via agy's `--model` flag (agy
+# >=1.0.5). The value must be the exact agy UI label (NOT an API id like
+# "gemini-3.1-pro") -- list the valid labels with `agy models`. An unrecognized
+# label is silently ignored and agy falls back to its default model (Gemini 3.5 Flash (Medium)).
+# Omit this key to leave the flag off, so agy uses its own default.
+model: "Gemini 3.5 Flash (High)"
+
+env:
+  # Set to your project
+  GOOGLE_CLOUD_PROJECT: "astana-evaluation"
+  GOOGLE_CLOUD_LOCATION: "global"
+  GOOGLE_GENAI_USE_VERTEXAI: "true"
+
