@@ -2,6 +2,8 @@ import concurrent.futures
 import datetime
 import json
 import logging
+import os
+import re
 from typing import Any, List
 
 from dataset.dataengineeringagentinput import EvalDeaRequest
@@ -13,6 +15,10 @@ from work.agentgenwork import AgentGenWork
 from evaluator.simulateduser import SimulatedUser
 from work.agentscorework import AgentScoreWork
 from util.config import load_yaml_config
+
+_WORKSPACE_RE = re.compile(
+    r"^projects/[^/]+/locations/[^/]+/repositories/([^/]+)/workspaces/([^/]+)$"
+)
 
 # Module-level logger
 logger = logging.getLogger(__name__)
@@ -48,6 +54,13 @@ class DataEngineeringAgentEvaluator:
         self.agent_runners = runner_config.get("agent_runners", 10)
         self.agentrunner = mprunner.MPRunner(self.agent_runners)
 
+    def _get_session_dir(self, job_id: str) -> str:
+        """Resolves the session directory path for a given job ID."""
+        reporting_config = self.config.get("reporting") or {}
+        csv_config = reporting_config.get("csv") or {}
+        base_output_dir = csv_config.get("output_directory", "results")
+        return os.path.abspath(os.path.join(base_output_dir, job_id))
+
     def evaluate(
         self,
         dataset: List[EvalDeaRequest],
@@ -58,6 +71,29 @@ class DataEngineeringAgentEvaluator:
         eval_outputs: List[dict[str, Any]] = []
         scoring_results: List[dict[str, Any]] = []
         logger.info("Running pure conversational DEA evaluation")
+
+        session_dir = self._get_session_dir(job_id)
+        state_file = os.path.join(session_dir, "target_workspace.txt")
+        workspace_uri = ""
+
+        if os.path.exists(state_file):
+            with open(state_file, "r", encoding="utf-8") as sf:
+                workspace_uri = sf.read().strip()
+            logger.info(
+                "Redirecting DEA evaluation to dynamic workspace: %s",
+                workspace_uri,
+            )
+            match = _WORKSPACE_RE.match(workspace_uri)
+            if match:
+                repo_id = match.group(1)
+                ws_id = match.group(2)
+                for item in dataset:
+                    item.gcp_resource_id = workspace_uri
+                    item.dataform_repository = repo_id
+                    item.dataform_workspace = ws_id
+            else:
+                for item in dataset:
+                    item.gcp_resource_id = workspace_uri
 
         self.agentrunner.futures.clear()
 
