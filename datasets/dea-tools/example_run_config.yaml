@@ -25,3 +25,7 @@ runners:
   agent_runners: 1
 set_up_script: datasets/dea-tools/scripts/setup_dataform.sh
 tear_down_script: datasets/dea-tools/scripts/teardown_dataform.sh
+dataform_workspace_gcs_archive:
+  bucket: !ENV ${EVAL_GCP_PROJECT_ID}-evalbench-archives
+  path_prefix: workspaces
+  gcp_project_id: !ENV ${EVAL_GCP_PROJECT_ID}
