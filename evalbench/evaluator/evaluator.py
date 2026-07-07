@@ -2,6 +2,7 @@ import collections
 import concurrent.futures
 import datetime
 import logging
+import queue
 from queue import Queue
 import time
 from typing import Any, List
@@ -290,8 +291,6 @@ class Evaluator:
                         logging.error(f"Multi-trial scoring future error: {e}")
 
         if close_connections and db_queue:
-            import queue
-
             while True:
                 try:
                     db = db_queue.get(block=False)
