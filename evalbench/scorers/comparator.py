@@ -34,6 +34,8 @@ class Comparator(abc.ABC):
         generated_execution_result: Any,
         generated_eval_result: Any,
         generated_error: Any,
+        database: str = "",
+        **kwargs,
     ) -> Tuple[float, str]:
         """Abstract method to compare two execution results.
 
@@ -45,6 +47,7 @@ class Comparator(abc.ABC):
           generated_query: The generated query.
           generated_execution_result: The actual execution result, obtained by
             running the generated query.
+          database: Optional database name being evaluated.
 
         Returns:
           Tuple[int, str] containing a score and an analysis of the comparison.

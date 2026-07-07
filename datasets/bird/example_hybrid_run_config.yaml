@@ -1,0 +1,44 @@
+############################################################
+### Dataset / Eval Items (Hybrid BigQuery -> SQLite Mode)
+############################################################
+# The JSON list of prompts / golden SQLs and eval attributes for the run
+dataset_config: datasets/bird/prompts.json
+
+# Database configs mapping to BigQuery (for executing generated SQL)
+database_configs:
+ - datasets/bat/db_configs/bigquery.yaml
+
+# Filter dialet to bigquery for query execution
+dialects:
+ - bigquery
+query_types:
+ - dql
+dataset_format: bird-standard-format
+
+############################################################
+### Prompt and Generation Modules
+############################################################
+# The YAML config for the model to be used for SQL generation
+model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+# The prompt generator module id
+prompt_generator: 'SQLGenBasePromptGenerator'
+
+############################################################
+### Scorer Related Configs
+############################################################
+scorers:
+  llmrater:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+    # Fallback to local SQLite database when golden query execution fails on BQ
+    hybrid_ground_truth: true
+  python_scorer:
+    # Isolated cross-database Execution Accuracy (XA) judge script
+    script_path: 'evalbench/scorers/judges/hybrid_xa_judge.py'
+    scorer_name: 'hybrid_cross_db'
+
+############################################################
+### Reporting Related Configs
+############################################################
+reporting:
+  csv:
+    output_directory: 'results'

@@ -24,6 +24,7 @@ Each evaluation item in the JSON file includes the following keys:
 ## Important Notes
 
 - **Multiple Dialects:** Each SQL-related key (`golden_sql`, `eval_query`, `setup_sql`, `cleanup_sql`) maps dialects to their corresponding queries. This ensures that the evaluation items can be used across different database systems.
+- **Hybrid Engine Evaluations (Cross-Database Mode):** When running hybrid cross-database benchmarks (e.g. generating and executing queries on BigQuery but validating them against SQLite references), the `golden_sql` queries must map to the execution engine's dialect (e.g., `"bigquery"`), even if those reference queries themselves are written in SQLite syntax.
 - **Custom Metadata:** The `other` field is optional and can contain any additional information you deem necessary for reporting or contextual purposes.
 - **Structured Testing:** By defining separate SQL statements for setup, evaluation, and cleanup, this configuration supports robust testing of DDL operations.
 
