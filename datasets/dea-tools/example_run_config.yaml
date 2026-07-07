@@ -29,3 +29,4 @@ dataform_workspace_gcs_archive:
   bucket: !ENV ${EVAL_GCP_PROJECT_ID}-evalbench-archives
   path_prefix: workspaces
   gcp_project_id: !ENV ${EVAL_GCP_PROJECT_ID}
+  gcp_region: !ENV ${EVAL_GCP_PROJECT_REGION}
