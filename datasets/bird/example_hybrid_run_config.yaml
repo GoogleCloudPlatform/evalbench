@@ -2,11 +2,11 @@
 ### Dataset / Eval Items (Hybrid BigQuery -> SQLite Mode)
 ############################################################
 # The JSON list of prompts / golden SQLs and eval attributes for the run
-dataset_config: datasets/bird/prompts.json
+dataset_config: datasets/bird/prompts_2db.json
 
-# Database configs mapping to BigQuery (for executing generated SQL)
 database_configs:
  - datasets/bat/db_configs/bigquery.yaml
+ - datasets/bird/db_configs/sqlite.yaml
 
 # Filter dialet to bigquery for query execution
 dialects:
@@ -40,5 +40,5 @@ scorers:
 ### Reporting Related Configs
 ############################################################
 reporting:
-  csv:
-    output_directory: 'results'
+  bigquery:
+    dataset_location: "US"
