@@ -3,6 +3,10 @@ project_id: "<YOUR_GCP_PROJECT_ID>"
 location: "<YOUR_GDA_LOCATION>"
 generator: "query_data_api"
 
+# Optional. Override the default production endpoint (leave unset for prod).
+# Example — sandbox: "autopush-geminidataanalytics.sandbox.googleapis.com"
+# api_endpoint: "<HOSTNAME>"
+
 # This context block directly maps to the gda.QueryDataContext protobuf definition
 context:
   datasource_references:
