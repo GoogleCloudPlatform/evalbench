@@ -21,8 +21,9 @@
     {
       "id": "dea-programmatic-scenario-2",
       "starting_prompt": "In my Dataform workspace, create a new SQLX view called `simple_constant_view` that selects a constant value (1 as value). Put it in `definitions/simple_constant_view.sqlx` and write it to the workspace. Overwrite `workflow_settings.yaml` to set `defaultLocation` to 'US' (not us-central1). Go straight to the answer.",
-      "max_turns": 1,
+      "max_turns": 2,
       "conversation_plan": [
+        "Approve the plan the agent generates.",
         "Verify that the agent confirms it has written the file simple_constant_view.sqlx."
       ],
       "binary_rubric": [
