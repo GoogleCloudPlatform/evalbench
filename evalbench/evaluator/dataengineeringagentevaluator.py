@@ -10,11 +10,14 @@ from dataset.dataengineeringagentinput import EvalDeaRequest
 from generators.models.gcp_data_engineering_agent import (
     DataEngineeringAgentGenerator,
 )
+from google.api_core import exceptions as api_exceptions
+from google.cloud import storage
 from mp import mprunner
 from work.agentgenwork import AgentGenWork
 from evaluator.simulateduser import SimulatedUser
 from work.agentscorework import AgentScoreWork
 from util.config import load_yaml_config
+from util.dataform_workspace import DataformWorkspaceManager
 
 _WORKSPACE_RE = re.compile(
     r"^projects/[^/]+/locations/[^/]+/repositories/([^/]+)/workspaces/([^/]+)$"
@@ -103,28 +106,30 @@ class DataEngineeringAgentEvaluator:
             "scorers": self.config.get("scorers", {}),
         }
 
-        # Submit scenarios concurrently to parallel worker threads
-        for item in dataset:
-            simulated_user = SimulatedUser(self.config)
-            work = AgentGenWork(
-                processor=self.process_scenario,
-                eval_result=item,
-                job_id=job_id,
-                metadata=metadata,
-                simulated_user=simulated_user,
-            )
-            self.agentrunner.execute_work(work)
+        try:
+            for item in dataset:
+                simulated_user = SimulatedUser(self.config)
+                work = AgentGenWork(
+                    processor=self.process_scenario,
+                    eval_result=item,
+                    job_id=job_id,
+                    metadata=metadata,
+                    simulated_user=simulated_user,
+                )
+                self.agentrunner.execute_work(work)
 
-        futures = self.agentrunner.futures
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                modified_item = future.result()
-                if hasattr(modified_item, "agent_results"):
-                    eval_outputs.extend(modified_item.agent_results)
-                if hasattr(modified_item, "scoring_results"):
-                    scoring_results.extend(modified_item.scoring_results)
-            except Exception as e:
-                logger.exception(f"Error getting result from future: {e}")
+            futures = self.agentrunner.futures
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    modified_item = future.result()
+                    if hasattr(modified_item, "agent_results"):
+                        eval_outputs.extend(modified_item.agent_results)
+                    if hasattr(modified_item, "scoring_results"):
+                        scoring_results.extend(modified_item.scoring_results)
+                except Exception as e:
+                    logger.exception(f"Error getting result from future: {e}")
+        finally:
+            self._archive_workspace_to_gcs(workspace_uri, job_id, dataset)
 
         return eval_outputs, scoring_results
 
@@ -201,6 +206,71 @@ class DataEngineeringAgentEvaluator:
         )
         return eval_result
 
+    def _archive_workspace_to_gcs(
+        self, workspace_uri: str, job_id: str, dataset: list
+    ) -> None:
+        """Archives the Dataform workspace to GCS if configured."""
+        archive_config = self.config.get("dataform_workspace_gcs_archive")
+        if not archive_config or not workspace_uri:
+            return
+
+        try:
+            bucket_name = archive_config.get("bucket")
+            prefix = archive_config.get("path_prefix", "workspaces")
+            project_id = archive_config.get("gcp_project_id")
+            location = archive_config.get("gcp_region")
+            if not project_id:
+                raise ValueError(
+                    "gcp_project_id must be specified in "
+                    "dataform_workspace_gcs_archive config."
+                )
+            if not location:
+                raise ValueError(
+                    "gcp_region must be specified in "
+                    "dataform_workspace_gcs_archive config."
+                )
+            manager = DataformWorkspaceManager(project_id, location)
+            zip_bytes = manager.download_and_zip(workspace_uri)
+            gcs_client = storage.Client(project=project_id)
+
+            try:
+                bucket = gcs_client.get_bucket(bucket_name)
+            except api_exceptions.NotFound:
+                logger.info("Bucket %s not found. Creating...", bucket_name)
+                bucket = gcs_client.create_bucket(
+                    bucket_name, location=location
+                )
+
+            scenario_id = self.config.get("env", {}).get(
+                "SCENARIO_ID", "default"
+            )
+
+            blob_path = f"{prefix}/{job_id}/{scenario_id}_debug.zip"
+            blob = bucket.blob(blob_path)
+
+            blob.upload_from_string(
+                zip_bytes, content_type="application/zip"
+            )
+
+            gcs_uri = f"gs://{bucket_name}/{blob_path}"
+            logger.info("Exported workspace archive to %s", gcs_uri)
+
+            for item in dataset:
+                item.gcs_debug_archive = gcs_uri
+                if not getattr(item, "dataform_repository", None):
+                    item.dataform_repository = f"evalbench-{job_id}"
+                if not getattr(item, "dataform_workspace", None):
+                    item.dataform_workspace = "default"
+
+                # Propagate GCS archive link and workspace coordinates
+                # to finalized results in-place.
+                for res in getattr(item, "agent_results", []):
+                    res["gcs_debug_archive"] = gcs_uri
+                    res["dataform_repository"] = item.dataform_repository
+                    res["dataform_workspace"] = item.dataform_workspace
+        except Exception as e:
+            logger.exception(f"Error archiving workspace to GCS: {e}")
+
     def _finalize_scenario(
         self,
         scenario: dict[str, Any],
@@ -229,6 +299,15 @@ class DataEngineeringAgentEvaluator:
             "accumulated_skills": [],
             "job_id": job_id,
             "metadata": metadata,
+            "dataform_repository": getattr(
+                eval_result, "dataform_repository", ""
+            ),
+            "dataform_workspace": getattr(
+                eval_result, "dataform_workspace", ""
+            ),
+            "gcs_debug_archive": getattr(
+                eval_result, "gcs_debug_archive", ""
+            ),
         }
 
         score_work = AgentScoreWork(
