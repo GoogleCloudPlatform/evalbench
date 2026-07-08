@@ -79,6 +79,11 @@ class DataEngineeringAgentEvaluator:
         state_file = os.path.join(session_dir, "target_workspace.txt")
         workspace_uri = ""
 
+        repo_id = self.config.get("dataform_repository")
+        ws_id = self.config.get("dataform_workspace")
+        project_id = self.config.get("gcp_project_id") or self.config.get("project_id")
+        region = self.config.get("gcp_region") or self.config.get("region")
+
         if os.path.exists(state_file):
             with open(state_file, "r", encoding="utf-8") as sf:
                 workspace_uri = sf.read().strip()
@@ -97,6 +102,22 @@ class DataEngineeringAgentEvaluator:
             else:
                 for item in dataset:
                     item.gcp_resource_id = workspace_uri
+        elif repo_id and ws_id and project_id and region:
+            workspace_uri = f"projects/{project_id}/locations/{region}/repositories/{repo_id}/workspaces/{ws_id}"
+            logger.info(
+                "Using configured static workspace: %s",
+                workspace_uri,
+            )
+            for item in dataset:
+                item.gcp_resource_id = workspace_uri
+                item.dataform_repository = repo_id
+                item.dataform_workspace = ws_id
+        else:
+            raise ValueError(
+                "No workspace configured. Either provide setup/teardown scripts "
+                "for dynamic sandbox, or configure static 'dataform_repository', "
+                "'dataform_workspace', 'gcp_project_id', and 'gcp_region' in your run config."
+            )
 
         self.agentrunner.futures.clear()
 
