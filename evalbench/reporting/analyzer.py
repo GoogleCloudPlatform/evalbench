@@ -79,6 +79,8 @@ def analyze_one_metric(
                 "end_to_end_latency",
                 "tool_call_latency",
                 "token_consumption",
+                "tokens_processed",
+                "effective_billed_tokens",
             ]
             if metric_name in non_binary_metrics:
                 avg_val = df_metric["score"].mean(
