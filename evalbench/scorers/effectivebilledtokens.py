@@ -76,6 +76,7 @@ class EffectiveBilledTokens(comparator.Comparator):
                 history = json.loads(history)
 
             total_tokens = 0.0
+            invalid_agent_payloads = 0
 
             if isinstance(history, list):
                 for turn in history:
@@ -99,14 +100,21 @@ class EffectiveBilledTokens(comparator.Comparator):
                                 * self.output_weight
                             )
                     except json.JSONDecodeError:
-                        pass
+                        invalid_agent_payloads += 1
 
+                skipped_note = (
+                    f" Skipped {invalid_agent_payloads} turn(s) with invalid "
+                    f"agent JSON."
+                    if invalid_agent_payloads
+                    else ""
+                )
                 return float(total_tokens), (
                     f"Effective billed tokens: {total_tokens} "
                     f"(weighted: input={self.input_weight}, "
                     f"cached={self.cached_weight}, "
                     f"cache_write={self.cache_write_weight}, "
                     f"output={self.output_weight})."
+                    f"{skipped_note}"
                 )
             else:
                 return 0.0, "Conversation history is not a list."
