@@ -65,6 +65,7 @@ class TokensProcessed(comparator.Comparator):
                 history = json.loads(history)
 
             total_tokens = 0.0
+            malformed_agent_entries = 0
 
             if isinstance(history, list):
                 for turn in history:
@@ -87,11 +88,17 @@ class TokensProcessed(comparator.Comparator):
                                 + tokens.get("cache_creation", 0.0)
                             )
                     except json.JSONDecodeError:
-                        pass
+                        malformed_agent_entries += 1
 
+                malformed_note = (
+                    f" Skipped {malformed_agent_entries} malformed agent "
+                    f"response(s)."
+                    if malformed_agent_entries
+                    else ""
+                )
                 return float(total_tokens), (
                     f"Agent processed {total_tokens} tokens "
-                    f"(incl. cached context)."
+                    f"(incl. cached context).{malformed_note}"
                 )
             else:
                 return 0.0, "Conversation history is not a list."
