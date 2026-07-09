@@ -18,6 +18,8 @@ from scorers import turncount
 from scorers import endtoendlatency
 from scorers import toolcalllatency
 from scorers import tokenconsumption
+from scorers import tokensprocessed
+from scorers import effectivebilledtokens
 from scorers import binaryrubricscorer
 from scorers import pythonscorer
 from scorers import dataformscorer
@@ -114,6 +116,16 @@ def compare(
     if "token_consumption" in scorers:
         comparators.append(
             tokenconsumption.TokenConsumption(scorers["token_consumption"])
+        )
+    if "tokens_processed" in scorers:
+        comparators.append(
+            tokensprocessed.TokensProcessed(scorers["tokens_processed"])
+        )
+    if "effective_billed_tokens" in scorers:
+        comparators.append(
+            effectivebilledtokens.EffectiveBilledTokens(
+                scorers["effective_billed_tokens"]
+            )
         )
     if "binary_rubric_scorer" in scorers:
         import json
