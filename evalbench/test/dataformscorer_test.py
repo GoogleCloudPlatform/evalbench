@@ -156,12 +156,16 @@ class TestDataformScorers(unittest.TestCase):
         self.assertIn("got CLOUDSDK_CORE_PROJECT from scenario: 'scenario-sdk-proj'", message)
         self.assertIn("got GOOGLE_CLOUD_PROJECT from scenario: 'scenario-gcp-proj'", message)
 
-        # Verify subprocess.run was called with inherited env
-        mock_run.assert_called_once()
+        # Verify subprocess.run was called with inherited env and synced GCP vars
         _, kwargs = mock_run.call_args
         subprocess_env = kwargs["env"]
         self.assertEqual(subprocess_env["CLOUDSDK_CORE_PROJECT"], "scenario-sdk-proj")
-        self.assertEqual(subprocess_env["GOOGLE_CLOUD_PROJECT"], "scenario-gcp-proj")
+        self.assertEqual(subprocess_env["GOOGLE_CLOUD_PROJECT"], "scenario-sdk-proj")
+        self.assertEqual(subprocess_env["GCLOUD_PROJECT"], "scenario-sdk-proj")
+        self.assertEqual(subprocess_env["GCP_PROJECT"], "scenario-sdk-proj")
+        self.assertEqual(subprocess_env["GOOGLE_CLOUD_QUOTA_PROJECT"], "scenario-sdk-proj")
+        self.assertNotIn("gcloud_project", subprocess_env)
+        self.assertNotIn("google_cloud_project", subprocess_env)
 
     @patch("scorers.dataformscorer.os.walk")
     @patch("scorers.dataformscorer.subprocess.run")
@@ -174,9 +178,14 @@ class TestDataformScorers(unittest.TestCase):
         mock_process.stdout = "Success"
         mock_run.return_value = mock_process
 
-        # Set host env
+        # Set host env including GKE/OCI pod default variables and lowercase variants
         os.environ["CLOUDSDK_CORE_PROJECT"] = "host-sdk-proj"
         os.environ["GOOGLE_CLOUD_PROJECT"] = "host-gcp-proj"
+        os.environ["GCLOUD_PROJECT"] = "oci-test-proj"
+        os.environ["GCP_PROJECT"] = "oci-test-proj"
+        os.environ["GOOGLE_CLOUD_QUOTA_PROJECT"] = "oci-quota-proj"
+        os.environ["gcloud_project"] = "lower-oci-proj"
+        os.environ["google_cloud_project"] = "lower-oci-proj"
 
         generated_eval_result = {
             "fake_home": "/tmp",
@@ -202,12 +211,17 @@ class TestDataformScorers(unittest.TestCase):
         self.assertIn("got CLOUDSDK_CORE_PROJECT from host: 'host-sdk-proj'", message)
         self.assertIn("got GOOGLE_CLOUD_PROJECT from host: 'host-gcp-proj'", message)
 
-        # Verify subprocess.run was called with host env
+        # Verify subprocess.run was called with host env and synced GCP vars overriding OCI variables
         mock_run.assert_called_once()
         _, kwargs = mock_run.call_args
         subprocess_env = kwargs["env"]
         self.assertEqual(subprocess_env["CLOUDSDK_CORE_PROJECT"], "host-sdk-proj")
-        self.assertEqual(subprocess_env["GOOGLE_CLOUD_PROJECT"], "host-gcp-proj")
+        self.assertEqual(subprocess_env["GOOGLE_CLOUD_PROJECT"], "host-sdk-proj")
+        self.assertEqual(subprocess_env["GCLOUD_PROJECT"], "host-sdk-proj")
+        self.assertEqual(subprocess_env["GCP_PROJECT"], "host-sdk-proj")
+        self.assertEqual(subprocess_env["GOOGLE_CLOUD_QUOTA_PROJECT"], "host-sdk-proj")
+        self.assertNotIn("gcloud_project", subprocess_env)
+        self.assertNotIn("google_cloud_project", subprocess_env)
 
     @patch("scorers.dataformscorer.os.walk")
     def test_run_dataform_command_missing_all_fails(self, mock_walk):
