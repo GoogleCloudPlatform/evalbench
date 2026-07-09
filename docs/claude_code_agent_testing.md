@@ -283,7 +283,7 @@ EvalBench accepts the **same MCP server config schema as Gemini CLI** for HTTP s
 | Gemini-style field | Claude Code translation |
 |---|---|
 | `httpUrl` | → `url` + auto-adds `type: "http"` |
-| `authProviderType: google_credentials` | → fetches a token via `gcloud auth print-access-token` and injects `Authorization: Bearer <token>` into headers |
+| `authProviderType: google_credentials` | → injects `Authorization: Bearer <ADC token>` (from `gcloud auth application-default print-access-token`, falling back to `gcloud auth print-access-token`) **and** sets a `headersHelper` so Claude Code re-mints a fresh ADC token on every connection (avoids ~1h expiry). Google API MCP endpoints reject the plain user token on tool calls — see [Troubleshooting](#mcp-tool-call-fails-with-incompatible-auth-server-does-not-support-dynamic-client-registration). |
 | `oauth.scopes` | (dropped — Claude Code doesn't use Gemini's OAuth delegation) |
 | `headers` | → passed through as-is |
 | `command` / `args` (stdio) | → passed through as-is |
@@ -470,9 +470,25 @@ runners:
   agent_runners: 1
 ```
 
+### MCP tool call fails with `Incompatible auth server: does not support dynamic client registration`
+
+**Symptom:** the agent connects to the MCP server and can list its tools, but the first real tool call fails with `Incompatible auth server: does not support dynamic client registration`.
+
+**Root cause:** this is a *misleading* error. Google API MCP endpoints (e.g. `sqladmin.googleapis.com/mcp`) leave `initialize` and `tools/list` unauthenticated but require a valid bearer token on the actual tool call. When the injected token is missing, expired, or the **wrong kind**, the tool call returns `401` with a `WWW-Authenticate: Bearer resource_metadata=...` challenge. Claude Code always attaches an OAuth authProvider to HTTP MCP servers, so on that 401 it tries to complete an OAuth 2.0 flow — which begins with [dynamic client registration (RFC 7591)](https://datatracker.ietf.org/doc/html/rfc7591). These Google endpoints **don't support dynamic client registration**, so the OAuth fallback dies with that error instead of surfacing the underlying 401.
+
+**Fixes:**
+- **Use ADC, not the user token.** The generator now injects `gcloud auth application-default print-access-token` (ADC) rather than `gcloud auth print-access-token`. The plain gcloud *user* token is rejected by these endpoints ("Request had invalid authentication credentials"), which is what triggered the fallback. Make sure you ran **`gcloud auth application-default login`** (not just `gcloud auth login`).
+- **Token expiry on long runs (handled automatically).** Google access tokens expire after ~1 hour. To avoid later scenarios hitting the same 401 → DCR error, the generator also emits a [`headersHelper`](https://code.claude.com/docs/en/mcp) on the MCP server config — a command Claude Code runs on **every connection** to mint a fresh ADC token (its JSON stdout overrides the baked static header). The baked token remains as a fallback for when `gcloud`/ADC isn't available in Claude Code's environment. No action needed; if you see stale-token 401s, confirm `gcloud` is on `PATH` and ADC is valid in the run environment.
+
+> **Limitation:** OneMCP / Google API MCP endpoints do not support OAuth dynamic client registration. Static bearer-token auth (via `authProviderType: google_credentials`) is the only supported path — Claude Code's interactive OAuth login flow will not work against them.
+
 ### MCP server fails with `401 Unauthorized` (real Cloud SQL endpoint)
 
-The injected gcloud access token may have insufficient scopes. Make sure `gcloud auth application-default login` was run with `--scopes=https://www.googleapis.com/auth/cloud-platform`, and your account has the required IAM roles (e.g., `roles/cloudsql.admin`).
+Usually a token problem (see the DCR entry above). Checklist:
+- Run `gcloud auth application-default login` with `--scopes=https://www.googleapis.com/auth/cloud-platform`.
+- Confirm your account has the required IAM roles (e.g., `roles/cloudsql.admin`).
+- Set the quota project header: `headers: { X-Goog-User-Project: <project> }`.
+- Verify directly: `curl -H "Authorization: Bearer $(gcloud auth application-default print-access-token)" -H "X-Goog-User-Project: <project>" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_instances","arguments":{"project":"<project>"}}}' https://sqladmin.googleapis.com/mcp`
 
 ### `npm exec` is slow on first run
 
