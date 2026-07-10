@@ -1,9 +1,11 @@
 from google.cloud import bigquery
+from google.api_core.exceptions import TooManyRequests, ServiceUnavailable
 import logging
 import pandas as pd
 from reporting.report import Reporter, STORETYPE
 from util.gcp import get_gcp_project
 import urllib.parse
+import time
 
 try:
     import google.colab  # type: ignore
@@ -13,7 +15,7 @@ try:
 except ImportError:
     _IN_COLAB = False
 
-_CHUNK_SIZE = 250
+_DEFAULT_CHUNK_SIZE = 500
 
 _REPORT_QUERY = """
 WITH all_runs_with_set_tag AS (
@@ -61,8 +63,7 @@ ORDER BY date_of_eval DESC;
 
 
 def _split_dataframe(df, chunk_size):
-    """
-    Splits a pandas DataFrame into chunks of a specified size.
+    """Splits a pandas DataFrame into chunks of a specified size.
 
     Args:
       df: The DataFrame to split.
@@ -92,6 +93,10 @@ class BigQueryReporter(Reporter):
         self.results_table = "{}.results".format(self.dataset_id)
         self.scores_table = "{}.scores".format(self.dataset_id)
         self.summary_table = "{}.summary".format(self.dataset_id)
+
+        # Make chunk size configurable, defaulting to 500
+        self.chunk_size = int(reporting_config.get(
+            "chunk_size") or _DEFAULT_CHUNK_SIZE)
 
     def store(self, results, type: STORETYPE):
         if results is None or results.empty:
@@ -127,7 +132,7 @@ class BigQueryReporter(Reporter):
         job_config.write_disposition = (
             bigquery.job.WriteDisposition.WRITE_APPEND  # type: ignore
         )
-        for chunk in _split_dataframe(results, _CHUNK_SIZE):
+        for chunk in _split_dataframe(results, self.chunk_size):
             # Workaround for pyarrow truncation error when inserting floats
             # into INT64 columns. This happens if BQ autodetected a column as
             # INT64 in a previous run. Casting to string avoids the client-side
@@ -163,10 +168,29 @@ class BigQueryReporter(Reporter):
                             .replace("nan", None)
                         )
 
-            job = self.client.load_table_from_dataframe(
-                chunk, table, job_config=job_config
-            )
-            job.result()  # Wait for the job to complete.
+            # Retry loop for BQ load job to handle transient rate limits
+            max_retries = 5
+            initial_delay = 2
+            backoff_factor = 2
+
+            for attempt in range(max_retries):
+                try:
+                    job = self.client.load_table_from_dataframe(
+                        chunk, table, job_config=job_config
+                    )
+                    job.result()  # Wait for the job to complete.
+                    break  # Success, exit retry loop
+                except (TooManyRequests, ServiceUnavailable) as e:
+                    if attempt == max_retries - 1:
+                        logging.error(
+                            f"BQ write failed after {max_retries} attempts: {e}")
+                        raise
+                    delay = initial_delay * (backoff_factor ** attempt)
+                    logging.warning(
+                        f"BQ write failed with transient error: {e}. "
+                        f"Retrying in {delay}s... (Attempt {attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(delay)
 
     def print_dashboard_links(self):
         report_date = self.run_time.strftime("%Y-%m-%d")
