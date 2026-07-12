@@ -1,3 +1,9 @@
+# /// script
+# dependencies = [
+#   "pandas",
+# ]
+# ///
+
 """Hybrid Execution Accuracy (XA) Cross-Database Evaluator for EvalBench."""
 
 from decimal import Decimal

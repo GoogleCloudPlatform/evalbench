@@ -20,7 +20,7 @@ WITH all_runs_with_set_tag AS (
     SELECT
         job_id,
         database,
-        REPLACE(REPLACE(REPLACE(dialects, '[', ''),']',''),'\'','') AS dialect,
+        REPLACE(REPLACE(REPLACE(dialects, '[', ''),']',''),'\\\'','') AS dialect,
         id,
         nl_prompt,
         trim(generated_sql) AS generated_sql,
