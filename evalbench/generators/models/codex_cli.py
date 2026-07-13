@@ -294,6 +294,9 @@ class CodexCliGenerator(AgentCliGenerator):
                         plugin_name = os.path.basename(os.path.abspath(repo_dir))
                     marketplace_name = skill_config.get("marketplace_name", "evalbench-local-marketplace")
                     plugin_id = f"{plugin_name}@{marketplace_name}"
+                    # Enable the plugin in config.toml. Even for skills-only plugins,
+                    # this is safe and ensures any plugin-specific configuration is passed
+                    # to the plugin context, and matches the behavior of _install_mcp_servers_from_repo.
                     self.enabled_plugins.setdefault(plugin_id, {}).update(skill_config.get("config", {}) or {})
                     self._install_skills_from_source(repo_dir, skill_config)
             elif action in ("copy", "link", "install") and path:
@@ -419,7 +422,9 @@ class CodexCliGenerator(AgentCliGenerator):
         # Install the plugin via Codex CLI so it changes status from 'not installed' to 'installed, enabled'
         cmd = ["npm", "exec", "--yes", self.codex_cli_version, "--", "plugin", "add", f"{plugin_name}@{marketplace_name}"]
         try:
-            result = subprocess.run(cmd, env=self.env, check=False, capture_output=True, text=True)
+            setup_env = os.environ.copy()
+            setup_env.update(self.env)
+            result = subprocess.run(cmd, env=setup_env, check=False, capture_output=True, text=True)
             if result.returncode == 0:
                 logging.info(f"Successfully installed Codex plugin '{plugin_name}@{marketplace_name}'")
             else:
@@ -561,7 +566,7 @@ class CodexCliGenerator(AgentCliGenerator):
             lines.append("")
 
         for plugin_id, options in self.enabled_plugins.items():
-            lines.append(f'[plugins."{plugin_id}"]')
+            lines.append(f"[plugins.{self._toml_key(plugin_id)}]")
             lines.append("enabled = true")
             if options:
                 lines.append(f"options = {self._toml_value(options)}")
