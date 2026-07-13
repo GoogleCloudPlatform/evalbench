@@ -108,4 +108,3 @@ def test_write_config_toml_escapes_plugin_id(monkeypatch, tmp_path):
     content = config_file.read_text()
     assert '[plugins."dak@evalbench-local-marketplace"]' in content
     assert '[plugins.clean_plugin]' in content
-
