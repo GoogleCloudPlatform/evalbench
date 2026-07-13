@@ -5,6 +5,7 @@ simulated_user_model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
 dataset_config: datasets/dea-tools/dea-live-conversational.evalset.json
 env:
   SCENARIO_ID: "dea-live-conversational"
+  EVAL_DATAFORM_SETUP_ENV_FILES_DIR: "datasets/dea-tools/templates/default_workspace"
 scorers:
   binary_rubric_scorer:
     model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
