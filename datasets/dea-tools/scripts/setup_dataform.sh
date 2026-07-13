@@ -13,11 +13,12 @@ REGION="${EVAL_GCP_PROJECT_REGION}"
 JOB_ID=$(basename "$SESSION_DIR")
 
 SCENARIO_ID="${SCENARIO_ID:-default}"
+ENV_FILES_DIR="${EVAL_DATAFORM_SETUP_ENV_FILES_DIR}"
 
 WORKSPACE_URI=$(PYTHONPATH=evalbench .venv/bin/python3 -c "
 from util.dataform_workspace import DataformWorkspaceManager
 manager = DataformWorkspaceManager('$PROJECT_ID', '$REGION')
-uri = manager.setup_workspace('$JOB_ID', '$SCENARIO_ID')
+uri = manager.setup_workspace('$JOB_ID', '$SCENARIO_ID', env_files_dir='$ENV_FILES_DIR')
 print(uri)
 ")
 
