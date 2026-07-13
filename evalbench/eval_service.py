@@ -1,8 +1,10 @@
 """A gRPC servicer that handles EvalService requests."""
 
+import ast
 import asyncio
 import json
 import os
+import pandas as pd
 from collections.abc import AsyncIterator
 from typing import AsyncGenerator
 
@@ -513,5 +515,32 @@ def _process_results(
                 "p50": round(latencies.quantile(0.5), 2),
                 "p90": round(latencies.quantile(0.9), 2),
             }
+
+    # Add percentiles for metrics reported via the `other` map. `other` is
+    # stored as a string-serialized dict in the dataframe, so parse it first.
+    if "other" in results_df.columns:
+        def _parse_other(o):
+            if isinstance(o, dict):
+                return o
+            if isinstance(o, str) and o:
+                try:
+                    return ast.literal_eval(o)
+                except (ValueError, SyntaxError):
+                    return {}
+            return {}
+
+        parsed_other = results_df["other"].apply(_parse_other)
+        for metric_key in (
+            "time_to_first_response",
+            "input_token_count",
+            "output_token_count",
+        ):
+            values = parsed_other.apply(lambda d, k=metric_key: d.get(k))
+            values = pd.to_numeric(values, errors="coerce").dropna()
+            if not values.empty:
+                summary[metric_key] = {
+                    "p50": round(values.quantile(0.5), 2),
+                    "p90": round(values.quantile(0.9), 2),
+                }
 
     return summary
