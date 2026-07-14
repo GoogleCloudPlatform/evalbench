@@ -1,5 +1,6 @@
 import json
 import copy
+from typing import Any
 
 
 class EvalDeaRequest:
@@ -21,8 +22,11 @@ class EvalDeaRequest:
         self.payload_str = json.dumps(raw_dict)
         self.payload = self.payload_str
 
-        self.agent_results = []
-        self.scoring_results = []
+        self.agent_results: list[dict[str, Any]] = []
+        self.scoring_results: list[dict[str, Any]] = []
+
+        self.accumulated_tools: list[str] = []
+        self.this_turn_tool_details: list[dict[str, Any]] = []
 
     @classmethod
     def init_from_proto(cls, proto):
