@@ -21,6 +21,8 @@ scorers:
   end_to_end_latency: {}
   tool_call_latency: {}
   token_consumption: {}
+  tokens_processed: {}
+  effective_billed_tokens: {}
 
 reporting:
   bigquery:
