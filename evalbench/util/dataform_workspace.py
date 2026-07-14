@@ -1,14 +1,23 @@
 """Utility for managing temporary GCP Dataform repositories and workspaces."""
 
+import io
 import logging
+import os
+import pathlib
+import re
+import zipfile
 
 from google.api_core import exceptions as api_exceptions
 from google.cloud import dataform_v1beta1
 
 logger = logging.getLogger(__name__)
 
+_WORKSPACE_RE = re.compile(
+    r"^projects/[^/]+/locations/[^/]+/repositories/([^/]+)/workspaces/[^/]+$"
+)
 
-class DataformHelper:
+
+class DataformWorkspaceManager:
     """Helper class to interact with Google Cloud Dataform API."""
 
     def __init__(self, project_id: str, location: str):
@@ -19,9 +28,11 @@ class DataformHelper:
             location: The GCP region (e.g. 'us-west4').
         """
         self.client = dataform_v1beta1.DataformClient()
+        self.project_id = project_id
+        self.location = location
         self.parent = f"projects/{project_id}/locations/{location}"
 
-    def create_repository(self, repository_id: str) -> str:
+    def _create_repository(self, repository_id: str) -> str:
         """Creates a new Dataform repository in the project and location.
 
         Args:
@@ -52,8 +63,8 @@ class DataformHelper:
             )
             raise
 
-    def create_workspace(self, repository_id: str,
-                         workspace_id: str) -> str:
+    def _create_workspace(self, repository_id: str,
+                          workspace_id: str) -> str:
         """Creates a new Dataform workspace inside the specified repository.
 
         Args:
@@ -87,8 +98,8 @@ class DataformHelper:
             )
             raise
 
-    def delete_workspace(self, repository_id: str,
-                         workspace_id: str) -> None:
+    def _delete_workspace(self, repository_id: str,
+                          workspace_id: str) -> None:
         """Deletes a Dataform workspace inside the specified repository.
 
         Args:
@@ -112,7 +123,7 @@ class DataformHelper:
             )
             raise
 
-    def delete_repository(self, repository_id: str) -> None:
+    def _delete_repository(self, repository_id: str) -> None:
         """Deletes a Dataform repository and all its nested resources.
 
         This performs a cascading delete by first programmatically deleting
@@ -131,7 +142,7 @@ class DataformHelper:
             )
             for ws in workspaces:
                 ws_id = ws.name.split("/")[-1]
-                self.delete_workspace(repository_id, ws_id)
+                self._delete_workspace(repository_id, ws_id)
 
             self.client.delete_repository(
                 request={"name": repository_path, "force": True}
@@ -146,3 +157,96 @@ class DataformHelper:
                 repository_id,
             )
             raise
+
+    def setup_workspace(
+        self,
+        job_id: str,
+        scenario_id: str = "default",
+        env_files_dir: str | None = None,
+    ) -> str:
+        """Dynamically creates a Dataform repository and workspace."""
+        repository_id = f"evalbench-{job_id}"
+        repository_path = self._create_repository(repository_id)
+
+        workspace_id = scenario_id
+        workspace_path = self._create_workspace(repository_id, workspace_id)
+
+        if env_files_dir:
+            base_path = pathlib.Path(env_files_dir)
+            if not base_path.is_dir():
+                raise ValueError(
+                    f"env_files_dir is not a valid directory: {env_files_dir}"
+                )
+
+            logger.info(
+                "Uploading setup files from directory: %s", env_files_dir
+            )
+            for root, _, files in os.walk(env_files_dir):
+                for file in files:
+                    local_file_path = pathlib.Path(root) / file
+                    relative_path = local_file_path.relative_to(base_path)
+
+                    with open(local_file_path, "rb") as f:
+                        raw_bytes = f.read()
+
+                    self.client.write_file(
+                        request={
+                            "workspace": workspace_path,
+                            "path": relative_path.as_posix(),
+                            "contents": raw_bytes,
+                        }
+                    )
+                    logger.info("Injected setup file: %s", relative_path)
+
+        return workspace_path
+
+    def download_and_zip(self, workspace_uri: str) -> bytes:
+        """Downloads all workspace files and compresses them into ZIP bytes."""
+        logger.info("Downloading and zipping workspace: %s...", workspace_uri)
+        try:
+            page_result = self.client.search_files(
+                request={"workspace": workspace_uri}
+            )
+            file_count = 0
+            with io.BytesIO() as zip_buffer:
+                with zipfile.ZipFile(
+                    zip_buffer, "w", zipfile.ZIP_DEFLATED
+                ) as zipf:
+                    for result in page_result:
+                        if result.file and result.file.path:
+                            file_path = result.file.path
+                            file_response = self.client.read_file(
+                                request={
+                                    "workspace": workspace_uri,
+                                    "path": file_path,
+                                }
+                            )
+                            zipf.writestr(
+                                file_path, file_response.file_contents
+                            )
+                            logger.info(
+                                "Added file to archive: %s", file_path
+                            )
+                            file_count += 1
+
+                zip_bytes = zip_buffer.getvalue()
+
+            logger.info(
+                "Successfully compressed %d files (%d bytes)",
+                file_count,
+                len(zip_bytes),
+            )
+            return zip_bytes
+        except Exception:
+            logger.exception(
+                "Failed to download and zip workspace %s", workspace_uri
+            )
+            raise
+
+    def teardown_workspace(self, workspace_uri: str) -> None:
+        """Deletes the parent Dataform repository and all child workspaces."""
+        workspace_uri_match = _WORKSPACE_RE.match(workspace_uri)
+        if not workspace_uri_match:
+            raise ValueError(f"Invalid workspace URI: {workspace_uri!r}")
+        repository_id = workspace_uri_match.group(1)
+        self._delete_repository(repository_id)

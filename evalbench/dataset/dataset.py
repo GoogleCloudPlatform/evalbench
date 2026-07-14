@@ -242,6 +242,17 @@ def load_json(json_file_path):
 
 
 def load_dataset_from_json(json_file_path, config):
+    # No dataset path (e.g. orchestrators driven by their run config rather than a
+    # prompt dataset): nothing to load. flatten_dataset({}) yields []. Log it so
+    # a run that *did* expect a dataset (missing/misconfigured dataset_config)
+    # doesn't fail silently.
+    if not json_file_path:
+        logging.info(
+            "load_dataset_from_json: no dataset path provided; returning an "
+            "empty dataset. Expected only for orchestrators that drive their "
+            "own inputs from the run config."
+        )
+        return {}
     input_items = {}
     dataset_format = config.get("dataset_format", "evalbench-standard-format")
     if dataset_format == "bird-interact-format":

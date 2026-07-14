@@ -107,7 +107,12 @@ def eval(experiment_config: str):
         if set_up_script:
             if os.path.exists(set_up_script):
                 logging.info("Executing set_up_script '%s'", set_up_script)
-                run_script(set_up_script, session_dir, "setup")
+                run_script(
+                    set_up_script,
+                    session_dir,
+                    "setup",
+                    env_updates=config.get("env")
+                )
             else:
                 logging.error(
                     "Cannot run set_up_script, file not found at '%s'", set_up_script

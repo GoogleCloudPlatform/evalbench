@@ -58,6 +58,15 @@ class ClaudeCodeGenerator(AgentCliGenerator):
 
         api_key = self.env.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
 
+        # Ignore unfilled template placeholders (e.g. "<API_KEY>"). Left as-is
+        # they are truthy, so they silently disable Vertex (use_vertex: true)
+        # and make Claude Code fail with "Invalid API key".
+        if api_key and api_key.strip().startswith("<"):
+            logging.warning(
+                f"Ignoring placeholder ANTHROPIC_API_KEY value {api_key!r}.")
+            self.env.pop("ANTHROPIC_API_KEY", None)
+            api_key = None
+
         if api_key:
             self.env["ANTHROPIC_API_KEY"] = api_key
             self.use_vertex = False
@@ -260,6 +269,7 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                     marketplace_dir,
                     plugin_name=mcp_config.get("plugin"),
                     plugin_config=mcp_config.get("config"),
+                    env=setup_env,
                 )
 
     def _translate_mcp_config(self, server_name: str, config: dict) -> dict:
@@ -281,32 +291,109 @@ class ClaudeCodeGenerator(AgentCliGenerator):
 
         if auth_provider == "google_credentials":
             headers = config.get("headers", {}) or {}
+
+            # Refresh the token on every MCP connection via `headersHelper`.
+            # Claude Code runs this command each time it connects and lets its
+            # JSON stdout override the static headers, so the bearer token
+            # never expires mid-suite (baked static tokens live ~1h). If the
+            # helper can't produce a token (gcloud/ADC unavailable in Claude
+            # Code's env), it prints nothing and Claude Code falls back to the
+            # static header below.
+            config.setdefault(
+                "headersHelper", self._google_credentials_headers_helper())
+
+            # Baked static token: the initial value and the fallback for when
+            # headersHelper can't run. headersHelper output takes precedence.
             if "Authorization" not in headers:
                 token = self._fetch_gcloud_access_token()
                 if token:
                     headers["Authorization"] = f"Bearer {token}"
                 else:
                     logging.warning(
-                        f"MCP server '{server_name}' requires google_credentials but "
-                        "failed to fetch access token via `gcloud auth print-access-token`."
+                        f"MCP server '{server_name}' requires google_credentials "
+                        "but failed to fetch an access token via gcloud."
                     )
             config["headers"] = headers
 
         return config
 
+    @staticmethod
+    def _google_credentials_headers_helper() -> str:
+        """Shell command Claude Code executes on each MCP connection to mint a
+        fresh Google bearer token.
+
+        Its stdout must be a JSON object of string headers, which Claude Code
+        merges over the static ``headers`` -- giving a token that refreshes per
+        connection instead of expiring ~1h after setup. Prefers ADC (required
+        by Google API MCP endpoints), falls back to the gcloud user token, and
+        prints nothing (non-zero exit) when neither is available so Claude Code
+        keeps using the baked static header.
+        """
+        return (
+            'tok="$(gcloud auth application-default print-access-token '
+            '2>/dev/null || gcloud auth print-access-token 2>/dev/null)"; '
+            '[ -n "$tok" ] && printf \'{"Authorization":"Bearer %s"}\' "$tok"'
+        )
+
     def _fetch_gcloud_access_token(self) -> str:
-        """Fetches a Google Cloud access token via gcloud."""
-        try:
-            result = subprocess.run(
-                ["gcloud", "auth", "print-access-token"],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            return result.stdout.strip()
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            logging.error(f"Failed to retrieve gcloud access token: {e}")
-            return ""
+        """Fetches a Google Cloud access token for MCP `google_credentials` auth.
+
+        Prefers Application Default Credentials (``gcloud auth
+        application-default print-access-token``) over the gcloud *user* token
+        (``gcloud auth print-access-token``). Google API MCP endpoints such as
+        Cloud SQL Managed (``sqladmin.googleapis.com/mcp``) reject the plain
+        user token on tool calls ("Request had invalid authentication
+        credentials") and only accept an ADC token.
+
+        This matters because a rejected token makes the MCP *tool call* return
+        ``401`` with a ``WWW-Authenticate: Bearer resource_metadata=...``
+        challenge (``initialize``/``tools/list`` are unauthenticated, so the
+        server connects fine and only the tool call fails). Claude Code always
+        attaches an OAuth authProvider to HTTP MCP servers, so that 401 drives
+        it into the OAuth flow -- and since these endpoints don't support OAuth
+        dynamic client registration, the run fails with the confusing error
+        "Incompatible auth server: does not support dynamic client
+        registration". See docs/claude_code_agent_testing.md#troubleshooting.
+
+        The token is fetched with the host environment (real HOME / gcloud
+        config), NOT the sandboxed fake HOME -- gcloud must find the
+        developer's / host's credentials. An explicit service-account or ADC
+        file (Cloud Run / mounted SA key) is honored if one was configured, but
+        HOME is never overridden (doing so points gcloud at the empty
+        fake-home config and both commands fail).
+        """
+        token_env = os.environ.copy()
+        adc = self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
+        if adc and os.path.exists(adc):
+            token_env["GOOGLE_APPLICATION_CREDENTIALS"] = adc
+        # ADC first (works for these endpoints); user token as a fallback for
+        # any MCP server that happens to accept it.
+        commands = [
+            ["gcloud", "auth", "application-default", "print-access-token"],
+            ["gcloud", "auth", "print-access-token"],
+        ]
+        for cmd in commands:
+            try:
+                result = subprocess.run(
+                    cmd, check=True, capture_output=True, text=True,
+                    env=token_env,
+                )
+                token = result.stdout.strip()
+                if token:
+                    logging.info(
+                        f"MCP google_credentials token via `{' '.join(cmd)}` "
+                        f"({len(token)} chars)"
+                    )
+                    return token
+            except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                stderr = getattr(e, "stderr", "") or ""
+                logging.warning(
+                    f"`{' '.join(cmd)}` failed: {e}. {stderr.strip()}")
+        logging.error(
+            "Failed to fetch a Google Cloud access token via gcloud (tried ADC "
+            "and user credentials). Run `gcloud auth application-default login`."
+        )
+        return ""
 
     def _setup_settings(self, settings_config: dict):
         """Writes Claude Code settings.json."""
@@ -359,7 +446,7 @@ class ClaudeCodeGenerator(AgentCliGenerator):
             marketplace_dir = self._clone_marketplace_repo(
                 url, marketplaces_dir, setup_env)
             if marketplace_dir:
-                self._register_marketplace_plugin(marketplace_dir)
+                self._register_marketplace_plugin(marketplace_dir, env=setup_env)
 
     def _setup_skills_from_dir(self, skills_dir_path: str):
         """Registers a local plugin marketplace directory in settings.json."""
@@ -400,7 +487,7 @@ class ClaudeCodeGenerator(AgentCliGenerator):
 
     def _register_marketplace_plugin(
         self, marketplace_dir: str, plugin_name: str | None = None,
-        plugin_config: dict | None = None,
+        plugin_config: dict | None = None, env: dict | None = None,
     ):
         """Reads marketplace.json and updates settings.json so Claude Code
         auto-loads a marketplace plugin at startup.
@@ -478,6 +565,37 @@ class ClaudeCodeGenerator(AgentCliGenerator):
             f"Registered plugin '{plugin_id}' "
             f"(directory source: {marketplace_dir})"
             + (f" with userConfig {list(plugin_config)}" if plugin_config else ""))
+
+        self._install_plugin(plugin_id, env)
+
+    def _install_plugin(self, plugin_id: str, env: dict | None = None):
+        """Forces synchronous installation of a registered plugin."""
+        if not env:
+            env = os.environ.copy()
+            env.update(self.env)
+
+        cli = self.claude_code_version
+        if cli.startswith("@") or "/" in cli:
+            cli_base_cmd = ["npm", "exec", "--yes", cli, "--"]
+        else:
+            cli_base_cmd = [cli]
+
+        # Run a dummy command to force initialization of projects/sessions
+        # and plugin manager state. Ignore the failure (it will fail with
+        # auth error if credentials are not ready, which is expected).
+        init_command = cli_base_cmd + ["-p", "initialize_session"]
+        logging.info(f"Initializing Claude Code state: {' '.join(init_command)}")
+        self._execute_cli_command(init_command, env=env)
+
+        # Now run the actual install command
+        install_command = cli_base_cmd + ["plugins", "install", plugin_id]
+        logging.info(f"Synchronously installing plugin: {' '.join(install_command)}")
+
+        result = self._execute_cli_command(install_command, env=env)
+        if result.returncode != 0:
+            logging.error(f"Failed to install plugin '{plugin_id}': {result.stderr}")
+        else:
+            logging.info(f"Successfully installed plugin '{plugin_id}'")
 
     def generate_internal(self, cli_cmd):
         if not isinstance(cli_cmd, CLICommand):
@@ -561,6 +679,31 @@ class ClaudeCodeGenerator(AgentCliGenerator):
 
         return result
 
+    @staticmethod
+    def _stringify_tool_result(content) -> str:
+        """Normalizes a tool_result `content` (string or list of content
+        blocks) into a plain-text response string."""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for block in content:
+                if isinstance(block, dict):
+                    parts.append(block.get("text", "") or "")
+                else:
+                    parts.append(str(block))
+            return "".join(parts)
+        return "" if content is None else str(content)
+
+    def _record_tool_result(self, tool_calls_dict, tool_id, is_error, content):
+        """Records a tool result's status/response against its originating
+        tool_use id (no-op if the id isn't a known tool call)."""
+        if not tool_id or tool_id not in tool_calls_dict:
+            return
+        tool_calls_dict[tool_id]["status"] = "error" if is_error else "success"
+        tool_calls_dict[tool_id]["response"] = self._stringify_tool_result(
+            content)
+
     def _parse_stream_json(self, stream_output: str) -> str:
         """Parses Claude Code stream-json output into a normalized format
         compatible with the eval pipeline."""
@@ -615,12 +758,32 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                                 }
 
                 elif event_type == "tool_result":
-                    tool_id = event.get("tool_use_id") or event.get("id", "")
-                    is_error = event.get("is_error", False)
-                    status = "error" if is_error else "success"
-                    if tool_id and tool_id in tool_calls_dict:
-                        tool_calls_dict[tool_id]["status"] = status
-                        tool_calls_dict[tool_id]["response"] = event.get("content", "")
+                    # Some streams emit a top-level tool_result event.
+                    self._record_tool_result(
+                        tool_calls_dict,
+                        event.get("tool_use_id") or event.get("id", ""),
+                        event.get("is_error", False),
+                        event.get("content", ""),
+                    )
+
+                elif event_type == "user":
+                    # Claude Code delivers tool results inside user-role
+                    # messages as `tool_result` content blocks, not as
+                    # top-level `tool_result` events. Without this, every MCP
+                    # tool call stays status=None (scored as a failure) even
+                    # when it succeeded.
+                    message = event.get("message", {})
+                    for block in message.get("content", []):
+                        if not isinstance(block, dict):
+                            continue
+                        if block.get("type") != "tool_result":
+                            continue
+                        self._record_tool_result(
+                            tool_calls_dict,
+                            block.get("tool_use_id") or block.get("id", ""),
+                            block.get("is_error", False),
+                            block.get("content", ""),
+                        )
 
                 elif event_type == "result":
                     if "session_id" in event:

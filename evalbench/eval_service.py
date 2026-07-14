@@ -128,7 +128,9 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         session = SESSIONMANAGER.get_session(rpc_id_var.get())
         logging.info("Retrieving Evals for: %s.", rpc_id_var.get())
         experiment_config = session["config"]
-        dataset_config_json = experiment_config["dataset_config"]
+        # dataset_config is optional: some orchestrators drive their work from
+        # the run config itself, in which case load_dataset_from_json returns {}.
+        dataset_config_json = experiment_config.get("dataset_config")
         dataset = load_dataset_from_json(
             dataset_config_json, experiment_config)
         for _, eval_inputs in dataset.items():
@@ -318,8 +320,9 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             context.set_details(error_msg)
             return
 
-        # Load dataset and instantiate the Orchestrator
-        dataset_config_json = config["dataset_config"]
+        # Load dataset and instantiate the Orchestrator. dataset_config is
+        # optional (datasetless orchestrators drive from the run config).
+        dataset_config_json = config.get("dataset_config")
         dataset_dict = load_dataset_from_json(dataset_config_json, config)
 
         dataset = []

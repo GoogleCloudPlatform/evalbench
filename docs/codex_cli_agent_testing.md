@@ -117,7 +117,7 @@ EvalBench's Codex CLI integration enables automated, multi-turn evaluation of ag
    export EVAL_GCP_PROJECT_ID=your_project_id
    export EVAL_GCP_PROJECT_REGION=us-central1
    ```
-6. **gcloud** (only if any MCP server uses `authProviderType: google_credentials` — the generator shells out to `gcloud auth print-access-token`)
+6. **gcloud** (only if any MCP server uses `authProviderType: google_credentials` — the generator shells out to `gcloud auth application-default print-access-token`; run `gcloud auth application-default login` first)
 
 ---
 
@@ -304,7 +304,7 @@ EvalBench accepts the **same MCP server config schema as Gemini CLI and Claude C
 |---|---|
 | `httpUrl` | → `url` (TOML, streamable HTTP server) |
 | `headers` | → `http_headers` (TOML inline table) |
-| `authProviderType: google_credentials` | → fetches a token via `gcloud auth print-access-token` and injects `Authorization: Bearer <token>` into `http_headers` |
+| `authProviderType: google_credentials` | → mints an **ADC** token (`gcloud auth application-default print-access-token`, falling back to `gcloud auth print-access-token`) and passes it to Codex via `bearer_token_env_var` (env var `EVALBENCH_GCLOUD_MCP_TOKEN`). The generator re-mints a fresh token before **every turn** (each `codex exec` re-reads the env var), so it doesn't expire mid-suite. `X-Goog-User-Project` stays a static `http_headers` entry. Google API MCP endpoints reject the plain user token on tool calls — see [Troubleshooting](#mcp-server-fails-with-401-unauthorized-real-cloud-sql-endpoint). |
 | `oauth.scopes` | (dropped — Codex doesn't use Gemini's OAuth delegation) |
 | `command` / `args` / `env` / `cwd` (stdio) | → passed through as-is into a `[mcp_servers.NAME]` stdio block |
 
@@ -569,10 +569,11 @@ json_flag: "--experimental-json"
 
 ### MCP server fails with `401 Unauthorized` (real Cloud SQL endpoint)
 
-The injected gcloud access token has insufficient scopes or your principal lacks IAM access. Make sure:
-- `gcloud auth application-default login` was run with `--scopes=https://www.googleapis.com/auth/cloud-platform`
-- Your account / service account has the required IAM roles (e.g., `roles/cloudsql.admin`)
-- `X-Goog-User-Project` header points at a project that has the Cloud SQL Admin API enabled
+The injected token is missing, expired, the **wrong kind**, or your principal lacks IAM access. Note Google API MCP endpoints leave `initialize`/`tools/list` unauthenticated but require a valid bearer token on the actual **tool call**, and they only accept an **ADC** token — the plain gcloud *user* token (`gcloud auth print-access-token`) is rejected. The generator now injects the ADC token (`gcloud auth application-default print-access-token`); make sure:
+- You ran **`gcloud auth application-default login`** (with `--scopes=https://www.googleapis.com/auth/cloud-platform`) — not just `gcloud auth login`.
+- Your account / service account has the required IAM roles (e.g., `roles/cloudsql.admin`).
+- `X-Goog-User-Project` header points at a project that has the Cloud SQL Admin API enabled.
+- Token expiry is handled automatically: the generator mints a fresh ADC token into `EVALBENCH_GCLOUD_MCP_TOKEN` before every turn and Codex reads it via `bearer_token_env_var`, so long suites don't hit stale-token 401s. (Requires a Codex build that supports `bearer_token_env_var`; if yours doesn't, the token won't be applied — fall back to a static `http_headers` `Authorization`.)
 
 ### `Invalid TOML` when Codex starts
 

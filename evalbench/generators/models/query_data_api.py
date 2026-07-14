@@ -2,6 +2,7 @@ from .generator import QueryGenerator
 import google.cloud.geminidataanalytics_v1beta as gda
 import logging
 from typing import Dict, Any
+from google.api_core.client_options import ClientOptions
 from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable, DeadlineExceeded
 from util.rate_limit import ResourceExhaustedError
 
@@ -23,10 +24,15 @@ class QueryDataAPIGenerator(QueryGenerator):
         self.project_id = querygenerator_config.get("project_id")
         self.location = querygenerator_config.get("location", "global")
         self.context = querygenerator_config.get("context", {})
+        api_endpoint = querygenerator_config.get("api_endpoint")
 
-        # Initialize client
-        # Authenticated via ADC automatically
-        self.client = gda.DataChatServiceClient()
+        # Initialize client. Authenticated via ADC automatically. If
+        # `api_endpoint` is supplied in the config (eg. an autopush /
+        # sandbox host), override the default production endpoint.
+        client_options = (
+            ClientOptions(api_endpoint=api_endpoint) if api_endpoint else None
+        )
+        self.client = gda.DataChatServiceClient(client_options=client_options)
 
     def generate_internal(self, prompt: str) -> Dict[str, Any]:
         """

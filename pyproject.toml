@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "google-evalbench"
-version = "1.9.0"
+version = "1.10.0"
 requires-python = ">=3.10"
 description = "Evalbench - evaluation benchmarking framework"
 readme = "README.md"
@@ -59,6 +59,7 @@ dependencies = [
     "dbt-bigquery",
     "dbt-postgres",
     "a2a-sdk>=1.0.3",
+    "mcp",
     # 26.2.0 turned a long-standing deprecation into a hard error
     # (mutating SSL.Context after use), breaking google-auth's mTLS path
     # (urllib3.contrib.pyopenssl.inject_into_urllib3). Lift when google-auth
