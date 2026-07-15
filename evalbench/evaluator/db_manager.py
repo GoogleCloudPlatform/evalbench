@@ -1,5 +1,6 @@
 from queue import Queue
 from copy import deepcopy
+import os
 from databases import DB, get_database
 from util.config import load_db_data_from_csvs, load_setup_scripts
 from concurrent.futures import ThreadPoolExecutor
@@ -35,7 +36,7 @@ def _prepare_db_queue_for_dql(core_db: DB, db_name, db_config, setup_config, num
     dql_db_config = deepcopy(db_config)
     if setup_config:
         setup_scripts, data = _get_setup_values(
-            setup_config, db_name, db_config.get("db_type")
+            setup_config, db_name, db_config.get("db_type"), db_config.get("dialect")
         )
         core_db.set_setup_instructions(setup_scripts, data)
         core_db.resetup_database(False, True)
@@ -53,7 +54,7 @@ def _prepare_db_queue_for_dml(core_db: DB, db_name, db_config, setup_config, num
     dml_db_config = deepcopy(db_config)
     if setup_config:
         setup_scripts, data = _get_setup_values(
-            setup_config, db_name, db_config.get("db_type")
+            setup_config, db_name, db_config.get("db_type"), db_config.get("dialect")
         )
         core_db.set_setup_instructions(setup_scripts, data)
         core_db.resetup_database(False, True)
@@ -69,7 +70,7 @@ def _prepare_db_queue_for_ddl(core_db: DB, db_name, db_config, setup_config, num
     """For DDL, use the same single DB with a user that has only DDL access."""
     if setup_config:
         setup_scripts, _ = _get_setup_values(
-            setup_config, db_name, db_config.get("db_type")
+            setup_config, db_name, db_config.get("db_type"), db_config.get("dialect")
         )
     core_db.set_setup_instructions(setup_scripts, None)
     core_db.resetup_database(False, False)
@@ -77,7 +78,7 @@ def _prepare_db_queue_for_ddl(core_db: DB, db_name, db_config, setup_config, num
     if not setup_config:
         raise ValueError("No Setup Config was provided for DDL")
     setup_scripts, _ = _get_setup_values(
-        setup_config, db_name, db_config.get("db_type")
+        setup_config, db_name, db_config.get("db_type"), db_config.get("dialect")
     )
     tmp_dbs = core_db.create_tmp_databases(num_dbs)
     with ThreadPoolExecutor() as executor:
@@ -98,7 +99,25 @@ def _create_ddl_tmp_db(tmp_db, db_config, setup_scripts):
     return tmp_db
 
 
-def _get_setup_values(setup_config, db_name: str, db_type: str):
+def _get_setup_values(setup_config, db_name: str, db_type: str, dialect: Optional[str] = None):
+    current_directory = os.getcwd()
+    setup_dir = os.path.join(current_directory, setup_config["setup_directory"], db_name)
+    
+    # 1. Try dialect path if dialect is provided and exists
+    if dialect:
+        dialect_path = os.path.join(setup_dir, dialect)
+        if os.path.isdir(dialect_path):
+            setup_scripts_dir = os.path.relpath(dialect_path, current_directory)
+            try:
+                setup_scripts = load_setup_scripts(setup_scripts_dir)
+                data = load_db_data_from_csvs(
+                    setup_config["setup_directory"] + "/" + db_name + "/data"
+                )
+                return setup_scripts, data
+            except Exception:
+                pass
+                
+    # 2. Try db_type path as fallback
     try:
         scripts_path = setup_config["setup_directory"] + "/" + db_name + "/" + db_type
         data_path = setup_config["setup_directory"] + "/" + db_name + "/data"
@@ -112,5 +131,5 @@ def _get_setup_values(setup_config, db_name: str, db_type: str):
         return setup_scripts, data
     except Exception as e:
         raise FileNotFoundError(
-            f"Could not find setup files for database {db_name} on {db_type} due to: {e}"
+            f"Could not find setup files for database {db_name} on {db_type}/{dialect} due to: {e}"
         )
