@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "google-evalbench"
-version = "1.9.0"
+version = "1.10.0"
 requires-python = ">=3.10"
 description = "Evalbench - evaluation benchmarking framework"
 readme = "README.md"
