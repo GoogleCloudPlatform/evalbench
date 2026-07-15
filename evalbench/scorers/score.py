@@ -20,6 +20,7 @@ from scorers import toolcalllatency
 from scorers import tokenconsumption
 from scorers import tokensprocessed
 from scorers import effectivebilledtokens
+from scorers import nonfinaloutputtokens
 from scorers import binaryrubricscorer
 from scorers import pythonscorer
 from scorers import dataformscorer
@@ -125,6 +126,12 @@ def compare(
         comparators.append(
             effectivebilledtokens.EffectiveBilledTokens(
                 scorers["effective_billed_tokens"]
+            )
+        )
+    if "non_final_output_tokens" in scorers:
+        comparators.append(
+            nonfinaloutputtokens.NonFinalOutputTokens(
+                scorers["non_final_output_tokens"]
             )
         )
     if "binary_rubric_scorer" in scorers:

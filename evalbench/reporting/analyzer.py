@@ -81,6 +81,7 @@ def analyze_one_metric(
                 "token_consumption",
                 "tokens_processed",
                 "effective_billed_tokens",
+                "non_final_output_tokens",
             ]
             if metric_name in non_binary_metrics:
                 avg_val = df_metric["score"].mean(

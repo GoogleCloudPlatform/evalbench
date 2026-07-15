@@ -1,32 +1,29 @@
 ############################################################
 ### Dataset / Eval Items
 ############################################################
-dataset_config: datasets/claude-code-tools/claude-code-skills.evalset.json
+# Single read-only scenario (list Cloud SQL instances) for a fast, cheap
+# smoke test of the token scorers -- in particular non_final_output_tokens,
+# which strips the high-variance rendered-answer text from output tokens.
+dataset_config: datasets/claude-code-tools/claude-code-smoke.evalset.json
 dataset_format: agent-format
 
 # Orchestrator Configuration
+# `agent` works for both Gemini CLI and Claude Code (alias of `geminicli`).
 orchestrator: agent
-model_config: datasets/model_configs/claude_code_mcp_repo_model.yaml
+model_config: datasets/model_configs/claude_code_model.yaml
 simulated_user_model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
 
+# Concurrency: number of scenarios to run in parallel.
 runners:
   agent_runners: 1
 
 ############################################################
 ### Scorer Related Configs
 ############################################################
+# Only the deterministic token scorers -- no LLM-based scorers -- so this
+# runs fast and cheap while still exercising non_final_output_tokens.
 scorers:
-  skills_trajectory:
-    enforce_order: false
-  skills_best_practices:
-    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
-  goal_completion:
-    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
-  behavioral_metrics:
-    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
   turn_count: {}
-  end_to_end_latency: {}
-  tool_call_latency: {}
   token_consumption: {}
   tokens_processed: {}
   effective_billed_tokens: {}

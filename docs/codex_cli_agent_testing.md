@@ -187,6 +187,7 @@ scorers:
   end_to_end_latency: {}
   tool_call_latency: {}
   token_consumption: {}
+  non_final_output_tokens: {}
 
 reporting:
   csv:
@@ -462,6 +463,7 @@ Quick reference:
 | `end_to_end_latency` | Deterministic | Total wall-clock latency of the `codex exec` subprocess |
 | `tool_call_latency` | Deterministic | Sum of per-tool durations measured between `item.started` and `item.completed` arrival times (Codex events carry no timestamps, so the generator stamps arrival in-process) |
 | `token_consumption` | Deterministic | Total input + output + cached tokens, plus `cost_usd` from the `pricing` block |
+| `non_final_output_tokens` | Deterministic | Output tokens spent on reasoning + tool-call orchestration, excluding the final rendered answer text. Robust to answer-verbosity variance for side-by-side efficiency comparison. |
 
 The Codex generator extracts tool calls from the following NDJSON ThreadItem kinds: `mcp_tool_call`, `command_execution` (reported as `shell`), `web_search`, and `file_change`.
 

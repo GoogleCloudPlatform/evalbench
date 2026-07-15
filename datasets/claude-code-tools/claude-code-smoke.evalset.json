@@ -1,0 +1,18 @@
+{
+  "scenarios": [
+    {
+      "id": "cloud-sql-list-instances-01",
+      "starting_prompt": "list all Cloud SQL instances in project astana-evaluation",
+      "conversation_plan": "Ask the agent to list instances in project astana-evaluation. Once all instances are listed if nl2code exist get its state and validate its RUNNABLE",
+      "expected_trajectory": [
+        "cloud-sql__list_instances",
+        "cloud-sql__get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 3
+    }
+  ]
+}

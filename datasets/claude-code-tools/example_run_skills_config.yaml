@@ -30,6 +30,7 @@ scorers:
   token_consumption: {}
   tokens_processed: {}
   effective_billed_tokens: {}
+  non_final_output_tokens: {}
 
 ############################################################
 ### Reporting Related Configs

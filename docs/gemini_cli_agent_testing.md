@@ -182,6 +182,7 @@ scorers:
   end_to_end_latency: {}
   tool_call_latency: {}
   token_consumption: {}
+  non_final_output_tokens: {}
 
 ############################################################
 ### Reporting Related Configs
@@ -623,6 +624,7 @@ These require no additional model:
 | `end_to_end_latency` | Milliseconds | Total latency = model API latency + tool execution latency. |
 | `tool_call_latency` | Milliseconds | Sum of all tool execution durations across all turns. |
 | `token_consumption` | Count | Total tokens consumed (input + output) across all turns. |
+| `non_final_output_tokens` | Count | Output tokens spent on reasoning + tool-call orchestration, excluding the final rendered answer text. Robust to answer-verbosity variance for side-by-side efficiency comparison. |
 | `python_scorer` | 0–100 | Delegates evaluation to an external Python script executed via `uv run`. |
 
 ### Scorer Configuration Example
@@ -641,6 +643,7 @@ scorers:
   end_to_end_latency: {}
   tool_call_latency: {}
   token_consumption: {}
+  non_final_output_tokens: {}
 
   # LLM-based scorers (require model_config)
   goal_completion:

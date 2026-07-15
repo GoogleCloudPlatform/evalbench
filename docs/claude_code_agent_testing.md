@@ -183,6 +183,7 @@ scorers:
   end_to_end_latency: {}
   tool_call_latency: {}
   token_consumption: {}
+  non_final_output_tokens: {}
 
 reporting:
   csv:
@@ -355,6 +356,7 @@ Quick reference:
 | `end_to_end_latency` | Deterministic | Total latency (model + tool execution) |
 | `tool_call_latency` | Deterministic | Sum of tool execution durations |
 | `token_consumption` | Deterministic | Total input + output tokens |
+| `non_final_output_tokens` | Deterministic | Output tokens spent on reasoning + tool-call orchestration, excluding the final rendered answer text. Robust to answer-verbosity variance for side-by-side efficiency comparison. |
 
 ---
 
