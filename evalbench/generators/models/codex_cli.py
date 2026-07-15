@@ -53,6 +53,10 @@ class CLICommand:
 class CodexCliGenerator(AgentCliGenerator):
     """Generator queries using OpenAI Codex CLI (`codex exec`)."""
 
+    # Env var Codex sources the Google MCP bearer token from
+    # (`bearer_token_env_var`); refreshed per turn in _run_codex_cli.
+    _GCLOUD_MCP_TOKEN_ENV = "EVALBENCH_GCLOUD_MCP_TOKEN"
+
     def __init__(self, querygenerator_config):
         super().__init__(querygenerator_config)
         self.name = "codex_cli"
@@ -598,30 +602,75 @@ class CodexCliGenerator(AgentCliGenerator):
 
         auth_provider = config.get("authProviderType")
         if auth_provider == "google_credentials" and "Authorization" not in headers:
+            # Supply the bearer token via `bearer_token_env_var` rather than a
+            # static header so it can be refreshed on every turn: each
+            # `codex exec` is a fresh process that re-reads the env var, and
+            # _run_codex_cli re-mints a fresh ADC token into it per turn -- so
+            # the token never expires mid-suite (Codex's closest equivalent to
+            # Claude Code's per-connection headersHelper). X-Goog-User-Project
+            # stays a static header.
+            out["bearer_token_env_var"] = self._GCLOUD_MCP_TOKEN_ENV
+            self._needs_gcloud_mcp_token = True
             token = self._fetch_gcloud_access_token()
             if token:
-                headers["Authorization"] = f"Bearer {token}"
+                self.env[self._GCLOUD_MCP_TOKEN_ENV] = token  # initial value
             else:
                 logging.warning(
-                    f"MCP server '{server_name}' requires google_credentials but "
-                    "failed to fetch access token via `gcloud auth print-access-token`."
+                    f"MCP server '{server_name}' requires google_credentials "
+                    "but failed to fetch an access token via gcloud."
                 )
         if headers:
             out["http_headers"] = headers
         return out
 
     def _fetch_gcloud_access_token(self) -> str:
-        try:
-            result = subprocess.run(
-                ["gcloud", "auth", "print-access-token"],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            return result.stdout.strip()
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            logging.error(f"Failed to retrieve gcloud access token: {e}")
-            return ""
+        """Fetches a Google Cloud access token for MCP `google_credentials` auth.
+
+        Prefers Application Default Credentials (``gcloud auth
+        application-default print-access-token``) over the gcloud *user* token
+        (``gcloud auth print-access-token``). Google API MCP endpoints such as
+        Cloud SQL Managed (``sqladmin.googleapis.com/mcp``) reject the plain
+        user token on tool calls ("Request had invalid authentication
+        credentials") and only accept an ADC token; a rejected token makes the
+        tool call return 401 and auth fails. (See the Claude Code generator for
+        the full write-up -- the same MCP endpoints and token requirement apply
+        here.)
+
+        The token is fetched with the host environment (real HOME / gcloud
+        config), NOT the sandboxed fake HOME, so gcloud finds the developer's /
+        host's credentials. An explicit service-account or ADC file is honored
+        if one was configured.
+        """
+        token_env = os.environ.copy()
+        adc = self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
+        if adc and os.path.exists(adc):
+            token_env["GOOGLE_APPLICATION_CREDENTIALS"] = adc
+        commands = [
+            ["gcloud", "auth", "application-default", "print-access-token"],
+            ["gcloud", "auth", "print-access-token"],
+        ]
+        for cmd in commands:
+            try:
+                result = subprocess.run(
+                    cmd, check=True, capture_output=True, text=True,
+                    env=token_env,
+                )
+                token = result.stdout.strip()
+                if token:
+                    logging.info(
+                        f"MCP google_credentials token via `{' '.join(cmd)}` "
+                        f"({len(token)} chars)"
+                    )
+                    return token
+            except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                stderr = getattr(e, "stderr", "") or ""
+                logging.warning(
+                    f"`{' '.join(cmd)}` failed: {e}. {stderr.strip()}")
+        logging.error(
+            "Failed to fetch a Google Cloud access token via gcloud (tried ADC "
+            "and user credentials). Run `gcloud auth application-default login`."
+        )
+        return ""
 
     @staticmethod
     def _toml_key(key: str) -> str:
@@ -762,6 +811,14 @@ class CodexCliGenerator(AgentCliGenerator):
         env = os.environ.copy()
         env.update(self.env)
         env.update(cli_cmd.env)
+
+        # Refresh the Google MCP bearer token for this turn. Each `codex exec`
+        # is a fresh process that re-reads `bearer_token_env_var`, so minting a
+        # new ADC token here keeps it from expiring across a long suite.
+        if getattr(self, "_needs_gcloud_mcp_token", False):
+            token = self._fetch_gcloud_access_token()
+            if token:
+                env[self._GCLOUD_MCP_TOKEN_ENV] = token
 
         # Pin a specific npm version when the spec looks like an npm package.
         cli = cli_cmd.cli

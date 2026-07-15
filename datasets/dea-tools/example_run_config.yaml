@@ -5,6 +5,7 @@ simulated_user_model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
 dataset_config: datasets/dea-tools/dea-live-conversational.evalset.json
 env:
   SCENARIO_ID: "dea-live-conversational"
+  EVAL_DATAFORM_SETUP_ENV_FILES_DIR: "datasets/dea-tools/templates/default_workspace"
 scorers:
   binary_rubric_scorer:
     model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
@@ -25,3 +26,8 @@ runners:
   agent_runners: 1
 set_up_script: datasets/dea-tools/scripts/setup_dataform.sh
 tear_down_script: datasets/dea-tools/scripts/teardown_dataform.sh
+dataform_workspace_gcs_archive:
+  bucket: !ENV ${EVAL_GCP_PROJECT_ID}-evalbench-archives
+  path_prefix: workspaces
+  gcp_project_id: !ENV ${EVAL_GCP_PROJECT_ID}
+  gcp_region: !ENV ${EVAL_GCP_PROJECT_REGION}

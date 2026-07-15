@@ -12,23 +12,31 @@
 
 orchestrator: mcp_readability
 
+# Plug-and-play scorers. Each key names a registered mcp_readability scorer
+# (SCORER_REGISTRY in the orchestrator) and carries that scorer's own config.
+# The orchestrator runs every scorer declared here against each endpoint and
+# merges their result columns; the shared analyzer aggregates a per-scorer pass
+# rate (comparator = scorer name) for the scores / summary reports. Add a scorer
+# (e.g. conformance) by registering the class and adding a block here.
+scorers:
+  # Deterministic size metrics. Pass = within token budget. `token_budget` feeds
+  # mcp_readability_token_budget_used_percent (endpoints may override per-entry).
+  mcp_tool_metrics:
+    token_budget: 200000
+  # LLM judge vs the style guide. Pass = no P0 findings. Owns its model config
+  # and style-guide path. Run with EVAL_GCP_PROJECT_REGION=global.
+  mcp_style_readability:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+    style_guide: datasets/mcp_readability/style_guide.md
+
 # Inputs (paths relative to the repo root / run cwd).
 endpoints_config: datasets/mcp_readability/endpoints.yaml
 exceptions_config: datasets/mcp_readability/exceptions.yaml          # optional
 tools_generator_config: datasets/mcp_readability/tools_generator.yaml
 
-# Token budget for token_budget_used_percent (endpoints may override per-entry).
-token_budget: 200000
-
 # Optional filter: only check endpoints whose endpoint_type is in this list.
 # Empty = check all. e.g. [PROD]
 endpoint_types: []
-
-# LLM judge: consumes a model config and the style-guide path. Reuses the
-# shared repo model config.
-readability_judge:
-  model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
-  style_guide: datasets/mcp_readability/style_guide.md
 
 # Per-endpoint check concurrency.
 runners:

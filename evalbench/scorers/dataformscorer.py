@@ -131,6 +131,18 @@ class DataformBaseScorer(comparator.Comparator):
             if not project_id:
                 return 0.0, "\n".join(log_messages) + "\nError: Both CLOUDSDK_CORE_PROJECT and GOOGLE_CLOUD_PROJECT are missing. Scorer cannot proceed."
 
+            # Ensure all GCP SDK environment variables uniformly point to the resolved project_id.
+            # Node.js @google-cloud client libraries (used by Dataform CLI) check process.env.GCLOUD_PROJECT
+            # and process.env.GCP_PROJECT before process.env.GOOGLE_CLOUD_PROJECT. In GKE environments,
+            # host OCI test project IDs in GCLOUD_PROJECT and GCP_PROJECT can leak into Dataform CLI if not updated.
+            env["GOOGLE_CLOUD_PROJECT"] = project_id
+            env["CLOUDSDK_CORE_PROJECT"] = project_id
+            env["GCLOUD_PROJECT"] = project_id
+            env["GCP_PROJECT"] = project_id
+            env["GOOGLE_CLOUD_QUOTA_PROJECT"] = project_id
+            for lower_var in ["gcloud_project", "gcp_project", "google_cloud_project", "google_cloud_quota_project"]:
+                env.pop(lower_var, None)
+
             search_root = '.'
             if parsed:
                 search_root = parsed.get("fake_home") or '.'

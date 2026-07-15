@@ -1,5 +1,65 @@
 # Changelog
 
+## [1.10.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.9.0...v1.10.0) (2026-07-13)
+
+
+### Features
+
+* add 300-second timeout to QueryData API calls to prevent indefinite blocking ([76c7ca4](https://github.com/GoogleCloudPlatform/evalbench/commit/76c7ca4f4a7e0c56b280e855d791f7a823c06993))
+* Add ability to filter to specific json scenario/examples ([#453](https://github.com/GoogleCloudPlatform/evalbench/issues/453)) ([7c99d3d](https://github.com/GoogleCloudPlatform/evalbench/commit/7c99d3dc4f5b2f647de6aeab37ec62918103708f))
+* Add hybrid evaluation Python notebook ([#487](https://github.com/GoogleCloudPlatform/evalbench/issues/487)) ([ace0149](https://github.com/GoogleCloudPlatform/evalbench/commit/ace01490753ea35710a32dee0a8d557c6f7fe409))
+* **dea:** adjust conversation turns and plan for programmatic scenarios ([#479](https://github.com/GoogleCloudPlatform/evalbench/issues/479)) ([7434a91](https://github.com/GoogleCloudPlatform/evalbench/commit/7434a91bd7a5a2b2403b123b8697c45277fc9563))
+* **dea:** adjust conversation turns and plan for programmatic scenarios ([#479](https://github.com/GoogleCloudPlatform/evalbench/issues/479)) ([85b90ec](https://github.com/GoogleCloudPlatform/evalbench/commit/85b90ec384e437b1826b0f851cad2036da5d4caf))
+* **dea:** implement GCS archival for DataEngineeringAgent ([#476](https://github.com/GoogleCloudPlatform/evalbench/issues/476)) ([5e36350](https://github.com/GoogleCloudPlatform/evalbench/commit/5e36350fadacef0c207a792d031c8df0479fe4b5))
+* **dea:** implement GCS archival for DataEngineeringAgent ([#476](https://github.com/GoogleCloudPlatform/evalbench/issues/476)) ([89c24e4](https://github.com/GoogleCloudPlatform/evalbench/commit/89c24e4affe8a74c73c203abef3c115b7dcba38c))
+* **dea:** support dynamic workspace environment files mapping and injection ([#491](https://github.com/GoogleCloudPlatform/evalbench/issues/491)) ([a409608](https://github.com/GoogleCloudPlatform/evalbench/commit/a409608a7d7b7726f9762c3a7d78708692bd2bbe))
+* **dea:** support dynamic workspace lifecycle and parameter passing in evaluator, generator, and scorers ([#474](https://github.com/GoogleCloudPlatform/evalbench/issues/474)) ([b5e97f0](https://github.com/GoogleCloudPlatform/evalbench/commit/b5e97f0e40eae55ea4b33e053f03c9c3cc041be8))
+* **dea:** support dynamic workspace lifecycle and parameter passing in evaluator, generator, and scorers ([#474](https://github.com/GoogleCloudPlatform/evalbench/issues/474)) ([94b63ae](https://github.com/GoogleCloudPlatform/evalbench/commit/94b63aed03d70a07de0eed794c6c043bfb761140))
+* **dea:** support static workspaces (Mode 2) and update README ([#486](https://github.com/GoogleCloudPlatform/evalbench/issues/486)) ([39cb2b8](https://github.com/GoogleCloudPlatform/evalbench/commit/39cb2b8bdf87abe64c37ff634d01de6c932feb45))
+* **mcp-readability:** add MCP tool man-page formatter ([620cc0b](https://github.com/GoogleCloudPlatform/evalbench/commit/620cc0b62e81204d4b9f72d9b801b104c369b158))
+* **mcp-readability:** add MCP tool man-page formatter ([3e4c16e](https://github.com/GoogleCloudPlatform/evalbench/commit/3e4c16eafecd0752ed21c31e404384f7fd37b1c0))
+* **mcp-readability:** add McpToolsGenerator with pluggable tools_source ([66b67d5](https://github.com/GoogleCloudPlatform/evalbench/commit/66b67d566bd1131907368f180836f0bd309a3ad3))
+* **mcp-readability:** add sample run config, endpoints, style guide, exceptions ([a21ec5e](https://github.com/GoogleCloudPlatform/evalbench/commit/a21ec5ed49055617fdd624c7b00da698f2a6de41))
+* **mcp-readability:** compliance orchestrator, LLM judge, and metrics scorer ([52ffade](https://github.com/GoogleCloudPlatform/evalbench/commit/52ffade7567373a0781cf2c841a4fd96e1ee5bb5))
+* **mcp-readability:** compliance orchestrator, LLM judge, and metrics scorer ([fefb034](https://github.com/GoogleCloudPlatform/evalbench/commit/fefb0341314e6a28237d67133d4d6de60cc3cb12))
+* **mcp-readability:** compliance orchestrator, LLM judge, and metrics scorer ([222fd49](https://github.com/GoogleCloudPlatform/evalbench/commit/222fd4933abde6cbc81bbc7e5f1bf7737ef0e505))
+* natively copy declared env_files to agent sandbox ([#434](https://github.com/GoogleCloudPlatform/evalbench/issues/434)) ([db4e5b8](https://github.com/GoogleCloudPlatform/evalbench/commit/db4e5b8e6883b38831b3359aba0227a316dae94c))
+* **query_data_api:** support api_endpoint override in model config ([#480](https://github.com/GoogleCloudPlatform/evalbench/issues/480)) ([3f1868c](https://github.com/GoogleCloudPlatform/evalbench/commit/3f1868cc1983b41d4a61ae9c49c29ebf267f30b2))
+* **query_data_api:** support api_endpoint override in model config ([#480](https://github.com/GoogleCloudPlatform/evalbench/issues/480)) ([0d59e90](https://github.com/GoogleCloudPlatform/evalbench/commit/0d59e90632c83a2976dd22ce5edcd31b41d92da9))
+* Support cross-database evaluation with SQLite ground truth ([#465](https://github.com/GoogleCloudPlatform/evalbench/issues/465)) ([e71692c](https://github.com/GoogleCloudPlatform/evalbench/commit/e71692c3ec32e4fca62f937c331d82b05b491f72))
+* Support cross-database evaluation with SQLite ground truth ([#465](https://github.com/GoogleCloudPlatform/evalbench/issues/465)) ([3cb207b](https://github.com/GoogleCloudPlatform/evalbench/commit/3cb207b83084547887d7a96dc553d26172e425c5))
+* **util:** add DataformHelper utility for managing cloud sandboxes and mock-based unit tests ([#458](https://github.com/GoogleCloudPlatform/evalbench/issues/458)) ([aa1642a](https://github.com/GoogleCloudPlatform/evalbench/commit/aa1642ab51ef960f7035fb4f39060961950f66af))
+* **util:** update DataformHelper utility with high-level workspace lifecycle methods ([#466](https://github.com/GoogleCloudPlatform/evalbench/issues/466)) ([9a75a7a](https://github.com/GoogleCloudPlatform/evalbench/commit/9a75a7ab9a7d1651bc094ed933925c7fcb6c8ffb))
+
+
+### Bug Fixes
+
+* add timeout to data agent request in querydata generator ([a8b148e](https://github.com/GoogleCloudPlatform/evalbench/commit/a8b148e2397383bac94285f3c5ca6648ec18df1c))
+* add timeout to data agent request in querydata generator ([9573c14](https://github.com/GoogleCloudPlatform/evalbench/commit/9573c146a4eb3be73b0a49cd087d0b26163a6259))
+* **agy_cli:** drop unsupported -- delimiter from plugin install ([4f55589](https://github.com/GoogleCloudPlatform/evalbench/commit/4f55589d16467f9dfb1b64b57c3f06a6611bdde2))
+* **agy_cli:** drop unsupported -- delimiter from plugin install ([87f0945](https://github.com/GoogleCloudPlatform/evalbench/commit/87f094510830b063e2e9fea05360f9f4f8431042))
+* **dataform:** synchronize GCP project env vars in dataform scorer ([a15a54f](https://github.com/GoogleCloudPlatform/evalbench/commit/a15a54f0a593a6e3cb9c25493a0b86acc62eb554))
+* **dataform:** synchronize GCP project env vars in dataform scorer ([de7dc22](https://github.com/GoogleCloudPlatform/evalbench/commit/de7dc225508360dc01f0b6e3171fe12addeb4704))
+* **dataform:** synchronize GCP project env vars in dataform scorer ([be31ac6](https://github.com/GoogleCloudPlatform/evalbench/commit/be31ac6dffea917ce0abe5f6ad0d44a74be454b6))
+* **dataset:** load all knowledge-base entries, not just the last line ([b8b96c8](https://github.com/GoogleCloudPlatform/evalbench/commit/b8b96c8db96c820f81ea81e8c21fae151f00b046))
+* **dataset:** load all knowledge-base entries, not just the last line ([63441ce](https://github.com/GoogleCloudPlatform/evalbench/commit/63441ce5fde578055fd19afc6a6972908e70d445))
+* **dea:** accumulate all agent text parts and increase timeout ([#456](https://github.com/GoogleCloudPlatform/evalbench/issues/456)) ([cf3f758](https://github.com/GoogleCloudPlatform/evalbench/commit/cf3f7584ec3ec16698167ad312deac54d65a89df))
+* **deps:** add mcp to pyproject.toml dependencies ([62c7436](https://github.com/GoogleCloudPlatform/evalbench/commit/62c7436274ae3aac31e8ebdacbf8798f7f256ca1))
+* **deps:** add mcp to pyproject.toml dependencies ([5928137](https://github.com/GoogleCloudPlatform/evalbench/commit/5928137ae972dda50f3fe69c748547fe28d320f9))
+* **interact:** count total_db_len so DB-setup progress isn't always zero ([#446](https://github.com/GoogleCloudPlatform/evalbench/issues/446)) ([0d66535](https://github.com/GoogleCloudPlatform/evalbench/commit/0d66535eaa20e9b88fded96e0d498b4f9d68cb7e))
+* log metadata reflection failures instead of swallowing them ([cce4eb2](https://github.com/GoogleCloudPlatform/evalbench/commit/cce4eb20dc4b61497cac720b7b7bfed3ff16eb05))
+* log metadata reflection failures instead of swallowing them ([fa3c508](https://github.com/GoogleCloudPlatform/evalbench/commit/fa3c5086fb976310dbfea9e5ece1fc4d6f5b6bad))
+* **make:** eliminate container name race in container/shell targets ([#449](https://github.com/GoogleCloudPlatform/evalbench/issues/449)) ([8f1803d](https://github.com/GoogleCloudPlatform/evalbench/commit/8f1803d53ed214a9976ce7697d3fd9098a07ecda))
+* re-raise 404 as bare HTTPError instead of ResourceExhaustedError ([3307570](https://github.com/GoogleCloudPlatform/evalbench/commit/330757065d1c23d670b6668ae5224a25cf45c6df))
+* re-raise 404 errors in querydata generate_internal ([7a2bf1f](https://github.com/GoogleCloudPlatform/evalbench/commit/7a2bf1f246de36bc6ae5d88734b6108ca18a90b5))
+* re-raise 404 errors in querydata generate_internal ([b7f7b30](https://github.com/GoogleCloudPlatform/evalbench/commit/b7f7b304521d2363f0bbc5622327efca2984a713))
+* **reporting:** Add retry logic and configurable chunk size for BigQuery writes ([6b5f0a6](https://github.com/GoogleCloudPlatform/evalbench/commit/6b5f0a63ceafe713a4034cd80ad23244a517d5e4))
+* **reporting:** Add retry logic and configurable chunk size for BigQuery writes ([8774d02](https://github.com/GoogleCloudPlatform/evalbench/commit/8774d02db9391306144f9845e8bdb741fe561b25))
+* restrict unpickling of cached results to safe types ([#439](https://github.com/GoogleCloudPlatform/evalbench/issues/439)) ([067dfe3](https://github.com/GoogleCloudPlatform/evalbench/commit/067dfe39fdb2f8d47d6de2ff787d433d28c6edaa))
+* **scorers:** correct digit regex in behavioral metrics scorer ([78ecdfc](https://github.com/GoogleCloudPlatform/evalbench/commit/78ecdfc67cd0c88ac394d3eb41be57bce8b08b27))
+* **scorers:** correct digit regex in behavioral metrics scorer ([c8d82ea](https://github.com/GoogleCloudPlatform/evalbench/commit/c8d82ea2e784f87273135532855cf2b2f2352463))
+* tight copy of claude settings from local environment ([#467](https://github.com/GoogleCloudPlatform/evalbench/issues/467)) ([474a9be](https://github.com/GoogleCloudPlatform/evalbench/commit/474a9beebb42c26223951d25a1435202fb47c5ca))
+
 ## [1.9.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.8.0...v1.9.0) (2026-06-11)
 
 
