@@ -470,6 +470,7 @@ class SpannerDB(DB):
                     f"FROM information_schema.columns "
                     f"WHERE table_schema = '{schema_name}' "
                     f"AND (UPPER(is_generated) != 'ALWAYS' OR is_generated IS NULL) "
+                    f"AND LOWER(column_name) NOT IN ('_row_id', 'surrogate_id') "
                     f"ORDER BY table_name, ordinal_position"
                 )
                 res = snapshot.execute_sql(query, timeout=self.query_timeout)
@@ -513,13 +514,7 @@ class SpannerDB(DB):
                             break
                 if not info:
                     continue
-                # CSV files are headerless, meaning we map values positionally.
-                # If the CSV has C columns and the DB has S columns (where C < S),
-                # we slice to map values to the first C columns. This allows
-                # database columns with defaults (like surrogate_id PKs) at the end
-                # to be omitted from the insert, letting Spanner generate defaults.
-                csv_col_count = len(rows[0]) if rows else 0
-                columns = info["columns"][:csv_col_count]
+                columns = info["columns"]
                 processed_rows = []
                 for row in rows:
                     p_row = list(row)

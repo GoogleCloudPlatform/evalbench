@@ -57,7 +57,7 @@ class TestSpanner:
             # Data omitting the generated column (3 values)
             data = {"ut_gen": [[1, 10, 20], [2, 100, 200]]}
             client.insert_data(data)
-            
+
             # Verify data
             res = client.execute("SELECT id, a, b, gen FROM `ut_gen` ORDER BY id")
             assert len(res[0]) == 2
@@ -70,21 +70,21 @@ class TestSpanner:
 
     @pytest.mark.filterwarnings("ignore::DeprecationWarning")
     def test_default_column_omitted(self, client):
-        # Create table with default column
-        create_table = "CREATE TABLE `ut_def` (id INT64, val INT64, def_val INT64 DEFAULT (42)) PRIMARY KEY (id)"
+        # Create table with default column (using surrogate_id which is filtered out)
+        create_table = "CREATE TABLE `ut_def` (id INT64, val INT64, surrogate_id STRING(36) DEFAULT ('default-uuid')) PRIMARY KEY (id)"
         client.batch_execute([create_table])
         try:
             # Data omitting default column (2 values)
             data = {"ut_def": [[1, 10], [2, 20]]}
             client.insert_data(data)
-            
+
             # Verify default value is populated
-            res = client.execute("SELECT id, val, def_val FROM `ut_def` ORDER BY id")
+            res = client.execute("SELECT id, val, surrogate_id FROM `ut_def` ORDER BY id")
             assert len(res[0]) == 2
             assert res[0][0]["id"] == 1
-            assert res[0][0]["def_val"] == 42
+            assert res[0][0]["surrogate_id"] == "default-uuid"
             assert res[0][1]["id"] == 2
-            assert res[0][1]["def_val"] == 42
+            assert res[0][1]["surrogate_id"] == "default-uuid"
         finally:
             client.batch_execute(["DROP TABLE `ut_def`"])
 
@@ -97,7 +97,7 @@ class TestSpanner:
             # Data including default column (3 values)
             data = {"ut_def_inc": [[1, 10, 99], [2, 20, 100]]}
             client.insert_data(data)
-            
+
             # Verify explicit value is populated
             res = client.execute("SELECT id, val, def_val FROM `ut_def_inc` ORDER BY id")
             assert len(res[0]) == 2
