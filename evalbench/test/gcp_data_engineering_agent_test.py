@@ -55,6 +55,7 @@ def valid_config():
         "gcp_region": "us-east1",
         "dataform_repository": "test-repo",
         "dataform_workspace": "test-workspace",
+        "model_env": "prod",
     }
 
 
@@ -163,6 +164,100 @@ def test_data_engineering_agent_generator_setup(valid_config):
         )
         assert generator.endpoint == expected_endpoint
         assert generator.auth_interceptor is not None
+        assert generator.agent_type_uri is None
+
+
+def test_generator_parameterized_staging_env(valid_config):
+    config = valid_config.copy()
+    config["model_env"] = "staging"
+    with patch("google.auth.default") as mock_auth_default:
+        mock_creds = MagicMock()
+        mock_creds.valid = True
+        mock_auth_default.return_value = (mock_creds, "test-project")
+
+        generator = DataEngineeringAgentGenerator(config)
+
+        expected_endpoint = (
+            "https://staging-geminidataanalytics.sandbox.googleapis.com/"
+            "v1/a2a/projects/test-project-123/locations/us-east1/agents/"
+            "dataengineeringagent"
+        )
+        assert generator.endpoint == expected_endpoint
+        assert generator.agent_type_uri is None
+
+
+def test_generator_parameterized_sparkagent(valid_config):
+    config = valid_config.copy()
+    config["model_env"] = "staging"
+    config["agent_type"] = "sparkagent"
+    with patch("google.auth.default") as mock_auth_default:
+        mock_creds = MagicMock()
+        mock_creds.valid = True
+        mock_auth_default.return_value = (mock_creds, "test-project")
+
+        generator = DataEngineeringAgentGenerator(config)
+
+        expected_endpoint = (
+            "https://staging-geminidataanalytics.sandbox.googleapis.com/"
+            "v1/a2a/projects/test-project-123/locations/us-east1/agents/"
+            "sparkagent"
+        )
+        assert generator.endpoint == expected_endpoint
+        assert generator.agent_type == "sparkagent"
+        assert generator.agent_type_uri == "SPARK_AGENT"
+
+
+def test_generator_parameterized_local_env(valid_config):
+    config = valid_config.copy()
+    config["model_env"] = "local"
+    config["port"] = 9876
+    config["agent_type"] = "sparkagent"
+    with patch("google.auth.default") as mock_auth_default:
+        mock_creds = MagicMock()
+        mock_creds.valid = True
+        mock_auth_default.return_value = (mock_creds, "test-project")
+
+        generator = DataEngineeringAgentGenerator(config)
+
+        expected_endpoint = (
+            "http://localhost:9876/v1/a2a/projects/test-project-123/"
+            "locations/us-east1/agents/sparkagent"
+        )
+        assert generator.endpoint == expected_endpoint
+
+
+def test_generator_parameterized_local_port_override(valid_config):
+    config = valid_config.copy()
+    config["model_env"] = "local"
+    config["port"] = 8080
+    config["agent_type"] = "dataengineeringagent"
+    with patch("google.auth.default") as mock_auth_default:
+        mock_creds = MagicMock()
+        mock_creds.valid = True
+        mock_auth_default.return_value = (mock_creds, "test-project")
+
+        generator = DataEngineeringAgentGenerator(config)
+
+        expected_endpoint = (
+            "http://localhost:8080/v1/a2a/projects/test-project-123/"
+            "locations/us-east1/agents/dataengineeringagent"
+        )
+        assert generator.endpoint == expected_endpoint
+        assert generator.agent_type_uri is None
+
+
+def test_generator_setup_unsupported_env_raises_value_error(valid_config):
+    config = valid_config.copy()
+    config["model_env"] = "invalid_env"
+    with patch("google.auth.default") as mock_auth_default:
+        mock_creds = MagicMock()
+        mock_creds.valid = True
+        mock_auth_default.return_value = (mock_creds, "test-project")
+
+        with pytest.raises(ValueError) as excinfo:
+            DataEngineeringAgentGenerator(config)
+
+        assert "Unsupported env: 'invalid_env'" in str(excinfo.value)
 
 
 @pytest.mark.anyio
@@ -303,6 +398,23 @@ async def test_generate_internal_uses_minimal_agent_card(
         == TransportProtocol.HTTP_JSON
     )
     assert called_card.capabilities.extended_agent_card is True
+
+
+def test_generator_setup_unsupported_agent_type_raises_error(
+    valid_config,
+):
+    config = valid_config.copy()
+    config["agent_type"] = "unsupportedagent"
+
+    with patch("google.auth.default") as mock_auth_default:
+        mock_creds = MagicMock()
+        mock_creds.valid = True
+        mock_auth_default.return_value = (mock_creds, "test-project")
+
+        with pytest.raises(ValueError) as excinfo:
+            DataEngineeringAgentGenerator(config)
+
+        assert "Unsupported agent_type 'unsupportedagent'" in str(excinfo.value)
 
 
 @patch("evaluator.dataengineeringagentevaluator.AgentScoreWork")
