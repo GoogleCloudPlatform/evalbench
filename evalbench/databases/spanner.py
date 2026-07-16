@@ -513,6 +513,11 @@ class SpannerDB(DB):
                             break
                 if not info:
                     continue
+                # CSV files are headerless, meaning we map values positionally.
+                # If the CSV has C columns and the DB has S columns (where C < S),
+                # we slice to map values to the first C columns. This allows
+                # database columns with defaults (like surrogate_id PKs) at the end
+                # to be omitted from the insert, letting Spanner generate defaults.
                 csv_col_count = len(rows[0]) if rows else 0
                 columns = info["columns"][:csv_col_count]
                 processed_rows = []
