@@ -30,6 +30,26 @@ This file is the main driver that dictates how evaluations are executed. Key par
 *   `set_up_script` & `tear_down_script`: Scripts that prep and clean up the Dataform environment. You can comment out `tear_down_script` if you want to keep the workspace alive after the run for debugging.
 *   `dataform_workspace_gcs_archive`: Saves a ZIP archive of the workspace artifacts to a GCS bucket.
 
+### Parameterized Agent & Environment Configuration:
+The model configuration file is defined in `datasets/model_configs/gcp_data_engineering_agent_model.yaml`. In your model configuration YAML file, you can configure target environments and agent personas:
+
+```yaml
+generator: "data_engineering_agent"
+gcp_project_id: !ENV ${EVAL_GCP_PROJECT_ID}
+gcp_region: !ENV ${EVAL_GCP_PROJECT_REGION}
+
+# Parameterized Agent Options:
+model_env: local                # Target environment: "local", "staging", or "prod" (defaults to "prod")
+port: 9876                      # Required port for local Boq servers when env="local"
+agent_type: sparkagent          # Desired agent persona (e.g., "sparkagent", "dataengineeringagent")
+
+```
+
+* **`model_env`**: Configures the host environment (`local` uses `http://localhost:{port}`, `staging` uses `https://staging-geminidataanalytics.sandbox.googleapis.com`, `prod` uses `https://geminidataanalytics.googleapis.com`).
+
+* **`port`**: Specifies the HTTP port for local Boq servers (required when `env="local"`).
+* **`agent_type`**: Sets the desired agent persona (e.g., "sparkagent", "dataengineeringagent").
+
 ## 3. Run EvalBench
 
 You can run EvalBench for DEA in two modes:
