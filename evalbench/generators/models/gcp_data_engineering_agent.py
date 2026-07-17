@@ -50,11 +50,21 @@ FINISH_REASON_URI = (
     "https://geminidataanalytics.googleapis.com/a2a/extensions/"
     "finishreason/v1"
 )
+AGENT_TYPE_URI = (
+    "https://geminidataanalytics.googleapis.com/a2a/extensions/"
+    "agenttype/v1"
+)
+
+# Mapping from agent_type to AGENT_TYPE_URI value
+AGENT_TYPE_MAP = {
+    "sparkagent": "SPARK_AGENT",
+}
+
 
 # All required A2A Extension Headers combined
 ALL_EXTENSIONS = (
     f"{MESSAGE_LEVEL_URI},{INSTRUCTION_URI},{GCP_RESOURCE_URI},"
-    f"{CONVERSATION_TOKEN_URI},{FINISH_REASON_URI}"
+    f"{CONVERSATION_TOKEN_URI},{FINISH_REASON_URI},{AGENT_TYPE_URI}"
 )
 
 logger = logging.getLogger(__name__)
@@ -211,6 +221,28 @@ class DataEngineeringAgentGenerator(QueryGenerator):
         self.name = "data_engineering_agent"
         gcp_project_id = querygenerator_config.get("gcp_project_id", "")
         gcp_region = querygenerator_config.get("gcp_region", "")
+        env_val = querygenerator_config.get("model_env")
+
+        if not isinstance(env_val, str):
+            raise TypeError(
+                "Configuration key 'model_env' must be a string, "
+                f"got {type(env_val).__name__}."
+            )
+        env = env_val.lower()
+
+        self.agent_type = querygenerator_config.get(
+            "agent_type", "dataengineeringagent"
+        ).lower()
+        match self.agent_type:
+            case "dataengineeringagent":
+                self.agent_type_uri = None
+            case "sparkagent":
+                self.agent_type_uri = AGENT_TYPE_MAP.get(self.agent_type)
+            case _:
+                raise ValueError(
+                    f"Unsupported agent_type '{self.agent_type}'. "
+                    "Must be 'dataengineeringagent' or 'sparkagent'."
+                )
 
         if not gcp_project_id:
             raise ValueError(
@@ -223,10 +255,25 @@ class DataEngineeringAgentGenerator(QueryGenerator):
                 "DataEngineeringAgentGenerator."
             )
 
+        if env == "local":
+            port = querygenerator_config.get("port", 9876)
+            host = f"http://localhost:{port}"
+        elif env == "staging":
+            host = (
+                "https://staging-geminidataanalytics."
+                "sandbox.googleapis.com"
+            )
+        elif env == "prod":
+            host = "https://geminidataanalytics.googleapis.com"
+        else:
+            raise ValueError(
+                f"Unsupported env: '{env}'. "
+                "Expected 'local', 'staging', or 'prod'."
+            )
+
         self.endpoint = (
-            f"https://geminidataanalytics.googleapis.com/v1/a2a/projects/"
-            f"{gcp_project_id}/locations/{gcp_region}/"
-            f"agents/dataengineeringagent"
+            f"{host}/v1/a2a/projects/{gcp_project_id}/"
+            f"locations/{gcp_region}/agents/{self.agent_type}"
         )
 
         self.auth_interceptor = AuthInterceptor(GcpAdcCredentialService())
@@ -324,6 +371,9 @@ class DataEngineeringAgentGenerator(QueryGenerator):
         message_req.metadata[GCP_RESOURCE_URI] = {
             "gcpResourceId": target_workspace
         }
+        # Configure Agent Type extension
+        if self.agent_type_uri:
+            message_req.metadata[AGENT_TYPE_URI] = self.agent_type_uri
 
         # Handle ConversationToken state memory thread-safely
         token = ""
