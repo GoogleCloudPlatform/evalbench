@@ -5,8 +5,11 @@ import google.auth.transport.requests
 import logging
 import requests
 from typing import Dict, Any
-from google.api_core.client_options import ClientOptions
-from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable, DeadlineExceeded
+from google.api_core.exceptions import (
+    ResourceExhausted,
+    ServiceUnavailable,
+    DeadlineExceeded,
+)
 from util.rate_limit import ResourceExhaustedError
 
 # Per-call gRPC deadline in seconds. The API may take a while to respond, but
