@@ -1,7 +1,11 @@
 import unittest
 from unittest.mock import patch, MagicMock
 from generators.models.query_data_api import QueryDataAPIGenerator
-from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable, DeadlineExceeded
+from google.api_core.exceptions import (
+    ResourceExhausted,
+    ServiceUnavailable,
+    DeadlineExceeded,
+)
 from util.rate_limit import ResourceExhaustedError
 
 
@@ -19,6 +23,9 @@ class TestQueryDataAPIGenerator(unittest.TestCase):
         self.assertEqual(generator.project_id, "test-project")
         self.assertEqual(generator.location, "us-central1")
         self.assertEqual(generator.context, {"key": "value"})
+        self.assertEqual(
+            generator.api_endpoint, "geminidataanalytics.googleapis.com"
+        )
         self.assertEqual(generator.name, "query_data_api")
         mock_gda.DataChatServiceClient.assert_called_once()
 
@@ -71,7 +78,9 @@ class TestQueryDataAPIGenerator(unittest.TestCase):
     def test_generate_internal_resource_exhausted(self, mock_gda):
         mock_client_instance = MagicMock()
         mock_gda.DataChatServiceClient.return_value = mock_client_instance
-        mock_client_instance.query_data.side_effect = ResourceExhausted("Quota exceeded")
+        mock_client_instance.query_data.side_effect = (
+            ResourceExhausted("Quota exceeded")
+        )
 
         config = {
             "project_id": "test-project"
@@ -85,7 +94,9 @@ class TestQueryDataAPIGenerator(unittest.TestCase):
     def test_generate_internal_service_unavailable(self, mock_gda):
         mock_client_instance = MagicMock()
         mock_gda.DataChatServiceClient.return_value = mock_client_instance
-        mock_client_instance.query_data.side_effect = ServiceUnavailable("Service unavailable")
+        mock_client_instance.query_data.side_effect = (
+            ServiceUnavailable("Service unavailable")
+        )
 
         config = {
             "project_id": "test-project"
@@ -99,7 +110,9 @@ class TestQueryDataAPIGenerator(unittest.TestCase):
     def test_generate_internal_deadline_exceeded(self, mock_gda):
         mock_client_instance = MagicMock()
         mock_gda.DataChatServiceClient.return_value = mock_client_instance
-        mock_client_instance.query_data.side_effect = DeadlineExceeded("Deadline exceeded")
+        mock_client_instance.query_data.side_effect = (
+            DeadlineExceeded("Deadline exceeded")
+        )
 
         config = {
             "project_id": "test-project"
@@ -108,6 +121,89 @@ class TestQueryDataAPIGenerator(unittest.TestCase):
 
         with self.assertRaises(ResourceExhaustedError):
             generator.generate_internal("What is in test?")
+
+    @patch('generators.models.query_data_api.requests')
+    @patch('generators.models.query_data_api.google.auth.default')
+    @patch('generators.models.query_data_api.gda')
+    def test_generate_internal_rest_fallback_on_proto_error(
+        self, mock_gda, mock_auth_default, mock_requests
+    ):
+        mock_gda.QueryDataContext.side_effect = ValueError(
+            "Unknown field fake_unreleased_field"
+        )
+        mock_credentials = MagicMock()
+        mock_auth_default.return_value = (mock_credentials, "project-id")
+
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "generatedQuery": "SELECT * FROM test_table",
+            "intentExplanation": "Unreleased field query",
+            "disambiguationQuestion": []
+        }
+        mock_requests.post.return_value = mock_resp
+
+        config = {
+            "project_id": "test-project",
+            "location": "us-east1",
+            "context": {"fake_unreleased_field": "dummy_value"}
+        }
+        generator = QueryDataAPIGenerator(config)
+        result = generator.generate_internal("Run query with fake field")
+
+        expected_query = "SELECT * FROM test_table"
+        self.assertEqual(result["generated_sql"], expected_query)
+        self.assertEqual(
+            result["other"]["intent_explanation"],
+            "Unreleased field query"
+        )
+        mock_requests.post.assert_called_once()
+
+    @patch('generators.models.query_data_api.requests')
+    @patch('generators.models.query_data_api.google.auth.default')
+    @patch('generators.models.query_data_api.gda')
+    def test_generate_internal_rest_fallback_arbitrary_nested_context(
+        self, mock_gda, mock_auth_default, mock_requests
+    ):
+        mock_gda.QueryDataContext.side_effect = TypeError(
+            "Proto type mismatch"
+        )
+        mock_credentials = MagicMock()
+        mock_auth_default.return_value = (mock_credentials, "project-id")
+
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "generatedQuery": "SELECT * FROM nosql_collection",
+            "intentExplanation": "Arbitrary nesting query",
+            "disambiguationQuestion": []
+        }
+        mock_requests.post.return_value = mock_resp
+
+        nested_context = {
+            "datasource_references": {
+                "nosql_reference": {
+                    "collection": {
+                        "deep_levels": {
+                            "metadata": ["tag1", "tag2"],
+                            "flags": {"is_active": True}
+                        }
+                    }
+                }
+            }
+        }
+        config = {
+            "project_id": "test-project",
+            "location": "us-east1",
+            "context": nested_context
+        }
+        generator = QueryDataAPIGenerator(config)
+        result = generator.generate_internal("Query nested NoSQL")
+
+        self.assertEqual(
+            result["generated_sql"], "SELECT * FROM nosql_collection"
+        )
+        mock_requests.post.assert_called_once()
+        call_kwargs = mock_requests.post.call_args[1]
+        self.assertEqual(call_kwargs["json"]["context"], nested_context)
 
 
 if __name__ == "__main__":
