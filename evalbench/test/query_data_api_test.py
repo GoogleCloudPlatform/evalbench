@@ -125,12 +125,9 @@ class TestQueryDataAPIGenerator(unittest.TestCase):
     @patch('generators.models.query_data_api.requests')
     @patch('generators.models.query_data_api.google.auth.default')
     @patch('generators.models.query_data_api.gda')
-    def test_generate_internal_rest_fallback_on_proto_error(
+    def test_generate_internal_rest_api_when_use_rest_api_true(
         self, mock_gda, mock_auth_default, mock_requests
     ):
-        mock_gda.QueryDataContext.side_effect = ValueError(
-            "Unknown field fake_unreleased_field"
-        )
         mock_credentials = MagicMock()
         mock_auth_default.return_value = (mock_credentials, "project-id")
 
@@ -145,6 +142,7 @@ class TestQueryDataAPIGenerator(unittest.TestCase):
         config = {
             "project_id": "test-project",
             "location": "us-east1",
+            "use_rest_api": True,
             "context": {"fake_unreleased_field": "dummy_value"}
         }
         generator = QueryDataAPIGenerator(config)
@@ -193,6 +191,7 @@ class TestQueryDataAPIGenerator(unittest.TestCase):
         config = {
             "project_id": "test-project",
             "location": "us-east1",
+            "use_rest_api": True,
             "context": nested_context
         }
         generator = QueryDataAPIGenerator(config)

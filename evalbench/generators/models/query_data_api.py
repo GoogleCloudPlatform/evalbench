@@ -35,6 +35,7 @@ class QueryDataAPIGenerator(QueryGenerator):
         self.project_id = querygenerator_config.get("project_id")
         self.location = querygenerator_config.get("location", "global")
         self.context = querygenerator_config.get("context", {})
+        self.use_rest_api = querygenerator_config.get("use_rest_api", False)
         self.api_endpoint = (
             querygenerator_config.get("api_endpoint")
             or _DEFAULT_API_ENDPOINT
@@ -54,11 +55,16 @@ class QueryDataAPIGenerator(QueryGenerator):
         """
         Generates SQL for the given prompt using the QueryData API.
 
-        Args:
-            prompt: The natural language question.
+        If use_rest_api is True, uses GDA REST HTTP API directly.
+        Otherwise (default), uses GDA gRPC client library.
+        """
+        if self.use_rest_api:
+            return self._query_data_rest(prompt)
+        return self._query_data_client(prompt)
 
-        Returns:
-            A dictionary with generated_sql and rich metadata.
+    def _query_data_client(self, prompt: str) -> Dict[str, Any]:
+        """
+        Executes query via GDA gRPC client library.
         """
         logger = logging.getLogger(__name__)
         try:
@@ -108,13 +114,6 @@ class QueryDataAPIGenerator(QueryGenerator):
             }
             return result
 
-        except _PROTO_SERIALIZATION_ERRORS as e:
-            logger.info(
-                f"Proto serialization failed for unreleased fields ({e}). "
-                "Falling back to GDA REST API."
-            )
-            return self._query_data_rest(prompt)
-
         except (ResourceExhausted, ServiceUnavailable, DeadlineExceeded) as e:
             raise ResourceExhaustedError(e)
         except Exception as e:
@@ -130,8 +129,9 @@ class QueryDataAPIGenerator(QueryGenerator):
         credentials, _ = google.auth.default(
             scopes=["https://www.googleapis.com/auth/cloud-platform"]
         )
-        auth_req = google.auth.transport.requests.Request()
-        credentials.refresh(auth_req)
+        if not credentials.valid:
+            auth_req = google.auth.transport.requests.Request()
+            credentials.refresh(auth_req)
 
         url = (
             f"https://{self.api_endpoint}/v1beta/projects/{self.project_id}"
@@ -141,6 +141,12 @@ class QueryDataAPIGenerator(QueryGenerator):
         payload = {
             "prompt": prompt,
             "context": self.context,
+            "generationOptions": {
+                "generateQueryResult": True,
+                "generateNaturalLanguageAnswer": False,
+                "generateExplanation": True,
+                "generateDisambiguationQuestion": True
+            }
         }
 
         headers = {
@@ -155,6 +161,12 @@ class QueryDataAPIGenerator(QueryGenerator):
             headers=headers,
             timeout=_REQUEST_TIMEOUT_SECONDS
         )
+
+        if resp.status_code in (429, 503, 504):
+            raise ResourceExhaustedError(
+                f"GDA REST API rate limited / unavailable ({resp.status_code})"
+            )
+
         resp.raise_for_status()
         data = resp.json()
 
