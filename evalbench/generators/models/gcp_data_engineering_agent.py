@@ -389,8 +389,21 @@ class DataEngineeringAgentGenerator(QueryGenerator):
             prompt.generated_nl_response = reply_text
             if new_token:
                 all_tools = _extract_tool_details_from_token(new_token)
-                prompt.this_turn_tool_details = all_tools
-                prompt.accumulated_tools = list({t["name"] for t in all_tools})
+                this_turn_tools = [
+                    t for t in all_tools
+                    if t.get("id") and t["id"] not in prompt.seen_tool_ids
+                ]
+                if not any(t.get("id") for t in all_tools):
+                    this_turn_tools = all_tools
+
+                prompt.seen_tool_ids.update(
+                    t["id"] for t in all_tools if t.get("id")
+                )
+                prompt.this_turn_tool_details = this_turn_tools
+                tool_names = [t["name"] for t in all_tools]
+                prompt.accumulated_tools = list(
+                    dict.fromkeys([*prompt.accumulated_tools, *tool_names])
+                )
         except Exception:
             logger.exception("A2A SDK messaging error")
             raise

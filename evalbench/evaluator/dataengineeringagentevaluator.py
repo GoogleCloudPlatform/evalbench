@@ -219,18 +219,14 @@ class DataEngineeringAgentEvaluator:
                 if fail:
                     tool_data["fail"] = 1
 
-            agent_json = {
-                "response": agent_text,
-                "stats": {
+            conversation_history.append({
+                "user": current_prompt,
+                "agent": agent_text,
+                "agent_stats": {
                     "tools": {
                         "byName": tools_by_name
                     }
-                }
-            }
-
-            conversation_history.append({
-                "user": current_prompt,
-                "agent": json.dumps(agent_json),
+                },
             })
 
             # Simulated User checks conversation plan and generates next prompt

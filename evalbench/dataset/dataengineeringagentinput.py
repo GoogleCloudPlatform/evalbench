@@ -27,6 +27,7 @@ class EvalDeaRequest:
 
         self.accumulated_tools: list[str] = []
         self.this_turn_tool_details: list[dict[str, Any]] = []
+        self.seen_tool_ids: set[str] = set()
 
     @classmethod
     def init_from_proto(cls, proto):
