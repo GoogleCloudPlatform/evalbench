@@ -51,7 +51,6 @@ class QueryDataAPIGenerator(QueryGenerator):
         else:
             self.client = gda.DataChatServiceClient()
 
-
     def generate_internal(self, prompt: str) -> Dict[str, Any]:
         """
         Generates SQL for the given prompt using the QueryData API.
