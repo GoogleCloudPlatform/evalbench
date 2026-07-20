@@ -28,14 +28,26 @@ _DEFAULT_GENERATION_OPTIONS = {
 }
 
 
-def _to_camel_case_dict(d: Dict[str, Any]) -> Dict[str, Any]:
-    """Converts a snake_case dictionary to camelCase for REST payloads."""
-    res = {}
-    for key, value in d.items():
-        parts = key.split("_")
-        camel_key = parts[0] + "".join(p.capitalize() for p in parts[1:])
-        res[camel_key] = value
-    return res
+def _to_camel_case_dict(val: Any) -> Any:
+    """Recursively converts snake_case keys in dicts/lists to lowerCamelCase for REST payloads."""
+    if isinstance(val, dict):
+        res = {}
+        for key, value in val.items():
+            if isinstance(key, str) and "_" in key:
+                parts = [p for p in key.split("_") if p]
+                if parts:
+                    camel_key = parts[0].lower() + "".join(p.capitalize() for p in parts[1:])
+                    if key.startswith("_"):
+                        camel_key = "_" + camel_key
+                else:
+                    camel_key = key
+            else:
+                camel_key = key
+            res[camel_key] = _to_camel_case_dict(value)
+        return res
+    elif isinstance(val, (list, tuple)):
+        return [_to_camel_case_dict(item) for item in val]
+    return val
 
 
 def _format_result(
@@ -149,7 +161,7 @@ class QueryDataAPIGenerator(QueryGenerator):
 
         payload = {
             "prompt": prompt,
-            "context": self.context,
+            "context": _to_camel_case_dict(self.context),
             "generationOptions": _to_camel_case_dict(
                 _DEFAULT_GENERATION_OPTIONS
             ),

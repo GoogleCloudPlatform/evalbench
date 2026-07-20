@@ -206,7 +206,56 @@ class TestQueryDataAPIGenerator(unittest.TestCase):
         )
         mock_requests.post.assert_called_once()
         call_kwargs = mock_requests.post.call_args[1]
-        self.assertEqual(call_kwargs["json"]["context"], nested_context)
+        expected_camel_context = {
+            "datasourceReferences": {
+                "nosqlReference": {
+                    "collection": {
+                        "deepLevels": {
+                            "metadata": ["tag1", "tag2"],
+                            "flags": {"isActive": True}
+                        }
+                    }
+                }
+            }
+        }
+        self.assertEqual(call_kwargs["json"]["context"], expected_camel_context)
+
+    def test_to_camel_case_dict_coverage(self):
+        from generators.models.query_data_api import _to_camel_case_dict
+
+        # Test primitives and non-dict/non-list types
+        self.assertEqual(_to_camel_case_dict("simple_string"), "simple_string")
+        self.assertEqual(_to_camel_case_dict(123), 123)
+        self.assertIsNone(_to_camel_case_dict(None))
+
+        # Test non-string keys
+        self.assertEqual(_to_camel_case_dict({123: "val"}), {123: "val"})
+
+        # Test leading underscores and multiple underscores
+        self.assertEqual(
+            _to_camel_case_dict({"_private_field": 1, "__meta__": 2}),
+            {"_privateField": 1, "_meta": 2}
+        )
+
+        # Test lists and tuples of dicts
+        input_data = {
+            "list_field": [{"item_name": "a"}, "plain_str"],
+            "tuple_field": ({"tuple_item": "b"},)
+        }
+        expected_data = {
+            "listField": [{"itemName": "a"}, "plain_str"],
+            "tupleField": [{"tupleItem": "b"}]
+        }
+        self.assertEqual(_to_camel_case_dict(input_data), expected_data)
+
+        # Test uppercase acronyms
+        self.assertEqual(
+            _to_camel_case_dict({"GCP_PROJECT_ID": "my-project"}),
+            {"gcpProjectId": "my-project"}
+        )
+
+        # Test underscores-only key
+        self.assertEqual(_to_camel_case_dict({"_": "val"}), {"_": "val"})
 
 
 if __name__ == "__main__":
