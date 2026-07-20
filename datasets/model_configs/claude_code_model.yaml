@@ -13,13 +13,11 @@ model: "claude-opus-4-6"
 
 # --- Auth Option 1: Vertex AI (GCP ADC, no API key) ---
 # Requires Claude models enabled in your GCP project via Model Garden.
-# use_vertex: true
-# vertex_project_id: "astana-evaluation"
-# vertex_region: "us-east5"
+use_vertex: true
+vertex_project_id: "astana-evaluation"
+vertex_region: "us-east5"
 
-use_vertex: false
 env:
-  ANTHROPIC_API_KEY: <API_KEY>
   GOOGLE_CLOUD_PROJECT: "astana-evaluation"
   GOOGLE_CLOUD_LOCATION: "us-central1"
 
