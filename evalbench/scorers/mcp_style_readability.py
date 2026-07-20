@@ -154,8 +154,14 @@ class McpStyleReadabilityScorer:
                 "mcp_readability_p1_issues": int(feedback.get("p1_issues", 0)),
                 "mcp_readability_p2_issues": int(feedback.get("p2_issues", 0)),
                 "mcp_readability_score": int(feedback.get("readability_score", 0)),
-                "mcp_readability_llm_feedback_json": json.dumps(feedback),
-                "mcp_readability_llm_feedback_html": self.to_html(feedback),
+                # Both feedback columns omit the readability score on purpose;
+                # only the numeric metric column above carries it.
+                "mcp_readability_llm_feedback_json": json.dumps(
+                    _public_feedback(feedback)
+                ),
+                "mcp_readability_llm_feedback_html": self.to_html(
+                    feedback, context.product_name
+                ),
             },
             score=100 if p0 == 0 else 0,
             logs=(
@@ -273,59 +279,101 @@ class McpStyleReadabilityScorer:
         }
 
     @staticmethod
-    def to_html(feedback: dict) -> str:
-        """Render feedback as a severity-grouped HTML fragment."""
+    def to_html(feedback: dict, product_name: str = "") -> str:
+        """Render feedback as a human-readable HTML fragment.
+
+        Leads with the overall summary, groups findings by severity, and ends
+        with the allowed exceptions (waived rules) and their reasons. It
+        deliberately omits any numeric readability score -- the intent is review
+        notes an engineer can act on, not a grade.
+
+        HTML (rather than Markdown) because this column is surfaced in a
+        dashboard that renders it as HTML. All model-supplied text is escaped.
+        """
         if not feedback:
             return ""
-        score = feedback.get("readability_score", 0)
-        summary = html.escape(str(feedback.get("summary", "")))
+
+        esc = html.escape
+        title = esc(str(product_name).strip() or "MCP endpoint")
         parts = [
             "<div class='mcp-readability'>",
-            f"<h3>Readability score: {score}</h3>",
-            f"<p>{summary}</p>",
-            "<p>P0: {p0} &nbsp; P1: {p1} &nbsp; P2: {p2}</p>".format(
-                p0=feedback.get("p0_issues", 0),
-                p1=feedback.get("p1_issues", 0),
-                p2=feedback.get("p2_issues", 0),
-            ),
+            f"<h3>MCP Tool Readability Review — {title}</h3>",
         ]
-        findings = feedback.get("findings") or []
-        if findings:
-            parts.append(
-                "<table border='1' cellpadding='4' cellspacing='0'>"
-                "<tr><th>Severity</th><th>Rule</th><th>Tool</th>"
-                "<th>Title</th><th>Issue</th><th>Suggestion</th></tr>"
-            )
-            for f in findings:
-                if not isinstance(f, dict):
-                    continue
-                parts.append(
-                    "<tr><td>{sev}</td><td>{rule}</td><td>{tool}</td>"
-                    "<td>{title}</td><td>{msg}</td><td>{sug}</td></tr>".format(
-                        sev=html.escape(str(f.get("severity", ""))),
-                        rule=html.escape(str(f.get("rule_id", ""))),
-                        tool=html.escape(str(f.get("tool", ""))),
-                        title=html.escape(str(f.get("title", ""))),
-                        msg=html.escape(str(f.get("message", ""))),
-                        sug=html.escape(str(f.get("suggestion", ""))),
-                    )
-                )
-            parts.append("</table>")
-        waived = feedback.get("waived") or []
-        if waived:
-            parts.append("<h4>Waived rules</h4><ul>")
-            for w in waived:
-                if not isinstance(w, dict):
-                    continue
-                parts.append(
-                    "<li>{rule}: {reason}</li>".format(
-                        rule=html.escape(str(w.get("rule_id", ""))),
-                        reason=html.escape(str(w.get("reason", ""))),
-                    )
-                )
+
+        summary = str(feedback.get("summary", "")).strip()
+        if summary:
+            parts.append(f"<p><b>Summary:</b> {esc(summary)}</p>")
+
+        # Group findings by severity so each section can be rendered in order.
+        by_sev = {"P0": [], "P1": [], "P2": []}
+        for f in feedback.get("findings") or []:
+            if isinstance(f, dict):
+                sev = str(f.get("severity", "")).upper()
+                if sev in by_sev:
+                    by_sev[sev].append(f)
+
+        for sev, heading in _SEVERITY_SECTIONS:
+            items = by_sev[sev]
+            parts.append(f"<h4>{heading} — {len(items)}</h4>")
+            if not items:
+                parts.append("<p><i>None</i></p>")
+                continue
+            parts.append("<ul>")
+            for f in items:
+                rule = esc(str(f.get("rule_id", "")).strip() or "(rule)")
+                tool = esc(str(f.get("tool", "")).strip() or "all tools")
+                li = [f"<b>[{rule}] {tool}</b>"]
+                finding_title = str(f.get("title", "")).strip()
+                if finding_title:
+                    li.append(f" — {esc(finding_title)}")
+                message = str(f.get("message", "")).strip()
+                if message:
+                    li.append(f"<br><i>Issue:</i> {esc(message)}")
+                suggestion = str(f.get("suggestion", "")).strip()
+                if suggestion:
+                    li.append(f"<br><i>Suggestion:</i> {esc(suggestion)}")
+                parts.append("<li>" + "".join(li) + "</li>")
             parts.append("</ul>")
+
+        # Allowed exceptions: the waived rules the reviewer must NOT treat as
+        # violations, with the reason and whether the tools would otherwise have
+        # tripped the rule.
+        waived = [w for w in (feedback.get("waived") or []) if isinstance(w, dict)]
+        parts.append(f"<h4>✅ Allowed exceptions (waived) — {len(waived)}</h4>")
+        if not waived:
+            parts.append("<p><i>None</i></p>")
+        else:
+            parts.append("<ul>")
+            for w in waived:
+                rule = esc(str(w.get("rule_id", "")).strip() or "(rule)")
+                reason = esc(str(w.get("reason", "")).strip() or "no reason given")
+                entry = f"<b>{rule}</b> — {reason}"
+                if "would_have_violated" in w:
+                    flag = "yes" if w.get("would_have_violated") else "no"
+                    entry += f" <i>(would have been flagged: {flag})</i>"
+                parts.append(f"<li>{entry}</li>")
+            parts.append("</ul>")
+
         parts.append("</div>")
         return "".join(parts)
+
+
+# Severity display order + section heading for the HTML feedback report.
+_SEVERITY_SECTIONS = [
+    ("P0", "🚫 Blockers (P0)"),
+    ("P1", "⚠️ Recommended (P1)"),
+    ("P2", "💡 Suggestions (P2)"),
+]
+
+
+def _public_feedback(feedback: dict) -> dict:
+    """The feedback dict as persisted to the JSON column: no readability score.
+
+    Keeps every structured field a human or downstream tool needs (findings,
+    counts, waived rules, summary) while dropping the numeric score so neither
+    feedback column reports a grade.
+    """
+    return {k: v for k, v in feedback.items() if k != "readability_score"}
 
 
 def _safe_int(value) -> int:

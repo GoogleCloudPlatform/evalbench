@@ -184,7 +184,8 @@ def test_scorer_parse_and_html():
     {"readability_score": 75, "findings": [
        {"severity": "P0", "rule_id": "P0-X", "tool": "t", "title": "Bad name", "message": "m", "suggestion": "s"},
        {"severity": "P2", "rule_id": "P2-Y", "tool": "t", "message": "m", "suggestion": "s"}
-     ], "waived": [], "summary": "ok"}
+     ], "waived": [{"rule_id": "use-enums", "reason": "legacy", "would_have_violated": true}],
+     "summary": "ok"}
     ```"""
     # Build a scorer without invoking the LLM constructor path.
     scorer = McpStyleReadabilityScorer.__new__(McpStyleReadabilityScorer)
@@ -194,10 +195,18 @@ def test_scorer_parse_and_html():
     assert fb["readability_score"] == 75
     # title flows through the parser unchanged.
     assert fb["findings"][0]["title"] == "Bad name"
-    html = McpStyleReadabilityScorer.to_html(fb)
-    assert "<table" in html and "P0-X" in html
-    # title is rendered as its own column.
-    assert "<th>Title</th>" in html and "Bad name" in html
+
+    html = McpStyleReadabilityScorer.to_html(fb, product_name="Cloud SQL")
+    # Human-readable report: product heading + summary, no numeric score.
+    assert "MCP Tool Readability Review — Cloud SQL" in html
+    assert "readability score" not in html.lower()
+    # Findings are grouped by severity and carry their title/rule.
+    assert "Blockers (P0) — 1" in html
+    assert "P0-X" in html and "Bad name" in html
+    # Allowed exceptions section surfaces the waiver, reason, and flag note.
+    assert "Allowed exceptions (waived) — 1" in html
+    assert "use-enums" in html and "legacy" in html
+    assert "would have been flagged: yes" in html
 
 
 def test_scorer_counts_are_authoritative_from_findings():
@@ -365,7 +374,17 @@ def test_orchestrator_end_to_end():
             assert row["mcp_readability_endpoint_type"] == "PROD"
             assert int(row["mcp_readability_total_tools"]) == 2
             assert int(row["mcp_readability_p1_issues"]) == 1
+            # The numeric score stays on its own metric column (row-type
+            # discriminator)...
             assert int(row["mcp_readability_score"]) == 80
+            # ...but neither feedback column reports it.
+            feedback_html = row["mcp_readability_llm_feedback_html"]
+            assert "readability score" not in feedback_html.lower()
+            assert "Allowed exceptions (waived)" in feedback_html
+            assert "use-enums" in feedback_html  # waiver surfaced from _FakeLLM
+            feedback_json = json.loads(row["mcp_readability_llm_feedback_json"])
+            assert "readability_score" not in feedback_json
+            assert feedback_json["waived"][0]["rule_id"] == "use-enums"
             assert row["job_id"] == job_id
 
             # scores_tf: one row per (endpoint, scorer).
