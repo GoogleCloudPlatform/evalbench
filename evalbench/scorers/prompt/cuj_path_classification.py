@@ -36,16 +36,18 @@ so judge what each scenario ACTUALLY exercises, not what it superficially resemb
   -- a query/tool fails, returns an error, hits a nonexistent resource, or the user
   identifies a mistake and asks the agent to correct course. Example: "That query
   failed with a syntax error, can you fix the join?".
-- "Out-of-Domain": The user requests something the agent should refuse or redirect
-  -- e.g. PII/sensitive data, disallowed actions, or data/tables that do not exist
-  -- and the expected behavior is a polite refusal plus redirection (guardrail).
+- "Out-of-Domain": The user requests something out-of-scope or disallowed that the
+  agent should refuse or redirect -- e.g. PII/sensitive data, disallowed actions, or
+  data the product is not meant to serve -- and the expected behavior is a polite
+  refusal plus redirection (guardrail). The request itself is illegitimate; the point
+  is the refusal, not fixing anything.
 
 ### How to classify
 For each CUJ, base your judgment primarily on the conversation_plan (it describes
 the intended multi-turn dynamic), then the starting_prompt and expected_trajectory.
 Pick the ONE path that best characterizes the scenario. If more than one seems to
 apply, choose the dominant path using this priority order (top wins):
-1. "Out-of-Domain" -- if the core request targets PII / disallowed / nonexistent
+1. "Out-of-Domain" -- if the core request targets PII / disallowed / out-of-scope
    data and the point of the scenario is a refusal or redirect.
 2. "Error Recovery" -- if the scenario is built around recovering from a failure,
    error, or a user-identified mistake.
@@ -55,6 +57,13 @@ apply, choose the dominant path using this priority order (top wins):
    agent must seek details before acting.
 5. "Happy" -- only when it is a direct, well-formed request with no ambiguity,
    refinement, error, or guardrail element.
+
+Out-of-Domain vs Error Recovery: choose "Out-of-Domain" when the user's request is
+itself out-of-scope or disallowed and the agent should refuse (e.g. asking for other
+users' SSNs, or for a table the product never exposes). Choose "Error Recovery" when
+the request is legitimate but execution fails or the user corrects a mistake and the
+scenario is about recovering (e.g. a valid query references a column that turns out
+not to exist, then the user asks to fix it).
 
 Do not invent behavior that is not implied by the scenario. When genuinely
 uncertain between an edge path and Happy, prefer the edge path only if the
@@ -67,7 +76,7 @@ conversation_plan clearly describes that dynamic; otherwise classify as "Happy".
 and "expected_trajectory".
 {cujs_json}
 
-### OUTPUT
+### Output Format
 Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
 {{
   "tags": [

@@ -42,7 +42,7 @@ When genuinely borderline on either judgment, answer false.
 and "expected_trajectory".
 {cujs_json}
 
-### OUTPUT
+### Output Format
 Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
 {{
   "tags": [

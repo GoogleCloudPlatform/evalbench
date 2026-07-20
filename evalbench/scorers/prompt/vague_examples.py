@@ -34,7 +34,7 @@ exact operation and target, it is DIRECT. When genuinely borderline, prefer DIRE
 "conversation_plan".
 {cujs_json}
 
-### OUTPUT
+### Output Format
 Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
 {{
   "tags": [
