@@ -22,10 +22,6 @@ vertex_project_id: "astana-evaluation"
 # unsupported past Sonnet 4.6. Override only for data-residency requirements.
 vertex_region: "global"
 
-# --- Auth Option 2: Direct Anthropic API (uncomment and set a real key) ---
-# Setting a non-placeholder ANTHROPIC_API_KEY disables Vertex (use_vertex).
-#   ANTHROPIC_API_KEY: <API_KEY>
-
 env:
   GOOGLE_CLOUD_PROJECT: "astana-evaluation"
   GOOGLE_CLOUD_LOCATION: "us-central1"

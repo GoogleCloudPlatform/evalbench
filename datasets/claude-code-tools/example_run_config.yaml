@@ -34,6 +34,7 @@ scorers:
   parameter_analysis:
     model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
   turn_count: {}
+  agent_steps: {}
   end_to_end_latency: {}
   tool_call_latency: {}
   token_consumption: {}

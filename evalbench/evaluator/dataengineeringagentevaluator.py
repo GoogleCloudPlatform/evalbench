@@ -200,9 +200,33 @@ class DataEngineeringAgentEvaluator:
                 agent_text
             )
 
+            this_turn_tools = getattr(
+                eval_result, "this_turn_tool_details", []
+            )
+
+            tools_by_name = {}
+            for t in this_turn_tools:
+                name = t["name"]
+                params = t["params"]
+                output = t.get("output", {})
+                fail = t.get("fail", 0)
+
+                tool_data = tools_by_name.setdefault(
+                    name, {"parameters": [], "outputs": [], "fail": 0}
+                )
+                tool_data["parameters"].append(params)
+                tool_data["outputs"].append(output)
+                if fail:
+                    tool_data["fail"] = 1
+
             conversation_history.append({
                 "user": current_prompt,
                 "agent": agent_text,
+                "agent_stats": {
+                    "tools": {
+                        "byName": tools_by_name
+                    }
+                },
             })
 
             # Simulated User checks conversation plan and generates next prompt
@@ -316,7 +340,9 @@ class DataEngineeringAgentEvaluator:
             "prompt": scenario["starting_prompt"],
             "conversation_history": json.dumps(conversation_history, indent=2),
             "scenario": scenario,
-            "accumulated_tools": [],
+            "accumulated_tools": getattr(
+                eval_result, "accumulated_tools", []
+            ),
             "accumulated_skills": [],
             "job_id": job_id,
             "metadata": metadata,

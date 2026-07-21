@@ -76,6 +76,7 @@ def analyze_one_metric(
 
             non_binary_metrics = [
                 "turn_count",
+                "agent_steps",
                 "end_to_end_latency",
                 "tool_call_latency",
                 "token_consumption",
@@ -95,6 +96,8 @@ def analyze_one_metric(
                     unit = " tokens"
                 elif "turn" in metric_name:
                     unit = " turns"
+                elif "agent_steps" in metric_name:
+                    unit = " steps"
 
                 logging.info(f"{metric_name}: \tAverage = {avg_val:.2f}{unit}")
                 return {
