@@ -24,7 +24,7 @@ class VagueExamplesScorer:
     def __init__(self, config: dict, global_models):
         self.name = "vague_examples"
         config = config or {}
-        self.weight = float(config.get("weight", 10))
+        self.weight = float(config.get("weight", 12))
         self.target_fraction = float(config.get("target_fraction", 0.5))
         model_config = config.get("model_config")
         if not model_config:

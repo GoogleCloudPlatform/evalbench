@@ -38,7 +38,7 @@ class ErrorRecoveryScorer:
     def __init__(self, config: dict, global_models):
         self.name = "error_recovery"
         config = config or {}
-        self.weight = float(config.get("weight", 20))
+        self.weight = float(config.get("weight", 28))
         self.target_fraction = float(config.get("target_fraction", 0.20))
         model_config = config.get("model_config")
         if not model_config:

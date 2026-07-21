@@ -29,7 +29,7 @@ class ParameterCoverageScorer:
     def __init__(self, config: dict, global_models):
         self.name = "parameter_coverage"
         config = config or {}
-        self.weight = float(config.get("weight", 5))
+        self.weight = float(config.get("weight", 13))
         self.min_items = int(config.get("min_items", 1))
         model_config = config.get("model_config")
         if not model_config:

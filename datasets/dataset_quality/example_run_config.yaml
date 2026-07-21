@@ -39,23 +39,23 @@ scorers:
     # tools_timeout: 30   # optional; live tools/list fetch timeout in seconds
     scorers:
       trajectory_coverage:
-        weight: 5
+        weight: 12
       naming_distribution:
         weight: 5
       parameter_coverage:
-        weight: 5
+        weight: 13
         min_items: 1
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       vague_examples:
-        weight: 10
+        weight: 12
         target_fraction: 0.5   # scores 100 once >=50% of CUJs are vague/indirect
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       error_recovery:
-        weight: 20
+        weight: 28
         target_fraction: 0.20  # scores 100 once >=20% of CUJs test error recovery
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       composition:
-        weight: 20
+        weight: 30
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
 
 ############################################################

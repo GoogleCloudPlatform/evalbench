@@ -26,7 +26,7 @@ class CompositionScorer:
     def __init__(self, config: dict, global_models):
         self.name = "composition"
         config = config or {}
-        self.weight = float(config.get("weight", 20))
+        self.weight = float(config.get("weight", 30))
         model_config = config.get("model_config")
         if not model_config:
             raise ValueError(

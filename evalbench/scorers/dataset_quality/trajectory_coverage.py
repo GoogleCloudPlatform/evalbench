@@ -24,7 +24,7 @@ class TrajectoryCoverageScorer:
     def __init__(self, config: dict, global_models):
         self.name = "trajectory_coverage"
         config = config or {}
-        self.weight = float(config.get("weight", 5))
+        self.weight = float(config.get("weight", 12))
 
     def run(self, context: DatasetQualityContext) -> SubScoreContribution:
         schema_tools = set(context.tool_names)
