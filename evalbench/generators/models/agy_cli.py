@@ -768,7 +768,7 @@ class AgyCliGenerator(AgentCliGenerator):
         silently ignored and agy falls back to its default model. When no
         model is configured the flag is omitted and agy uses its default.
         """
-        command = [cli, "-p", prompt, "--dangerously-skip-permissions"]
+        command = [cli, "-p", prompt, "--dangerously-skip-permissions", "--print-timeout", "20m"]
         if model:
             command += ["--model", model]
         if resume:
