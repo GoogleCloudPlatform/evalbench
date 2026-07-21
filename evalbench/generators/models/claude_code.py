@@ -1248,6 +1248,7 @@ class _ClaudeStreamingSession(AgentCliSession):
             try:
                 self._proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
-                pass
+                logging.debug(
+                    "Claude Code process did not exit within 10s after kill; continuing shutdown.")
         if self._stderr_thread is not None:
             self._stderr_thread.join(timeout=5)
