@@ -9,7 +9,6 @@ from evaluator.dataengineeringagentorchestrator import (
     DataEngineeringAgentOrchestrator,
 )
 from evaluator.mcp_readability import McpReadabilityOrchestrator
-from evaluator.dataset_quality import DatasetQualityOrchestrator
 import logging
 
 
@@ -31,10 +30,6 @@ def get_orchestrator(config, db_configs, setup_config, report_progress=False):
         )
     elif orchestrator_type == "mcp_readability":
         return McpReadabilityOrchestrator(
-            config, db_configs, setup_config, report_progress
-        )
-    elif orchestrator_type == "dataset_quality":
-        return DatasetQualityOrchestrator(
             config, db_configs, setup_config, report_progress
         )
     else:

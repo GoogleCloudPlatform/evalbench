@@ -25,6 +25,7 @@ from scorers import pythonscorer
 from scorers import dataformscorer
 from scorers import dataformcloudscorer
 from scorers import dbtscorer
+from scorers.dataset_quality.scorer import DatasetQualityScorer
 from dataset.evaloutput import EvalOutput
 import logging
 import os
@@ -200,6 +201,10 @@ def compare(
     if "dbt_run" in scorers:
         comparators.append(
             dbtscorer.DbtRunScorer(scorers["dbt_run"])
+        )
+    if "dataset_quality" in scorers:
+        comparators.append(
+            DatasetQualityScorer(scorers["dataset_quality"], global_models)
         )
 
     for comp in comparators:

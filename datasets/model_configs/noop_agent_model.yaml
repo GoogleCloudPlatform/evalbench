@@ -1,0 +1,4 @@
+# No-op agent generator: satisfies AgentEvaluator's AgentCliGenerator requirement
+# while producing no output. Used by dataset-quality grading, where there is no
+# agent run and all work lives in the scorer.
+generator: noop_agent

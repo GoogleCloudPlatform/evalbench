@@ -234,6 +234,35 @@ def load_gemini_cli_json(json_file_path, config):
     return all_items
 
 
+def load_dataset_quality_json(json_file_path, config):
+    """Load a CUJ evalset as a single wrapper scenario for holistic grading.
+
+    Dataset quality grades the whole dataset at once, but the agent pipeline scores
+    per scenario. Bundling every CUJ into one wrapper scenario (under ``all_cujs``)
+    makes the pipeline invoke the scorer exactly once with the full dataset. The
+    ``dataset_quality`` scorer reads ``all_cujs`` back out.
+    """
+    all_items: dict[str, list[EvalGeminiCliRequest]] = {
+        "dataset-quality-format": [],
+    }
+    with open(json_file_path, "r") as json_file:
+        json_item = _expand_env_placeholders(json_file.read(), json_file_path)
+        item = json.loads(json_item)
+
+    scenarios = _filter_scenarios(item.get("scenarios", []), config)
+    wrapper = {
+        "id": "dataset_quality",
+        "starting_prompt": "",
+        "all_cujs": scenarios,
+    }
+    eval_input = EvalGeminiCliRequest(
+        id=item.get("id", "0"),
+        payload=json.dumps({"scenarios": [wrapper]}),
+    )
+    all_items["dataset-quality-format"].append(eval_input)
+    return all_items
+
+
 def load_json(json_file_path):
     all_items = []
     with open(json_file_path, "r") as json_file:
@@ -259,6 +288,8 @@ def load_dataset_from_json(json_file_path, config):
         all_items = load_bird_interact_dataset(json_file_path, config)
     elif dataset_format in ("gemini-cli-format", "agent-format"):
         all_items = load_gemini_cli_json(json_file_path, config)
+    elif dataset_format == "dataset-quality-format":
+        all_items = load_dataset_quality_json(json_file_path, config)
     elif dataset_format == "cortado-format":
         all_items = load_cortado_json(json_file_path, config)
     elif dataset_format == "dea-format":
@@ -288,10 +319,13 @@ def load_dataset_from_json(json_file_path, config):
         if "orchestrator" not in config:
             config["orchestrator"] = "agent" if dataset_format == "agent-format" else "geminicli"
         input_items = all_items
+    elif dataset_format == "dataset-quality-format":
+        config["orchestrator"] = "agent"
+        input_items = all_items
     else:
         raise ValueError("Dataset not in any of the recognised formats")
 
-    if dataset_format not in ["gemini-cli-format", "bird-interact-format", "agent-format", "cortado-format"]:
+    if dataset_format not in ["gemini-cli-format", "bird-interact-format", "agent-format", "cortado-format", "dataset-quality-format"]:
         totalEntries = sum(len(input_items.get(q, []))
                            for q in ["dql", "dml", "ddl"])
         logging.info(f"Converted {totalEntries} entries to EvalInput.")

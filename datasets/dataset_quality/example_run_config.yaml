@@ -1,62 +1,71 @@
 ############################################################
 ### Dataset Quality — example run config
 ############################################################
-# Grades the intrinsic quality of a CUJ dataset (no eval / agent run). For each
-# scorer, the judge tags every CUJ and the scorer computes a 0-100 sub-score;
-# grading.py rolls them into a weighted global score + letter grade. Drives the
-# `dataset_quality` orchestrator.
+# Grades the intrinsic quality of a CUJ dataset (no eval / agent run). Runs on the
+# standard agent pipeline: a no-op generator does nothing, and the `dataset_quality`
+# scorer grades the whole dataset holistically (each sub-scorer tags every CUJ and
+# computes a 0-100 sub-score; grading rolls them into a weighted global score +
+# letter grade). Results flow through the shared reporters as one scoring row.
 #
 # One run grades one dataset. To grade several, list several run configs under a
 # suite (see datasets/sample_suite_config.yaml).
 
-orchestrator: dataset_quality
+orchestrator: agent
 
-# What to grade: the CUJ scenarios + the product's tool schema.
-product_name: "Gemini CLI Tools"
+# Bundles every CUJ into one wrapper scenario so the scorer is invoked once with
+# the full dataset (the default formats can't parse CUJ scenarios this way).
+dataset_format: dataset-quality-format
 dataset_config: datasets/gemini-cli-tools/gemini-cli.evalset.json
-# CUJ evalset format; the framework pre-loads the dataset before the orchestrator
-# runs, and the default format can't parse CUJ scenarios.
-dataset_format: gemini-cli-format
 
-# The tool catalog is fetched live from the product's model config: every
-# setup.mcp_servers entry with an httpUrl is queried (MCP tools/list), the
-# results are aggregated, and tool names are namespaced <server>__<tool> to match
-# expected_trajectory. google_credentials servers are authenticated via ADC, so
-# this needs credentials + network (e.g. `gcloud auth application-default login`).
-model_config: datasets/model_configs/gemini_cli_model.yaml
-# tools_timeout: 30   # optional; live tools/list fetch timeout in seconds
+# No-op agent generator: satisfies AgentEvaluator's AgentCliGenerator requirement
+# while producing no output (no CLI, no API call).
+model_config: datasets/model_configs/noop_agent_model.yaml
+
+# AgentEvaluator constructs a SimulatedUser per scenario. The wrapper scenario runs
+# a single turn, so the simulated user is never actually called -- it only needs to
+# construct, so point it at the same no-op model.
+simulated_user_model_config: datasets/model_configs/noop_agent_model.yaml
 
 ############################################################
-### Scorers (plug-and-play; each carries its weight + judge)
+### Scorers
 ############################################################
-# The orchestrator runs every scorer declared here and weight-normalizes the
-# global score over the applicable ones. Run the LLM judges with
+# The `dataset_quality` scorer fetches the product's tool catalog live from its own
+# model_config (every setup.mcp_servers entry with an httpUrl is queried via MCP
+# tools/list; names are namespaced <server>__<tool> to match expected_trajectory).
+# google_credentials servers use ADC, so this needs credentials + network (e.g.
+# `gcloud auth application-default login`). Run the LLM judges with
 # EVAL_GCP_PROJECT_REGION=global.
 scorers:
-  trajectory_coverage:
-    weight: 5
-  naming_distribution:
-    weight: 5
-  parameter_coverage:
-    weight: 5
-    min_items: 1
-  vague_examples:
-    weight: 10
-    target_fraction: 0.5
-    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
-  error_recovery:
-    weight: 20
-    target_fraction: 0.20
-    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
-  composition:
-    weight: 20
-    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  dataset_quality:
+    product_name: "Gemini CLI Tools"
+    model_config: datasets/model_configs/gemini_cli_model.yaml
+    # tools_timeout: 30   # optional; live tools/list fetch timeout in seconds
+    scorers:
+      trajectory_coverage:
+        weight: 5
+      naming_distribution:
+        weight: 5
+      parameter_coverage:
+        weight: 5
+        min_items: 1
+      vague_examples:
+        weight: 10
+        target_fraction: 0.5
+        model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+      error_recovery:
+        weight: 20
+        target_fraction: 0.20
+        model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+      composition:
+        weight: 20
+        model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
 
 ############################################################
 ### Reporting
 ############################################################
-# The orchestrator writes results/<job_id>/dataset_quality.csv. Uncomment
-# bigquery to also append one row per run to <gcp_project_id>.evalbench.dataset_quality.
+# Results flow through the shared reporters. The dataset_quality grade lands as one
+# scoring row (comparator "dataset_quality", score = global_score, full breakdown in
+# comparison_logs). Uncomment bigquery to also append rows to the shared table.
 reporting:
   csv:
     output_directory: 'results'
