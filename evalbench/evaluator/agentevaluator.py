@@ -141,69 +141,75 @@ class AgentEvaluator:
                         "Declared env file not found in session: %s", src_path
                     )
 
-        session_id = None
-        for turn in range(max_turns):
-            logging.info(
-                f"Turn {turn + 1}/{max_turns} - Prompt: {current_prompt}")
-            if isinstance(self.generator, AgentCliGenerator):
-                cli_cmd = self.generator.create_command(
-                    cli=self.agent_version,
-                    prompt=current_prompt,
-                    env=env,
-                    resume=(turn > 0),
-                    session_id=session_id,
-                    cwd=resolved_work_dir,
-                )
-                try:
-                    result = self.generator.safe_generate(cli_cmd)
-                    if result.stdout:
-                        parsed = self.generator.parse_response(result.stdout)
-                        if parsed.get("session_id"):
-                            session_id = parsed["session_id"]
-                except Exception as e:
-                    logging.error(f'CLI execution failed: {e}')
-                    result = subprocess.CompletedProcess(
-                        args=[self.agent_version], returncode=1, stdout='', stderr=str(e)
-                    )
-            else:
-                try:
-                    result = self.generator.generate(current_prompt)
-                except Exception as e:
-                    logging.error(f'LLM generation failed: {e}')
-                    result = str(e)
+        # For CLI generators, open a single session that spans all turns of the
+        # scenario. The default session still runs one `--resume` subprocess per
+        # turn, but generators like claude_code override it to keep one process
+        # alive across turns so the prompt cache -- and thus token metrics --
+        # survives (spawning a fresh `--resume` process per turn pays a cold
+        # cache each time and corrupts those metrics).
+        session = None
+        if isinstance(self.generator, AgentCliGenerator):
+            session = self.generator.start_session(
+                env=env, cwd=resolved_work_dir)
 
-            last_result = result
-
-            self._log_cli_result(turn, max_turns, result)
-
-            tools = []
-            if isinstance(self.generator, AgentCliGenerator):
-                tools = self.generator.extract_tools(result.stdout)
-            accumulated_tools.extend(tools)
-
-            # Extract skills from generator output
-            if isinstance(self.generator, AgentCliGenerator):
-                skills = self.generator.extract_skills(result.stdout)
-                accumulated_skills.extend(skills)
-
-            conversation_history.append({
-                "user": current_prompt,
-                "agent": result.stdout
-            })
-
-            if turn < max_turns - 1:
-                if simulated_user:
-                    next_response = simulated_user.get_next_response(
-                        conversation_plan,
-                        conversation_history,
-                        result.stdout
-                    )
-                    if "TERMINATE" in next_response:
-                        logging.info("Simulated user terminated conversation.")
-                        break
-                    current_prompt = next_response
+        try:
+            for turn in range(max_turns):
+                logging.info(
+                    f"Turn {turn + 1}/{max_turns} - Prompt: {current_prompt}")
+                if session is not None:
+                    try:
+                        result = session.send(current_prompt)
+                    except Exception as e:
+                        logging.error(f'CLI execution failed: {e}')
+                        result = subprocess.CompletedProcess(
+                            args=[self.agent_version], returncode=1, stdout='', stderr=str(e)
+                        )
                 else:
-                    break
+                    try:
+                        result = self.generator.generate(current_prompt)
+                    except Exception as e:
+                        logging.error(f'LLM generation failed: {e}')
+                        result = str(e)
+
+                last_result = result
+
+                self._log_cli_result(turn, max_turns, result)
+
+                tools = []
+                if isinstance(self.generator, AgentCliGenerator):
+                    tools = self.generator.extract_tools(result.stdout)
+                accumulated_tools.extend(tools)
+
+                # Extract skills from generator output
+                if isinstance(self.generator, AgentCliGenerator):
+                    skills = self.generator.extract_skills(result.stdout)
+                    accumulated_skills.extend(skills)
+
+                conversation_history.append({
+                    "user": current_prompt,
+                    "agent": result.stdout
+                })
+
+                if turn < max_turns - 1:
+                    if simulated_user:
+                        next_response = simulated_user.get_next_response(
+                            conversation_plan,
+                            conversation_history,
+                            result.stdout
+                        )
+                        if "TERMINATE" in next_response:
+                            logging.info(
+                                "Simulated user terminated conversation.")
+                            break
+                        current_prompt = next_response
+                    else:
+                        break
+        finally:
+            if session is not None:
+                try:
+                    session.close()
+                except Exception as e:
+                    logging.warning(f"Failed to close agent session: {e}")
 
         if last_result:
             self._finalize_scenario(

@@ -11,15 +11,22 @@ generator: claude_code
 #   - Direct API model IDs: "claude-sonnet-4-20250514", "claude-opus-4-20250514"
 model: "claude-opus-4-6"
 
-# --- Auth Option 1: Vertex AI (GCP ADC, no API key) ---
+# --- Auth: Vertex AI (GCP ADC, no API key) ---
 # Requires Claude models enabled in your GCP project via Model Garden.
-# use_vertex: true
-# vertex_project_id: "astana-evaluation"
-# vertex_region: "us-east5"
+use_vertex: true
+vertex_project_id: "astana-evaluation"
+# Use the global endpoint, not a pinned region. Vertex prompt caching is
+# best-effort and non-sticky (cache entries are node-local to the serving
+# replica and requests route dynamically with no cache affinity), so a pinned
+# regional endpoint only worsens cross-request cache-hit determinism and is
+# unsupported past Sonnet 4.6. Override only for data-residency requirements.
+vertex_region: "global"
 
-use_vertex: false
+# --- Auth Option 2: Direct Anthropic API (uncomment and set a real key) ---
+# Setting a non-placeholder ANTHROPIC_API_KEY disables Vertex (use_vertex).
+#   ANTHROPIC_API_KEY: <API_KEY>
+
 env:
-  ANTHROPIC_API_KEY: <API_KEY>
   GOOGLE_CLOUD_PROJECT: "astana-evaluation"
   GOOGLE_CLOUD_LOCATION: "us-central1"
 

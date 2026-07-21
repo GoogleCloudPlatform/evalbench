@@ -1,4 +1,4 @@
-from .agent_cli import AgentCliGenerator
+from .agent_cli import AgentCliGenerator, AgentCliSession
 from .tool_naming import canonicalize_claude_tool_name
 import subprocess
 import os
@@ -8,6 +8,7 @@ import shlex
 import sys
 import re
 import shutil
+import threading
 from util.context import rpc_id_var
 
 
@@ -621,37 +622,65 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                 command, 1, "", f"An unexpected error occurred: {e}"
             )
 
-    def _run_claude_code(self, cli_cmd: CLICommand):
-        env = os.environ.copy()
-        env.update(self.env)
-        env.update(cli_cmd.env)
+    def _build_cli_base(self, cli: str, allowed_tools: list | None) -> list[str]:
+        """Builds the argv prefix common to every Claude Code invocation
+        (one-shot and persistent streaming): the CLI launcher plus the flags
+        that are independent of how turns are fed in.
 
+        Excludes the mode-specific bits -- ``-p <prompt>`` / ``--input-format``,
+        ``--output-format``, and ``--resume`` -- which each caller appends.
+        """
         # If the version looks like an npm package spec (contains "/" or starts
         # with "@"), use `npm exec` to pin that version (like Gemini CLI does).
         # Otherwise, invoke the binary directly (e.g. "claude").
-        cli = cli_cmd.cli
         if cli.startswith("@") or "/" in cli:
             command = ["npm", "exec", "--yes", cli, "--"]
         else:
             command = [cli]
 
-        # -p "prompt" for non-interactive single-prompt mode
-        command.extend(["-p", cli_cmd.prompt])
-
-        # Auto-accept all tool uses (like --yolo in Gemini CLI)
+        # Auto-accept all tool uses (like --yolo in Gemini CLI). Claude Code
+        # refuses this as root, so IS_SANDBOX=1 (set in __init__) enables it.
         command.append("--dangerously-skip-permissions")
 
-        # Output format (stream-json requires --verbose with --print)
-        command.extend(["--output-format", "stream-json", "--verbose"])
-
         # Model override
-        model = self.model
-        if model:
-            command.extend(["--model", model])
+        if self.model:
+            command.extend(["--model", self.model])
 
         # MCP server config
         if hasattr(self, "mcp_config_path") and os.path.exists(self.mcp_config_path):
             command.extend(["--mcp-config", self.mcp_config_path])
+
+        # Allowed tools
+        if allowed_tools:
+            for tool in allowed_tools:
+                command.extend(["--allowedTools", tool])
+
+        return command
+
+    def start_session(
+        self, env: dict | None = None, cwd: str | None = None
+    ) -> AgentCliSession:
+        """Drives all turns of a scenario through ONE persistent process.
+
+        Overrides the default `--resume`-per-turn session so the model's prompt
+        cache survives across turns (a fresh process per turn pays a cold cache
+        each time, corrupting the token metrics the eval measures).
+        """
+        return _ClaudeStreamingSession(self, env, cwd)
+
+    def _run_claude_code(self, cli_cmd: CLICommand):
+        env = os.environ.copy()
+        env.update(self.env)
+        env.update(cli_cmd.env)
+
+        allowed_tools = cli_cmd.allowedTools or self.allowed_tools
+        command = self._build_cli_base(cli_cmd.cli, allowed_tools)
+
+        # -p "prompt" for non-interactive single-prompt mode
+        command.extend(["-p", cli_cmd.prompt])
+
+        # Output format (stream-json requires --verbose with --print)
+        command.extend(["--output-format", "stream-json", "--verbose"])
 
         # Resume session: `--resume <session_id>` takes the UUID as its value.
         # `--fork-session` creates a new session ID from the resumed history,
@@ -659,17 +688,6 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         # same sandboxed ~/.claude session store and otherwise conflict).
         if cli_cmd.resume and cli_cmd.session_id:
             command.extend(["--resume", cli_cmd.session_id, "--fork-session"])
-
-        # Allowed tools
-        allowed_tools = cli_cmd.allowedTools or self.allowed_tools
-        if allowed_tools:
-            for tool in allowed_tools:
-                command.extend(["--allowedTools", tool])
-
-        # Claude Code refuses --dangerously-skip-permissions when running as
-        # root.  Wrap with `su` to drop privileges to a non-root user.
-        # Recursively chown the fake_home so claudeuser can write to it
-        # (covers .claude dir, gcloud creds, MCP config copied during init).
 
         logging.info(f"Running Claude Code CLI: {' '.join(command)}")
 
@@ -1074,3 +1092,161 @@ class ClaudeCodeGenerator(AgentCliGenerator):
             cli=cli, prompt=prompt, env=merged_env,
             resume=resume, session_id=session_id, cwd=cwd,
         )
+
+
+class _ClaudeStreamingSession(AgentCliSession):
+    """Drives a whole scenario through ONE persistent ``claude`` process using
+    Claude Code streaming-input mode.
+
+    The process is launched with ``-p --input-format stream-json
+    --output-format stream-json --verbose`` and stays alive across turns. Each
+    turn is a newline-delimited user message written to stdin
+    (``{"type":"user","message":{"role":"user","content":...}}``); the process
+    emits stream-json events on stdout and closes each turn with a
+    ``type=="result"`` event, then waits for the next message. Because it is one
+    long-lived session, both the conversation context AND the model's prompt
+    cache persist across turns -- unlike the default ``--resume``-per-turn
+    session, whose fresh process pays a cold cache each turn and corrupts the
+    token metrics the eval measures.
+    """
+
+    # Max wall-clock for a single turn's `result` event before we kill the
+    # process and surface a timeout (agentic turns with tool use can be long).
+    _TURN_TIMEOUT_S = 900
+
+    def __init__(self, generator: "ClaudeCodeGenerator", env: dict | None, cwd: str | None):
+        self._gen = generator
+        self._cwd = cwd
+        self._proc = None
+        self._stderr_lines: list[str] = []
+        self._stderr_thread = None
+
+        merged_env = os.environ.copy()
+        merged_env.update(generator.env)
+        if env:
+            merged_env.update(env)
+        self._env = merged_env
+
+        command = generator._build_cli_base(
+            generator.claude_code_version, generator.allowed_tools)
+        # Streaming input: prompts arrive as NDJSON on stdin (no `-p <prompt>`),
+        # and no `--resume` -- a single process is the session.
+        command.extend([
+            "-p",
+            "--input-format", "stream-json",
+            "--output-format", "stream-json",
+            "--verbose",
+        ])
+        self._command = command
+
+    def _ensure_started(self):
+        if self._proc is not None:
+            return
+        logging.info(
+            f"Starting persistent Claude Code CLI: {' '.join(self._command)}")
+        self._proc = subprocess.Popen(
+            self._command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=self._env,
+            cwd=self._cwd or self._gen.fake_home,
+            bufsize=1,  # line-buffered
+        )
+        # Drain stderr in the background so a chatty child can't deadlock on a
+        # full stderr pipe while we block reading stdout.
+        self._stderr_thread = threading.Thread(
+            target=self._drain_stderr, daemon=True)
+        self._stderr_thread.start()
+
+    def _drain_stderr(self):
+        try:
+            for line in self._proc.stderr:
+                self._stderr_lines.append(line)
+        except (ValueError, OSError):
+            pass
+
+    def send(self, prompt: str) -> subprocess.CompletedProcess:
+        try:
+            self._ensure_started()
+        except FileNotFoundError:
+            return subprocess.CompletedProcess(
+                self._command, 127, "",
+                f"Error: Command not found: {self._command[0]}")
+        except Exception as e:
+            return subprocess.CompletedProcess(
+                self._command, 1, "", f"Failed to start Claude Code: {e}")
+
+        user_msg = json.dumps({
+            "type": "user",
+            "message": {"role": "user", "content": prompt},
+        })
+
+        # Kill the process if this turn hangs past the deadline; the stdout read
+        # loop then unblocks on EOF and we surface a timeout error.
+        watchdog = threading.Timer(self._TURN_TIMEOUT_S, self._proc.kill)
+        watchdog.start()
+        try:
+            self._proc.stdin.write(user_msg + "\n")
+            self._proc.stdin.flush()
+        except (ValueError, OSError) as e:
+            watchdog.cancel()
+            return self._dead_process_result(f"Failed to send prompt: {e}")
+
+        turn_lines: list[str] = []
+        got_result = False
+        try:
+            for line in self._proc.stdout:
+                turn_lines.append(line)
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    event = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                # Each turn ends with a `result` event; stop reading and leave
+                # the process alive for the next turn.
+                if event.get("type") == "result":
+                    got_result = True
+                    break
+        except (ValueError, OSError):
+            pass
+        finally:
+            watchdog.cancel()
+
+        if not got_result:
+            return self._dead_process_result(
+                "Claude Code exited before returning a result "
+                "(process died or turn timed out).")
+
+        stdout = self._gen._parse_stream_json("".join(turn_lines))
+        return subprocess.CompletedProcess(
+            self._command, 0, stdout, "".join(self._stderr_lines))
+
+    def _dead_process_result(self, message: str) -> subprocess.CompletedProcess:
+        stderr = "".join(self._stderr_lines)
+        return subprocess.CompletedProcess(
+            self._command, 1, "",
+            f"{stderr}\n{message}\nError: Generator returned empty response.")
+
+    def close(self):
+        if self._proc is None:
+            return
+        # Closing stdin (EOF) tells Claude Code the session is over and it exits.
+        try:
+            if self._proc.stdin and not self._proc.stdin.closed:
+                self._proc.stdin.close()
+        except (ValueError, OSError):
+            pass
+        try:
+            self._proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            self._proc.kill()
+            try:
+                self._proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                pass
+        if self._stderr_thread is not None:
+            self._stderr_thread.join(timeout=5)
