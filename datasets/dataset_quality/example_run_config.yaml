@@ -1,0 +1,64 @@
+############################################################
+### Dataset Quality — example run config
+############################################################
+# Grades the intrinsic quality of a CUJ dataset (no eval / agent run). For each
+# scorer, the judge tags every CUJ and the scorer computes a 0-100 sub-score;
+# grading.py rolls them into a weighted global score + letter grade. Drives the
+# `dataset_quality` orchestrator.
+#
+# One run grades one dataset. To grade several, list several run configs under a
+# suite (see datasets/sample_suite_config.yaml).
+
+orchestrator: dataset_quality
+
+# What to grade: the CUJ scenarios + the product's tool schema.
+product_name: "Gemini CLI Tools"
+dataset_config: datasets/gemini-cli-tools/gemini-cli.evalset.json
+# CUJ evalset format; the framework pre-loads the dataset before the orchestrator
+# runs, and the default format can't parse CUJ scenarios.
+dataset_format: gemini-cli-format
+
+# The tool catalog is fetched live from the product's model config: every
+# setup.mcp_servers entry with an httpUrl is queried (MCP tools/list), the
+# results are aggregated, and tool names are namespaced <server>__<tool> to match
+# expected_trajectory. google_credentials servers are authenticated via ADC, so
+# this needs credentials + network (e.g. `gcloud auth application-default login`).
+model_config: datasets/model_configs/gemini_cli_model.yaml
+# tools_timeout: 30   # optional; live tools/list fetch timeout in seconds
+
+############################################################
+### Scorers (plug-and-play; each carries its weight + judge)
+############################################################
+# The orchestrator runs every scorer declared here and weight-normalizes the
+# global score over the applicable ones. Run the LLM judges with
+# EVAL_GCP_PROJECT_REGION=global.
+scorers:
+  trajectory_coverage:
+    weight: 5
+  naming_distribution:
+    weight: 5
+  parameter_coverage:
+    weight: 5
+    min_items: 1
+  vague_examples:
+    weight: 10
+    target_fraction: 0.5
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  error_recovery:
+    weight: 20
+    target_fraction: 0.20
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  composition:
+    weight: 20
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+
+############################################################
+### Reporting
+############################################################
+# The orchestrator writes results/<job_id>/dataset_quality.csv. Uncomment
+# bigquery to also append one row per run to <gcp_project_id>.evalbench.dataset_quality.
+reporting:
+  csv:
+    output_directory: 'results'
+  # bigquery:
+  #   gcp_project_id: your-gcp-project
