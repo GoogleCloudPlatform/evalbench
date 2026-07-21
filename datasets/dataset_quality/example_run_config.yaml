@@ -48,17 +48,18 @@ scorers:
       parameter_coverage:
         weight: 5
         min_items: 1
+        model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       vague_examples:
         weight: 10
         target_fraction: 0.5
-        model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+        model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       error_recovery:
         weight: 20
         target_fraction: 0.20
-        model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+        model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       composition:
         weight: 20
-        model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+        model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
 
 ############################################################
 ### Reporting

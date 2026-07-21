@@ -1,21 +1,24 @@
 """Parameter-coverage scorer: how much of the tool param surface CUJs exercise.
 
-Static (no judge). Enumerates every distinct named parameter across the tool
-schema (each tool's ``inputSchema.properties``) and counts a parameter as covered
-when at least ``min_items`` CUJs mention it. Score is ``covered / total * 100``.
+A judge decides, per ``(tool, parameter)``, which CUJs actually EXERCISE it --
+i.e. which scenarios would force the agent to supply a value for that parameter,
+inferred from the scenario text (CUJs carry no literal argument values). A
+parameter is covered when at least ``min_items`` CUJs exercise it; the score is
+``covered / total * 100``. The denominator is taken from the tool schema itself
+(ground truth), not the judge, so a parameter the judge omits counts as uncovered.
 A dataset that never varies a parameter can't tell you whether it's discoverable
-or handled -- uncovered params are blind spots. Matching is lexical (the param
-name and its underscores-as-spaces form) against the user-facing CUJ text, so it
-is a rough proxy: generic names (``name``, ``id``) over-match and type-suffixed
-names (``project_id`` vs "project ...") can under-match.
+or handled -- uncovered params are blind spots.
 """
 
 import logging
 
+from generators.models import get_generator
 from scorers.dataset_quality.context import (
     DatasetQualityContext,
     SubScoreContribution,
 )
+from scorers.dataset_quality.llm import judge_coverage
+from scorers.prompt.parameter_coverage import PARAMETER_COVERAGE_PROMPT
 
 
 class ParameterCoverageScorer:
@@ -28,49 +31,43 @@ class ParameterCoverageScorer:
         config = config or {}
         self.weight = float(config.get("weight", 5))
         self.min_items = int(config.get("min_items", 1))
-
-    @staticmethod
-    def _param_names(tool) -> set[str]:
-        schema = getattr(tool, "inputSchema", None)
-        if schema is None and isinstance(tool, dict):
-            schema = tool.get("inputSchema")
-        properties = (schema or {}).get("properties") or {}
-        return set(properties)
-
-    @staticmethod
-    def _surface_forms(param: str) -> set[str]:
-        return {param.lower(), param.replace("_", " ").lower()}
+        model_config = config.get("model_config")
+        if not model_config:
+            raise ValueError(
+                "model_config is required for the parameter_coverage scorer"
+            )
+        self.model = get_generator(global_models, model_config)
 
     def run(self, context: DatasetQualityContext) -> SubScoreContribution:
         n = context.n
         if n == 0:
             return SubScoreContribution(applicable=False, logs="no scenarios")
 
-        params = set()
-        for tool in context.tools:
-            params.update(self._param_names(tool))
+        params = context.tool_parameters()
         if not params:
             return SubScoreContribution(
                 applicable=False, logs="no parameters in schema"
             )
 
-        texts = [
-            " ".join(
-                str(scenario.get(field) or "")
-                for field in ("starting_prompt", "conversation_plan")
-            ).lower()
-            for scenario in context.scenarios
-        ]
+        prompt = PARAMETER_COVERAGE_PROMPT.format(
+            tool_schema=context.tool_schema_json(),
+            cujs_json=context.cujs_json(
+                ["starting_prompt", "conversation_plan", "expected_trajectory"]
+            ),
+        )
+        valid_ids = {s.get("id") for s in context.scenarios}
 
-        covered = set()
-        for param in params:
-            forms = self._surface_forms(param)
-            hits = sum(
-                1 for text in texts if any(form in text for form in forms)
+        counts: dict[tuple[str, str], set] = {}
+        for entry in judge_coverage(self.model, prompt):
+            key = (entry.get("tool"), entry.get("parameter"))
+            if key not in params:
+                continue
+            ids = entry.get("cuj_ids") or []
+            counts.setdefault(key, set()).update(
+                i for i in ids if i in valid_ids
             )
-            if hits >= self.min_items:
-                covered.add(param)
 
+        covered = {k for k in params if len(counts.get(k, set())) >= self.min_items}
         uncovered = sorted(params - covered)
         score = round(len(covered) / len(params) * 100, 2)
 
@@ -78,7 +75,7 @@ class ParameterCoverageScorer:
         if uncovered:
             suggestions.append(
                 f"No CUJ (>= {self.min_items}) exercises these parameters: "
-                + ", ".join(uncovered)
+                + ", ".join(f"{tool}.{param}" for tool, param in uncovered)
             )
         logging.info(
             "parameter_coverage: \t%d/%d params covered -> %.2f",

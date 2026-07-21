@@ -47,6 +47,37 @@ class DatasetQualityContext:
     def tool_names_str(self) -> str:
         return ", ".join(self.tool_names) or "(none provided)"
 
+    @staticmethod
+    def _tool_field(tool, key: str):
+        value = getattr(tool, key, None)
+        if value is None and isinstance(tool, dict):
+            value = tool.get(key)
+        return value
+
+    def tool_parameters(self) -> set[tuple[str, str]]:
+        """Every named parameter as a ``(tool_name, parameter)`` pair."""
+        params = set()
+        for tool in self.tools:
+            name = self._tool_field(tool, "name")
+            schema = self._tool_field(tool, "inputSchema") or {}
+            for param in (schema.get("properties") or {}):
+                params.add((name, param))
+        return params
+
+    def tool_schema_json(self) -> str:
+        """JSON string of the tool schema (name + inputSchema per tool)."""
+        tools = []
+        for tool in self.tools:
+            schema = self._tool_field(tool, "inputSchema") or {}
+            tools.append({
+                "name": self._tool_field(tool, "name"),
+                "inputSchema": {
+                    "properties": schema.get("properties") or {},
+                    "required": schema.get("required") or [],
+                },
+            })
+        return json.dumps({"tools": tools}, indent=2, default=str)
+
     def cujs_json(self, fields: list[str]) -> str:
         """JSON string of each scenario projected to ``id`` + ``fields``.
 
