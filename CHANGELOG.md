@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.11.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.10.0...v1.11.0) (2026-07-21)
+
+
+### Features
+
+* **dea:** parameterize url_agent_name and agent_type_uri options ([#497](https://github.com/GoogleCloudPlatform/evalbench/issues/497)) ([30a065f](https://github.com/GoogleCloudPlatform/evalbench/commit/30a065f3ca2005c6a0d7dbecfe639cbe811534cb))
+* **mcp_readability:** human-readable LLM feedback without score, with waivers ([c49f45f](https://github.com/GoogleCloudPlatform/evalbench/commit/c49f45f5dcc83f71818e5e8e3780083538e788b9))
+* **mcp_readability:** human-readable LLM feedback without score, with waivers ([ffa4d1f](https://github.com/GoogleCloudPlatform/evalbench/commit/ffa4d1f720142f50884a77e68505bafd8c8277dd))
+
 ## [1.10.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.9.0...v1.10.0) (2026-07-13)
 
 
