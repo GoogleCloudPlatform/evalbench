@@ -257,6 +257,36 @@ class TestQueryDataAPIGenerator(unittest.TestCase):
         # Test underscores-only key
         self.assertEqual(_to_camel_case_dict({"_": "val"}), {"_": "val"})
 
+    @patch('generators.models.query_data_api.requests')
+    @patch('generators.models.query_data_api.google.auth.default')
+    @patch('generators.models.query_data_api.gda')
+    def test_credentials_caching_across_rest_calls(
+        self, mock_gda, mock_auth_default, mock_requests
+    ):
+        mock_credentials = MagicMock()
+        mock_credentials.valid = True
+        mock_credentials.expired = False
+        mock_auth_default.return_value = (mock_credentials, "project-id")
+
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"generatedQuery": "SELECT 1"}
+        mock_requests.post.return_value = mock_resp
+
+        config = {
+            "project_id": "test-project",
+            "use_rest_api": True,
+        }
+        generator = QueryDataAPIGenerator(config)
+
+        # Make multiple REST calls on the same generator instance
+        generator.generate_internal("Prompt 1")
+        generator.generate_internal("Prompt 2")
+        generator.generate_internal("Prompt 3")
+
+        # google.auth.default should only be called ONCE due to credential caching
+        mock_auth_default.assert_called_once()
+        self.assertEqual(mock_requests.post.call_count, 3)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -87,12 +87,29 @@ class QueryDataAPIGenerator(QueryGenerator):
             or _DEFAULT_API_ENDPOINT
         )
 
+        # Initialize credentials cache
+        self._credentials = None
+        self._auth_request = None
+
         # Initialize client
         # Authenticated via ADC automatically
         client_options = {"api_endpoint": self.api_endpoint}
         self.client = gda.DataChatServiceClient(
             client_options=client_options
         )
+
+    def _get_credentials(self):
+        """Retrieves and caches ADC credentials, refreshing only when expired."""
+        if self._credentials is None:
+            self._credentials, _ = google.auth.default(
+                scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            )
+            self._auth_request = google.auth.transport.requests.Request()
+
+        if not self._credentials.valid or self._credentials.expired:
+            self._credentials.refresh(self._auth_request)
+
+        return self._credentials
 
     def generate_internal(self, prompt: str) -> Dict[str, Any]:
         """
@@ -147,12 +164,7 @@ class QueryDataAPIGenerator(QueryGenerator):
         missing from PyPI SDK protos.
         """
         logger = logging.getLogger(__name__)
-        credentials, _ = google.auth.default(
-            scopes=["https://www.googleapis.com/auth/cloud-platform"]
-        )
-        if not credentials.valid:
-            auth_req = google.auth.transport.requests.Request()
-            credentials.refresh(auth_req)
+        credentials = self._get_credentials()
 
         url = (
             f"https://{self.api_endpoint}/v1beta/projects/{self.project_id}"
