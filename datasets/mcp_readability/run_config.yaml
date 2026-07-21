@@ -26,7 +26,7 @@ scorers:
   # LLM judge vs the style guide. Pass = no P0 findings. Owns its model config
   # and style-guide path. Run with EVAL_GCP_PROJECT_REGION=global.
   mcp_style_readability:
-    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+    model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
     style_guide: datasets/mcp_readability/style_guide.md
 
 # Inputs (paths relative to the repo root / run cwd).
