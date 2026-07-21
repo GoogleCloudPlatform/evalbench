@@ -1165,6 +1165,7 @@ class _ClaudeStreamingSession(AgentCliSession):
             for line in self._proc.stderr:
                 self._stderr_lines.append(line)
         except (ValueError, OSError):
+            # Stderr may be closed concurrently during process shutdown; this is benign.
             pass
 
     def send(self, prompt: str) -> subprocess.CompletedProcess:
