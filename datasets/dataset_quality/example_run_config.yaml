@@ -3,9 +3,8 @@
 ############################################################
 # Grades the intrinsic quality of a CUJ dataset (no eval / agent run). Runs on the
 # standard agent pipeline: a no-op generator does nothing, and the `dataset_quality`
-# scorer grades the whole dataset holistically (each sub-scorer tags every CUJ and
-# computes a 0-100 sub-score; grading rolls them into a weighted global score +
-# letter grade). Results flow through the shared reporters as one scoring row.
+# scorer grades the whole dataset holistically (each sub-scorer computes a 0-100
+# sub-score; grading rolls them into a weighted global score + letter grade).
 #
 # One run grades one dataset. To grade several, list several run configs under a
 # suite (see datasets/sample_suite_config.yaml).
@@ -21,9 +20,7 @@ dataset_config: datasets/gemini-cli-tools/gemini-cli.evalset.json
 # while producing no output (no CLI, no API call).
 model_config: datasets/model_configs/noop_agent_model.yaml
 
-# AgentEvaluator constructs a SimulatedUser per scenario. The wrapper scenario runs
-# a single turn, so the simulated user is never actually called -- it only needs to
-# construct, so point it at the same no-op model.
+# Never actually called (single-turn wrapper scenario); only needs to construct.
 simulated_user_model_config: datasets/model_configs/noop_agent_model.yaml
 
 ############################################################
@@ -51,11 +48,11 @@ scorers:
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       vague_examples:
         weight: 10
-        target_fraction: 0.5
+        target_fraction: 0.5   # scores 100 once >=50% of CUJs are vague/indirect
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       error_recovery:
         weight: 20
-        target_fraction: 0.20
+        target_fraction: 0.20  # scores 100 once >=20% of CUJs test error recovery
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       composition:
         weight: 20
@@ -64,9 +61,7 @@ scorers:
 ############################################################
 ### Reporting
 ############################################################
-# Results flow through the shared reporters. The dataset_quality grade lands as one
-# scoring row (comparator "dataset_quality", score = global_score, full breakdown in
-# comparison_logs). Uncomment bigquery to also append rows to the shared table.
+# The grade lands as one scoring row; uncomment bigquery to also append to the table.
 reporting:
   csv:
     output_directory: 'results'
