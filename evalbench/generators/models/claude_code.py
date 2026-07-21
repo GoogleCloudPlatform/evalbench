@@ -1212,8 +1212,10 @@ class _ClaudeStreamingSession(AgentCliSession):
                 if event.get("type") == "result":
                     got_result = True
                     break
-        except (ValueError, OSError):
-            pass
+        except (ValueError, OSError) as e:
+            # The subprocess may be killed by the watchdog or exit mid-read;
+            # treat stream-read failures as a dead-process turn and continue.
+            logging.debug("Claude Code stdout read interrupted: %s", e)
         finally:
             watchdog.cancel()
 
