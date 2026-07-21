@@ -1,9 +1,11 @@
 import asyncio
+import base64
 import collections.abc
 import concurrent.futures
 import datetime
 import json
 import logging
+import re
 import threading
 import uuid
 from typing import Any, Coroutine
@@ -207,6 +209,81 @@ def _find_agent_text_recursive(obj: Any) -> str:
     return "\n\n".join(texts)
 
 
+def _find_json_objects(
+    text: str,
+) -> collections.abc.Iterable[dict[str, Any]]:
+    """Finds top-level JSON objects starting with {"id": in text."""
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r'\{"id":', text):
+        start = match.start()
+        try:
+            obj, _ = decoder.raw_decode(text, start)
+            if isinstance(obj, dict):
+                yield obj
+        except json.JSONDecodeError:
+            continue
+
+
+def _extract_tool_details_from_token(
+    token_str: str,
+) -> list[dict[str, Any]]:
+    """Extracts tool execution details from A2A conversation token."""
+    if not token_str:
+        return []
+
+    cleaned_token_str = re.sub(r"[^A-Za-z0-9+/=]", "", token_str)
+
+    try:
+        decoded_bytes = base64.b64decode(cleaned_token_str)
+        decoded_str = decoded_bytes.decode("utf-8", errors="ignore")
+    except (ValueError, UnicodeDecodeError) as e:
+        logger.exception("Failed to decode token: %s", e)
+        return []
+
+    calls = {}
+    responses = {}
+
+    for js in _find_json_objects(decoded_str):
+        content = js.get("content", {})
+        if not isinstance(content, dict):
+            continue
+        parts = content.get("parts")
+        if not isinstance(parts, list):
+            continue
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            if "functionCall" in part:
+                fc = part["functionCall"]
+                fc_id = fc.get("id")
+                if fc_id:
+                    calls[fc_id] = {
+                        "id": fc_id,
+                        "name": fc["name"],
+                        "params": fc.get("args", {}),
+                        "output": {},
+                        "fail": 0,
+                    }
+            if "functionResponse" in part:
+                fr = part["functionResponse"]
+                fr_id = fr.get("id")
+                if fr_id:
+                    responses[fr_id] = fr.get("response", {})
+
+    # Match calls and responses to determine failure and store output
+    for fr_id, resp_payload in responses.items():
+        if fr_id in calls:
+            calls[fr_id]["output"] = resp_payload
+            if isinstance(resp_payload, dict):
+                if resp_payload.get("error") or resp_payload.get("errors"):
+                    calls[fr_id]["fail"] = 1
+            elif isinstance(resp_payload, str):
+                if "error" in resp_payload.lower():
+                    calls[fr_id]["fail"] = 1
+
+    return list(calls.values())
+
+
 class DataEngineeringAgentGenerator(QueryGenerator):
     """Data Engineering Agent (DEA) Query Generator using the A2A SDK."""
 
@@ -308,7 +385,25 @@ class DataEngineeringAgentGenerator(QueryGenerator):
         )
 
         try:
-            prompt.generated_nl_response = self.run_async(coro)
+            reply_text, new_token = self.run_async(coro)
+            prompt.generated_nl_response = reply_text
+            if new_token:
+                all_tools = _extract_tool_details_from_token(new_token)
+                this_turn_tools = [
+                    t for t in all_tools
+                    if t.get("id") and t["id"] not in prompt.seen_tool_ids
+                ]
+                if not any(t.get("id") for t in all_tools):
+                    this_turn_tools = all_tools
+
+                prompt.seen_tool_ids.update(
+                    t["id"] for t in all_tools if t.get("id")
+                )
+                prompt.this_turn_tool_details = this_turn_tools
+                tool_names = [t["name"] for t in all_tools]
+                prompt.accumulated_tools = list(
+                    dict.fromkeys([*prompt.accumulated_tools, *tool_names])
+                )
         except Exception:
             logger.exception("A2A SDK messaging error")
             raise
@@ -319,7 +414,7 @@ class DataEngineeringAgentGenerator(QueryGenerator):
         prompt: str,
         conversation_id: str | None,
         target_workspace: str,
-    ) -> str:
+    ) -> tuple[str, str]:
         """Core asynchronous A2A SDK connection loop."""
         # Configure Client in standard Non-Streaming Mode
         config = ClientConfig(
@@ -376,11 +471,13 @@ class DataEngineeringAgentGenerator(QueryGenerator):
             message_req.metadata[AGENT_TYPE_URI] = self.agent_type_uri
 
         # Handle ConversationToken state memory thread-safely
-        token = ""
+        conversation_token = ""
         with self._token_lock:
-            token = self._conversation_token_cache.get(conversation_id, "")
-        if token:
-            message_req.metadata[CONVERSATION_TOKEN_URI] = token
+            conversation_token = self._conversation_token_cache.get(
+                conversation_id, ""
+            )
+        if conversation_token:
+            message_req.metadata[CONVERSATION_TOKEN_URI] = conversation_token
 
         context = ClientCallContext(
             timeout=300.0,
@@ -390,7 +487,7 @@ class DataEngineeringAgentGenerator(QueryGenerator):
         )
 
         reply_text = ""
-        new_token = ""
+        new_conversation_token = ""
 
         try:
             async for resp in client.send_message(
@@ -408,7 +505,9 @@ class DataEngineeringAgentGenerator(QueryGenerator):
                     resp.HasField("task")
                     and CONVERSATION_TOKEN_URI in resp.task.metadata
                 ):
-                    new_token = resp.task.metadata[CONVERSATION_TOKEN_URI]
+                    new_conversation_token = resp.task.metadata[
+                        CONVERSATION_TOKEN_URI
+                    ]
         except Exception as e:
             self._log_api_error_details(e)
             raise
@@ -416,11 +515,13 @@ class DataEngineeringAgentGenerator(QueryGenerator):
             await client.close()
 
         # Cache the new token thread-safely
-        if new_token:
+        if new_conversation_token:
             with self._token_lock:
-                self._conversation_token_cache[conversation_id] = new_token
+                self._conversation_token_cache[
+                    conversation_id
+                ] = new_conversation_token
 
-        return reply_text.strip()
+        return reply_text.strip(), new_conversation_token
 
     @staticmethod
     def run_async(coro: Coroutine[Any, Any, Any]) -> Any:

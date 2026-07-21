@@ -469,10 +469,15 @@ def test_evaluator_process_scenario(
     eval_output = result.agent_results[0]
     history = json.loads(eval_output["conversation_history"])
     assert history == [
-        {"user": "hello", "agent": "Hi user!"},
+        {
+            "user": "hello",
+            "agent": "Hi user!",
+            "agent_stats": {"tools": {"byName": {}}},
+        },
         {
             "user": "What is target workspace?",
             "agent": "It is test-workspace.",
+            "agent_stats": {"tools": {"byName": {}}},
         },
     ]
     assert eval_output["stdout"] == "It is test-workspace."
