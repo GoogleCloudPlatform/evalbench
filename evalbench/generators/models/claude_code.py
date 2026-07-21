@@ -1242,6 +1242,8 @@ class _ClaudeStreamingSession(AgentCliSession):
             if self._proc.stdin and not self._proc.stdin.closed:
                 self._proc.stdin.close()
         except (ValueError, OSError):
+            # Ignore stream-close errors during shutdown; process termination
+            # and wait/kill logic below handle teardown robustness.
             pass
         try:
             self._proc.wait(timeout=30)
