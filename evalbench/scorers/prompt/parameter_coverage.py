@@ -50,7 +50,6 @@ Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
     {{
       "tool": "<tool name, copied verbatim from the schema>",
       "parameter": "<parameter name, copied verbatim from the schema>",
-      "required": true|false,
       "cuj_ids": ["<id of each CUJ that exercises this parameter>"]
     }}
   ]
