@@ -162,8 +162,14 @@ class McpToolsGenerator(QueryGenerator):
                     "google_credentials auth requires oauth.scopes on the MCP "
                     "server config; none provided"
                 )
-            creds, _ = google.auth.default(scopes=scopes)
-            creds.refresh(google.auth.transport.requests.Request())
+            try:
+                creds, _ = google.auth.default(scopes=scopes)
+                creds.refresh(google.auth.transport.requests.Request())
+            except Exception as e:
+                raise McpToolsError(
+                    "Failed to acquire GCP Application Default Credentials. "
+                    "Run `gcloud auth application-default login`."
+                ) from e
             headers["Authorization"] = f"Bearer {creds.token}"
         return headers or None
 
