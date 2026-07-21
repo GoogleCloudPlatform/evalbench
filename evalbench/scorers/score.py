@@ -15,6 +15,7 @@ from scorers import behavioralmetrics
 from scorers import parameteranalysis
 from scorers import skillsbestpractices
 from scorers import turncount
+from scorers import agentsteps
 from scorers import endtoendlatency
 from scorers import toolcalllatency
 from scorers import tokenconsumption
@@ -105,6 +106,10 @@ def compare(
     if "turn_count" in scorers:
         comparators.append(
             turncount.TurnCount(scorers["turn_count"])
+        )
+    if "agent_steps" in scorers:
+        comparators.append(
+            agentsteps.AgentSteps(scorers["agent_steps"])
         )
     if "end_to_end_latency" in scorers:
         comparators.append(
