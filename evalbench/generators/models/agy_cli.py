@@ -1,6 +1,5 @@
 from .agent_cli import AgentCliGenerator
 from .tool_naming import canonicalize_agy_tool_name, parse_agy_mcp_tool_call
-import collections
 import subprocess
 import os
 import json
@@ -8,7 +7,6 @@ import logging
 import re
 import shutil
 import sys
-import dateutil.parser
 from util.context import rpc_id_var
 
 # Bare command name. agy's installer exposes no version pinning and the binary
@@ -34,14 +32,14 @@ class CLICommand:
 class AgyCliGenerator(AgentCliGenerator):
     """Generator that queries via the Antigravity CLI (``agy``).
 
-    Surface targeted here is what the v1.0.5 binary actually exposes:
-    ``agy -p <prompt> --dangerously-skip-permissions [--model <label>]
-    [--continue]``. The on-disk layout lives under
-    ``~/.gemini/antigravity-cli/`` (the binary calls this ``appDataDir``).
-    Skills are delivered via plugins (see _setup_skills). There is no
-    ``--output-format`` flag and no stdout stream protocol; structured
-    tool-call data is read out of the per-conversation JSONL transcript at
-    ``<appDataDir>/brain/<uuid>/.system_generated/logs/transcript.jsonl``.
+    The eval turn runs ``agy -p <prompt> --dangerously-skip-permissions
+    --output-format stream-json [--model <label>] [--continue]``. The on-disk
+    layout lives under ``~/.gemini/antigravity-cli/`` (the binary calls this
+    ``appDataDir``). Skills are delivered via plugins (see _setup_skills).
+    ``--output-format stream-json`` emits newline-delimited events (an
+    ``init``, one ``step_update`` per step, then a final ``result``); tool
+    calls, the response, token usage, and latency are all read from that
+    stream (see _parse_stream_json).
     """
 
     APP_DATA_SUBPATH = os.path.join(".gemini", "antigravity-cli")
@@ -373,23 +371,14 @@ class AgyCliGenerator(AgentCliGenerator):
         if configured_servers:
             self._verify_mcp_runtime(configured_servers)
 
-    # Transcript step type agy's runtime writes for an executed MCP call.
-    # A genuine ``call_mcp_tool`` wrapper invocation is always recorded as a
-    # dedicated ``MCP_TOOL`` result step (native tools get VIEW_FILE,
-    # RUN_COMMAND, etc.), so this is the signal that the wrapper actually ran.
-    _AGY_MCP_RESULT_TYPE = "MCP_TOOL"
-
-    # Transcript step types / fields used while parsing a turn.
-    _STEP_USER_INPUT = "USER_INPUT"
-    _STEP_PLANNER_RESPONSE = "PLANNER_RESPONSE"
-    _STEP_STATUS_DONE = "DONE"
-    # ``source`` value agy stamps on every model-emitted step (tool results
-    # and planner responses alike).
-    _SOURCE_MODEL = "MODEL"
-    # MODEL steps that are not themselves results (they carry no tool output).
-    _NON_RESULT_MODEL_TYPES = (
-        None, "PLANNER_RESPONSE", "CONVERSATION_HISTORY", "GENERIC",
-    )
+    # stream-json event/step markers (agy --output-format stream-json).
+    # Each line is one JSON object: an ``init`` event, many ``step_update``
+    # events, then a final ``result`` event.
+    _EVENT_RESULT = "result"
+    _STEP_TYPE_TOOL = "tool"
+    # A tool step is emitted twice: ACTIVE when dispatched, then DONE
+    # (success) or ERROR (failure) -- both carry the same ``step_index``.
+    _STATE_DONE = "DONE"
 
     # cli.log line agy emits once it has resolved the model for a run, e.g.
     #   model_config_manager.go:157] Propagating selected model override to
@@ -758,6 +747,7 @@ class AgyCliGenerator(AgentCliGenerator):
     @staticmethod
     def _base_agy_command(
         cli: str, prompt: str, resume: bool = False, model: str = None,
+        output_format: str = None,
     ) -> list:
         """Builds the non-interactive ``agy -p`` argv shared by the eval
         turn path and the setup-time MCP probe.
@@ -767,10 +757,16 @@ class AgyCliGenerator(AgentCliGenerator):
         strings ``agy models`` lists), not an API id; an unrecognized value is
         silently ignored and agy falls back to its default model. When no
         model is configured the flag is omitted and agy uses its default.
+
+        ``output_format`` maps to agy's ``--output-format`` (values ``json``
+        and ``stream-json``); the eval turn passes ``stream-json`` to get the
+        machine-readable event stream. Omitted for the setup probe.
         """
         command = [cli, "-p", prompt, "--dangerously-skip-permissions"]
         if model:
             command += ["--model", model]
+        if output_format:
+            command += ["--output-format", output_format]
         if resume:
             command.append("--continue")
         return command
@@ -808,20 +804,21 @@ class AgyCliGenerator(AgentCliGenerator):
         # the label carried on cli_cmd.cli (the evaluator passes agent_version,
         # "agy", which is not a path).
         command = self._base_agy_command(
-            self.agy_bin, cli_cmd.prompt, cli_cmd.resume, self.model
+            self.agy_bin, cli_cmd.prompt, cli_cmd.resume, self.model,
+            output_format="stream-json",
         )
         cwd = cli_cmd.cwd if cli_cmd.cwd else self.fake_home
         result = self._execute_cli_command(command, env=env, cwd=cwd)
 
-        if result.returncode == 0:
+        # Parse whenever agy emitted a stream, even on a non-zero exit: a
+        # timed-out/errored run still ends in a ``result`` event carrying real
+        # usage tokens and the tool calls made, which we want to keep. Empty
+        # stdout (e.g. binary not found) is left for safe_generate to flag.
+        if result.stdout:
             try:
-                result.stdout = self._parse_transcript_jsonl(
-                    cwd, fallback_response=result.stdout or "",
-                )
+                result.stdout = self._parse_stream_json(result.stdout)
             except Exception:
-                logging.exception(
-                    "Failed to parse agy transcript for cwd=%s", cwd,
-                )
+                logging.exception("Failed to parse agy stream-json output")
 
         return result
 
@@ -847,19 +844,6 @@ class AgyCliGenerator(AgentCliGenerator):
                     return inner
                 return {"_raw": inner}
         return {}
-
-    def _conversation_id_for_cwd(self, cwd: str):
-        cache_path = os.path.join(
-            self.app_data_dir, "cache", "last_conversations.json"
-        )
-        try:
-            with open(cache_path, "r") as f:
-                cache = json.load(f)
-        except (json.JSONDecodeError, OSError):
-            return None
-        if not isinstance(cache, dict):
-            return None
-        return cache.get(os.path.abspath(cwd))
 
     def _latest_log_path(self):
         """Return the path of the most recent agy cli log, or None.
@@ -905,152 +889,88 @@ class AgyCliGenerator(AgentCliGenerator):
             return None
         return label
 
-    def _read_transcript(self, conversation_id: str):
-        transcript_path = os.path.join(
-            self.app_data_dir, "brain", conversation_id,
-            ".system_generated", "logs", "transcript.jsonl",
-        )
-        steps = []
-        try:
-            with open(transcript_path, "r") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        steps.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue
-        except OSError:
-            return []
-        return steps
-
-    def _parse_transcript_jsonl(
-        self, cwd: str, fallback_response: str = "",
-    ) -> str:
-        """Builds the same envelope as the old ``_parse_stream_json``
-        output, sourcing tool calls and the assistant response from the
-        per-conversation JSONL transcript that agy writes under
-        ``<appDataDir>/brain/<uuid>/.system_generated/logs/``.
-
-        Only the most-recent turn is reported (see _slice_current_turn).
+    def _parse_stream_json(self, stdout: str, fallback_response: str = "") -> str:
+        """Builds the stats envelope from agy's ``--output-format stream-json``
+        output: newline-delimited JSON events (``init``, ``step_update`` x N,
+        ``result``). The stream is per-invocation, so no cross-turn slicing is
+        needed.
         """
-        # Transcripts don't carry token counts; downstream
-        # token_consumption scorers will see zeros.
         final_obj = {"session_id": "", "response": "", "stats": {}}
 
-        conversation_id = self._conversation_id_for_cwd(cwd)
-        if not conversation_id:
+        events = []
+        for line in stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        if not events:
             final_obj["response"] = fallback_response
             return json.dumps(final_obj, indent=2)
-        final_obj["session_id"] = conversation_id
 
-        steps = self._read_transcript(conversation_id)
-        if not steps:
-            final_obj["response"] = fallback_response
-            return json.dumps(final_obj, indent=2)
+        result = next(
+            (e.get("result", {}) for e in events
+             if e.get("event") == self._EVENT_RESULT),
+            {},
+        )
+        final_obj["session_id"] = (
+            result.get("conversation_id")
+            or next((e.get("conversation_id", "") for e in events), "")
+        )
+        final_obj["response"] = result.get("response") or fallback_response
 
-        turn_steps = self._slice_current_turn(steps)
-        (calls, result_for, response_text_parts,
-         turn_start_ts, turn_end_ts) = self._pair_calls_and_results(turn_steps)
-
-        final_obj["response"] = "\n".join(response_text_parts).strip() \
-            or fallback_response
-
-        # Approximate end-to-end latency from transcript timestamps.
-        total_duration_ms = self._ms_between(turn_start_ts, turn_end_ts)
-
+        duration_ms = int(result.get("duration_seconds", 0) * 1000)
         final_obj["stats"]["models"] = self._build_models_stats(
-            total_duration_ms
+            duration_ms, result.get("usage") or {}
         )
         final_obj["stats"]["tools"] = self._build_tools_stats(
-            calls, result_for
+            self._collect_tool_calls(events)
         )
         return json.dumps(final_obj, indent=2)
 
-    def _slice_current_turn(self, steps: list) -> list:
-        """Returns the steps from the last ``USER_INPUT`` onward (this turn).
+    def _collect_tool_calls(self, events: list) -> list:
+        """Collapses ``tool`` step_update events into one record per call.
 
-        The transcript accumulates across turns when ``--continue`` is used,
-        so the slice from the last ``USER_INPUT`` step is the new material
-        from this invocation.
+        Each tool step is emitted as ACTIVE (dispatch) then DONE/ERROR
+        (outcome), sharing a ``step_index``. We key on ``step_index`` so the
+        terminal event's state and duration land on the same record, and
+        preserve first-seen order.
         """
-        last_user_idx = max(
-            (i for i, s in enumerate(steps)
-             if s.get("type") == self._STEP_USER_INPUT),
-            default=-1,
-        )
-        return steps[last_user_idx:] if last_user_idx >= 0 else steps
+        by_index = {}
+        order = []
+        for event in events:
+            step = event.get("step_update")
+            if not step or step.get("step_type") != self._STEP_TYPE_TOOL:
+                continue
+            idx = step.get("step_index")
+            info = step.get("tool_info") or {}
+            record = by_index.get(idx)
+            if record is None:
+                record = {"name": None, "args": {}, "state": None,
+                          "duration_ms": 0}
+                by_index[idx] = record
+                order.append(idx)
+            record["name"] = step.get("tool_name") or record["name"]
+            if info.get("parameters") is not None:
+                record["args"] = info["parameters"]
+            state = step.get("state")
+            if state in (self._STATE_DONE, "ERROR"):
+                record["state"] = state
+                record["duration_ms"] = int(
+                    step.get("duration_seconds", 0) * 1000
+                )
+        return [by_index[i] for i in order]
 
-    def _pair_calls_and_results(self, turn_steps: list):
-        """Pairs each tool call in one turn with the result step that
-        immediately follows it.
-
-        Returns ``(calls, result_for, response_text_parts, turn_start_ts,
-        turn_end_ts)`` where ``calls`` is an ordered list of ``(call, ts)``
-        and ``result_for`` maps a call's index to its ``(result_step, ts)``.
-
-        agy records a tool call on a ``PLANNER_RESPONSE`` step and the
-        tool's result on the *immediately following* MODEL step (MCP_TOOL
-        for genuine MCP calls; VIEW_FILE / RUN_COMMAND / ... for native
-        tools). We pair by strict adjacency: a call is bound only to the
-        result step that directly follows the planner step that emitted it.
-        The pending window is reset at every new planner step and at any
-        other intervening step, so a call that never produced a runtime
-        result -- e.g. a ``call_mcp_tool`` line the agent forged via
-        ``run_command`` -- stays unpaired instead of stealing a later
-        call's result. (An earlier FIFO scheme paired across steps and
-        mis-attributed a forged MCP call to a subsequent shell-out's result.)
-        """
-        calls = []          # ordered (call_dict, ts)
-        result_for = {}     # call index -> (result_step, ts)
-        # call indices awaiting an adjacent result
-        pending = collections.deque()
-        response_text_parts = []
-        turn_start_ts = None
-        turn_end_ts = None
-
-        for step in turn_steps:
-            ts = step.get("created_at")
-            if ts and turn_start_ts is None:
-                turn_start_ts = ts
-            if ts:
-                turn_end_ts = ts
-
-            stype = step.get("type")
-            if stype == self._STEP_PLANNER_RESPONSE:
-                # A new planner step ends the previous adjacency window.
-                pending.clear()
-                tool_calls = step.get("tool_calls") or []
-                if tool_calls:
-                    for call in tool_calls:
-                        pending.append(len(calls))
-                        calls.append((call, ts))
-                else:
-                    content = step.get("content")
-                    if content:
-                        response_text_parts.append(content)
-            elif (step.get("source") == self._SOURCE_MODEL
-                  and stype not in self._NON_RESULT_MODEL_TYPES):
-                # A result step consumes the next call awaiting in the current
-                # adjacency window. Consecutive results pair with consecutive
-                # calls from the same planner step (rare multi-call case).
-                if pending:
-                    result_for[pending.popleft()] = (step, ts)
-            else:
-                # Any other intervening step breaks adjacency.
-                pending.clear()
-
-        return (calls, result_for, response_text_parts,
-                turn_start_ts, turn_end_ts)
-
-    def _build_tools_stats(self, calls: list, result_for: dict) -> dict:
-        """Aggregates per-tool call/success/fail/duration counts from the
-        paired calls into the ``tools`` stats envelope."""
+    def _build_tools_stats(self, tool_calls: list) -> dict:
+        """Aggregates per-tool call/success/fail/duration counts into the
+        ``tools`` stats envelope. A call counts as a success iff its terminal
+        state is ``DONE`` (``ERROR`` or no terminal event is a failure)."""
         tools_by_name = {}
-        for idx, (call, call_ts) in enumerate(calls):
-            raw_name = call.get("name", "unknown")
-            raw_args = call.get("args", {}) or {}
+        for call in tool_calls:
+            raw_name = call["name"] or "unknown"
+            raw_args = call["args"] or {}
             # agy wraps every MCP invocation in the native ``call_mcp_tool``
             # tool; the real server/tool identity and arguments live in the
             # wrapper's args. Canonicalize to ``<server>__<tool>`` and surface
@@ -1070,66 +990,45 @@ class AgyCliGenerator(AgentCliGenerator):
             slot["parameters"].append(call_args)
             slot["decisions"]["accept"] += 1
             slot["decisions"]["auto_accept"] += 1
-
-            duration = 0
-            paired = result_for.get(idx)
-            if paired:
-                result_step, result_ts = paired
-                done = result_step.get("status") == self._STEP_STATUS_DONE
-                # A genuine MCP invocation is executed by agy's runtime and
-                # recorded as a dedicated ``MCP_TOOL`` result step. If a
-                # ``call_mcp_tool`` wrapper is paired with any other result
-                # type, it did not actually run as an MCP call, so we do not
-                # credit it as a success. This bounds (it cannot fully
-                # prevent) crediting transcript lines an agent may have forged
-                # via shell-outs; the authoritative attach guarantee is the
-                # setup-time schema-cache check in ``_verify_mcp_runtime``.
-                if (is_mcp and result_step.get("type")
-                        != self._AGY_MCP_RESULT_TYPE):
-                    done = False
-                if done:
-                    slot["success"] += 1
-                else:
-                    slot["fail"] += 1
-                duration = self._ms_between(call_ts, result_ts)
-            elif is_mcp:
-                # An MCP wrapper call with no runtime result step never
-                # executed -- count it as a failure rather than silently
-                # leaving it neutral.
+            if call["state"] == self._STATE_DONE:
+                slot["success"] += 1
+            else:
                 slot["fail"] += 1
-            slot["durationMs"] += duration
+            slot["durationMs"] += call["duration_ms"]
 
         return {
-            "totalCalls": len(calls),
+            "totalCalls": len(tool_calls),
             "totalSuccess": sum(s["success"] for s in tools_by_name.values()),
             "totalFail": sum(s["fail"] for s in tools_by_name.values()),
             "totalDurationMs": sum(
                 s["durationMs"] for s in tools_by_name.values()
             ),
             "decisions": {
-                "accept": len(calls),
+                "accept": len(tool_calls),
                 "reject": 0,
                 "modify": 0,
-                "auto_accept": len(calls),
+                "auto_accept": len(tool_calls),
             },
             "byName": tools_by_name,
         }
 
-    def _build_models_stats(self, total_duration_ms: int) -> dict:
+    def _build_models_stats(
+        self, total_duration_ms: int, usage: dict = None
+    ) -> dict:
         """Builds the ``models`` stats bucket for the turn.
 
-        The transcript echoes neither a model name nor token counts, so the
-        bucket is keyed by the configured model label (matching
-        claude_code/codex_cli). When no model is configured, recover the
-        model agy actually resolved (its default) from the cli log; fall back
-        to a generic label only if even that is unavailable. Token counts are
-        always zero.
+        stream-json carries token ``usage`` but no model name, so the bucket
+        is keyed by the configured model label (matching claude_code/
+        codex_cli). When no model is configured, recover the model agy
+        actually resolved (its default) from the cli log; fall back to a
+        generic label only if even that is unavailable.
         """
         model_name = (
             self.model
             or self._detect_model_from_log()
             or self._DEFAULT_MODEL_LABEL
         )
+        tokens = self._map_usage_tokens(usage)
         return {
             model_name: {
                 "api": {
@@ -1137,30 +1036,38 @@ class AgyCliGenerator(AgentCliGenerator):
                     "totalErrors": 0,
                     "totalLatencyMs": total_duration_ms,
                 },
-                "tokens": dict(self._ZERO_TOKENS),
+                "tokens": tokens,
                 "roles": {
                     "main": {
                         "totalRequests": 1,
                         "totalErrors": 0,
                         "totalLatencyMs": total_duration_ms,
-                        "tokens": dict(self._ZERO_TOKENS),
+                        "tokens": dict(tokens),
                     },
                 },
             }
         }
 
-    @staticmethod
-    def _ms_between(ts0: str, ts1: str) -> int:
-        """Millisecond delta between two ISO-8601 timestamps, or 0 when
-        either is missing or unparseable."""
-        if not (ts0 and ts1):
-            return 0
-        try:
-            t0 = dateutil.parser.isoparse(ts0)
-            t1 = dateutil.parser.isoparse(ts1)
-        except (ValueError, TypeError):
-            return 0
-        return int((t1 - t0).total_seconds() * 1000)
+    def _map_usage_tokens(self, usage: dict) -> dict:
+        """Maps agy's stream-json ``usage`` block onto the stats token bucket.
+
+        agy reports input/output/thinking/total; ``cached`` and ``tool`` are
+        not exposed and stay zero. ``prompt`` mirrors ``input`` and
+        ``candidates`` mirrors ``output`` to match the other CLI adapters.
+        """
+        if not usage:
+            return dict(self._ZERO_TOKENS)
+        input_tokens = usage.get("input_tokens", 0)
+        output_tokens = usage.get("output_tokens", 0)
+        return {
+            "input": input_tokens,
+            "prompt": input_tokens,
+            "candidates": output_tokens,
+            "total": usage.get("total_tokens", 0),
+            "cached": 0,
+            "thoughts": usage.get("thinking_tokens", 0),
+            "tool": 0,
+        }
 
     @property
     def version(self) -> str:

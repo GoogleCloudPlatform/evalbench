@@ -253,7 +253,7 @@ def test_ensure_agy_installed_raises_when_binary_absent_after_install(
 
 def test_run_command_argv_shape(mock_run, sandbox):
     """``_run_agy_cli`` must build ``agy -p <prompt>
-    --dangerously-skip-permissions`` -- no legacy flags."""
+    --dangerously-skip-permissions --output-format stream-json``."""
     generator = AgyCliGenerator({})
     cmd = CLICommand(cli="agy", prompt="hello world")
     generator._run_agy_cli(cmd)
@@ -261,7 +261,7 @@ def test_run_command_argv_shape(mock_run, sandbox):
     sent_argv = mock_run.call_args[0][0]
     assert sent_argv == [
         generator.agy_bin, "-p", "hello world",
-        "--dangerously-skip-permissions",
+        "--dangerously-skip-permissions", "--output-format", "stream-json",
     ]
 
 
@@ -273,206 +273,177 @@ def test_run_command_argv_shape_with_continue(mock_run, sandbox):
     sent_argv = mock_run.call_args[0][0]
     assert sent_argv == [
         generator.agy_bin, "-p", "next turn",
-        "--dangerously-skip-permissions", "--continue",
+        "--dangerously-skip-permissions", "--output-format", "stream-json",
+        "--continue",
     ]
 
 
-def _write_transcript_fixture(app_data_dir, cwd, conversation_id, steps):
-    """Drops a transcript.jsonl + last_conversations.json mapping into the
-    fake appDataDir so ``_parse_transcript_jsonl`` can pick it up."""
-    cache_dir = os.path.join(app_data_dir, "cache")
-    os.makedirs(cache_dir, exist_ok=True)
-    with open(os.path.join(cache_dir, "last_conversations.json"), "w") as f:
-        json.dump({os.path.abspath(cwd): conversation_id}, f)
-
-    transcript_dir = os.path.join(
-        app_data_dir, "brain", conversation_id,
-        ".system_generated", "logs",
+def test_run_agy_cli_parses_stream_on_nonzero_exit(mock_run, sandbox):
+    """A timed-out/errored run exits non-zero but still emits a full stream
+    ending in an ERROR result -- its usage tokens and tool calls must be kept,
+    not dropped as raw JSONL that parse_response chokes on."""
+    generator = AgyCliGenerator({"model": "Gemini 3.1 Pro (High)"})
+    stream = _stream(
+        _init_event("conv-timeout"),
+        *_tool_events(1, "call_mcp_tool", _MCP_PARAMS),
+        _result_event(
+            conversation_id="conv-timeout", status="ERROR", response="",
+            usage={"input_tokens": 100, "output_tokens": 20,
+                   "thinking_tokens": 5, "total_tokens": 125},
+        ),
     )
-    os.makedirs(transcript_dir, exist_ok=True)
-    with open(os.path.join(transcript_dir, "transcript.jsonl"), "w") as f:
-        for step in steps:
-            f.write(json.dumps(step) + "\n")
+    mock_run.return_value = MagicMock(
+        returncode=1, stdout=stream, stderr="",
+    )
+
+    result = generator._run_agy_cli(CLICommand(cli="agy", prompt="hi"))
+
+    envelope = generator.parse_response(result.stdout)
+    assert envelope["session_id"] == "conv-timeout"
+    tokens = envelope["stats"]["models"]["Gemini 3.1 Pro (High)"]["tokens"]
+    assert tokens["total"] == 125
+    assert generator.extract_tools(result.stdout) == ["cloud-sql__list_instances"]
 
 
-def test_parse_transcript_extracts_tools_and_response(sandbox):
+def _stream(*events) -> str:
+    """Serializes stream-json events to the newline-delimited stdout agy emits
+    under ``--output-format stream-json``."""
+    return "\n".join(json.dumps(e) for e in events)
+
+
+def _init_event(conversation_id="conv-1"):
+    return {"event": "init", "conversation_id": conversation_id, "init": {}}
+
+
+def _tool_events(step_index, name, parameters, state="DONE",
+                 duration_seconds=0.1):
+    """An ACTIVE dispatch event followed by its DONE/ERROR terminal event,
+    sharing ``step_index`` -- the shape agy emits for one tool call."""
+    active = {
+        "event": "step_update",
+        "step_update": {
+            "step_index": step_index, "state": "ACTIVE", "step_type": "tool",
+            "tool_name": name,
+            "tool_info": {"name": name, "parameters": parameters},
+        },
+    }
+    terminal_info = {"name": name, "parameters": parameters}
+    if state == "DONE":
+        terminal_info["output"] = "ok"
+    else:
+        terminal_info["error"] = {"type": "TOOL_ERROR", "message": "boom"}
+    terminal = {
+        "event": "step_update",
+        "step_update": {
+            "step_index": step_index, "state": state, "step_type": "tool",
+            "tool_name": name, "duration_seconds": duration_seconds,
+            "tool_info": terminal_info,
+        },
+    }
+    return [active, terminal]
+
+
+def _result_event(conversation_id="conv-1", status="SUCCESS", response="done",
+                  duration_seconds=1.0, usage=None):
+    return {
+        "event": "result",
+        "result": {
+            "conversation_id": conversation_id, "status": status,
+            "response": response, "duration_seconds": duration_seconds,
+            "num_turns": 1, "usage": usage or {},
+        },
+    }
+
+
+# The MCP wrapper shape agy emits in stream-json. Unlike the transcript, the
+# args arrive already parsed (ServerName/ToolName are plain strings, Arguments
+# is a dict), not JSON-quoted.
+_MCP_PARAMS = {
+    "Arguments": {"project": "example-project"},
+    "ServerName": "cloud-sql",
+    "ToolName": "list_instances",
+}
+
+
+def test_parse_stream_json_extracts_tools_and_response(sandbox):
     generator = AgyCliGenerator({})
-    cwd = generator.fake_home
-    conversation_id = "abc-123"
 
-    steps = [
-        {
-            "step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT",
-            "status": "DONE", "created_at": "2026-05-27T07:00:00Z",
-            "content": "<USER_REQUEST>list /tmp</USER_REQUEST>",
-        },
-        {
-            "step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-27T07:00:01Z",
-            "tool_calls": [{"name": "list_dir",
-                            "args": {"DirectoryPath": "/tmp"}}],
-        },
-        {
-            "step_index": 2, "source": "MODEL", "type": "LIST_DIRECTORY",
-            "status": "DONE", "created_at": "2026-05-27T07:00:02Z",
-            "content": "file1\nfile2",
-        },
-        {
-            "step_index": 3, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-27T07:00:03Z",
-            "content": "I listed two files for you.",
-        },
-    ]
-
-    _write_transcript_fixture(
-        generator.app_data_dir, cwd, conversation_id, steps,
+    stdout = _stream(
+        _init_event(),
+        *_tool_events(1, "list_dir", {"DirectoryPath": "/tmp"}),
+        _result_event(response="I listed two files for you."),
     )
 
-    envelope_json = generator._parse_transcript_jsonl(cwd)
+    envelope_json = generator._parse_stream_json(stdout)
     envelope = json.loads(envelope_json)
 
-    assert envelope["session_id"] == conversation_id
+    assert envelope["session_id"] == "conv-1"
     assert envelope["response"] == "I listed two files for you."
-    assert "list_dir" in envelope["stats"]["tools"]["byName"]
     list_dir = envelope["stats"]["tools"]["byName"]["list_dir"]
     assert list_dir["count"] == 1
     assert list_dir["success"] == 1
     assert envelope["stats"]["tools"]["totalCalls"] == 1
     assert envelope["stats"]["tools"]["totalSuccess"] == 1
 
-    tools = generator.extract_tools(envelope_json)
-    assert tools == ["list_dir"]
+    assert generator.extract_tools(envelope_json) == ["list_dir"]
 
 
-def test_parse_transcript_uses_only_last_turn(sandbox):
-    """When ``--continue`` is used the transcript spans multiple turns;
-    only the slice from the most-recent ``USER_INPUT`` onward should be
-    reported."""
+def test_parse_stream_json_no_events_returns_fallback(sandbox):
     generator = AgyCliGenerator({})
-    cwd = generator.fake_home
-    conversation_id = "multi-turn-xyz"
-
-    steps = [
-        # ----- Turn 1 -----
-        {
-            "step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT",
-            "status": "DONE", "created_at": "2026-05-27T07:00:00Z",
-            "content": "<USER_REQUEST>turn one</USER_REQUEST>",
-        },
-        {
-            "step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-27T07:00:01Z",
-            "tool_calls": [{"name": "read_file", "args": {}}],
-        },
-        {
-            "step_index": 2, "source": "MODEL", "type": "READ_FILE",
-            "status": "DONE", "created_at": "2026-05-27T07:00:02Z",
-            "content": "...",
-        },
-        {
-            "step_index": 3, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-27T07:00:03Z",
-            "content": "turn one reply",
-        },
-        # ----- Turn 2 -----
-        {
-            "step_index": 4, "source": "USER_EXPLICIT", "type": "USER_INPUT",
-            "status": "DONE", "created_at": "2026-05-27T07:01:00Z",
-            "content": "<USER_REQUEST>turn two</USER_REQUEST>",
-        },
-        {
-            "step_index": 5, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-27T07:01:01Z",
-            "tool_calls": [{"name": "write_file", "args": {}}],
-        },
-        {
-            "step_index": 6, "source": "MODEL", "type": "WRITE_FILE",
-            "status": "DONE", "created_at": "2026-05-27T07:01:02Z",
-            "content": "ok",
-        },
-        {
-            "step_index": 7, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-27T07:01:03Z",
-            "content": "turn two reply",
-        },
-    ]
-
-    _write_transcript_fixture(
-        generator.app_data_dir, cwd, conversation_id, steps,
+    envelope = json.loads(
+        generator._parse_stream_json("", fallback_response="raw stdout text")
     )
-
-    envelope = json.loads(generator._parse_transcript_jsonl(cwd))
-
-    assert envelope["response"] == "turn two reply"
-    by_name = envelope["stats"]["tools"]["byName"]
-    assert "write_file" in by_name
-    assert "read_file" not in by_name
-    assert envelope["stats"]["tools"]["totalCalls"] == 1
-
-
-def test_parse_transcript_no_conversation_returns_fallback(sandbox):
-    generator = AgyCliGenerator({})
-    envelope_json = generator._parse_transcript_jsonl(
-        generator.fake_home, fallback_response="raw stdout text",
-    )
-    envelope = json.loads(envelope_json)
     assert envelope["response"] == "raw stdout text"
     assert envelope["session_id"] == ""
 
 
-# The exact JSON-quoted arg shape agy writes for a real MCP wrapper call.
-# The ``args`` payload mirrors ``REAL_ARGS`` in tool_naming_test.py -- keep the
-# two in lockstep if the observed agy transcript shape changes.
-_REAL_MCP_CALL = {
-    "name": "call_mcp_tool",
-    "args": {
-        "Arguments": '{"project":"example-project"}',
-        "ServerName": '"cloud-sql"',
-        "ToolName": '"list_instances"',
-        "toolAction": '"Listing Cloud SQL instances"',
-        "toolSummary": '"List Cloud SQL instances"',
-    },
-}
+def test_parse_stream_json_missing_result_uses_fallback_response(sandbox):
+    """A truncated stream with tool events but no ``result`` event still
+    surfaces tool stats and falls back to the raw response."""
+    generator = AgyCliGenerator({})
+    stdout = _stream(
+        _init_event("conv-x"),
+        *_tool_events(1, "view_file", {"AbsolutePath": "/x"}),
+    )
+    envelope = json.loads(
+        generator._parse_stream_json(stdout, fallback_response="partial")
+    )
+    assert envelope["session_id"] == "conv-x"
+    assert envelope["response"] == "partial"
+    assert envelope["stats"]["tools"]["byName"]["view_file"]["success"] == 1
 
 
-def test_parse_transcript_genuine_mcp_call_is_canonicalized_and_succeeds(
-    sandbox,
-):
-    """A real ``call_mcp_tool`` paired with an ``MCP_TOOL`` result step is
+def test_parse_stream_json_tokens_from_usage(sandbox):
+    """Real token counts flow from the result event's ``usage`` block into the
+    models bucket (input mirrors prompt, output mirrors candidates)."""
+    generator = AgyCliGenerator({"model": "Gemini 3.1 Pro (High)"})
+    stdout = _stream(
+        _init_event(),
+        _result_event(usage={
+            "input_tokens": 100, "output_tokens": 20,
+            "thinking_tokens": 5, "total_tokens": 125,
+        }),
+    )
+    envelope = json.loads(generator._parse_stream_json(stdout))
+    tokens = envelope["stats"]["models"]["Gemini 3.1 Pro (High)"]["tokens"]
+    assert tokens == {
+        "input": 100, "prompt": 100, "candidates": 20,
+        "total": 125, "cached": 0, "thoughts": 5, "tool": 0,
+    }
+
+
+def test_parse_stream_json_mcp_call_is_canonicalized_and_succeeds(sandbox):
+    """A ``call_mcp_tool`` wrapper whose terminal state is DONE is
     canonicalized to ``<server>__<tool>``, its args are unwrapped, and it
     counts as a success."""
     generator = AgyCliGenerator({})
-    cwd = generator.fake_home
-    conversation_id = "mcp-genuine"
-
-    steps = [
-        {
-            "step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT",
-            "status": "DONE", "created_at": "2026-05-29T09:00:00Z",
-            "content": "<USER_REQUEST>list instances</USER_REQUEST>",
-        },
-        {
-            "step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-29T09:00:01Z",
-            "tool_calls": [_REAL_MCP_CALL],
-        },
-        {
-            "step_index": 2, "source": "MODEL", "type": "MCP_TOOL",
-            "status": "DONE", "created_at": "2026-05-29T09:00:02Z",
-            "content": "instances: ...",
-        },
-        {
-            "step_index": 3, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-29T09:00:03Z",
-            "content": "Here are your instances.",
-        },
-    ]
-
-    _write_transcript_fixture(
-        generator.app_data_dir, cwd, conversation_id, steps,
+    stdout = _stream(
+        _init_event(),
+        *_tool_events(1, "call_mcp_tool", _MCP_PARAMS, state="DONE"),
+        _result_event(),
     )
 
-    envelope = json.loads(generator._parse_transcript_jsonl(cwd))
+    envelope = json.loads(generator._parse_stream_json(stdout))
     by_name = envelope["stats"]["tools"]["byName"]
 
     assert "cloud-sql__list_instances" in by_name
@@ -481,193 +452,69 @@ def test_parse_transcript_genuine_mcp_call_is_canonicalized_and_succeeds(
     assert slot["count"] == 1
     assert slot["success"] == 1
     assert slot["fail"] == 0
-    # The wrapper envelope is unwrapped to the real MCP arguments.
     assert slot["parameters"] == [{"project": "example-project"}]
 
 
-def test_parse_transcript_forged_mcp_call_without_result_is_failed(sandbox):
-    """A ``call_mcp_tool`` line with no agy-runtime ``MCP_TOOL`` result
-    step -- the cheapest transcript line an agent could forge via a
-    shell-out -- is not credited as a successful MCP execution."""
+def test_parse_stream_json_mcp_call_error_is_failed(sandbox):
+    """A ``call_mcp_tool`` whose terminal state is ERROR is not credited as a
+    success -- the state is authoritative, no result-type heuristic needed."""
     generator = AgyCliGenerator({})
-    cwd = generator.fake_home
-    conversation_id = "mcp-forged"
-
-    steps = [
-        {
-            "step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT",
-            "status": "DONE", "created_at": "2026-05-29T09:00:00Z",
-            "content": "<USER_REQUEST>list instances</USER_REQUEST>",
-        },
-        # Forged: a planner line claiming an MCP call, with no MCP_TOOL
-        # result step following it.
-        {
-            "step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-29T09:00:01Z",
-            "tool_calls": [_REAL_MCP_CALL],
-        },
-        {
-            "step_index": 2, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-29T09:00:02Z",
-            "content": "done",
-        },
-    ]
-
-    _write_transcript_fixture(
-        generator.app_data_dir, cwd, conversation_id, steps,
+    stdout = _stream(
+        _init_event(),
+        *_tool_events(1, "call_mcp_tool", _MCP_PARAMS, state="ERROR"),
+        _result_event(status="ERROR", response=""),
     )
 
-    envelope = json.loads(generator._parse_transcript_jsonl(cwd))
-    by_name = envelope["stats"]["tools"]["byName"]
-
-    slot = by_name["cloud-sql__list_instances"]
+    envelope = json.loads(generator._parse_stream_json(stdout))
+    slot = envelope["stats"]["tools"]["byName"]["cloud-sql__list_instances"]
     assert slot["count"] == 1
     assert slot["success"] == 0
     assert slot["fail"] == 1
     assert envelope["stats"]["tools"]["totalSuccess"] == 0
 
 
-def test_parse_transcript_mcp_call_with_non_mcp_result_is_failed(sandbox):
-    """A ``call_mcp_tool`` paired with a non-``MCP_TOOL`` result step (e.g.
-    a real ``RUN_COMMAND`` step the agent produced) is not credited as an
-    MCP success -- only agy's dedicated MCP_TOOL result proves execution."""
+def test_parse_stream_json_tool_without_terminal_is_failed(sandbox):
+    """A tool that only ever reaches ACTIVE (no DONE/ERROR) counts as a
+    failure, not a neutral entry."""
     generator = AgyCliGenerator({})
-    cwd = generator.fake_home
-    conversation_id = "mcp-wrong-result"
-
-    steps = [
-        {
-            "step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT",
-            "status": "DONE", "created_at": "2026-05-29T09:00:00Z",
-            "content": "<USER_REQUEST>list instances</USER_REQUEST>",
+    active_only = {
+        "event": "step_update",
+        "step_update": {
+            "step_index": 1, "state": "ACTIVE", "step_type": "tool",
+            "tool_name": "run_command",
+            "tool_info": {"name": "run_command",
+                          "parameters": {"CommandLine": "ls"}},
         },
-        {
-            "step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-29T09:00:01Z",
-            "tool_calls": [_REAL_MCP_CALL],
-        },
-        {
-            "step_index": 2, "source": "MODEL", "type": "RUN_COMMAND",
-            "status": "DONE", "created_at": "2026-05-29T09:00:02Z",
-            "content": "gcloud output",
-        },
-    ]
+    }
+    stdout = _stream(_init_event(), active_only, _result_event())
 
-    _write_transcript_fixture(
-        generator.app_data_dir, cwd, conversation_id, steps,
-    )
-
-    envelope = json.loads(generator._parse_transcript_jsonl(cwd))
-    slot = envelope["stats"]["tools"]["byName"]["cloud-sql__list_instances"]
+    envelope = json.loads(generator._parse_stream_json(stdout))
+    slot = envelope["stats"]["tools"]["byName"]["run_command"]
     assert slot["count"] == 1
     assert slot["success"] == 0
     assert slot["fail"] == 1
 
 
-def test_parse_transcript_adjacency_pairing_does_not_misattribute_results(
-    sandbox,
-):
-    """A call that produced no result of its own must not steal a *later*
-    call's result. Strict next-step adjacency keeps each result with the
-    call it directly followed.
-
-    This is the exact case an earlier document-order FIFO scheme got wrong:
-    a forged ``call_mcp_tool`` (no MCP_TOOL result) preceding a genuine
-    native ``run_command`` would consume the later RUN_COMMAND result, both
-    masking the forgery's failure and stripping the real call of its result.
-    """
+def test_parse_stream_json_multiple_tools_aggregate(sandbox):
+    """Native and MCP calls each pair to their own terminal state by
+    step_index, and durations/totals aggregate."""
     generator = AgyCliGenerator({})
-    cwd = generator.fake_home
-    conversation_id = "adjacency-pairing"
-
-    steps = [
-        {
-            "step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT",
-            "status": "DONE", "created_at": "2026-05-29T09:00:00Z",
-            "content": "<USER_REQUEST>go</USER_REQUEST>",
-        },
-        # Forged MCP call: no MCP_TOOL result follows it.
-        {
-            "step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-29T09:00:01Z",
-            "tool_calls": [_REAL_MCP_CALL],
-        },
-        # A separate, genuine native call followed by its own result. Under
-        # FIFO the forged MCP call above would have grabbed this result.
-        {
-            "step_index": 2, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-29T09:00:02Z",
-            "tool_calls": [{"name": "run_command", "args": {"Command": "ls"}}],
-        },
-        {
-            "step_index": 3, "source": "MODEL", "type": "RUN_COMMAND",
-            "status": "DONE", "created_at": "2026-05-29T09:00:03Z",
-            "content": "ok",
-        },
-    ]
-
-    _write_transcript_fixture(
-        generator.app_data_dir, cwd, conversation_id, steps,
+    stdout = _stream(
+        _init_event(),
+        *_tool_events(1, "view_file", {"AbsolutePath": "/x"},
+                      state="DONE", duration_seconds=0.2),
+        *_tool_events(2, "call_mcp_tool", _MCP_PARAMS,
+                      state="DONE", duration_seconds=0.5),
+        _result_event(),
     )
 
-    envelope = json.loads(generator._parse_transcript_jsonl(cwd))
-    by_name = envelope["stats"]["tools"]["byName"]
-    # The forged MCP call gets no result and is failed.
-    assert by_name["cloud-sql__list_instances"]["success"] == 0
-    assert by_name["cloud-sql__list_instances"]["fail"] == 1
-    # The genuine native call keeps its own result.
-    assert by_name["run_command"]["success"] == 1
-    assert by_name["run_command"]["fail"] == 0
-    assert envelope["stats"]["tools"]["totalSuccess"] == 1
-    assert envelope["stats"]["tools"]["totalFail"] == 1
-
-
-def test_parse_transcript_interleaved_native_and_mcp_calls_pair_correctly(
-    sandbox,
-):
-    """Native call + result, then a genuine MCP call + MCP_TOOL result, all
-    pair to the right call under adjacency."""
-    generator = AgyCliGenerator({})
-    cwd = generator.fake_home
-    conversation_id = "interleaved"
-
-    steps = [
-        {
-            "step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT",
-            "status": "DONE", "created_at": "2026-05-29T09:00:00Z",
-            "content": "<USER_REQUEST>go</USER_REQUEST>",
-        },
-        {
-            "step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-29T09:00:01Z",
-            "tool_calls": [{"name": "view_file", "args": {}}],
-        },
-        {
-            "step_index": 2, "source": "MODEL", "type": "VIEW_FILE",
-            "status": "DONE", "created_at": "2026-05-29T09:00:02Z",
-            "content": "ok",
-        },
-        {
-            "step_index": 3, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-29T09:00:03Z",
-            "tool_calls": [_REAL_MCP_CALL],
-        },
-        {
-            "step_index": 4, "source": "MODEL", "type": "MCP_TOOL",
-            "status": "DONE", "created_at": "2026-05-29T09:00:04Z",
-            "content": "instances",
-        },
-    ]
-
-    _write_transcript_fixture(
-        generator.app_data_dir, cwd, conversation_id, steps,
-    )
-
-    envelope = json.loads(generator._parse_transcript_jsonl(cwd))
-    by_name = envelope["stats"]["tools"]["byName"]
-    assert by_name["view_file"]["success"] == 1
-    assert by_name["cloud-sql__list_instances"]["success"] == 1
-    assert envelope["stats"]["tools"]["totalSuccess"] == 2
+    envelope = json.loads(generator._parse_stream_json(stdout))
+    tools = envelope["stats"]["tools"]
+    assert tools["byName"]["view_file"]["success"] == 1
+    assert tools["byName"]["cloud-sql__list_instances"]["success"] == 1
+    assert tools["totalCalls"] == 2
+    assert tools["totalSuccess"] == 2
+    assert tools["totalDurationMs"] == 700
 
 
 def _write_probe_log(app_data_dir, log_name, content):
@@ -966,37 +813,24 @@ def test_model_never_written_to_settings(sandbox):
     assert "model" not in _written_settings(generator)
 
 
-def _stats_models(generator, cwd):
-    steps = [
-        {
-            "step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT",
-            "status": "DONE", "created_at": "2026-05-27T07:00:00Z",
-            "content": "<USER_REQUEST>hi</USER_REQUEST>",
-        },
-        {
-            "step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-27T07:00:01Z",
-            "content": "done.",
-        },
-    ]
-    _write_transcript_fixture(generator.app_data_dir, cwd, "conv-1", steps)
-    envelope = json.loads(generator._parse_transcript_jsonl(cwd))
+def _stats_models(generator):
+    envelope = json.loads(
+        generator._parse_stream_json(_stream(_init_event(), _result_event()))
+    )
     return envelope["stats"]["models"]
 
 
 def test_models_bucket_keyed_by_configured_model(sandbox):
     """The stats models bucket is keyed by the configured model label."""
     generator = AgyCliGenerator({"model": "Gemini 3.1 Pro (High)"})
-    assert "Gemini 3.1 Pro (High)" in _stats_models(
-        generator, generator.fake_home
-    )
+    assert "Gemini 3.1 Pro (High)" in _stats_models(generator)
 
 
 def test_models_bucket_falls_back_to_agy(sandbox):
     """Without a configured model and no cli log, the bucket falls back to
     the generic 'agy' label."""
     generator = AgyCliGenerator({})
-    assert "agy" in _stats_models(generator, generator.fake_home)
+    assert "agy" in _stats_models(generator)
 
 
 _MODEL_LOG_LINE = (
@@ -1050,7 +884,7 @@ def test_models_bucket_uses_detected_default_model(sandbox):
     generator = AgyCliGenerator({})
     _write_cli_log(generator, _MODEL_LOG_LINE)
 
-    models = _stats_models(generator, generator.fake_home)
+    models = _stats_models(generator)
     assert "Gemini 3.5 Flash (Medium)" in models
     assert "agy" not in models
 
@@ -1060,9 +894,7 @@ def test_configured_model_overrides_detected_log_model(sandbox):
     generator = AgyCliGenerator({"model": "Gemini 3.1 Pro (High)"})
     _write_cli_log(generator, _MODEL_LOG_LINE)
 
-    assert "Gemini 3.1 Pro (High)" in _stats_models(
-        generator, generator.fake_home
-    )
+    assert "Gemini 3.1 Pro (High)" in _stats_models(generator)
 
 
 def test_oauth_token_mirrored_from_host_disk(sandbox):
