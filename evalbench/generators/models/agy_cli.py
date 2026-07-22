@@ -33,7 +33,8 @@ class AgyCliGenerator(AgentCliGenerator):
     """Generator that queries via the Antigravity CLI (``agy``).
 
     The eval turn runs ``agy -p <prompt> --dangerously-skip-permissions
-    --output-format stream-json [--model <label>] [--continue]``. The on-disk
+    --output-format stream-json [--model <label>] [--print-timeout <timeout>]
+    [--continue]``. The on-disk
     layout lives under ``~/.gemini/antigravity-cli/`` (the binary calls this
     ``appDataDir``). Skills are delivered via plugins (see _setup_skills).
     ``--output-format stream-json`` emits newline-delimited events (an
@@ -59,6 +60,7 @@ class AgyCliGenerator(AgentCliGenerator):
         # flag (None -> flag omitted). See _base_agy_command for the value
         # format and resolution semantics.
         self.model = querygenerator_config.get("model")
+        self.timeout = querygenerator_config.get("timeout")
 
         # Order is load-bearing: paths/dirs must exist before the binary
         # installs and settings/auth write into them, and self.env must carry
@@ -441,7 +443,9 @@ class AgyCliGenerator(AgentCliGenerator):
         before = set(os.listdir(log_dir)) if os.path.isdir(log_dir) else set()
 
         env = self._merged_env()
-        cmd = self._base_agy_command(self.agy_bin, "ping", model=self.model)
+        cmd = self._base_agy_command(
+            self.agy_bin, "ping", model=self.model, timeout=self.timeout
+        )
         try:
             subprocess.run(
                 cmd, env=env, cwd=self.fake_home,
@@ -755,6 +759,7 @@ class AgyCliGenerator(AgentCliGenerator):
     def _base_agy_command(
         cli: str, prompt: str, resume: bool = False, model: str = None,
         output_format: str = None, log_file: str = None,
+        timeout: str = None,
     ) -> list:
         """Builds the non-interactive ``agy -p`` argv shared by the eval
         turn path and the setup-time MCP probe.
@@ -779,6 +784,8 @@ class AgyCliGenerator(AgentCliGenerator):
             command += ["--output-format", output_format]
         if log_file:
             command += ["--log-file", log_file]
+        if timeout:
+            command += ["--print-timeout", timeout]
         if resume:
             command.append("--continue")
         return command
@@ -818,6 +825,7 @@ class AgyCliGenerator(AgentCliGenerator):
         command = self._base_agy_command(
             self.agy_bin, cli_cmd.prompt, cli_cmd.resume, self.model,
             output_format="stream-json", log_file=self.cli_log_path,
+            timeout=self.timeout,
         )
         cwd = cli_cmd.cwd if cli_cmd.cwd else self.fake_home
         result = self._execute_cli_command(command, env=env, cwd=cwd)
