@@ -185,7 +185,6 @@ class AgyCliGenerator(AgentCliGenerator):
 
         self._setup_gcloud_credentials(self.env, self.real_home, self.fake_home)
 
-
     def _mirror_agy_auth_state(self):
         """Mirrors agy's OAuth token + installation id from the host's real
         appDataDir into the sandboxed appDataDir so the sandboxed CLI does not
