@@ -82,6 +82,30 @@ class CodexCliGenerator(AgentCliGenerator):
         self.env["HOME"] = self.fake_home
         self.env["CODEX_HOME"] = self.codex_config_dir
 
+        adc_path = self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
+        if not adc_path:
+            adc_path = os.path.join(
+                self.real_home,
+                ".config",
+                "gcloud",
+                "application_default_credentials.json",
+            )
+            if os.path.exists(adc_path):
+                self.env["GOOGLE_APPLICATION_CREDENTIALS"] = adc_path
+
+        if adc_path and os.path.exists(adc_path):
+            # Copy the ADC to fake_home
+            fake_gcloud_dir = os.path.join(self.fake_home, ".config", "gcloud")
+            os.makedirs(fake_gcloud_dir, exist_ok=True)
+            fake_adc_path = os.path.join(fake_gcloud_dir, "application_default_credentials.json")
+            if os.path.abspath(adc_path) != os.path.abspath(fake_adc_path):
+                shutil.copy2(adc_path, fake_adc_path)
+
+        if "CLOUDSDK_CONFIG" not in self.env:
+            self.env["CLOUDSDK_CONFIG"] = os.path.join(
+                self.real_home, ".config", "gcloud"
+            )
+
         api_key = self._resolve_openai_api_key(querygenerator_config)
         if api_key:
             self.env["OPENAI_API_KEY"] = api_key
@@ -1210,19 +1234,23 @@ class CodexCliGenerator(AgentCliGenerator):
 
     def _get_installed_skills(self) -> set[str]:
         installed = set()
+        logging.info(f"[SKILL_DEBUG] Scanning skills_dir: {self.skills_dir}")
         self._collect_skills(self.skills_dir, installed)
 
         plugins_root = os.path.join(self.codex_config_dir, "plugins")
+        logging.info(f"[SKILL_DEBUG] Scanning plugins_root: {plugins_root}")
         if os.path.isdir(plugins_root):
             for plugin in os.listdir(plugins_root):
                 self._collect_skills(
                     os.path.join(plugins_root, plugin, "skills"), installed)
 
         skills_dir_path = (self.setup_config or {}).get("skills_dir")
+        logging.info(f"[SKILL_DEBUG] Scanning setup_config skills_dir: {skills_dir_path}")
         if skills_dir_path:
             self._collect_skills(skills_dir_path, installed)
             self._collect_skills(os.path.join(skills_dir_path, "skills"), installed)
 
+        logging.info(f"[SKILL_DEBUG] Final installed_skills set: {installed}")
         return installed
 
     @staticmethod
@@ -1250,12 +1278,19 @@ class CodexCliGenerator(AgentCliGenerator):
         installed_skills = self._get_installed_skills()
         items = []
 
+        logging.info(f"[SKILL_DEBUG] by_name keys: {list(by_name.keys())}")
+
         if not installed_skills:
+            logging.info("[SKILL_DEBUG] No installed skills found. Exiting.")
             return []
 
         def add_skill(name: str):
+            logging.info(f"[SKILL_DEBUG] add_skill called with: '{name}'")
             if name and name in installed_skills and name not in items:
                 items.append(name)
+                logging.info(f"[SKILL_DEBUG] ✅ Added skill: '{name}'")
+            else:
+                logging.info(f"[SKILL_DEBUG] ❌ Rejected skill: '{name}' (Installed: {name in installed_skills})")
 
         for tool_name in by_name:
             if tool_name in installed_skills:
@@ -1274,16 +1309,26 @@ class CodexCliGenerator(AgentCliGenerator):
                 )
 
         shell_tool = by_name.get("shell", {}) or by_name.get("Bash", {})
-        for params in shell_tool.get("parameters", []) or []:
+        logging.info(f"[SKILL_DEBUG] shell_tool payload: {shell_tool}")
+        
+        parameters = shell_tool.get("parameters", [])
+        logging.info(f"[SKILL_DEBUG] shell_tool parameters type: {type(parameters)}")
+        logging.info(f"[SKILL_DEBUG] shell_tool parameters: {parameters}")
+
+        for params in parameters or []:
             if not isinstance(params, dict):
+                logging.info(f"[SKILL_DEBUG] Skipping non-dict param: {params} (Type: {type(params)})")
                 continue
             command = params.get("command", "") or params.get("cmd", "")
+            logging.info(f"[SKILL_DEBUG] Inspecting command: {command}")
             if not isinstance(command, str):
                 continue
             for match in re.finditer(r"/skills/([^/\s'\"]+)/", command):
+                logging.info(f"[SKILL_DEBUG] Regex matched: {match.group(1)}")
                 add_skill(match.group(1))
             for skill_name in installed_skills:
                 if f"/{skill_name}/" in command:
+                    logging.info(f"[SKILL_DEBUG] Fallback matched: {skill_name}")
                     add_skill(skill_name)
 
         return items
