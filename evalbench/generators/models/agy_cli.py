@@ -60,10 +60,6 @@ class AgyCliGenerator(AgentCliGenerator):
         # format and resolution semantics.
         self.model = querygenerator_config.get("model")
 
-        # Optional Go-duration string (e.g. "10m0s") for agy's --print-timeout;
-        # None omits the flag and agy uses its 5m0s default.
-        self.print_timeout = querygenerator_config.get("print_timeout")
-
         # Order is load-bearing: paths/dirs must exist before the binary
         # installs and settings/auth write into them, and self.env must carry
         # HOME before the installer stages files (and auth resolves ADC) into
@@ -758,8 +754,7 @@ class AgyCliGenerator(AgentCliGenerator):
     @staticmethod
     def _base_agy_command(
         cli: str, prompt: str, resume: bool = False, model: str = None,
-        output_format: str = None, print_timeout: str = None,
-        log_file: str = None,
+        output_format: str = None, log_file: str = None,
     ) -> list:
         """Builds the non-interactive ``agy -p`` argv shared by the eval
         turn path and the setup-time MCP probe.
@@ -774,17 +769,14 @@ class AgyCliGenerator(AgentCliGenerator):
         and ``stream-json``); the eval turn passes ``stream-json`` to get the
         machine-readable event stream. Omitted for the setup probe.
 
-        ``print_timeout`` maps to agy's ``--print-timeout`` (a Go-duration
-        string, agy's default 5m0s); ``log_file`` maps to ``--log-file``,
-        pinning the CLI log to a known path for deterministic model detection.
+        ``log_file`` maps to ``--log-file``, pinning the CLI log to a known
+        path for deterministic model detection.
         """
         command = [cli, "-p", prompt, "--dangerously-skip-permissions"]
         if model:
             command += ["--model", model]
         if output_format:
             command += ["--output-format", output_format]
-        if print_timeout:
-            command += ["--print-timeout", print_timeout]
         if log_file:
             command += ["--log-file", log_file]
         if resume:
@@ -825,8 +817,7 @@ class AgyCliGenerator(AgentCliGenerator):
         # "agy", which is not a path).
         command = self._base_agy_command(
             self.agy_bin, cli_cmd.prompt, cli_cmd.resume, self.model,
-            output_format="stream-json", print_timeout=self.print_timeout,
-            log_file=self.cli_log_path,
+            output_format="stream-json", log_file=self.cli_log_path,
         )
         cwd = cli_cmd.cwd if cli_cmd.cwd else self.fake_home
         result = self._execute_cli_command(command, env=env, cwd=cwd)

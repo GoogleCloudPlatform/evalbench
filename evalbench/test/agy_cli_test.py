@@ -282,23 +282,6 @@ def test_run_command_argv_shape_with_continue(mock_run, sandbox):
     ]
 
 
-def test_run_command_argv_includes_print_timeout_when_configured(
-    mock_run, sandbox
-):
-    """A configured ``print_timeout`` is passed through as agy's
-    ``--print-timeout``; it is omitted when unset (agy uses its default)."""
-    generator = AgyCliGenerator({"print_timeout": "10m0s"})
-    generator._run_agy_cli(CLICommand(cli="agy", prompt="hi"))
-
-    sent_argv = mock_run.call_args[0][0]
-    assert sent_argv == [
-        generator.agy_bin, "-p", "hi",
-        "--dangerously-skip-permissions", "--output-format", "stream-json",
-        "--print-timeout", "10m0s",
-        "--log-file", generator.cli_log_path,
-    ]
-
-
 def test_run_agy_cli_parses_stream_on_nonzero_exit(mock_run, sandbox):
     """A timed-out/errored run exits non-zero but still emits a full stream
     ending in an ERROR result -- its usage tokens and tool calls must be kept,

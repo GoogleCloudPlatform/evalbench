@@ -182,7 +182,6 @@ reporting:
 |-----|----------|-------------|
 | `generator` | Yes | Must be `agy_cli` |
 | `model` | Optional | agy UI model label, e.g. `"Gemini 3.1 Pro (High)"`. Passed via the `--model` flag. Must be a valid label, not an API id. |
-| `print_timeout` | Optional | Go-duration string (e.g. `"10m0s"`) passed via agy's `--print-timeout`. Omit to use agy's 5m0s default. |
 | `env` | Optional | Environment variables passed to the CLI process |
 | `setup` | Optional | Tool setup block containing `mcp_servers`, `skills`, or `fake_mcp_servers` |
 
