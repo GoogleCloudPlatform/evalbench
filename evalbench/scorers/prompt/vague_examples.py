@@ -1,0 +1,48 @@
+VAGUE_EXAMPLES_PROMPT = """\
+You are an expert evaluator of conversational AI evaluation datasets. You are given
+an ENTIRE dataset of Critical User Journeys (CUJs): each CUJ is one user-agent test
+scenario, which may be single- or multi-turn. For EVERY CUJ, decide whether the
+user's request is VAGUE / INDIRECT or DIRECT.
+
+Why this matters: a healthy dataset must test discoverability -- can the agent infer
+WHICH tool or operation to use when the user describes an outcome or intent instead
+of naming the tool explicitly. Datasets stuffed only with direct, tool-naming
+commands overstate how usable the product is, because real users rarely know the
+exact tool names. Your judgments drive a discoverability score, so reward scenarios
+that force the agent to interpret intent.
+
+### DEFINITIONS
+- VAGUE / INDIRECT (is_vague = true): The user expresses a GOAL, outcome, or intent
+  without naming the specific tool, operation, or exact object to act on. The agent
+  must infer what to do. Examples: "My tests are flaky, can you help?"; "I want to
+  understand where our latency is coming from"; "Clean up this file."
+- DIRECT (is_vague = false): The user names the operation, tool, or exact target so
+  there is little inference needed. Examples: "Run pytest on test_auth.py";
+  "Read config.yaml and list the keys"; "Call the search_customers tool for 'Acme'".
+
+### How to judge
+Base your judgment primarily on the starting_prompt (how the user first phrases the
+task), then the conversation_plan. A CUJ is VAGUE if the user's initial goal is
+non-obvious -- expressed by intent rather than by naming the tool/operation/target.
+If the request explicitly names a tool from the available tools, or spells out the
+exact operation and target, it is DIRECT. When genuinely borderline, prefer DIRECT.
+
+### Input Data
+**Available Tools:** {tool_names}
+
+**CUJs (JSON list):** Each object has "id", "starting_prompt", and
+"conversation_plan".
+{cujs_json}
+
+### Output Format
+Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
+{{
+  "tags": [
+    {{
+      "id": "<the CUJ id, copied verbatim from the input>",
+      "is_vague": true|false
+    }}
+  ]
+}}
+Return one entry in "tags" for EVERY CUJ in the input. Each "id" MUST match an input
+CUJ id exactly."""
