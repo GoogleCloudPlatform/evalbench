@@ -384,6 +384,9 @@ class AgyCliGenerator(AgentCliGenerator):
     # Each line is one JSON object: an ``init`` event, many ``step_update``
     # events, then a final ``result`` event.
     _EVENT_RESULT = "result"
+    # The ``status`` on the final ``result`` event; anything else (e.g.
+    # "ERROR" from a timed-out/failed run) counts as a model error.
+    _STATUS_SUCCESS = "SUCCESS"
     _STEP_TYPE_TOOL = "tool"
     # A tool step is emitted twice: ACTIVE when dispatched, then DONE
     # (success) or ERROR (failure) -- both carry the same ``step_index``.
@@ -897,9 +900,14 @@ class AgyCliGenerator(AgentCliGenerator):
             if not line:
                 continue
             try:
-                events.append(json.loads(line))
+                event = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            # agy emits one JSON object per line, but a stray scalar/array
+            # (e.g. a serialized warning) parses cleanly; skip non-objects so
+            # downstream ``.get`` calls can't raise on them.
+            if isinstance(event, dict):
+                events.append(event)
         if not events:
             final_obj["response"] = fallback_response
             return json.dumps(final_obj, indent=2)
@@ -917,7 +925,7 @@ class AgyCliGenerator(AgentCliGenerator):
 
         duration_ms = int(result.get("duration_seconds", 0) * 1000)
         final_obj["stats"]["models"] = self._build_models_stats(
-            duration_ms, result.get("usage") or {}
+            duration_ms, result.get("usage") or {}, result.get("status")
         )
         final_obj["stats"]["tools"] = self._build_tools_stats(
             self._collect_tool_calls(events)
@@ -1007,7 +1015,7 @@ class AgyCliGenerator(AgentCliGenerator):
         }
 
     def _build_models_stats(
-        self, total_duration_ms: int, usage: dict = None
+        self, total_duration_ms: int, usage: dict = None, status: str = None
     ) -> dict:
         """Builds the ``models`` stats bucket for the turn.
 
@@ -1016,6 +1024,11 @@ class AgyCliGenerator(AgentCliGenerator):
         codex_cli). When no model is configured, recover the model agy
         actually resolved (its default) from the cli log; fall back to a
         generic label only if even that is unavailable.
+
+        ``status`` is the final ``result`` event's status; a present,
+        non-``SUCCESS`` value (e.g. a timed-out/failed run whose stream we
+        still parse) counts as one model error. A missing status is treated
+        as no error, so a partial stream is not misreported as a failure.
         """
         model_name = (
             self.model
@@ -1023,18 +1036,19 @@ class AgyCliGenerator(AgentCliGenerator):
             or self._DEFAULT_MODEL_LABEL
         )
         tokens = self._map_usage_tokens(usage)
+        errors = 1 if status and status != self._STATUS_SUCCESS else 0
         return {
             model_name: {
                 "api": {
                     "totalRequests": 1,
-                    "totalErrors": 0,
+                    "totalErrors": errors,
                     "totalLatencyMs": total_duration_ms,
                 },
                 "tokens": tokens,
                 "roles": {
                     "main": {
                         "totalRequests": 1,
-                        "totalErrors": 0,
+                        "totalErrors": errors,
                         "totalLatencyMs": total_duration_ms,
                         "tokens": dict(tokens),
                     },

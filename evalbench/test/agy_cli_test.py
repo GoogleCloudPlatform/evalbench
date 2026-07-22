@@ -14,6 +14,9 @@ from generators.models.agy_cli import AgyCliGenerator, CLICommand
 
 APP_DATA_SUBPATH = os.path.join(".gemini", "antigravity-cli")
 
+# Sample agy UI model label used throughout the tests.
+_MODEL_LABEL = "Gemini 3.1 Pro (High)"
+
 
 @pytest.fixture
 def sandbox(tmp_path, monkeypatch):
@@ -300,7 +303,7 @@ def test_run_agy_cli_parses_stream_on_nonzero_exit(mock_run, sandbox):
     """A timed-out/errored run exits non-zero but still emits a full stream
     ending in an ERROR result -- its usage tokens and tool calls must be kept,
     not dropped as raw JSONL that parse_response chokes on."""
-    generator = AgyCliGenerator({"model": "Gemini 3.1 Pro (High)"})
+    generator = AgyCliGenerator({"model": _MODEL_LABEL})
     stream = _stream(
         _init_event("conv-timeout"),
         *_tool_events(1, "call_mcp_tool", _MCP_PARAMS),
@@ -318,7 +321,7 @@ def test_run_agy_cli_parses_stream_on_nonzero_exit(mock_run, sandbox):
 
     envelope = generator.parse_response(result.stdout)
     assert envelope["session_id"] == "conv-timeout"
-    tokens = envelope["stats"]["models"]["Gemini 3.1 Pro (High)"]["tokens"]
+    tokens = envelope["stats"]["models"][_MODEL_LABEL]["tokens"]
     assert tokens["total"] == 125
     assert generator.extract_tools(result.stdout) == ["cloud-sql__list_instances"]
 
@@ -406,6 +409,27 @@ def test_parse_stream_json_extracts_tools_and_response(sandbox):
     assert generator.extract_tools(envelope_json) == ["list_dir"]
 
 
+def test_parse_stream_json_skips_non_object_lines(sandbox):
+    """A stray scalar/array line parses as valid JSON but is not an event;
+    it must be skipped so it can't break parsing of the real events around it."""
+    generator = AgyCliGenerator({})
+    stdout = "\n".join([
+        json.dumps(_init_event()),
+        '"a warning string"',
+        "[]",
+        "42",
+        *[json.dumps(e)
+          for e in _tool_events(1, "list_dir", {"DirectoryPath": "/tmp"})],
+        json.dumps(_result_event(response="done")),
+    ])
+
+    envelope = json.loads(generator._parse_stream_json(stdout))
+
+    assert envelope["session_id"] == "conv-1"
+    assert envelope["response"] == "done"
+    assert envelope["stats"]["tools"]["byName"]["list_dir"]["success"] == 1
+
+
 def test_parse_stream_json_no_events_returns_fallback(sandbox):
     generator = AgyCliGenerator({})
     envelope = json.loads(
@@ -434,7 +458,7 @@ def test_parse_stream_json_missing_result_uses_fallback_response(sandbox):
 def test_parse_stream_json_tokens_from_usage(sandbox):
     """Real token counts flow from the result event's ``usage`` block into the
     models bucket (input mirrors prompt, output mirrors candidates)."""
-    generator = AgyCliGenerator({"model": "Gemini 3.1 Pro (High)"})
+    generator = AgyCliGenerator({"model": _MODEL_LABEL})
     stdout = _stream(
         _init_event(),
         _result_event(usage={
@@ -443,11 +467,48 @@ def test_parse_stream_json_tokens_from_usage(sandbox):
         }),
     )
     envelope = json.loads(generator._parse_stream_json(stdout))
-    tokens = envelope["stats"]["models"]["Gemini 3.1 Pro (High)"]["tokens"]
+    tokens = envelope["stats"]["models"][_MODEL_LABEL]["tokens"]
     assert tokens == {
         "input": 100, "prompt": 100, "candidates": 20,
         "total": 125, "cached": 0, "thoughts": 5, "tool": 0,
     }
+
+
+def test_parse_stream_json_success_status_reports_no_error(sandbox):
+    """A SUCCESS result keeps totalErrors at 0 in both api and roles.main."""
+    generator = AgyCliGenerator({"model": _MODEL_LABEL})
+    stdout = _stream(_init_event(), _result_event(status="SUCCESS"))
+    model = json.loads(
+        generator._parse_stream_json(stdout)
+    )["stats"]["models"][_MODEL_LABEL]
+    assert model["api"]["totalErrors"] == 0
+    assert model["roles"]["main"]["totalErrors"] == 0
+
+
+def test_parse_stream_json_error_status_reports_error(sandbox):
+    """A non-SUCCESS result (e.g. a timed-out/failed run) counts as one model
+    error in both api and roles.main, while stats are still retained."""
+    generator = AgyCliGenerator({"model": _MODEL_LABEL})
+    stdout = _stream(_init_event(), _result_event(status="ERROR"))
+    model = json.loads(
+        generator._parse_stream_json(stdout)
+    )["stats"]["models"][_MODEL_LABEL]
+    assert model["api"]["totalErrors"] == 1
+    assert model["roles"]["main"]["totalErrors"] == 1
+
+
+def test_parse_stream_json_missing_status_reports_no_error(sandbox):
+    """A partial stream with no result status is not misreported as a failure."""
+    generator = AgyCliGenerator({"model": _MODEL_LABEL})
+    stdout = _stream(
+        _init_event(),
+        *_tool_events(1, "view_file", {"AbsolutePath": "/x"}),
+    )
+    model = json.loads(
+        generator._parse_stream_json(stdout)
+    )["stats"]["models"][_MODEL_LABEL]
+    assert model["api"]["totalErrors"] == 0
+    assert model["roles"]["main"]["totalErrors"] == 0
 
 
 def test_parse_stream_json_mcp_call_is_canonicalized_and_succeeds(sandbox):
@@ -800,11 +861,11 @@ def test_config_model_passed_as_flag():
     """A configured `model` (an agy UI label) is appended to the command as
     ``--model <label>`` verbatim."""
     cmd = AgyCliGenerator._base_agy_command(
-        "agy", "hi", model="Gemini 3.1 Pro (High)"
+        "agy", "hi", model=_MODEL_LABEL
     )
 
     assert "--model" in cmd
-    assert cmd[cmd.index("--model") + 1] == "Gemini 3.1 Pro (High)"
+    assert cmd[cmd.index("--model") + 1] == _MODEL_LABEL
 
 
 def test_no_model_flag_when_unset():
@@ -816,17 +877,17 @@ def test_no_model_flag_when_unset():
 
 def test_run_passes_configured_model_flag(mock_run, sandbox):
     """The turn command carries the configured model via ``--model``."""
-    generator = AgyCliGenerator({"model": "Gemini 3.1 Pro (High)"})
+    generator = AgyCliGenerator({"model": _MODEL_LABEL})
     generator._run_agy_cli(CLICommand(generator.agy_bin, "hi"))
 
     argv = list(mock_run.call_args_list[-1].args[0])
-    assert argv[argv.index("--model") + 1] == "Gemini 3.1 Pro (High)"
+    assert argv[argv.index("--model") + 1] == _MODEL_LABEL
 
 
 def test_model_never_written_to_settings(sandbox):
     """The model is selected via the flag, not the settings.json `model`
     key -- so no `model` key is ever written there."""
-    generator = AgyCliGenerator({"model": "Gemini 3.1 Pro (High)"})
+    generator = AgyCliGenerator({"model": _MODEL_LABEL})
 
     assert "model" not in _written_settings(generator)
 
@@ -840,8 +901,8 @@ def _stats_models(generator):
 
 def test_models_bucket_keyed_by_configured_model(sandbox):
     """The stats models bucket is keyed by the configured model label."""
-    generator = AgyCliGenerator({"model": "Gemini 3.1 Pro (High)"})
-    assert "Gemini 3.1 Pro (High)" in _stats_models(generator)
+    generator = AgyCliGenerator({"model": _MODEL_LABEL})
+    assert _MODEL_LABEL in _stats_models(generator)
 
 
 def test_models_bucket_falls_back_to_agy(sandbox):
@@ -878,10 +939,10 @@ def test_detect_model_from_log_takes_last_match(sandbox):
     _write_cli_log(
         generator,
         _MODEL_LOG_LINE,
-        _MODEL_LOG_LINE.replace("Gemini 3.5 Flash (Medium)", "Gemini 3.1 Pro (High)"),
+        _MODEL_LOG_LINE.replace("Gemini 3.5 Flash (Medium)", _MODEL_LABEL),
     )
 
-    assert generator._detect_model_from_log() == "Gemini 3.1 Pro (High)"
+    assert generator._detect_model_from_log() == _MODEL_LABEL
 
 
 def test_detect_model_from_log_returns_none_without_log(sandbox):
@@ -903,10 +964,10 @@ def test_models_bucket_uses_detected_default_model(sandbox):
 
 def test_configured_model_overrides_detected_log_model(sandbox):
     """A configured model takes precedence over whatever the log resolved."""
-    generator = AgyCliGenerator({"model": "Gemini 3.1 Pro (High)"})
+    generator = AgyCliGenerator({"model": _MODEL_LABEL})
     _write_cli_log(generator, _MODEL_LOG_LINE)
 
-    assert "Gemini 3.1 Pro (High)" in _stats_models(generator)
+    assert _MODEL_LABEL in _stats_models(generator)
 
 
 def test_oauth_token_mirrored_from_host_disk(sandbox):
