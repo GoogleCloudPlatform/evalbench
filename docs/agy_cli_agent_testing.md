@@ -318,8 +318,8 @@ stream (`init`, `step_update` x N, `result`) from stdout. Each tool call is a
 directly; `call_mcp_tool` invocations are unwrapped into the canonical
 `<server>__<tool>` format. The stream is per-invocation, so no turn-slicing is
 needed under `--continue`. A run that times out or errors exits non-zero but
-still emits a full stream ending in an `ERROR` `result`, so its token counts and
-tool calls are captured too.
+still emits a full stream ending in an `ERROR` `result`, so its tool calls are
+captured too.
 
 ---
 
