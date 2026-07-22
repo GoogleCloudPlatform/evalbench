@@ -413,6 +413,27 @@ def test_parse_stream_json_skips_non_object_lines(sandbox):
     assert envelope["stats"]["tools"]["byName"]["list_dir"]["success"] == 1
 
 
+def test_parse_stream_json_skips_non_dict_nested_payloads(sandbox):
+    """An event can be a dict while its ``result``/``step_update`` payload is a
+    non-dict (e.g. ``{"event":"result","result":[]}``). Those payloads reach a
+    ``.get()`` call, so they must be type-checked -- otherwise parsing the whole
+    stream aborts and drops the valid usage/tool events around them."""
+    generator = AgyCliGenerator({})
+    stdout = _stream(
+        _init_event(),
+        {"event": "step_update", "step_update": "a warning"},
+        *_tool_events(1, "list_dir", {"DirectoryPath": "/tmp"}),
+        {"event": "result", "result": []},
+        _result_event(response="done"),
+    )
+
+    envelope = json.loads(generator._parse_stream_json(stdout))
+
+    assert envelope["session_id"] == "conv-1"
+    assert envelope["response"] == "done"
+    assert envelope["stats"]["tools"]["byName"]["list_dir"]["success"] == 1
+
+
 def test_parse_stream_json_no_events_returns_fallback(sandbox):
     generator = AgyCliGenerator({})
     envelope = json.loads(

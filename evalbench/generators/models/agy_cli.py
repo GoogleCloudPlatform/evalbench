@@ -904,8 +904,9 @@ class AgyCliGenerator(AgentCliGenerator):
             return json.dumps(final_obj, indent=2)
 
         result = next(
-            (e.get("result", {}) for e in events
-             if e.get("event") == self._EVENT_RESULT),
+            (e["result"] for e in events
+             if e.get("event") == self._EVENT_RESULT
+             and isinstance(e.get("result"), dict)),
             {},
         )
         final_obj["session_id"] = (
@@ -935,7 +936,9 @@ class AgyCliGenerator(AgentCliGenerator):
         order = []
         for event in events:
             step = event.get("step_update")
-            if not step or step.get("step_type") != self._STEP_TYPE_TOOL:
+            if not isinstance(step, dict):
+                continue
+            if step.get("step_type") != self._STEP_TYPE_TOOL:
                 continue
             idx = step.get("step_index")
             info = step.get("tool_info") or {}
