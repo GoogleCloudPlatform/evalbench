@@ -119,7 +119,7 @@ class DatasetQualityScorer(Comparator):
             {
                 "product_name": self.product_name,
                 "total_cujs": context.n,
-                "global_score": grade["global_score"],
+                "dataset_quality_score": grade["dataset_quality_score"],
                 "letter_grade": grade["letter_grade"],
                 "category_scores": grade["category_scores"],
                 "sub_scores": sub_scores,
@@ -131,10 +131,10 @@ class DatasetQualityScorer(Comparator):
         logging.info(
             "dataset_quality: %s -> %s (%s)",
             self.product_name,
-            grade["global_score"],
+            grade["dataset_quality_score"],
             grade["letter_grade"],
         )
-        return grade["global_score"] or 0, logs
+        return grade["dataset_quality_score"] or 0, logs
 
     def _extract_cujs(self, eval_results: Any) -> list[dict]:
         """Pull the bundled CUJs out of the single wrapper scenario."""

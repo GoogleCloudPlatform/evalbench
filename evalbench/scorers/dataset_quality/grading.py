@@ -1,7 +1,7 @@
-"""Aggregate per-scorer sub-scores into a global score, grade, and rollups.
+"""Aggregate per-scorer sub-scores into a dataset quality score, grade, and rollups.
 
-Pure functions, no I/O. The global score is a weighted average over only the
-*applicable* scorers, so a scorer that dropped out (empty dataset, metric not
+Pure functions, no I/O. The dataset quality score is a weighted average over only
+the *applicable* scorers, so a scorer that dropped out (empty dataset, metric not
 applicable to this product) neither contributes nor inflates the denominator.
 Category rollups apply the same weight-normalized average within each category.
 """
@@ -45,16 +45,16 @@ def _weighted_average(metrics: list[ScoredMetric]) -> float | None:
 
 
 def compute_grade(metrics: list[ScoredMetric]) -> dict:
-    """Roll metrics up into a global score, letter grade, and category scores.
+    """Roll metrics up into a dataset quality score, letter grade, and category scores.
 
-    Returns ``global_score`` (None when nothing applies), ``letter_grade``, and
-    ``category_scores`` (weight-normalized per category, applicable metrics only).
+    Returns ``dataset_quality_score`` (None when nothing applies), ``letter_grade``,
+    and ``category_scores`` (weight-normalized per category, applicable metrics only).
     """
     applicable = [
         m for m in metrics if m.applicable and m.score is not None
     ]
 
-    global_score = _weighted_average(applicable)
+    dataset_quality_score = _weighted_average(applicable)
 
     category_scores: dict[str, float] = {}
     for metric in applicable:
@@ -66,7 +66,15 @@ def compute_grade(metrics: list[ScoredMetric]) -> dict:
     }
 
     return {
-        "global_score": round(global_score, 2) if global_score is not None else None,
-        "letter_grade": letter_grade(global_score) if global_score is not None else "F",
+        "dataset_quality_score": (
+            round(dataset_quality_score, 2)
+            if dataset_quality_score is not None
+            else None
+        ),
+        "letter_grade": (
+            letter_grade(dataset_quality_score)
+            if dataset_quality_score is not None
+            else "F"
+        ),
         "category_scores": category_scores,
     }
