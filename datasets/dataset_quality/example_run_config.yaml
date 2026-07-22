@@ -37,25 +37,27 @@ scorers:
     product_name: "Gemini CLI Tools"
     model_config: datasets/model_configs/gemini_cli_model.yaml
     # tools_timeout: 30   # optional; live tools/list fetch timeout in seconds
+    # Each sub-scorer's weight defaults in its scorer class; the commented value
+    # below is that default. Uncomment `weight:` to override.
     scorers:
       trajectory_coverage:
-        weight: 12
+        # weight: 12  (default)
       naming_distribution:
-        weight: 5
+        # weight: 5   (default)
       parameter_coverage:
-        weight: 13
-        min_items: 1
+        # weight: 13  (default)
+        # min_items: 1  (default; min CUJs that must exercise a parameter to count it covered)
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       vague_examples:
-        weight: 12
-        target_fraction: 0.5   # scores 100 once >=50% of CUJs are vague/indirect
+        # weight: 12  (default)
+        # target_fraction: 0.5   (default; scores 100 once >= this fraction of CUJs are vague/indirect)
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       error_recovery:
-        weight: 28
-        target_fraction: 0.20  # scores 100 once >=20% of CUJs test error recovery
+        # weight: 28  (default)
+        # target_fraction: 0.20  (default; scores 100 once >= this fraction of CUJs test error recovery)
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       composition:
-        weight: 30
+        # weight: 30  (default)
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
 
 ############################################################
