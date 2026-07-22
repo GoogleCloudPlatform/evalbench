@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.11.0...v1.12.0) (2026-07-22)
+
+
+### Features
+
+* **query_data_api:** add option to use REST API fallback for unreleased proto fields ([#503](https://github.com/GoogleCloudPlatform/evalbench/issues/503)) ([b29d37f](https://github.com/GoogleCloudPlatform/evalbench/commit/b29d37f81ea34704923b0358ea4a6c0fa072ce20))
+
 ## [1.11.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.10.0...v1.11.0) (2026-07-21)
 
 
