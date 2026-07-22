@@ -57,3 +57,26 @@ Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
 Emit exactly ONE entry for EVERY named parameter of EVERY tool in the schema --
 including parameters exercised by no CUJ, whose "cuj_ids" MUST be an empty list. Each
 id in "cuj_ids" MUST match an input CUJ id exactly, with no duplicates."""
+
+
+PARAMETER_COVERAGE_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "coverage": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "tool": {"type": "STRING"},
+                    "parameter": {"type": "STRING"},
+                    "cuj_ids": {
+                        "type": "ARRAY",
+                        "items": {"type": "STRING"},
+                    },
+                },
+                "required": ["tool", "parameter", "cuj_ids"],
+            },
+        },
+    },
+    "required": ["coverage"],
+}

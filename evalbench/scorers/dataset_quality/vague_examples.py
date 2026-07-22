@@ -13,7 +13,10 @@ from scorers.dataset_quality.context import (
     SubScoreContribution,
 )
 from scorers.dataset_quality.llm import tag_cujs
-from scorers.prompt.vague_examples import VAGUE_EXAMPLES_PROMPT
+from scorers.prompt.vague_examples import (
+    VAGUE_EXAMPLES_PROMPT,
+    VAGUE_EXAMPLES_SCHEMA,
+)
 
 
 class VagueExamplesScorer:
@@ -44,7 +47,7 @@ class VagueExamplesScorer:
                 ["starting_prompt", "conversation_plan"]
             ),
         )
-        tags = tag_cujs(self.model, prompt)
+        tags = tag_cujs(self.model, prompt, VAGUE_EXAMPLES_SCHEMA)
         n_vague = sum(
             1
             for s in context.scenarios

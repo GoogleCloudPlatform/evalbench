@@ -18,6 +18,7 @@ from scorers.dataset_quality.llm import tag_cujs
 from scorers.prompt.cuj_path_classification import (
     CUJ_PATHS,
     CUJ_PATH_CLASSIFICATION_PROMPT,
+    CUJ_PATH_CLASSIFICATION_SCHEMA,
 )
 
 # Path label -> BQ path-count column.
@@ -58,7 +59,7 @@ class ErrorRecoveryScorer:
                 ["starting_prompt", "conversation_plan", "expected_trajectory"]
             ),
         )
-        tags = tag_cujs(self.model, prompt)
+        tags = tag_cujs(self.model, prompt, CUJ_PATH_CLASSIFICATION_SCHEMA)
 
         counts = {path: 0 for path in CUJ_PATHS}
         for s in context.scenarios:

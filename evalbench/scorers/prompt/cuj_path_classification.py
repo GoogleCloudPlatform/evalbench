@@ -89,3 +89,22 @@ Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
 Return one entry in "tags" for EVERY CUJ in the input. Each "id" MUST match an input
 CUJ id exactly. Each "cuj_path" value MUST be exactly one of the five strings listed
 above."""
+
+
+CUJ_PATH_CLASSIFICATION_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "tags": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "id": {"type": "STRING"},
+                    "cuj_path": {"type": "STRING", "enum": list(CUJ_PATHS)},
+                },
+                "required": ["id", "cuj_path"],
+            },
+        },
+    },
+    "required": ["tags"],
+}

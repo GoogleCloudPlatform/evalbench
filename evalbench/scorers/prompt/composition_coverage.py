@@ -55,3 +55,25 @@ Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
 }}
 Return one entry in "tags" for EVERY CUJ in the input. Each "id" MUST match an input
 CUJ id exactly."""
+
+
+COMPOSITION_COVERAGE_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "tags": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "id": {"type": "STRING"},
+                    "is_multi_tool": {"type": "BOOLEAN"},
+                    "has_sequence_dependency": {"type": "BOOLEAN"},
+                },
+                "required": [
+                    "id", "is_multi_tool", "has_sequence_dependency",
+                ],
+            },
+        },
+    },
+    "required": ["tags"],
+}

@@ -46,3 +46,22 @@ Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
 }}
 Return one entry in "tags" for EVERY CUJ in the input. Each "id" MUST match an input
 CUJ id exactly."""
+
+
+VAGUE_EXAMPLES_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "tags": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "id": {"type": "STRING"},
+                    "is_vague": {"type": "BOOLEAN"},
+                },
+                "required": ["id", "is_vague"],
+            },
+        },
+    },
+    "required": ["tags"],
+}

@@ -18,7 +18,10 @@ from scorers.dataset_quality.context import (
     SubScoreContribution,
 )
 from scorers.dataset_quality.llm import judge_coverage
-from scorers.prompt.parameter_coverage import PARAMETER_COVERAGE_PROMPT
+from scorers.prompt.parameter_coverage import (
+    PARAMETER_COVERAGE_PROMPT,
+    PARAMETER_COVERAGE_SCHEMA,
+)
 
 
 class ParameterCoverageScorer:
@@ -58,7 +61,9 @@ class ParameterCoverageScorer:
         valid_ids = {s.get("id") for s in context.scenarios}
 
         counts: dict[tuple[str, str], set] = {}
-        for entry in judge_coverage(self.model, prompt):
+        for entry in judge_coverage(
+            self.model, prompt, response_schema=PARAMETER_COVERAGE_SCHEMA
+        ):
             key = (entry.get("tool"), entry.get("parameter"))
             if key not in params:
                 continue

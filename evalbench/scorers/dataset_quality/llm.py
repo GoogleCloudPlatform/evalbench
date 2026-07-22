@@ -27,7 +27,7 @@ def _finish_reason(resp) -> str:
         return "unknown"
 
 
-def generate_json(model, prompt: str) -> str:
+def generate_json(model, prompt: str, response_schema: dict | None = None) -> str:
     """Generate a model response as raw JSON text.
 
     Prefer Gemini's native JSON mode via the underlying genai client: it
@@ -38,6 +38,11 @@ def generate_json(model, prompt: str) -> str:
     An empty/failed Gemini call returns "" so callers degrade to their safe
     default. Only genuinely non-Gemini models (no native JSON mode) use
     ``model.generate``.
+
+    ``response_schema`` (a plain dict) constrains Gemini to emit exactly that
+    structure via constrained decoding -- the reliable fix for Gemini 3.x JSON
+    mode, which otherwise drops/adds braces or cuts values mid-token. Ignored on
+    the non-Gemini fallback path.
     """
     client = getattr(model, "client", None)
     caller = getattr(model, "_call_generate_content", None)
@@ -49,6 +54,7 @@ def generate_json(model, prompt: str) -> str:
                 response_mime_type="application/json",
                 temperature=0,
                 max_output_tokens=_MAX_OUTPUT_TOKENS,
+                response_schema=response_schema,
             )
             resp = caller(contents=prompt, config=config)
         except Exception as e:
@@ -80,27 +86,35 @@ def extract_json(text: str) -> dict:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end > start:
-            try:
-                return json.loads(text[start:end + 1])
-            except json.JSONDecodeError:
-                pass
         raise ValueError("no JSON object found in model response")
 
 
-def tag_cujs(model, prompt: str) -> dict[str, dict]:
+def _log_parse_failure(raw: str, err: Exception) -> None:
+    snippet = (raw or "").strip().replace("\n", " ")
+    if len(snippet) > 500:
+        snippet = snippet[:1000] + "...[truncated]"
+    logging.warning(
+        "dataset_quality: could not parse judge response: %s | len=%d raw=%r",
+        err,
+        len(raw or ""),
+        snippet,
+    )
+
+
+def tag_cujs(
+    model, prompt: str, response_schema: dict | None = None
+) -> dict[str, dict]:
     """Run one tagging prompt and return the per-CUJ tags indexed by id.
 
     Returns ``{}`` on any parse failure so a malformed judge response yields
     all-missing tags (each scorer then treats missing as its safe default)
     rather than aborting the run.
     """
+    raw = generate_json(model, prompt, response_schema)
     try:
-        data = extract_json(generate_json(model, prompt))
+        data = extract_json(raw)
     except ValueError as e:
-        logging.warning("dataset_quality: could not parse judge response: %s", e)
+        _log_parse_failure(raw, e)
         return {}
     tags = data.get("tags")
     if not isinstance(tags, list):
@@ -112,17 +126,21 @@ def tag_cujs(model, prompt: str) -> dict[str, dict]:
     return indexed
 
 
-def judge_coverage(model, prompt: str, key: str = "coverage") -> list[dict]:
+def judge_coverage(
+    model, prompt: str, key: str = "coverage",
+    response_schema: dict | None = None,
+) -> list[dict]:
     """Run one coverage prompt and return the judge's list of entries.
 
     Unlike ``tag_cujs`` (keyed per CUJ id), coverage prompts return a flat list
     under ``key``. Returns ``[]`` on any parse failure so a malformed response
     yields zero coverage rather than aborting the run.
     """
+    raw = generate_json(model, prompt, response_schema)
     try:
-        data = extract_json(generate_json(model, prompt))
+        data = extract_json(raw)
     except ValueError as e:
-        logging.warning("dataset_quality: could not parse judge response: %s", e)
+        _log_parse_failure(raw, e)
         return []
     items = data.get(key)
     if not isinstance(items, list):
