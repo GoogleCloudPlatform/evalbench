@@ -262,6 +262,7 @@ def test_run_command_argv_shape(mock_run, sandbox):
     assert sent_argv == [
         generator.agy_bin, "-p", "hello world",
         "--dangerously-skip-permissions", "--output-format", "stream-json",
+        "--log-file", generator.cli_log_path,
     ]
 
 
@@ -274,7 +275,24 @@ def test_run_command_argv_shape_with_continue(mock_run, sandbox):
     assert sent_argv == [
         generator.agy_bin, "-p", "next turn",
         "--dangerously-skip-permissions", "--output-format", "stream-json",
-        "--continue",
+        "--log-file", generator.cli_log_path, "--continue",
+    ]
+
+
+def test_run_command_argv_includes_print_timeout_when_configured(
+    mock_run, sandbox
+):
+    """A configured ``print_timeout`` is passed through as agy's
+    ``--print-timeout``; it is omitted when unset (agy uses its default)."""
+    generator = AgyCliGenerator({"print_timeout": "10m0s"})
+    generator._run_agy_cli(CLICommand(cli="agy", prompt="hi"))
+
+    sent_argv = mock_run.call_args[0][0]
+    assert sent_argv == [
+        generator.agy_bin, "-p", "hi",
+        "--dangerously-skip-permissions", "--output-format", "stream-json",
+        "--print-timeout", "10m0s",
+        "--log-file", generator.cli_log_path,
     ]
 
 
@@ -841,15 +859,9 @@ _MODEL_LOG_LINE = (
 
 
 def _write_cli_log(generator, *lines):
-    log_dir = os.path.join(generator.app_data_dir, "log")
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, "cli-20260604_092731.log")
-    with open(log_file, "w") as f:
+    os.makedirs(os.path.dirname(generator.cli_log_path), exist_ok=True)
+    with open(generator.cli_log_path, "w") as f:
         f.writelines(lines)
-    cli_log = os.path.join(generator.app_data_dir, "cli.log")
-    if os.path.lexists(cli_log):
-        os.remove(cli_log)
-    os.symlink(log_file, cli_log)
 
 
 def test_detect_model_from_log(sandbox):

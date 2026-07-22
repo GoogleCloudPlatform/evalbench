@@ -60,6 +60,10 @@ class AgyCliGenerator(AgentCliGenerator):
         # format and resolution semantics.
         self.model = querygenerator_config.get("model")
 
+        # Optional Go-duration string (e.g. "10m0s") for agy's --print-timeout;
+        # None omits the flag and agy uses its 5m0s default.
+        self.print_timeout = querygenerator_config.get("print_timeout")
+
         # Order is load-bearing: paths/dirs must exist before the binary
         # installs and settings/auth write into them, and self.env must carry
         # HOME before the installer stages files (and auth resolves ADC) into
@@ -100,6 +104,10 @@ class AgyCliGenerator(AgentCliGenerator):
         self.agy_bin = os.path.join(self.bin_dir, "agy")
 
         self.app_data_dir = os.path.join(self.fake_home, self.APP_DATA_SUBPATH)
+        # Deterministic CLI log path passed to agy via --log-file, so model
+        # detection reads exactly this run's log rather than guessing the
+        # newest file (which races under concurrency).
+        self.cli_log_path = os.path.join(self.app_data_dir, "log", "eval-cli.log")
         self.settings_path = os.path.join(self.app_data_dir, "settings.json")
         self.config_dir = os.path.join(self.fake_home, ".gemini", "config")
         self.mcp_config_path = os.path.join(self.config_dir, "mcp_config.json")
@@ -111,6 +119,7 @@ class AgyCliGenerator(AgentCliGenerator):
         os.makedirs(self.fake_home, exist_ok=True)
         os.makedirs(self.bin_dir, exist_ok=True)
         os.makedirs(self.app_data_dir, exist_ok=True)
+        os.makedirs(os.path.dirname(self.cli_log_path), exist_ok=True)
         os.makedirs(os.path.dirname(self.settings_path), exist_ok=True)
         os.makedirs(self.config_dir, exist_ok=True)
 
@@ -746,7 +755,8 @@ class AgyCliGenerator(AgentCliGenerator):
     @staticmethod
     def _base_agy_command(
         cli: str, prompt: str, resume: bool = False, model: str = None,
-        output_format: str = None,
+        output_format: str = None, print_timeout: str = None,
+        log_file: str = None,
     ) -> list:
         """Builds the non-interactive ``agy -p`` argv shared by the eval
         turn path and the setup-time MCP probe.
@@ -760,12 +770,20 @@ class AgyCliGenerator(AgentCliGenerator):
         ``output_format`` maps to agy's ``--output-format`` (values ``json``
         and ``stream-json``); the eval turn passes ``stream-json`` to get the
         machine-readable event stream. Omitted for the setup probe.
+
+        ``print_timeout`` maps to agy's ``--print-timeout`` (a Go-duration
+        string, agy's default 5m0s); ``log_file`` maps to ``--log-file``,
+        pinning the CLI log to a known path for deterministic model detection.
         """
         command = [cli, "-p", prompt, "--dangerously-skip-permissions"]
         if model:
             command += ["--model", model]
         if output_format:
             command += ["--output-format", output_format]
+        if print_timeout:
+            command += ["--print-timeout", print_timeout]
+        if log_file:
+            command += ["--log-file", log_file]
         if resume:
             command.append("--continue")
         return command
@@ -804,7 +822,8 @@ class AgyCliGenerator(AgentCliGenerator):
         # "agy", which is not a path).
         command = self._base_agy_command(
             self.agy_bin, cli_cmd.prompt, cli_cmd.resume, self.model,
-            output_format="stream-json",
+            output_format="stream-json", print_timeout=self.print_timeout,
+            log_file=self.cli_log_path,
         )
         cwd = cli_cmd.cwd if cli_cmd.cwd else self.fake_home
         result = self._execute_cli_command(command, env=env, cwd=cwd)
@@ -844,42 +863,18 @@ class AgyCliGenerator(AgentCliGenerator):
                 return {"_raw": inner}
         return {}
 
-    def _latest_log_path(self):
-        """Return the path of the most recent agy cli log, or None.
-
-        agy writes a fresh ``log/cli-<timestamp>.log`` per process and points
-        the ``cli.log`` symlink at it. Since each query runs as its own agy
-        subprocess, the newest log reflects the run we just made.
-        """
-        cli_log = os.path.join(self.app_data_dir, "cli.log")
-        if os.path.exists(cli_log):
-            return cli_log
-        log_dir = os.path.join(self.app_data_dir, "log")
-        try:
-            logs = [
-                os.path.join(log_dir, f) for f in os.listdir(log_dir)
-                if f.endswith(".log")
-            ]
-        except OSError:
-            return None
-        if not logs:
-            return None
-        return max(logs, key=os.path.getmtime)
-
     def _detect_model_from_log(self):
         """Best-effort: read the resolved model label from the cli log.
 
-        Returns the last ``label="..."`` agy logged for this run (see
-        ``_MODEL_LABEL_RE``), or None if the log is missing/unreadable or
-        carries no such line. Used only as a fallback when no model is
-        configured, so any failure degrades gracefully to the default label.
+        Reads ``self.cli_log_path`` (pinned via ``--log-file``) and returns the
+        last ``label="..."`` agy logged (see ``_MODEL_LABEL_RE``), or None if
+        the log is missing/unreadable or carries no such line. Used only as a
+        fallback when no model is configured, so any failure degrades
+        gracefully to the default label.
         """
-        log_path = self._latest_log_path()
-        if not log_path:
-            return None
         label = None
         try:
-            with open(log_path, "r") as f:
+            with open(self.cli_log_path, "r") as f:
                 for line in f:
                     match = self._MODEL_LABEL_RE.search(line)
                     if match:
