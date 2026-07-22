@@ -384,8 +384,7 @@ class AgyCliGenerator(AgentCliGenerator):
     #   model_config_manager.go:157] Propagating selected model override to
     #   backend: label="Gemini 3.5 Flash (High)"
     # This is the only on-disk record of the *resolved* model: it appears
-    # whether the model came from --model, settings.json, or agy's own default
-    # (the transcript only records a model when the user explicitly changes it).
+    # whether the model came from --model, settings.json, or agy's own default.
     # Used to label the stats bucket when no model is configured -- see
     # _detect_model_from_log.
     _MODEL_LABEL_RE = re.compile(
@@ -395,7 +394,7 @@ class AgyCliGenerator(AgentCliGenerator):
     # Bucket label when the resolved model can't be determined from any source.
     _DEFAULT_MODEL_LABEL = "agy"
 
-    # Transcripts carry no token counts, so every token bucket is zero.
+    # Fallback token bucket when the stream-json result carries no usage.
     _ZERO_TOKENS = {
         "input": 0, "prompt": 0, "candidates": 0,
         "total": 0, "cached": 0, "thoughts": 0, "tool": 0,
@@ -692,7 +691,7 @@ class AgyCliGenerator(AgentCliGenerator):
         ``struct { McpServers map[string]interface {} }``) reveals the
         key. agy has no offline verification subcommand, so this step
         only writes config -- it does not confirm the server actually
-        loads. Failures will surface at eval time via the transcript.
+        loads. Failures will surface at eval time via the stream-json output.
         """
         if not mcp_servers_config:
             return

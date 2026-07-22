@@ -329,11 +329,6 @@ Identical to Gemini CLI -- see the
 The `trajectory_matcher` default of dropping native/harness-internal tools
 also applies.
 
-> [!NOTE]
-> **Token usage is now available** via the stream-json `result` event, so the
-> `token_consumption` scorer reports real counts and can be enabled in the agy
-> configs.
-
 ---
 
 ## Reporting
