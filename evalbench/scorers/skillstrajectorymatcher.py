@@ -2,7 +2,7 @@
 SkillsTrajectoryMatcher
 
 Compares expected activated skills vs actual activated skill names.
-Supports flexible coverage matching (when ignore_extra_skills is True),
+Supports flexible coverage matching (when allow_extra_skills is True),
 Jaccard set similarity (default), and strict Levenshtein sequence alignment.
 """
 from typing import Tuple, Any, List
@@ -23,7 +23,7 @@ class SkillsTrajectoryMatcher(comparator.Comparator):
         self.name = "skills_trajectory"
         self.config = config
         self.enforce_order = config.get("enforce_order", False)
-        self.ignore_extra_skills = config.get("ignore_extra_skills", False)
+        self.allow_extra_skills = config.get("allow_extra_skills", False)
 
     def _levenshtein_distance(self, seq1: List[str], seq2: List[str]) -> int:
         n, m = len(seq1), len(seq2)
@@ -88,7 +88,15 @@ class SkillsTrajectoryMatcher(comparator.Comparator):
             return 0.0, "Skills data must be lists."
 
         if not expected:
-            return 100.0, "No expected skills specified."
+            if not actual:
+                return 100.0, "Both expected and actual skill lists are empty."
+            elif self.allow_extra_skills:
+                return 100.0, "No expected skills required and extra skills are allowed."
+            else:
+                actual_set = set(actual)
+                return 0.0, (
+                    f"Skills Jaccard Similarity: 0.00. Expected: set(), Actual: {actual_set}"
+                )
 
         if self.enforce_order:
             distance = self._levenshtein_distance(expected, actual)
@@ -101,14 +109,14 @@ class SkillsTrajectoryMatcher(comparator.Comparator):
                 f"(Distance: {distance}, Max: {max_len}). "
                 f"Expected: {expected}, Actual: {actual}"
             )
-        elif self.ignore_extra_skills:
+        elif self.allow_extra_skills:
             expected_set = set(expected)
             actual_set = set(actual)
             matched = expected_set & actual_set
             similarity = len(matched) / len(expected_set)
             score = similarity * 100.0
             return score, (
-                f"Skills Coverage (ignore_extra_skills=True): {score:.2f}%. "
+                f"Skills Coverage (allow_extra_skills=True): {score:.2f}%. "
                 f"Expected: {expected_set}, Actual: {actual_set}, Matched: {matched}"
             )
         else:

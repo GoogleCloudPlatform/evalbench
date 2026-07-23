@@ -35,11 +35,23 @@ def _compare(matcher, expected_skills, accumulated_skills):
 
 class SkillsTrajectoryMatcherTest(unittest.TestCase):
 
-    def test_empty_expected_skills_returns_full_score(self):
+    def test_both_empty_returns_full_score(self):
         matcher = SkillsTrajectoryMatcher({})
+        score, explanation = _compare(matcher, [], [])
+        self.assertEqual(score, 100.0)
+        self.assertIn("Both expected and actual skill lists are empty", explanation)
+
+    def test_empty_expected_skills_with_extra_skills_when_allow_extra_false(self):
+        matcher = SkillsTrajectoryMatcher({"allow_extra_skills": False})
+        score, explanation = _compare(matcher, [], ["dataform_bigquery"])
+        self.assertEqual(score, 0.0)
+        self.assertIn("Jaccard Similarity: 0.00", explanation)
+
+    def test_empty_expected_skills_with_extra_skills_when_allow_extra_true(self):
+        matcher = SkillsTrajectoryMatcher({"allow_extra_skills": True})
         score, explanation = _compare(matcher, [], ["dataform_bigquery"])
         self.assertEqual(score, 100.0)
-        self.assertIn("No expected skills specified", explanation)
+        self.assertIn("extra skills are allowed", explanation)
 
     def test_default_uses_jaccard_similarity(self):
         matcher = SkillsTrajectoryMatcher({})
@@ -50,17 +62,17 @@ class SkillsTrajectoryMatcherTest(unittest.TestCase):
         self.assertEqual(score, 50.0)
         self.assertIn("Jaccard Similarity", explanation)
 
-    def test_ignore_extra_skills_enabled(self):
-        matcher = SkillsTrajectoryMatcher({"ignore_extra_skills": True})
+    def test_allow_extra_skills_enabled(self):
+        matcher = SkillsTrajectoryMatcher({"allow_extra_skills": True})
         expected = ["dataform_bigquery"]
         actual = ["dataform_bigquery", "gcp_pipeline_orchestration"]
 
         score, explanation = _compare(matcher, expected, actual)
         self.assertEqual(score, 100.0)
-        self.assertIn("ignore_extra_skills=True", explanation)
+        self.assertIn("allow_extra_skills=True", explanation)
 
     def test_partial_coverage(self):
-        matcher = SkillsTrajectoryMatcher({"ignore_extra_skills": True})
+        matcher = SkillsTrajectoryMatcher({"allow_extra_skills": True})
         expected = ["dataform_bigquery", "dbt_bigquery"]
         actual = ["dataform_bigquery"]
 
