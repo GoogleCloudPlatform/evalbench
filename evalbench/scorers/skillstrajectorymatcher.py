@@ -25,6 +25,11 @@ class SkillsTrajectoryMatcher(comparator.Comparator):
         self.enforce_order = config.get("enforce_order", False)
         self.allow_extra_skills = config.get("allow_extra_skills", False)
 
+        if self.enforce_order and self.allow_extra_skills:
+            raise ValueError(
+                "Cannot set both 'enforce_order' and 'allow_extra_skills' to True."
+            )
+
     def _levenshtein_distance(self, seq1: List[str], seq2: List[str]) -> int:
         n, m = len(seq1), len(seq2)
         if n == 0:
