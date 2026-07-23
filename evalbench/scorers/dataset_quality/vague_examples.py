@@ -48,18 +48,31 @@ class VagueExamplesScorer:
             ),
         )
         tags = tag_cujs(self.model, prompt, VAGUE_EXAMPLES_SCHEMA)
-        n_vague = sum(
-            1
-            for s in context.scenarios
-            if tags.get(s.get("id"), {}).get("is_vague") is True
-        )
+        vague_ids, direct_ids = [], []
+        for s in context.scenarios:
+            sid = s.get("id")
+            if tags.get(sid, {}).get("is_vague") is True:
+                vague_ids.append(sid)
+            else:
+                direct_ids.append(sid)
+        n_vague = len(vague_ids)
 
         denom = self.target_fraction * n
         score = min(100.0, n_vague / denom * 100) if denom > 0 else 0.0
         score = round(score, 2)
+
+        suggestions = []
+        if n_vague / n < self.target_fraction:
+            suggestions.append(
+                f"Only {n_vague}/{n} CUJs are vague/indirect; aim for ~"
+                f"{int(self.target_fraction * 100)}%. Add CUJs that state a goal "
+                "without naming the tool, so the agent is tested on inferring intent."
+            )
         logging.info("vague_examples: \t%d/%d vague -> %.2f", n_vague, n, score)
         return SubScoreContribution(
             score=score,
             row_fields={"dq_vague_count": n_vague},
+            suggestions=suggestions,
+            evidence={"vague": vague_ids, "direct": direct_ids},
             logs=f"vague={n_vague}/{n}, target_fraction={self.target_fraction}",
         )

@@ -103,6 +103,8 @@ class SubScoreContribution:
       (e.g. an empty dataset or a metric that doesn't apply to this product).
     - ``row_fields``: extra detail columns merged into the product's BQ row.
     - ``suggestions``: human-readable improvement notes (non-weighted).
+    - ``evidence``: per-CUJ classifier tags grouped by label (which CUJ ids got
+      which classification), surfaced for the UI and to ground the synthesis pass.
     - ``logs``: short human-readable summary for logging.
     """
 
@@ -110,4 +112,5 @@ class SubScoreContribution:
     applicable: bool = True
     row_fields: dict[str, Any] = field(default_factory=dict)
     suggestions: list = field(default_factory=list)
+    evidence: dict[str, Any] = field(default_factory=dict)
     logs: str = ""

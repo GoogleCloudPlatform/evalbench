@@ -61,11 +61,13 @@ class ErrorRecoveryScorer:
         )
         tags = tag_cujs(self.model, prompt, CUJ_PATH_CLASSIFICATION_SCHEMA)
 
-        counts = {path: 0 for path in CUJ_PATHS}
+        path_ids: dict[str, list] = {path: [] for path in CUJ_PATHS}
         for s in context.scenarios:
-            path = tags.get(s.get("id"), {}).get("cuj_path")
-            if path in counts:
-                counts[path] += 1
+            sid = s.get("id")
+            path = tags.get(sid, {}).get("cuj_path")
+            if path in path_ids:
+                path_ids[path].append(sid)
+        counts = {path: len(ids) for path, ids in path_ids.items()}
 
         n_error = counts["Error Recovery"]
         denom = self.target_fraction * n
@@ -74,6 +76,16 @@ class ErrorRecoveryScorer:
 
         row_fields = {col: counts[path] for path, col in _PATH_COLUMNS.items()}
         row_fields["total_cujs"] = n
+
+        suggestions = []
+        if n_error / n < self.target_fraction:
+            top_path = max(counts, key=counts.get)
+            suggestions.append(
+                f"Only {n_error}/{n} CUJs exercise the Error Recovery path (target ~"
+                f"{int(self.target_fraction * 100)}%); the dataset skews to "
+                f"{top_path} ({counts[top_path]}/{n}). Add CUJs where a tool call "
+                "fails and the agent must recover (retry, correct params, fall back)."
+            )
         paths_str = ", ".join(f"{path}={counts[path]}" for path in CUJ_PATHS)
         logging.info(
             "error_recovery: \t%d/%d error-recovery -> %.2f | paths: %s",
@@ -82,5 +94,7 @@ class ErrorRecoveryScorer:
         return SubScoreContribution(
             score=score,
             row_fields=row_fields,
+            suggestions=suggestions,
+            evidence=path_ids,
             logs=f"error_recovery={n_error}/{n}, paths={counts}",
         )

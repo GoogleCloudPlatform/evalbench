@@ -20,6 +20,9 @@ from scorers.dataset_quality.prompts.composition_coverage import (
     COMPOSITION_COVERAGE_SCHEMA,
 )
 
+# Below this share (%), a composition dimension is flagged in suggestions only.
+_LOW_SHARE = 50.0
+
 
 class CompositionScorer:
     """Average of the multi-tool share and the sequencing-dependency share."""
@@ -50,20 +53,32 @@ class CompositionScorer:
         )
         tags = tag_cujs(self.model, prompt, COMPOSITION_COVERAGE_SCHEMA)
 
-        n_multi = sum(
-            1
-            for s in context.scenarios
-            if tags.get(s.get("id"), {}).get("is_multi_tool") is True
-        )
-        n_seq = sum(
-            1
-            for s in context.scenarios
-            if tags.get(s.get("id"), {}).get("has_sequence_dependency") is True
-        )
+        multi_ids, seq_ids = [], []
+        for s in context.scenarios:
+            sid = s.get("id")
+            tag = tags.get(sid, {})
+            if tag.get("is_multi_tool") is True:
+                multi_ids.append(sid)
+            if tag.get("has_sequence_dependency") is True:
+                seq_ids.append(sid)
+        n_multi, n_seq = len(multi_ids), len(seq_ids)
 
         multitool_score = round(n_multi / n * 100, 2)
         sequencing_score = round(n_seq / n * 100, 2)
         score = round((multitool_score + sequencing_score) / 2, 2)
+
+        suggestions = []
+        weak = []
+        if multitool_score < _LOW_SHARE:
+            weak.append(f"multi-tool ({n_multi}/{n})")
+        if sequencing_score < _LOW_SHARE:
+            weak.append(f"order-dependent ({n_seq}/{n})")
+        if weak:
+            suggestions.append(
+                "Few composite CUJs: " + " and ".join(weak) + ". Add CUJs whose "
+                "success needs more than one distinct tool in a specific order, to "
+                "test realistic multi-step work."
+            )
         logging.info(
             "composition: \tmulti=%d/%d seq=%d/%d -> %.2f",
             n_multi, n, n_seq, n, score,
@@ -76,6 +91,8 @@ class CompositionScorer:
                 "dq_multitool_score": multitool_score,
                 "dq_sequencing_score": sequencing_score,
             },
+            suggestions=suggestions,
+            evidence={"multi_tool": multi_ids, "sequence_dependency": seq_ids},
             logs=(
                 f"multitool={n_multi}/{n} ({multitool_score}), "
                 f"sequencing={n_seq}/{n} ({sequencing_score})"

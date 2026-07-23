@@ -53,14 +53,18 @@ class NamingDistributionScorer:
                 applicable=False, logs="no tools in schema"
             )
 
-        n_named = 0
+        named_ids, intent_ids = [], []
         for scenario in context.scenarios:
+            sid = scenario.get("id")
             text = " ".join(
                 str(scenario.get(field) or "")
                 for field in ("starting_prompt", "conversation_plan")
             ).lower()
             if any(form in text for form in forms):
-                n_named += 1
+                named_ids.append(sid)
+            else:
+                intent_ids.append(sid)
+        n_named = len(named_ids)
 
         score = round((n - n_named) / n * 100, 2)
 
@@ -79,5 +83,6 @@ class NamingDistributionScorer:
             score=score,
             row_fields={"dq_tool_named_count": n_named},
             suggestions=suggestions,
+            evidence={"names_tool": named_ids, "intent_based": intent_ids},
             logs=f"named={n_named}/{n}",
         )

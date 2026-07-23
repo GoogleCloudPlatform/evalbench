@@ -59,6 +59,11 @@ scorers:
       composition:
         # weight: 30  (default)
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+    # Optional LLM synthesis pass. Absent -> deterministic report only. When set,
+    # a single call turns the graded report (scores, counts, suggestions, per-CUJ
+    # evidence) into structured recommendations under report["recommendations"].
+    synthesis:
+      model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
 
 ############################################################
 ### Reporting

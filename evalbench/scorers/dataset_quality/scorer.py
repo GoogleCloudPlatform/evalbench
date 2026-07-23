@@ -13,6 +13,7 @@ import json
 import logging
 from typing import Any, Tuple
 
+from generators.models import get_generator
 from generators.models.mcp_tools import McpToolsGenerator
 from scorers.comparator import Comparator
 from scorers.dataset_quality.composition import CompositionScorer
@@ -21,6 +22,7 @@ from scorers.dataset_quality.error_recovery import ErrorRecoveryScorer
 from scorers.dataset_quality.grading import ScoredMetric, compute_grade
 from scorers.dataset_quality.naming_distribution import NamingDistributionScorer
 from scorers.dataset_quality.parameter_coverage import ParameterCoverageScorer
+from scorers.dataset_quality.synthesis import synthesize
 from scorers.dataset_quality.trajectory_coverage import TrajectoryCoverageScorer
 from scorers.dataset_quality.vague_examples import VagueExamplesScorer
 from util.config import load_yaml_config
@@ -72,6 +74,15 @@ class DatasetQualityScorer(Comparator):
                 )
             self.scorers.append(scorer_cls(scorer_config or {}, global_models))
 
+        # Optional LLM synthesis pass. Absent -> deterministic path only.
+        synthesis_config = config.get("synthesis") or {}
+        synthesis_model_config = synthesis_config.get("model_config")
+        self.synthesis_model = (
+            get_generator(global_models, synthesis_model_config)
+            if synthesis_model_config
+            else None
+        )
+
     def compare(
         self,
         nl_prompt: Any,
@@ -98,6 +109,7 @@ class DatasetQualityScorer(Comparator):
         sub_scores: dict[str, Any] = {}
         row_fields: dict[str, Any] = {}
         suggestions: list = []
+        evidence: dict[str, Any] = {}
         metrics = []
         for scorer in self.scorers:
             contribution = scorer.run(context)
@@ -111,6 +123,8 @@ class DatasetQualityScorer(Comparator):
                 }
                 for text in contribution.suggestions
             )
+            if contribution.evidence:
+                evidence[scorer.name] = contribution.evidence
             metrics.append(
                 ScoredMetric(
                     name=scorer.name,
@@ -122,19 +136,20 @@ class DatasetQualityScorer(Comparator):
             )
 
         grade = compute_grade(metrics)
-        logs = json.dumps(
-            {
-                "product_name": self.product_name,
-                "total_cujs": context.n,
-                "dataset_quality_score": grade["dataset_quality_score"],
-                "letter_grade": grade["letter_grade"],
-                "category_scores": grade["category_scores"],
-                "sub_scores": sub_scores,
-                "row_fields": row_fields,
-                "suggestions": suggestions,
-            },
-            default=str,
-        )
+        report = {
+            "product_name": self.product_name,
+            "total_cujs": context.n,
+            "dataset_quality_score": grade["dataset_quality_score"],
+            "letter_grade": grade["letter_grade"],
+            "category_scores": grade["category_scores"],
+            "sub_scores": sub_scores,
+            "row_fields": row_fields,
+            "suggestions": suggestions,
+            "evidence": evidence,
+        }
+        if self.synthesis_model is not None:
+            report["recommendations"] = synthesize(self.synthesis_model, report)
+        logs = json.dumps(report, default=str)
         logging.info(
             "dataset_quality: %s -> %s (%s)",
             self.product_name,
