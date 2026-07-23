@@ -295,7 +295,7 @@ for a working example.
 | Version pinning | NPM specifier in `gemini_cli_version` | No pinning mechanism; the latest binary is installed dynamically at runtime. |
 | Invocation | `npm exec --yes @google/gemini-cli@<ver> -- ...` | `agy ...` (bare binary) |
 | Non-interactive flag | `--yolo` / `--prompt` | `--dangerously-skip-permissions` and `-p` (alias `--print`) |
-| Output format | `--output-format stream-json` (NDJSON on stdout) | Plain text on stdout; structured tool-call data lives in the per-conversation transcript JSONL (see below) |
+| Output format | `--output-format stream-json` (NDJSON on stdout) | `--output-format stream-json` (NDJSON on stdout); the harness parses this event stream (see below) |
 | Session resume | `--resume <id>` | `--continue` (most recent in cwd) or `--conversation <uuid>` |
 | Settings dir (`appDataDir`) | `~/.gemini/` | `~/.gemini/antigravity-cli/` |
 | Settings file | `~/.gemini/settings.json` | `~/.gemini/antigravity-cli/settings.json` |
@@ -307,15 +307,18 @@ for a working example.
 | MCP tool name format | `mcp_<server>_<tool>` (single underscore) | No per-tool functions -- every MCP call goes through a single native `call_mcp_tool` wrapper whose args carry `ServerName`/`ToolName`/`Arguments`; the harness unwraps it to the canonical `<server>__<tool>` |
 | Model selection | `GEMINI_API_MODEL` / `GEMINI_MODEL` env var | `--model` flag (agy >=1.0.5); value is a UI label (e.g. `"Gemini 3.1 Pro (High)"`), not an API id |
 | Auth | NPM auth token via `gcloud auth print-access-token` plus ADC | OAuth (keyring-backed); ADC not required by agy itself |
-| Token-usage stats | Reported per request | Not exposed; transcript carries no token counts (verified through agy v1.0.5). See [Scorers](#scorers) for the `token_consumption` implication |
+| Token-usage stats | Reported per request | Exposed via the stream-json `result` event's `usage` block (input/output/thinking/total tokens) |
 
 ### Tool-call extraction
 
-Since agy has no `--output-format stream-json`, the harness automatically
-extracts structured tool-call data by parsing agy's per-conversation transcript
-logs. It unwraps `call_mcp_tool` invocations into the canonical `<server>__<tool>`
-format, and correctly slices the transcript to report only the current turn
-even when session resuming (`--continue`) is used.
+The harness runs agy with `--output-format stream-json` and parses the event
+stream (`init`, `step_update` x N, `result`) from stdout. Each tool call is a
+`step_update` whose `ACTIVE` -> `DONE`/`ERROR` states give success/failure
+directly; `call_mcp_tool` invocations are unwrapped into the canonical
+`<server>__<tool>` format. The stream is per-invocation, so no turn-slicing is
+needed under `--continue`. A run that times out or errors exits non-zero but
+still emits a full stream ending in an `ERROR` `result`, so its tool calls are
+captured too.
 
 ---
 
@@ -325,11 +328,6 @@ Identical to Gemini CLI -- see the
 [scorers section of the Gemini guide](gemini_cli_agent_testing.md#scorers).
 The `trajectory_matcher` default of dropping native/harness-internal tools
 also applies.
-
-> [!NOTE]
-> **`token_consumption` is omitted from the agy example configs.** agy's
-> transcript exposes no token-usage data, so the scorer would only ever
-> report 0. Re-add it if agy starts emitting usage data.
 
 ---
 

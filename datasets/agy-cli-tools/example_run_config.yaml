@@ -29,8 +29,7 @@ scorers:
   turn_count: {}
   end_to_end_latency: {}
   tool_call_latency: {}
-  # token_consumption omitted: agy's transcript exposes no token usage, so the
-  # scorer would only ever report 0. Re-add if agy starts emitting usage data.
+  token_consumption: {}
 
 ############################################################
 ### Reporting Related Configs
