@@ -28,6 +28,14 @@ CATEGORY_ERROR_RECOVERY = "error_recovery_coverage"
 CATEGORY_COMPOSITION = "composition_coverage"
 CATEGORY_DIVERSITY = "cuj_diversity"
 
+# The CUJ fields most judge scorers project into their prompt. vague_examples and
+# naming_distribution intentionally use a narrower set and pass their own.
+DEFAULT_CUJ_FIELDS = [
+    "starting_prompt",
+    "conversation_plan",
+    "expected_trajectory",
+]
+
 
 @dataclass
 class DatasetQualityContext:
@@ -124,7 +132,7 @@ class SubScoreContribution:
     score: float | None = None
     applicable: bool = True
     row_fields: dict[str, Any] = field(default_factory=dict)
-    suggestions: list = field(default_factory=list)
-    evidence: dict[str, Any] = field(default_factory=dict)
+    suggestions: list[str] = field(default_factory=list)
+    evidence: dict[str, list[str]] = field(default_factory=dict)
     distribution: dict[str, Any] = field(default_factory=dict)
     logs: str = ""

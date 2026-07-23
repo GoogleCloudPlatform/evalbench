@@ -12,6 +12,7 @@ import logging
 from generators.models import get_generator
 from scorers.dataset_quality.context import (
     CATEGORY_COMPOSITION,
+    DEFAULT_CUJ_FIELDS,
     DatasetQualityContext,
     SubScoreContribution,
 )
@@ -33,7 +34,7 @@ class CompositionScorer:
     def __init__(self, config: dict, global_models):
         self.name = "composition"
         config = config or {}
-        self.weight = float(config.get("weight", 30))
+        self.weight = float(config.get("weight", 15))
         model_config = config.get("model_config")
         if not model_config:
             raise ValueError(
@@ -48,11 +49,11 @@ class CompositionScorer:
 
         prompt = COMPOSITION_COVERAGE_PROMPT.format(
             tool_names=context.tool_names_str,
-            cujs_json=context.cujs_json(
-                ["starting_prompt", "conversation_plan", "expected_trajectory"]
-            ),
+            cujs_json=context.cujs_json(DEFAULT_CUJ_FIELDS),
         )
         tags = tag_cujs(self.model, prompt, COMPOSITION_COVERAGE_SCHEMA)
+        if tags is None:
+            return SubScoreContribution(applicable=False, logs="judge call failed")
 
         multi_ids, seq_ids = [], []
         for s in context.scenarios:

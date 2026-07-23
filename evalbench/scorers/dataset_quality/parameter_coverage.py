@@ -16,6 +16,7 @@ from collections import Counter, defaultdict
 from generators.models import get_generator
 from scorers.dataset_quality.context import (
     CATEGORY_DISCOVERABILITY,
+    DEFAULT_CUJ_FIELDS,
     DatasetQualityContext,
     SubScoreContribution,
 )
@@ -56,16 +57,18 @@ class ParameterCoverageScorer:
 
         prompt = PARAMETER_COVERAGE_PROMPT.format(
             tool_schema=context.tool_schema_json(),
-            cujs_json=context.cujs_json(
-                ["starting_prompt", "conversation_plan", "expected_trajectory"]
-            ),
+            cujs_json=context.cujs_json(DEFAULT_CUJ_FIELDS),
         )
         valid_ids = {s.get("id") for s in context.scenarios}
 
-        counts: dict[tuple[str, str], set] = {}
-        for entry in judge_coverage(
+        coverage = judge_coverage(
             self.model, prompt, response_schema=PARAMETER_COVERAGE_SCHEMA
-        ):
+        )
+        if coverage is None:
+            return SubScoreContribution(applicable=False, logs="judge call failed")
+
+        counts: dict[tuple[str, str], set] = {}
+        for entry in coverage:
             key = (entry.get("tool"), entry.get("parameter"))
             if key not in params:
                 continue

@@ -56,7 +56,7 @@ scorers:
         # weight: 28  (default; scores the fraction of the failure/recovery taxonomy the dataset covers)
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       composition:
-        # weight: 30  (default)
+        # weight: 15  (default)
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       cuj_diversity:
         # weight: 15  (default; scores the fraction of the 5 CUJ interaction paths the dataset exercises)

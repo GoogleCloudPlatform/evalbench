@@ -11,10 +11,11 @@ sub-scores up into a single weighted global score + letter grade.
 
 import json
 import logging
+import time
 from typing import Any, Tuple
 
 from generators.models import get_generator
-from generators.models.mcp_tools import McpToolsGenerator
+from generators.models.mcp_tools import McpToolsError, McpToolsGenerator
 from scorers.comparator import Comparator
 from scorers.dataset_quality.composition import CompositionScorer
 from scorers.dataset_quality.context import DatasetQualityContext
@@ -27,6 +28,12 @@ from scorers.dataset_quality.synthesis import synthesize
 from scorers.dataset_quality.trajectory_coverage import TrajectoryCoverageScorer
 from scorers.dataset_quality.vague_examples import VagueExamplesScorer
 from util.config import load_yaml_config
+
+
+# Bounded retry for the live tool-discovery fetch, to ride out a transient
+# network/ADC blip. A deterministic failure still surfaces after the last try.
+_TOOL_FETCH_ATTEMPTS = 3
+_TOOL_FETCH_BACKOFF_S = 1.0
 
 
 # Sub-scorers, keyed by the name used under the nested ``scorers:`` block.
@@ -99,9 +106,28 @@ class DatasetQualityScorer(Comparator):
         generated_error: Any,
         database: str = "",
         **kwargs,
-    ) -> Tuple[float, str]:
+    ) -> list[Tuple[str, float | None, str]]:
         scenarios = self._extract_cujs(generated_eval_result)
-        tools = self._fetch_tools()
+        try:
+            tools = self._fetch_tools()
+        except McpToolsError as e:
+            # Tool discovery is infrastructure (network / ADC), not a property of
+            # the dataset. Emit one ungraded row (null score) so a transient blip
+            # is distinguishable from a genuine low grade rather than reading as
+            # an F on the trends page. Unexpected errors are left to propagate.
+            logging.error("dataset_quality: tool discovery failed: %s", e)
+            return [(
+                self.name,
+                None,
+                json.dumps(
+                    {
+                        "product_name": self.product_name,
+                        "graded": False,
+                        "error": f"tool discovery failed: {e}",
+                    },
+                    default=str,
+                ),
+            )]
         context = DatasetQualityContext(
             product_name=self.product_name,
             scenarios=scenarios,
@@ -158,15 +184,29 @@ class DatasetQualityScorer(Comparator):
         }
         if self.synthesis_model is not None:
             synthesize(self.synthesis_model, report)
-        logs = json.dumps(report, default=str)
         logging.info(
             "dataset_quality: %s -> %s (%s)",
             self.product_name,
             grade["dataset_quality_score"],
             grade["letter_grade"],
         )
-        score = grade["dataset_quality_score"]
-        return (score if score is not None else 0), logs
+
+        # Emit one row per category plus a top-level summary row, so each
+        # sub-score lands on its own scores.csv row (mirroring how per-CUJ
+        # scorers each get a row) rather than a single JSON blob. The summary
+        # row carries the rollup that belongs to no single category.
+        overall = grade["dataset_quality_score"]
+        summary = {k: v for k, v in report.items() if k != "categories"}
+        rows = [(self.name, overall if overall is not None else 0,
+                 json.dumps(summary, default=str))]
+        for category in report["categories"]:
+            cat_score = category.get("score")
+            rows.append((
+                category["name"],
+                cat_score if cat_score is not None else 0,
+                json.dumps(category, default=str),
+            ))
+        return rows
 
     def _extract_cujs(self, eval_results: Any) -> list[dict]:
         """Pull the bundled CUJs out of the single wrapper scenario."""
@@ -190,6 +230,17 @@ class DatasetQualityScorer(Comparator):
                 "dataset_quality: setup.extensions is not yet supported for "
                 "tool discovery; only setup.mcp_servers is queried."
             )
-        return self.tools_generator.fetch_tools_from_mcp_servers(
-            setup.get("mcp_servers") or {}
-        )
+        mcp_servers = setup.get("mcp_servers") or {}
+        for attempt in range(1, _TOOL_FETCH_ATTEMPTS + 1):
+            try:
+                return self.tools_generator.fetch_tools_from_mcp_servers(
+                    mcp_servers
+                )
+            except McpToolsError:
+                if attempt == _TOOL_FETCH_ATTEMPTS:
+                    raise
+                logging.warning(
+                    "dataset_quality: tool discovery attempt %d/%d failed; "
+                    "retrying", attempt, _TOOL_FETCH_ATTEMPTS,
+                )
+                time.sleep(_TOOL_FETCH_BACKOFF_S * attempt)

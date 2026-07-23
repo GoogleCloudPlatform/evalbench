@@ -50,6 +50,8 @@ class VagueExamplesScorer:
             ),
         )
         tags = tag_cujs(self.model, prompt, VAGUE_EXAMPLES_SCHEMA)
+        if tags is None:
+            return SubScoreContribution(applicable=False, logs="judge call failed")
         vague_ids, direct_ids = [], []
         for s in context.scenarios:
             sid = s.get("id")

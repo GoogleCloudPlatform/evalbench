@@ -13,6 +13,7 @@ import logging
 from generators.models import get_generator
 from scorers.dataset_quality.context import (
     CATEGORY_ERROR_RECOVERY,
+    DEFAULT_CUJ_FIELDS,
     DatasetQualityContext,
     SubScoreContribution,
 )
@@ -22,8 +23,6 @@ from scorers.dataset_quality.prompts.error_recovery_coverage import (
     ERROR_RECOVERY_COVERAGE_SCHEMA,
     ERROR_RECOVERY_MODES,
 )
-
-_CUJ_FIELDS = ["starting_prompt", "conversation_plan", "expected_trajectory"]
 
 
 class ErrorRecoveryScorer:
@@ -49,9 +48,11 @@ class ErrorRecoveryScorer:
 
         prompt = ERROR_RECOVERY_COVERAGE_PROMPT.format(
             tool_names=context.tool_names_str,
-            cujs_json=context.cujs_json(_CUJ_FIELDS),
+            cujs_json=context.cujs_json(DEFAULT_CUJ_FIELDS),
         )
         tags = tag_cujs(self.model, prompt, ERROR_RECOVERY_COVERAGE_SCHEMA)
+        if tags is None:
+            return SubScoreContribution(applicable=False, logs="judge call failed")
 
         mode_ids: dict[str, list] = {mode: [] for mode in ERROR_RECOVERY_MODES}
         for scenario in context.scenarios:

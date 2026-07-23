@@ -88,7 +88,7 @@ def extract_json(text: str) -> dict:
     start, end = text.find("{"), text.rfind("}")
     if start != -1 and end > start:
         try:
-            return json.loads(text[start : end + 1])
+            return json.loads(text[start:end + 1])
         except json.JSONDecodeError:
             pass
     raise ValueError("no JSON object found in model response")
@@ -108,22 +108,24 @@ def _log_parse_failure(raw: str, err: Exception) -> None:
 
 def tag_cujs(
     model, prompt: str, response_schema: dict | None = None
-) -> dict[str, dict]:
+) -> dict[str, dict] | None:
     """Run one tagging prompt and return the per-CUJ tags indexed by id.
 
-    Returns ``{}`` on any parse failure so a malformed judge response yields
-    all-missing tags (each scorer then treats missing as its safe default)
-    rather than aborting the run.
+    Returns ``None`` when the judge call itself failed (empty/unparseable
+    response, or a response missing the ``tags`` list) so the caller can drop
+    the metric as inapplicable instead of scoring a confident 0. A successfully
+    parsed response returns the indexed tags (possibly empty).
     """
     raw = generate_json(model, prompt, response_schema)
     try:
         data = extract_json(raw)
     except ValueError as e:
         _log_parse_failure(raw, e)
-        return {}
+        return None
     tags = data.get("tags")
     if not isinstance(tags, list):
-        return {}
+        _log_parse_failure(raw, ValueError("response missing 'tags' list"))
+        return None
     indexed = {}
     for tag in tags:
         if isinstance(tag, dict) and tag.get("id") is not None:
@@ -133,20 +135,23 @@ def tag_cujs(
 
 def judge_coverage(
     model, prompt: str, response_schema: dict | None = None
-) -> list[dict]:
+) -> list[dict] | None:
     """Run one coverage prompt and return the judge's list of entries.
 
     Unlike ``tag_cujs`` (keyed per CUJ id), coverage prompts return a flat list
-    under ``coverage``. Returns ``[]`` on any parse failure so a malformed
-    response yields zero coverage rather than aborting the run.
+    under ``coverage``. Returns ``None`` when the judge call itself failed
+    (empty/unparseable response, or a response missing the ``coverage`` list) so
+    the caller can drop the metric as inapplicable instead of scoring a confident
+    0. A successfully parsed response returns the list (possibly empty).
     """
     raw = generate_json(model, prompt, response_schema)
     try:
         data = extract_json(raw)
     except ValueError as e:
         _log_parse_failure(raw, e)
-        return []
+        return None
     items = data.get("coverage")
     if not isinstance(items, list):
-        return []
+        _log_parse_failure(raw, ValueError("response missing 'coverage' list"))
+        return None
     return [item for item in items if isinstance(item, dict)]

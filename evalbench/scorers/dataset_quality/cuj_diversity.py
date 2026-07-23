@@ -13,6 +13,7 @@ import logging
 from generators.models import get_generator
 from scorers.dataset_quality.context import (
     CATEGORY_DIVERSITY,
+    DEFAULT_CUJ_FIELDS,
     DatasetQualityContext,
     SubScoreContribution,
 )
@@ -22,8 +23,6 @@ from scorers.dataset_quality.prompts.cuj_path_classification import (
     CUJ_PATH_CLASSIFICATION_PROMPT,
     CUJ_PATH_CLASSIFICATION_SCHEMA,
 )
-
-_CUJ_FIELDS = ["starting_prompt", "conversation_plan", "expected_trajectory"]
 
 
 class CujDiversityScorer:
@@ -49,9 +48,11 @@ class CujDiversityScorer:
 
         prompt = CUJ_PATH_CLASSIFICATION_PROMPT.format(
             tool_names=context.tool_names_str,
-            cujs_json=context.cujs_json(_CUJ_FIELDS),
+            cujs_json=context.cujs_json(DEFAULT_CUJ_FIELDS),
         )
         tags = tag_cujs(self.model, prompt, CUJ_PATH_CLASSIFICATION_SCHEMA)
+        if tags is None:
+            return SubScoreContribution(applicable=False, logs="judge call failed")
 
         path_ids: dict[str, list] = {path: [] for path in CUJ_PATHS}
         for scenario in context.scenarios:

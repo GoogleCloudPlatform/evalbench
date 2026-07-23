@@ -213,8 +213,10 @@ def compare(
         )
 
     for comp in comparators:
-        score = 0
-        comparison_result = comparator.ComparisonResult(comp, 0)
+        # Each element is (comparator_name, score, logs, error). Most
+        # comparators produce one row, but a whole-dataset scorer like
+        # dataset_quality returns a list of rows (one per category).
+        rows: list = []
         try:
             if eval_output_item["generated_sql"] is not None:
                 # Dynamically inspect signature to only pass the 'database'
@@ -226,7 +228,7 @@ def compare(
                     compare_kwargs["database"] = (
                         eval_output_item.get("database", "")
                     )
-                score, logs = comp.compare(
+                result = comp.compare(
                     eval_output_item["nl_prompt"],
                     eval_output_item["golden_sql"],
                     eval_output_item["query_type"],
@@ -239,16 +241,25 @@ def compare(
                     eval_output_item["generated_error"],
                     **compare_kwargs,
                 )
-                comparison_result.score = score
-                comparison_result.comparison_logs = logs
+                if isinstance(result, list):
+                    rows = [(name, s, logs, None) for name, s, logs in result]
+                else:
+                    score, logs = result
+                    rows = [(comp.name, score, logs, None)]
         except Exception as e:
-            comparison_result.comparison_error = e
-        score_dict = comparison_result.to_dict()
-        score_dict["id"] = eval_output_item["id"]
-        score_dict["generated_sql"] = eval_output_item["generated_sql"]
-        score_dict["generated_error"] = eval_output_item["generated_error"]
-        score_dict["dialects"] = eval_output_item["dialects"]
-        score_dict["database"] = eval_output_item["database"]
-        score_dict["job_id"] = eval_output_item["job_id"]
-        logging.debug("scoring: %d %s %d", score_dict["id"], comp.name, score)
-        scoring_results.append(score_dict)
+            rows = [(comp.name, 0, None, e)]
+        if not rows:
+            rows = [(comp.name, 0, None, None)]
+        for name, score, logs, error in rows:
+            score_dict = comparator.ComparisonResult(
+                comp, score, comparison_logs=logs, comparison_error=error
+            ).to_dict()
+            score_dict["comparator"] = name
+            score_dict["id"] = eval_output_item["id"]
+            score_dict["generated_sql"] = eval_output_item["generated_sql"]
+            score_dict["generated_error"] = eval_output_item["generated_error"]
+            score_dict["dialects"] = eval_output_item["dialects"]
+            score_dict["database"] = eval_output_item["database"]
+            score_dict["job_id"] = eval_output_item["job_id"]
+            logging.debug("scoring: %d %s %s", score_dict["id"], name, score)
+            scoring_results.append(score_dict)
