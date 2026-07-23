@@ -103,7 +103,14 @@ class DatasetQualityScorer(Comparator):
             contribution = scorer.run(context)
             sub_scores[scorer.name] = contribution.score
             row_fields.update(contribution.row_fields)
-            suggestions.extend(contribution.suggestions)
+            suggestions.extend(
+                {
+                    "scorer": scorer.name,
+                    "category": scorer.category,
+                    "text": text,
+                }
+                for text in contribution.suggestions
+            )
             metrics.append(
                 ScoredMetric(
                     name=scorer.name,

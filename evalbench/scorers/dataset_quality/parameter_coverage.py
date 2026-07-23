@@ -11,6 +11,7 @@ or handled -- uncovered params are blind spots.
 """
 
 import logging
+from collections import Counter, defaultdict
 
 from generators.models import get_generator
 from scorers.dataset_quality.context import (
@@ -78,9 +79,19 @@ class ParameterCoverageScorer:
 
         suggestions = []
         if uncovered:
+            covered_by_tool = Counter(tool for tool, _ in covered)
+            total_by_tool = Counter(tool for tool, _ in params)
+            uncovered_by_tool: dict[str, list[str]] = defaultdict(list)
+            for tool, param in uncovered:
+                uncovered_by_tool[tool].append(param)
+            groups = [
+                f"{tool} ({covered_by_tool[tool]}/{total_by_tool[tool]} covered): "
+                + ", ".join(uncovered_by_tool[tool])
+                for tool in sorted(uncovered_by_tool)
+            ]
             suggestions.append(
-                f"No CUJ (>= {self.min_items}) exercises these parameters: "
-                + ", ".join(f"{tool}.{param}" for tool, param in uncovered)
+                f"No CUJ (>= {self.min_items}) exercises these parameters, "
+                "by tool: " + "; ".join(groups)
             )
         logging.info(
             "parameter_coverage: \t%d/%d params covered -> %.2f",
