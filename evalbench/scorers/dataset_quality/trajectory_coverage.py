@@ -11,6 +11,7 @@ is golden-validation's concern), so the score is capped by the real catalog.
 import logging
 
 from scorers.dataset_quality.context import (
+    CATEGORY_TOOL_ACTIVATION,
     DatasetQualityContext,
     SubScoreContribution,
 )
@@ -19,7 +20,7 @@ from scorers.dataset_quality.context import (
 class TrajectoryCoverageScorer:
     """Fraction of schema tools exercised by at least one expected_trajectory."""
 
-    category = "tool_activation_faithfulness"
+    category = CATEGORY_TOOL_ACTIVATION
 
     def __init__(self, config: dict, global_models):
         self.name = "trajectory_coverage"

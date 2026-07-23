@@ -9,9 +9,11 @@ import logging
 
 from generators.models import get_generator
 from scorers.dataset_quality.context import (
+    CATEGORY_DISCOVERABILITY,
     DatasetQualityContext,
     SubScoreContribution,
 )
+from scorers.dataset_quality.grading import fraction_score
 from scorers.dataset_quality.llm import tag_cujs
 from scorers.dataset_quality.prompts.vague_examples import (
     VAGUE_EXAMPLES_PROMPT,
@@ -22,7 +24,7 @@ from scorers.dataset_quality.prompts.vague_examples import (
 class VagueExamplesScorer:
     """Fraction of CUJs whose request is vague / indirect, vs a target share."""
 
-    category = "discoverability_coverage"
+    category = CATEGORY_DISCOVERABILITY
 
     def __init__(self, config: dict, global_models):
         self.name = "vague_examples"
@@ -56,10 +58,7 @@ class VagueExamplesScorer:
             else:
                 direct_ids.append(sid)
         n_vague = len(vague_ids)
-
-        denom = self.target_fraction * n
-        score = min(100.0, n_vague / denom * 100) if denom > 0 else 0.0
-        score = round(score, 2)
+        score = fraction_score(n_vague, n, self.target_fraction)
 
         suggestions = []
         if n_vague / n < self.target_fraction:

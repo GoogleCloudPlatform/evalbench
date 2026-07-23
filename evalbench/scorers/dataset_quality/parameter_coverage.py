@@ -15,6 +15,7 @@ from collections import Counter, defaultdict
 
 from generators.models import get_generator
 from scorers.dataset_quality.context import (
+    CATEGORY_DISCOVERABILITY,
     DatasetQualityContext,
     SubScoreContribution,
 )
@@ -28,7 +29,7 @@ from scorers.dataset_quality.prompts.parameter_coverage import (
 class ParameterCoverageScorer:
     """Fraction of schema parameters exercised by at least ``min_items`` CUJs."""
 
-    category = "discoverability_coverage"
+    category = CATEGORY_DISCOVERABILITY
 
     def __init__(self, config: dict, global_models):
         self.name = "parameter_coverage"

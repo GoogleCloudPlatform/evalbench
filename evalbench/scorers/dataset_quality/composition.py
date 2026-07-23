@@ -11,6 +11,7 @@ import logging
 
 from generators.models import get_generator
 from scorers.dataset_quality.context import (
+    CATEGORY_COMPOSITION,
     DatasetQualityContext,
     SubScoreContribution,
 )
@@ -27,7 +28,7 @@ _LOW_SHARE = 50.0
 class CompositionScorer:
     """Average of the multi-tool share and the sequencing-dependency share."""
 
-    category = "composition_coverage"
+    category = CATEGORY_COMPOSITION
 
     def __init__(self, config: dict, global_models):
         self.name = "composition"

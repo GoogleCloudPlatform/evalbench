@@ -12,6 +12,7 @@ catches prompts that read like tool invocations rather than real-world goals.
 import logging
 
 from scorers.dataset_quality.context import (
+    CATEGORY_DISCOVERABILITY,
     DatasetQualityContext,
     SubScoreContribution,
 )
@@ -20,7 +21,7 @@ from scorers.dataset_quality.context import (
 class NamingDistributionScorer:
     """Fraction of CUJs that express intent instead of naming a tool."""
 
-    category = "discoverability_coverage"
+    category = CATEGORY_DISCOVERABILITY
 
     def __init__(self, config: dict, global_models):
         self.name = "naming_distribution"

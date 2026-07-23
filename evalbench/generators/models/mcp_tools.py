@@ -34,6 +34,7 @@ from mcp.client.streamable_http import streamablehttp_client
 
 from .generator import QueryGenerator
 from .mcp_tool_formatter import format_tools_to_man_page
+from .tool_naming import canonical_tool_name
 
 
 class McpToolsError(Exception):
@@ -205,7 +206,7 @@ class McpToolsGenerator(QueryGenerator):
         for server_name, server_config in (mcp_servers or {}).items():
             aggregated.extend(
                 mcp_types.Tool(
-                    name=f"{server_name}__{t.name}",
+                    name=canonical_tool_name(server_name, t.name),
                     description=t.description or "",
                     inputSchema=t.inputSchema,
                 )

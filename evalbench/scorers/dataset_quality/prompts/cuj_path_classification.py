@@ -1,11 +1,16 @@
 # Canonical CUJ path labels. The judge MUST return one of these exact strings;
-# downstream scorers key off them, so keep them in sync with any consumer.
+# downstream scorers key off the named constants so they can't desync.
+PATH_HAPPY = "Happy"
+PATH_AMBIGUITY = "Ambiguity & Clarification"
+PATH_ITERATIVE_REFINEMENT = "Iterative Refinement"
+PATH_ERROR_RECOVERY = "Error Recovery"
+PATH_OUT_OF_DOMAIN = "Out-of-Domain"
 CUJ_PATHS = (
-    "Happy",
-    "Ambiguity & Clarification",
-    "Iterative Refinement",
-    "Error Recovery",
-    "Out-of-Domain",
+    PATH_HAPPY,
+    PATH_AMBIGUITY,
+    PATH_ITERATIVE_REFINEMENT,
+    PATH_ERROR_RECOVERY,
+    PATH_OUT_OF_DOMAIN,
 )
 
 

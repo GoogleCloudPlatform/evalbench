@@ -11,30 +11,37 @@ import logging
 
 from generators.models import get_generator
 from scorers.dataset_quality.context import (
+    CATEGORY_ERROR_RECOVERY,
     DatasetQualityContext,
     SubScoreContribution,
 )
+from scorers.dataset_quality.grading import fraction_score
 from scorers.dataset_quality.llm import tag_cujs
 from scorers.dataset_quality.prompts.cuj_path_classification import (
     CUJ_PATHS,
     CUJ_PATH_CLASSIFICATION_PROMPT,
     CUJ_PATH_CLASSIFICATION_SCHEMA,
+    PATH_AMBIGUITY,
+    PATH_ERROR_RECOVERY,
+    PATH_HAPPY,
+    PATH_ITERATIVE_REFINEMENT,
+    PATH_OUT_OF_DOMAIN,
 )
 
 # Path label -> BQ path-count column.
 _PATH_COLUMNS = {
-    "Happy": "cuj_happy",
-    "Ambiguity & Clarification": "cuj_ambiguity",
-    "Iterative Refinement": "cuj_iterative_refinement",
-    "Error Recovery": "cuj_error_recovery",
-    "Out-of-Domain": "cuj_out_of_domain",
+    PATH_HAPPY: "cuj_happy",
+    PATH_AMBIGUITY: "cuj_ambiguity",
+    PATH_ITERATIVE_REFINEMENT: "cuj_iterative_refinement",
+    PATH_ERROR_RECOVERY: "cuj_error_recovery",
+    PATH_OUT_OF_DOMAIN: "cuj_out_of_domain",
 }
 
 
 class ErrorRecoveryScorer:
     """Fraction of CUJs on the Error Recovery path, vs a target share."""
 
-    category = "error_recovery_coverage"
+    category = CATEGORY_ERROR_RECOVERY
 
     def __init__(self, config: dict, global_models):
         self.name = "error_recovery"
@@ -69,10 +76,8 @@ class ErrorRecoveryScorer:
                 path_ids[path].append(sid)
         counts = {path: len(ids) for path, ids in path_ids.items()}
 
-        n_error = counts["Error Recovery"]
-        denom = self.target_fraction * n
-        score = min(100.0, n_error / denom * 100) if denom > 0 else 0.0
-        score = round(score, 2)
+        n_error = counts[PATH_ERROR_RECOVERY]
+        score = fraction_score(n_error, n, self.target_fraction)
 
         row_fields = {col: counts[path] for path, col in _PATH_COLUMNS.items()}
         row_fields["total_cujs"] = n

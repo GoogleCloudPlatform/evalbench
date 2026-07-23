@@ -20,6 +20,14 @@ import json
 from typing import Any
 
 
+# Score categories the sub-scorers roll up into. Single source of truth so a
+# scorer's ``category`` and the grading rollup can't desync on a typo.
+CATEGORY_TOOL_ACTIVATION = "tool_activation_faithfulness"
+CATEGORY_DISCOVERABILITY = "discoverability_coverage"
+CATEGORY_ERROR_RECOVERY = "error_recovery_coverage"
+CATEGORY_COMPOSITION = "composition_coverage"
+
+
 @dataclass
 class DatasetQualityContext:
     """Everything a scorer needs to grade one product's CUJ dataset."""

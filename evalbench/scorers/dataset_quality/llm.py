@@ -11,12 +11,9 @@ import logging
 import re
 
 
-# Generous output cap so a thinking model's reasoning tokens don't starve the
-# JSON answer. Gemini 3.x models think by default and draw reasoning tokens from
-# the output budget; without an explicit, high cap the response can finish
-# (finish_reason=MAX_TOKENS) with only thought parts and empty ``.text``. 65536
-# is the max output for the target Gemini Pro models, so it is safe to set for
-# both 2.5 (non-truncating) and 3.x (needs the headroom).
+# Max output for the target Gemini Pro models. Gemini 3.x draws reasoning tokens
+# from the output budget, so a high cap keeps thought tokens from starving the
+# JSON answer (which otherwise finishes with empty ``.text``).
 _MAX_OUTPUT_TOKENS = 65536
 
 
@@ -86,13 +83,21 @@ def extract_json(text: str) -> dict:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        raise ValueError("no JSON object found in model response")
+        pass
+    # Fall back to the outermost {...} span for prose-wrapped responses.
+    start, end = text.find("{"), text.rfind("}")
+    if start != -1 and end > start:
+        try:
+            return json.loads(text[start : end + 1])
+        except json.JSONDecodeError:
+            pass
+    raise ValueError("no JSON object found in model response")
 
 
 def _log_parse_failure(raw: str, err: Exception) -> None:
     snippet = (raw or "").strip().replace("\n", " ")
     if len(snippet) > 500:
-        snippet = snippet[:1000] + "...[truncated]"
+        snippet = snippet[:500] + "...[truncated]"
     logging.warning(
         "dataset_quality: could not parse judge response: %s | len=%d raw=%r",
         err,
@@ -127,14 +132,13 @@ def tag_cujs(
 
 
 def judge_coverage(
-    model, prompt: str, key: str = "coverage",
-    response_schema: dict | None = None,
+    model, prompt: str, response_schema: dict | None = None
 ) -> list[dict]:
     """Run one coverage prompt and return the judge's list of entries.
 
     Unlike ``tag_cujs`` (keyed per CUJ id), coverage prompts return a flat list
-    under ``key``. Returns ``[]`` on any parse failure so a malformed response
-    yields zero coverage rather than aborting the run.
+    under ``coverage``. Returns ``[]`` on any parse failure so a malformed
+    response yields zero coverage rather than aborting the run.
     """
     raw = generate_json(model, prompt, response_schema)
     try:
@@ -142,7 +146,7 @@ def judge_coverage(
     except ValueError as e:
         _log_parse_failure(raw, e)
         return []
-    items = data.get(key)
+    items = data.get("coverage")
     if not isinstance(items, list):
         return []
     return [item for item in items if isinstance(item, dict)]

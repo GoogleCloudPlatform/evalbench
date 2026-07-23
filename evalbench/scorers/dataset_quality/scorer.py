@@ -156,7 +156,8 @@ class DatasetQualityScorer(Comparator):
             grade["dataset_quality_score"],
             grade["letter_grade"],
         )
-        return grade["dataset_quality_score"] or 0, logs
+        score = grade["dataset_quality_score"]
+        return (score if score is not None else 0), logs
 
     def _extract_cujs(self, eval_results: Any) -> list[dict]:
         """Pull the bundled CUJs out of the single wrapper scenario."""

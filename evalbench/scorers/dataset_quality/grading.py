@@ -6,6 +6,7 @@ applicable to this product) neither contributes nor inflates the denominator.
 Category rollups apply the same weight-normalized average within each category.
 """
 
+from collections import defaultdict
 from dataclasses import dataclass
 
 # Letter-grade bands: (inclusive lower bound, letter), highest first.
@@ -36,6 +37,14 @@ def letter_grade(score: float) -> str:
     return "F"
 
 
+def fraction_score(hits: int, n: int, target_fraction: float) -> float:
+    """Score a share against a target: 100 once ``hits/n`` reaches the target."""
+    denom = target_fraction * n
+    if denom <= 0:
+        return 0.0
+    return round(min(100.0, hits / denom * 100), 2)
+
+
 def _weighted_average(metrics: list[ScoredMetric]) -> float | None:
     """Weighted mean of numeric scores; None when no positive weight applies."""
     total_weight = sum(m.weight for m in metrics)
@@ -56,13 +65,12 @@ def compute_grade(metrics: list[ScoredMetric]) -> dict:
 
     dataset_quality_score = _weighted_average(applicable)
 
-    category_scores: dict[str, float] = {}
+    by_category: dict[str, list[ScoredMetric]] = defaultdict(list)
     for metric in applicable:
-        category_scores.setdefault(metric.category, [])
-        category_scores[metric.category].append(metric)
+        by_category[metric.category].append(metric)
     category_scores = {
         category: round(_weighted_average(members), 2)
-        for category, members in category_scores.items()
+        for category, members in by_category.items()
     }
 
     return {
