@@ -18,6 +18,7 @@ from generators.models.mcp_tools import McpToolsGenerator
 from scorers.comparator import Comparator
 from scorers.dataset_quality.composition import CompositionScorer
 from scorers.dataset_quality.context import DatasetQualityContext
+from scorers.dataset_quality.cuj_diversity import CujDiversityScorer
 from scorers.dataset_quality.error_recovery import ErrorRecoveryScorer
 from scorers.dataset_quality.grading import ScoredMetric, compute_grade
 from scorers.dataset_quality.naming_distribution import NamingDistributionScorer
@@ -36,6 +37,7 @@ SCORER_REGISTRY = {
     "vague_examples": VagueExamplesScorer,
     "error_recovery": ErrorRecoveryScorer,
     "composition": CompositionScorer,
+    "cuj_diversity": CujDiversityScorer,
 }
 
 
@@ -106,25 +108,15 @@ class DatasetQualityScorer(Comparator):
             tools=tools,
         )
 
-        sub_scores: dict[str, Any] = {}
-        row_fields: dict[str, Any] = {}
-        suggestions: list = []
-        evidence: dict[str, Any] = {}
+        # Group every scorer's output under the category it grades, so the report
+        # is one card-per-category structure instead of parallel flat blocks.
+        # Dataset-wide distributions (e.g. the CUJ-path breakdown) are hoisted to
+        # the report's top level rather than nested under any one category.
+        categories: dict[str, dict] = {}
+        distributions: dict[str, Any] = {}
         metrics = []
         for scorer in self.scorers:
             contribution = scorer.run(context)
-            sub_scores[scorer.name] = contribution.score
-            row_fields.update(contribution.row_fields)
-            suggestions.extend(
-                {
-                    "scorer": scorer.name,
-                    "category": scorer.category,
-                    "text": text,
-                }
-                for text in contribution.suggestions
-            )
-            if contribution.evidence:
-                evidence[scorer.name] = contribution.evidence
             metrics.append(
                 ScoredMetric(
                     name=scorer.name,
@@ -134,21 +126,38 @@ class DatasetQualityScorer(Comparator):
                     applicable=contribution.applicable,
                 )
             )
+            category = categories.setdefault(
+                scorer.category,
+                {
+                    "name": scorer.category,
+                    "score": None,
+                    "sub_scores": {},
+                    "metrics": {},
+                    "gaps": [],
+                    "evidence": {},
+                },
+            )
+            category["sub_scores"][scorer.name] = contribution.score
+            category["gaps"].extend(contribution.suggestions)
+            category["evidence"].update(contribution.evidence)
+            category["metrics"].update(contribution.row_fields)
+            distributions.update(contribution.distribution)
 
         grade = compute_grade(metrics)
+        for name, score in grade["category_scores"].items():
+            if name in categories:
+                categories[name]["score"] = score
+
         report = {
             "product_name": self.product_name,
             "total_cujs": context.n,
             "dataset_quality_score": grade["dataset_quality_score"],
             "letter_grade": grade["letter_grade"],
-            "category_scores": grade["category_scores"],
-            "sub_scores": sub_scores,
-            "row_fields": row_fields,
-            "suggestions": suggestions,
-            "evidence": evidence,
+            "categories": list(categories.values()),
+            **distributions,
         }
         if self.synthesis_model is not None:
-            report["recommendations"] = synthesize(self.synthesis_model, report)
+            synthesize(self.synthesis_model, report)
         logs = json.dumps(report, default=str)
         logging.info(
             "dataset_quality: %s -> %s (%s)",

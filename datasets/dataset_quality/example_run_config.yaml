@@ -53,11 +53,13 @@ scorers:
         # target_fraction: 0.5   (default; scores 100 once >= this fraction of CUJs are vague/indirect)
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       error_recovery:
-        # weight: 28  (default)
-        # target_fraction: 0.20  (default; scores 100 once >= this fraction of CUJs test error recovery)
+        # weight: 28  (default; scores the fraction of the failure/recovery taxonomy the dataset covers)
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       composition:
         # weight: 30  (default)
+        model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+      cuj_diversity:
+        # weight: 15  (default; scores the fraction of the 5 CUJ interaction paths the dataset exercises)
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
     # Optional LLM synthesis pass. Absent -> deterministic report only. When set,
     # a single call turns the graded report (scores, counts, suggestions, per-CUJ

@@ -26,6 +26,7 @@ CATEGORY_TOOL_ACTIVATION = "tool_activation_faithfulness"
 CATEGORY_DISCOVERABILITY = "discoverability_coverage"
 CATEGORY_ERROR_RECOVERY = "error_recovery_coverage"
 CATEGORY_COMPOSITION = "composition_coverage"
+CATEGORY_DIVERSITY = "cuj_diversity"
 
 
 @dataclass
@@ -113,6 +114,10 @@ class SubScoreContribution:
     - ``suggestions``: human-readable improvement notes (non-weighted).
     - ``evidence``: per-CUJ classifier tags grouped by label (which CUJ ids got
       which classification), surfaced for the UI and to ground the synthesis pass.
+    - ``distribution``: dataset-wide descriptive counts keyed by the report field
+      they belong under (e.g. ``{"cuj_path_distribution": {...}}``). The
+      orchestrator hoists these to the report's top level instead of nesting them
+      under the scorer's category, since they describe the whole dataset.
     - ``logs``: short human-readable summary for logging.
     """
 
@@ -121,4 +126,5 @@ class SubScoreContribution:
     row_fields: dict[str, Any] = field(default_factory=dict)
     suggestions: list = field(default_factory=list)
     evidence: dict[str, Any] = field(default_factory=dict)
+    distribution: dict[str, Any] = field(default_factory=dict)
     logs: str = ""

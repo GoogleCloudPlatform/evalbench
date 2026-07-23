@@ -9,17 +9,24 @@ clear, prioritized analysis the dataset author can act on.
 {report_json}
 
 ### How to read the report
+- ``total_cujs``: the dataset size; the denominator for every count and share,
+  so use it to judge whether a raw count is a big or small gap.
 - ``dataset_quality_score`` / ``letter_grade``: the overall grade.
-- ``category_scores`` / ``sub_scores``: 0-100 per category and per sub-metric;
-  lower means a bigger gap.
-- ``row_fields``: raw counts (tools/params covered, CUJ path distribution, etc.).
-- ``suggestions``: precomputed, factual gap statements, each tagged with the
-  ``scorer`` and ``category`` it came from.
-- ``evidence``: per-CUJ classifications (which CUJ ids were tagged vague, which
-  path each CUJ is on, which are multi-tool, etc.).
+- ``categories``: one entry per top-level grade area, each with:
+  - ``score``: 0-100 for the category (lower means a bigger gap).
+  - ``sub_scores``: 0-100 per individual scorer that rolls into it; a low
+    category is best explained by its weakest sub_score.
+  - ``metrics``: raw counts behind those scores (tools/params covered, etc.).
+  - ``gaps``: precomputed, factual gap statements for this category.
+  - ``evidence``: per-CUJ classifications (which CUJ ids were tagged vague,
+    which are multi-tool, etc.).
+- ``cuj_path_distribution``: dataset-wide count of CUJs per interaction path
+  (Happy, Ambiguity & Clarification, Iterative Refinement, Error Recovery,
+  Out-of-Domain). Most datasets skew to Happy; a thin tail on the unhappy paths
+  is a diversity gap.
 
 ### Rules (critical for accuracy)
-- Reason ONLY from the numbers, counts, suggestions, and evidence in the report.
+- Reason ONLY from the numbers, counts, gaps, and evidence in the report.
   Do NOT invent tools, parameters, CUJs, or gaps that the report does not state.
 - Do NOT re-judge or recompute any score; treat the numbers as final.
 - Every recommendation must be traceable to a specific signal in the report
@@ -33,8 +40,7 @@ Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
   "overall_summary": "<2-3 sentences on the dataset's overall health, its grade, and its single biggest gap>",
   "category_analysis": [
     {{
-      "category": "<category name from category_scores>",
-      "score": <the category's score, copied from the report>,
+      "category": "<the ``name`` of an entry in ``categories``>",
       "assessment": "<1-2 sentences on what this score means for the dataset>",
       "recommendations": ["<concrete, actionable step>", "..."]
     }}
@@ -48,8 +54,11 @@ Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
     }}
   ]
 }}
-Include one ``category_analysis`` entry per category in ``category_scores``. Order
-``prioritized_actions`` by impact, lowest-scoring gaps first."""
+Include one ``category_analysis`` entry per entry in ``categories`` (use its
+``name`` as the ``category``); in each ``assessment``, name the weakest
+``sub_score`` driving that category. Order
+``prioritized_actions`` lowest-scoring gaps first (rank by score; no weights are
+provided)."""
 
 
 SYNTHESIS_SCHEMA = {
@@ -62,7 +71,6 @@ SYNTHESIS_SCHEMA = {
                 "type": "OBJECT",
                 "properties": {
                     "category": {"type": "STRING"},
-                    "score": {"type": "NUMBER"},
                     "assessment": {"type": "STRING"},
                     "recommendations": {
                         "type": "ARRAY",
@@ -71,7 +79,6 @@ SYNTHESIS_SCHEMA = {
                 },
                 "required": [
                     "category",
-                    "score",
                     "assessment",
                     "recommendations",
                 ],
