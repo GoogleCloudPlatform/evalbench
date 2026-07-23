@@ -19,7 +19,7 @@ from scorers.dataset_quality.context import (
     SubScoreContribution,
 )
 from scorers.dataset_quality.llm import judge_coverage
-from scorers.prompt.parameter_coverage import (
+from scorers.dataset_quality.prompts.parameter_coverage import (
     PARAMETER_COVERAGE_PROMPT,
     PARAMETER_COVERAGE_SCHEMA,
 )

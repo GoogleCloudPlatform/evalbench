@@ -15,7 +15,7 @@ from scorers.dataset_quality.context import (
     SubScoreContribution,
 )
 from scorers.dataset_quality.llm import tag_cujs
-from scorers.prompt.cuj_path_classification import (
+from scorers.dataset_quality.prompts.cuj_path_classification import (
     CUJ_PATHS,
     CUJ_PATH_CLASSIFICATION_PROMPT,
     CUJ_PATH_CLASSIFICATION_SCHEMA,

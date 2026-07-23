@@ -15,7 +15,7 @@ from scorers.dataset_quality.context import (
     SubScoreContribution,
 )
 from scorers.dataset_quality.llm import tag_cujs
-from scorers.prompt.composition_coverage import (
+from scorers.dataset_quality.prompts.composition_coverage import (
     COMPOSITION_COVERAGE_PROMPT,
     COMPOSITION_COVERAGE_SCHEMA,
 )

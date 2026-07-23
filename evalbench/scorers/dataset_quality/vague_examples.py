@@ -13,7 +13,7 @@ from scorers.dataset_quality.context import (
     SubScoreContribution,
 )
 from scorers.dataset_quality.llm import tag_cujs
-from scorers.prompt.vague_examples import (
+from scorers.dataset_quality.prompts.vague_examples import (
     VAGUE_EXAMPLES_PROMPT,
     VAGUE_EXAMPLES_SCHEMA,
 )
