@@ -88,6 +88,12 @@ class SkillsTrajectoryMatcherTest(unittest.TestCase):
         self.assertLess(score, 100.0)
         self.assertIn("Sequence Alignment", explanation)
 
+    def test_empty_expected_skills_with_extra_skills_when_enforce_order_true(self):
+        matcher = SkillsTrajectoryMatcher({"enforce_order": True})
+        score, explanation = _compare(matcher, [], ["dataform_bigquery"])
+        self.assertEqual(score, 0.0)
+        self.assertIn("Sequence Alignment", explanation)
+
     def test_invalid_config_combination_raises_error(self):
         with self.assertRaises(ValueError):
             SkillsTrajectoryMatcher({"enforce_order": True, "allow_extra_skills": True})

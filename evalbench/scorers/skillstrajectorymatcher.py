@@ -92,16 +92,11 @@ class SkillsTrajectoryMatcher(comparator.Comparator):
         if not isinstance(expected, list) or not isinstance(actual, list):
             return 0.0, "Skills data must be lists."
 
-        if not expected:
-            if not actual:
-                return 100.0, "Both expected and actual skill lists are empty."
-            elif self.allow_extra_skills:
-                return 100.0, "No expected skills required and extra skills are allowed."
-            else:
-                actual_set = set(actual)
-                return 0.0, (
-                    f"Skills Jaccard Similarity: 0.00. Expected: set(), Actual: {actual_set}"
-                )
+        if not expected and not actual:
+            return 100.0, "Both expected and actual skill lists are empty."
+
+        if not expected and self.allow_extra_skills:
+            return 100.0, "No expected skills specified and extra skills are allowed."
 
         if self.enforce_order:
             distance = self._levenshtein_distance(expected, actual)
