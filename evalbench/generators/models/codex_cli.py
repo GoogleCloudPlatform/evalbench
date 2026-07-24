@@ -82,6 +82,8 @@ class CodexCliGenerator(AgentCliGenerator):
         self.env["HOME"] = self.fake_home
         self.env["CODEX_HOME"] = self.codex_config_dir
 
+        self._setup_gcloud_credentials(self.env, self.real_home, self.fake_home)
+
         api_key = self._resolve_openai_api_key(querygenerator_config)
         if api_key:
             self.env["OPENAI_API_KEY"] = api_key
