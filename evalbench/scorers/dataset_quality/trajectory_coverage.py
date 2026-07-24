@@ -6,6 +6,10 @@ cover. A dataset that never exercises a tool can't tell you whether that tool is
 discoverable or works -- low coverage means blind spots. Tools referenced in a
 trajectory but absent from the schema don't count toward coverage (that staleness
 is golden-validation's concern), so the score is capped by the real catalog.
+
+Scope: the MCP tool channel only. Skills (expected_skills) are not measured here
+-- there's no static skill catalog to score against (skills install from repos and
+are only named post-install), so skill coverage is a separate follow-up.
 """
 
 import logging
