@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.12.1](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.12.0...v1.12.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* add type checking to stream event parsing to safely handle non-dict payloads ([1003e08](https://github.com/GoogleCloudPlatform/evalbench/commit/1003e085fddc8a577108e96b5a1012c68048b283))
+* skip non-object lines in agy stream and report model errors based on result status ([e3ac999](https://github.com/GoogleCloudPlatform/evalbench/commit/e3ac99998a769c65b8248133dce0812df60d1ca3))
+
 ## [1.12.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.11.0...v1.12.0) (2026-07-22)
 
 
