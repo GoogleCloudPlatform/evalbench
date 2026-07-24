@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.12.1...v1.13.0) (2026-07-24)
+
+
+### Features
+
+* **mcp_readability:** move style judge to gemini-3.1-pro with truncation handling ([b4665f3](https://github.com/GoogleCloudPlatform/evalbench/commit/b4665f3d702e31198e8f511358415b92c04260cb))
+
 ## [1.12.1](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.12.0...v1.12.1) (2026-07-23)
 
 

@@ -76,29 +76,7 @@ class GeminiCliGenerator(AgentCliGenerator):
         self.env = querygenerator_config.get("env") or {}
         self.env["HOME"] = self.fake_home
 
-        adc_path = self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
-        if not adc_path:
-            adc_path = os.path.join(
-                self.real_home,
-                ".config",
-                "gcloud",
-                "application_default_credentials.json",
-            )
-            if os.path.exists(adc_path):
-                self.env["GOOGLE_APPLICATION_CREDENTIALS"] = adc_path
-
-        if adc_path and os.path.exists(adc_path):
-            # Copy the ADC to fake_home
-            fake_gcloud_dir = os.path.join(self.fake_home, ".config", "gcloud")
-            os.makedirs(fake_gcloud_dir, exist_ok=True)
-            fake_adc_path = os.path.join(fake_gcloud_dir, "application_default_credentials.json")
-            if os.path.abspath(adc_path) != os.path.abspath(fake_adc_path):
-                shutil.copy2(adc_path, fake_adc_path)
-
-        if "CLOUDSDK_CONFIG" not in self.env:
-            self.env["CLOUDSDK_CONFIG"] = os.path.join(
-                self.real_home, ".config", "gcloud"
-            )
+        self._setup_gcloud_credentials(self.env, self.real_home, self.fake_home)
 
         self.gemini_cli_version = querygenerator_config.get(
             "gemini_cli_version", "gemini-cli"
