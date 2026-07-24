@@ -11,6 +11,9 @@ generator: agy_cli
 # model. Omit this key to leave the flag off, so agy uses its own default.
 model: "Gemini 3.1 Pro (High)"
 
+# Timeout for print mode wait (default 5m). Passed via --print-timeout.
+timeout: "20m"
+
 env:
   # Set to your project, or export EVAL_GCP_PROJECT_ID and keep the !ENV form.
   # Key stays GOOGLE_CLOUD_PROJECT -- the var the agy subprocess reads.

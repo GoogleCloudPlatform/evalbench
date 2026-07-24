@@ -62,6 +62,8 @@ class AgyCliGenerator(AgentCliGenerator):
         self.model = querygenerator_config.get("model")
         self.timeout = querygenerator_config.get("timeout")
 
+        self._validate_timeout(self.timeout)
+
         # Order is load-bearing: paths/dirs must exist before the binary
         # installs and settings/auth write into them, and self.env must carry
         # HOME before the installer stages files (and auth resolves ADC) into
@@ -75,6 +77,21 @@ class AgyCliGenerator(AgentCliGenerator):
         self.setup_config = querygenerator_config.get("setup", {})
         if self.setup_config:
             self._setup_tools()
+
+    @staticmethod
+    def _validate_timeout(timeout):
+        if timeout is not None:
+            if not isinstance(timeout, str):
+                raise TypeError(
+                    "timeout must be a string (e.g., '20m', '1h30m', '300s')"
+                )
+            # Strict regex for common units (s, m, h).
+            # Allows things like "20m", "1h30m", "300s".
+            if not re.match(r'^(\d+(s|m|h))+$', timeout):
+                raise ValueError(
+                    f"Invalid timeout format: '{timeout}'. "
+                    "Must be a valid duration string (e.g., '20m', '1h30m', '300s')."
+                )
 
     def _init_paths(self, querygenerator_config):
         """Resolves the sandbox ``HOME`` and all derived agy paths, and
@@ -444,7 +461,7 @@ class AgyCliGenerator(AgentCliGenerator):
 
         env = self._merged_env()
         cmd = self._base_agy_command(
-            self.agy_bin, "ping", model=self.model, timeout=self.timeout
+            self.agy_bin, "ping", model=self.model
         )
         try:
             subprocess.run(
@@ -456,8 +473,8 @@ class AgyCliGenerator(AgentCliGenerator):
             raise RuntimeError(
                 f"agy MCP verification probe failed to run: {e}. "
                 f"Configured MCP servers: {configured_servers}.\n"
-                f"STDOUT:\n{getattr(e, 'stdout', '')}\n"
-                f"STDERR:\n{getattr(e, 'stderr', '')}"
+                f"STDOUT: \n{getattr(e, 'stdout', '')}\n"
+                f"STDERR: \n{getattr(e, 'stderr', '')}"
             ) from e
 
         # Collect fatal log markers (diagnostic context for any failure).
@@ -776,6 +793,9 @@ class AgyCliGenerator(AgentCliGenerator):
 
         ``log_file`` maps to ``--log-file``, pinning the CLI log to a known
         path for deterministic model detection.
+
+        ``timeout`` maps to ``--print-timeout`` (e.g. "20m"). If omitted,
+        defaults to agy's internal default (5 minutes).
         """
         command = [cli, "-p", prompt, "--dangerously-skip-permissions"]
         if model:
