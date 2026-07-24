@@ -88,7 +88,7 @@ class BigQueryReporter(Reporter):
             reporting_config.get("gcp_project_id"))
         self.location = reporting_config.get("dataset_location") or "US"
         self.client = bigquery.Client(project=self.project_id)
-        self.dataset_name = reporting_config.get("table_name") or "evalbench"
+        self.dataset_name = reporting_config.get("dataset_name") or "evalbench"
         self.dataset_id = "{}.{}".format(self.project_id, self.dataset_name)
         self.configs_table = "{}.configs".format(self.dataset_id)
         self.results_table = "{}.results".format(self.dataset_id)

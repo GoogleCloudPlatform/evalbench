@@ -224,6 +224,7 @@ To upload metrics directly to Google BigQuery and create Looker Studio dashboard
 reporting:
   bigquery:
     gcp_project_id: 'your-gcp-project-id'
+    dataset_name: 'evalbench' # Optional, defaults to 'evalbench'
     dataset_location: 'US' # Optional, defaults to 'US'
 ```
 
