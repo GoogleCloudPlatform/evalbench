@@ -68,10 +68,11 @@ def compute_grade(metrics: list[ScoredMetric]) -> dict:
     by_category: dict[str, list[ScoredMetric]] = defaultdict(list)
     for metric in applicable:
         by_category[metric.category].append(metric)
-    category_scores = {
-        category: round(_weighted_average(members), 2)
-        for category, members in by_category.items()
-    }
+    category_scores = {}
+    for category, members in by_category.items():
+        avg = _weighted_average(members)
+        if avg is not None:
+            category_scores[category] = round(avg, 2)
 
     return {
         "dataset_quality_score": (

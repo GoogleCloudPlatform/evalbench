@@ -261,5 +261,5 @@ def compare(
             score_dict["dialects"] = eval_output_item["dialects"]
             score_dict["database"] = eval_output_item["database"]
             score_dict["job_id"] = eval_output_item["job_id"]
-            logging.debug("scoring: %d %s %s", score_dict["id"], name, score)
+            logging.debug("scoring: %s %s %s", score_dict["id"], name, score)
             scoring_results.append(score_dict)

@@ -250,9 +250,9 @@ def load_dataset_quality_json(json_file_path, config):
         item = json.loads(json_item)
 
     scenarios = _filter_scenarios(item.get("scenarios", []), config)
-    # Two ids, different roles: the wrapper scenario id is a fixed placeholder
-    # for the one bundled scenario (the scorer reads ``all_cujs``, not this id),
-    # while the request id carries the dataset's own identity onto the scores rows.
+    # The wrapper id is a fixed placeholder for the one bundled scenario; the
+    # scorer reads ``all_cujs``, not this id. It becomes the eval id on every
+    # score row (the request id below does not propagate to the score rows).
     wrapper = {
         "id": "dataset_quality",
         "starting_prompt": "",

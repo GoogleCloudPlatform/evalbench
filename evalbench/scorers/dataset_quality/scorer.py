@@ -9,6 +9,7 @@ the product's tool schema, runs every configured sub-scorer, and rolls the
 sub-scores up into a single weighted global score + letter grade.
 """
 
+import concurrent.futures
 import json
 import logging
 import time
@@ -138,11 +139,23 @@ class DatasetQualityScorer(Comparator):
         # is one card-per-category structure instead of parallel flat blocks.
         # Dataset-wide distributions (e.g. the CUJ-path breakdown) are hoisted to
         # the report's top level rather than nested under any one category.
+        # Sub-scorers are independent and mostly LLM-bound, so run them on a pool
+        # and pay the slowest scorer's latency instead of the sum. Results are
+        # merged below in self.scorers order to keep the report deterministic.
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=len(self.scorers)
+        ) as pool:
+            futures = {pool.submit(s.run, context): s for s in self.scorers}
+            contributions = {
+                futures[f]: f.result()
+                for f in concurrent.futures.as_completed(futures)
+            }
+
         categories: dict[str, dict] = {}
         distributions: dict[str, Any] = {}
         metrics = []
         for scorer in self.scorers:
-            contribution = scorer.run(context)
+            contribution = contributions[scorer]
             metrics.append(
                 ScoredMetric(
                     name=scorer.name,
@@ -244,3 +257,6 @@ class DatasetQualityScorer(Comparator):
                     "retrying", attempt, _TOOL_FETCH_ATTEMPTS,
                 )
                 time.sleep(_TOOL_FETCH_BACKOFF_S * attempt)
+        # Unreachable: the last attempt re-raises. Explicit terminal outcome so
+        # the function never implicitly returns None against its -> list contract.
+        raise McpToolsError("dataset_quality: tool discovery exhausted retries")

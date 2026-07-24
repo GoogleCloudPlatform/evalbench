@@ -27,19 +27,15 @@ def _finish_reason(resp) -> str:
 def generate_json(model, prompt: str, response_schema: dict | None = None) -> str:
     """Generate a model response as raw JSON text.
 
-    Prefer Gemini's native JSON mode via the underlying genai client: it
-    guarantees valid JSON and bypasses ``GeminiGenerator.generate``'s SQL
-    sanitizer, which corrupts JSON escapes. Crucially, on the Gemini path an
-    empty response is NOT routed through ``model.generate()`` -- that fallback
-    runs the SQL sanitizer and turns an already-failed call into corrupted JSON.
-    An empty/failed Gemini call returns "" so callers degrade to their safe
-    default. Only genuinely non-Gemini models (no native JSON mode) use
-    ``model.generate``.
+    Prefer Gemini's native JSON mode via the underlying genai client: it bypasses
+    ``GeminiGenerator.generate``'s SQL sanitizer, which corrupts JSON escapes. An
+    empty/failed Gemini call returns "" rather than falling back to
+    ``model.generate`` -- that path re-runs the sanitizer on the failed response.
+    Only non-Gemini models (no native JSON mode) use ``model.generate``.
 
-    ``response_schema`` (a plain dict) constrains Gemini to emit exactly that
-    structure via constrained decoding -- the reliable fix for Gemini 3.x JSON
-    mode, which otherwise drops/adds braces or cuts values mid-token. Ignored on
-    the non-Gemini fallback path.
+    ``response_schema`` (a plain dict) constrains Gemini via constrained decoding
+    -- the reliable fix for Gemini 3.x JSON mode, which otherwise drops/adds
+    braces or cuts values mid-token. Ignored on the non-Gemini fallback path.
     """
     client = getattr(model, "client", None)
     caller = getattr(model, "_call_generate_content", None)
