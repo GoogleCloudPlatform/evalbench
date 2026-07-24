@@ -83,7 +83,10 @@ class DatasetQualityScorer(Comparator):
                 )
             self.scorers.append(scorer_cls(scorer_config or {}, global_models))
 
-        # Optional LLM synthesis pass. Absent -> deterministic path only.
+        # Optional LLM synthesis pass. Absent -> deterministic report only. When
+        # set, a single call turns the graded report (scores, counts, suggestions,
+        # per-CUJ evidence) into an overall summary + prioritized actions, plus a
+        # per-category assessment and recommendations merged into each category.
         synthesis_config = config.get("synthesis") or {}
         synthesis_model_config = synthesis_config.get("model_config")
         self.synthesis_model = (
