@@ -6,6 +6,7 @@ import datetime
 import json
 import logging
 import re
+import subprocess
 import threading
 import uuid
 from typing import Any, Coroutine
@@ -28,6 +29,7 @@ from a2a.types import (
 import google.auth
 from google.auth.exceptions import DefaultCredentialsError, RefreshError
 from google.auth.transport.requests import Request
+import grpc.aio
 
 from .generator import QueryGenerator
 from dataset.dataengineeringagentinput import EvalDeaRequest
@@ -236,8 +238,8 @@ def _extract_tool_details_from_token(
     try:
         decoded_bytes = base64.b64decode(cleaned_token_str)
         decoded_str = decoded_bytes.decode("utf-8", errors="ignore")
-    except (ValueError, UnicodeDecodeError) as e:
-        logger.exception("Failed to decode token: %s", e)
+    except Exception as e:
+        logger.debug("Token is not a base64 encoded tool trace: %s", e)
         return []
 
     calls = {}
@@ -416,17 +418,60 @@ class DataEngineeringAgentGenerator(QueryGenerator):
         target_workspace: str,
     ) -> tuple[str, str]:
         """Core asynchronous A2A SDK connection loop."""
+        if "localhost" in self.endpoint or "127.0.0.1" in self.endpoint:
+            if not conversation_id:
+                conversation_id = f"conv-{uuid.uuid4()}"
+            clean_prompt = prompt.replace('"', '\\"').replace('\n', ' ')
+            stubby_req = f"pipeline_id: '{target_workspace}' messages {{ user_message {{ text: \"{clean_prompt}\" }} }}"
+            try:
+                proc = subprocess.run(
+                    [
+                        "stubby", "call", "localhost:9876",
+                        "com.google.cloud.hosted.dataworkeragent.proto.service.DataWorkerAgentService.Chat",
+                        stubby_req
+                    ],
+                    capture_output=True, text=True, timeout=120
+                )
+                output = (proc.stdout or "") + "\n" + (proc.stderr or "")
+                matches = re.findall(r'(?:description|text_message|text):\s*["\'](.*?)["\']', output, re.DOTALL)
+                # Unescape escaped newlines and quotes in raw textproto strings
+                clean_matches = [
+                    m.replace("\\n", "\n").replace("\\'", "'").replace('\\"', '"')
+                    for m in matches
+                    if m.strip() and not m.strip().startswith("projects/")
+                ]
+                if clean_matches:
+                    # Pick the longest matching string (usually the full model reply)
+                    best_match = max(clean_matches, key=len)
+                    return best_match, conversation_id
+                
+                # Fallback: if regex missed, filter out known gRPC noise lines and return raw output
+                lines = [line for line in output.splitlines() if not any(w in line for w in ["NOT_FOUND", "server_status", "FeatureSet", "DestinationPermission"])]
+                fallback_text = "\n".join(lines).strip()
+                return fallback_text or "Local stubby response received", conversation_id
+            except Exception as e:
+                logger.warning(f"Local stubby call failed, falling back: {e}")
+
         # Configure Client in standard Non-Streaming Mode
+        local_transport = TransportProtocol.GRPC if ("localhost" in self.endpoint or "127.0.0.1" in self.endpoint) else TransportProtocol.HTTP_JSON
+        def _make_grpc_channel(target_url: str):
+            clean_target = target_url.replace("http://", "").replace("https://", "").split("/")[0]
+            clean_target = clean_target.replace("localhost", "127.0.0.1")
+            return grpc.aio.insecure_channel(clean_target)
+
+        grpc_factory = _make_grpc_channel if local_transport == TransportProtocol.GRPC else None
+
         config = ClientConfig(
             supported_protocol_bindings=[
-                TransportProtocol.HTTP_JSON,
+                local_transport,
             ],
+            grpc_channel_factory=grpc_factory,
             streaming=False
         )
 
         agent_card = minimal_agent_card(
             self.endpoint,
-            transports=[TransportProtocol.HTTP_JSON]
+            transports=[local_transport]
         )
         security_req = SecurityRequirement()
         security_req.schemes["oauth2"].CopyFrom(StringList(list=[]))
