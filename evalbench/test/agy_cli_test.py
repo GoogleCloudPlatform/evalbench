@@ -282,6 +282,41 @@ def test_run_command_argv_shape_with_continue(mock_run, sandbox):
     ]
 
 
+def test_init_raises_on_non_string_timeout(sandbox):
+    """The generator should raise TypeError if timeout is not a string."""
+    with pytest.raises(TypeError, match="timeout must be a string"):
+        AgyCliGenerator({"timeout": 20})
+
+
+def test_init_raises_on_invalid_timeout_format(sandbox):
+    """The generator should raise ValueError if timeout format is invalid."""
+    invalid_timeouts = ["20", "20 minutes", "20d", "abc", "m", "20m10"]
+    for timeout in invalid_timeouts:
+        with pytest.raises(ValueError, match="Invalid timeout format"):
+            AgyCliGenerator({"timeout": timeout})
+
+
+def test_init_accepts_valid_timeout_formats(sandbox):
+    """The generator should accept valid timeout formats without raising."""
+    valid_timeouts = ["20m", "300s", "1h30m", "1h", "10s"]
+    for timeout in valid_timeouts:
+        gen = AgyCliGenerator({"timeout": timeout})
+        assert gen.timeout == timeout
+
+
+def test_run_command_argv_shape_with_timeout(mock_run, sandbox):
+    generator = AgyCliGenerator({"timeout": "20m"})
+    cmd = CLICommand(cli="agy", prompt="hello world")
+    generator._run_agy_cli(cmd)
+
+    sent_argv = mock_run.call_args[0][0]
+    assert sent_argv == [
+        generator.agy_bin, "-p", "hello world",
+        "--dangerously-skip-permissions", "--output-format", "stream-json",
+        "--log-file", generator.cli_log_path, "--print-timeout", "20m",
+    ]
+
+
 def test_run_agy_cli_parses_stream_on_nonzero_exit(mock_run, sandbox):
     """A timed-out/errored run exits non-zero but still emits a full stream
     ending in an ERROR result -- its usage tokens and tool calls must be kept,
