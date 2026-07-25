@@ -186,6 +186,25 @@ def test_generator_parameterized_staging_env(valid_config):
         assert generator.agent_type_uri is None
 
 
+def test_generator_parameterized_autopush_env(valid_config):
+    config = valid_config.copy()
+    config["model_env"] = "autopush"
+    with patch("google.auth.default") as mock_auth_default:
+        mock_creds = MagicMock()
+        mock_creds.valid = True
+        mock_auth_default.return_value = (mock_creds, "test-project")
+
+        generator = DataEngineeringAgentGenerator(config)
+
+        expected_endpoint = (
+            "https://autopush-geminidataanalytics.sandbox.googleapis.com/"
+            "v1/a2a/projects/test-project-123/locations/us-east1/agents/"
+            "dataengineeringagent"
+        )
+        assert generator.endpoint == expected_endpoint
+        assert generator.agent_type_uri is None
+
+
 def test_generator_parameterized_sparkagent(valid_config):
     config = valid_config.copy()
     config["model_env"] = "staging"
