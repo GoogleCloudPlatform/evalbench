@@ -53,7 +53,10 @@ def analyze_one_metric(
                 .drop_duplicates()
             )
     else:
-        df_metric = df[df["comparator"] == metric_name]
+        if metric_name == "binary_rubric_scorer":
+            df_metric = df[df["comparator"].astype(str).str.startswith("binary_rubric_scorer")]
+        else:
+            df_metric = df[df["comparator"] == metric_name]
 
         if (
             "prompt_id" in df_metric.columns
