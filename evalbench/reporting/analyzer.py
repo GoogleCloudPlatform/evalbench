@@ -12,6 +12,7 @@ def analyze_one_metric(
     num_scorers: int = 1,
     num_prompts: int = None,
     num_trials: int = None,
+    experiment_config: dict = None,
 ) -> dict:
     """Analyze one metric from dataframe with flexibility."""
     num_scorers = max(1, num_scorers)
@@ -53,7 +54,23 @@ def analyze_one_metric(
                 .drop_duplicates()
             )
     else:
-        df_metric = df[df["comparator"] == metric_name]
+        comparator_name = metric_name
+        if metric_name.startswith("python_scorer") and experiment_config:
+            import os
+            scorers_config = experiment_config.get("scorers", {})
+            scorer_config = scorers_config.get(metric_name)
+            if isinstance(scorer_config, dict):
+                custom_name = scorer_config.get("scorer_name")
+                if custom_name and isinstance(custom_name, str):
+                    custom_name = custom_name.strip()
+                if not custom_name:
+                    script_path = scorer_config.get("script_path")
+                    if script_path and isinstance(script_path, str) and script_path.strip():
+                        custom_name = os.path.splitext(os.path.basename(script_path))[0].strip()
+                if custom_name:
+                    comparator_name = custom_name
+
+        df_metric = df[df["comparator"] == comparator_name]
 
         if (
             "prompt_id" in df_metric.columns
@@ -188,6 +205,7 @@ def analyze_result(
             num_scorers=num_scorers,
             num_prompts=num_prompts,
             num_trials=num_trials,
+            experiment_config=experiment_config,
         )
         summary_scores.append(summary)
 

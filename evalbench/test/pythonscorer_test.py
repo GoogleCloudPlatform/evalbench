@@ -100,10 +100,10 @@ class TestPythonScorer(unittest.TestCase):
         experiment_config = {
             "scorers": {
                 "python_scorer_accuracy": {
-                    "script_path": "acc_script.py"
+                    "script_path": "path/to/acc_script.py"
                 },
                 "python_scorer_style": {
-                    "script_path": "style_script.py",
+                    "script_path": "path/to/style_script.py",
                     "scorer_name": "custom_style_name"
                 }
             }
@@ -128,8 +128,8 @@ class TestPythonScorer(unittest.TestCase):
         score_module.compare(eval_output_item, experiment_config, scoring_results, global_models=None)
 
         comparators = [res["comparator"] for res in scoring_results]
-        self.assertIn("python_scorer_accuracy", comparators)
-        self.assertIn("python_scorer_style", comparators)
+        self.assertIn("acc_script", comparators)
+        self.assertIn("custom_style_name", comparators)
         self.assertEqual(len(scoring_results), 2)
 
     def test_multiple_python_scorers_aggregation(self):
@@ -138,28 +138,28 @@ class TestPythonScorer(unittest.TestCase):
         scores = [
             {
                 "id": "1",
-                "comparator": "python_scorer_accuracy",
+                "comparator": "acc_script",
                 "score": 100,
                 "generated_sql": "SELECT 1",
                 "generated_error": None,
             },
             {
                 "id": "2",
-                "comparator": "python_scorer_accuracy",
+                "comparator": "acc_script",
                 "score": 0,
                 "generated_sql": "SELECT 1",
                 "generated_error": None,
             },
             {
                 "id": "1",
-                "comparator": "python_scorer_style",
+                "comparator": "custom_style_name",
                 "score": 100,
                 "generated_sql": "SELECT 1",
                 "generated_error": None,
             },
             {
                 "id": "2",
-                "comparator": "python_scorer_style",
+                "comparator": "custom_style_name",
                 "score": 100,
                 "generated_sql": "SELECT 1",
                 "generated_error": None,
@@ -167,8 +167,8 @@ class TestPythonScorer(unittest.TestCase):
         ]
         experiment_config = {
             "scorers": {
-                "python_scorer_accuracy": {"script_path": "accuracy.py"},
-                "python_scorer_style": {"script_path": "style.py", "scorer_name": "custom_style_name"},
+                "python_scorer_accuracy": {"script_path": "path/to/acc_script.py"},
+                "python_scorer_style": {"script_path": "path/to/style_script.py", "scorer_name": "custom_style_name"},
             }
         }
 
