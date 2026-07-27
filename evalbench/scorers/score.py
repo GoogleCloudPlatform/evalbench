@@ -166,8 +166,7 @@ def compare(
             )
     for key, scorer_config in scorers.items():
         if key.startswith("python_scorer"):
-            if not isinstance(scorer_config, dict):
-                scorer_config = {}
+            scorer_config = scorer_config if isinstance(scorer_config, dict) else {}
             custom_name = util.get_python_scorer_name(scorer_config, default_key=key)
             config_copy = dict(scorer_config)
             config_copy["database_configs"] = experiment_config.get(
