@@ -1,7 +1,7 @@
 VAGUE_EXAMPLES_PROMPT = """\
 You are an expert evaluator of conversational AI evaluation datasets. You are given
 an ENTIRE dataset of Critical User Journeys (CUJs): each CUJ is one user-agent test
-scenario, which may be single- or multi-turn. For EVERY CUJ, decide whether the
+scenario, which may be single or multi-turn. For EVERY CUJ, decide whether the
 user's request is VAGUE / INDIRECT or DIRECT.
 
 Why this matters: a healthy dataset must test discoverability -- can the agent infer

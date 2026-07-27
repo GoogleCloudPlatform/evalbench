@@ -17,7 +17,7 @@ CUJ_PATHS = (
 CUJ_PATH_CLASSIFICATION_PROMPT = """\
 You are an expert evaluator of conversational AI evaluation datasets. You are given
 an ENTIRE dataset of Critical User Journeys (CUJs): each CUJ is one user-agent test
-scenario, which may be single- or multi-turn. Classify EVERY CUJ into EXACTLY ONE of
+scenario, which may be single or multi-turn. Classify EVERY CUJ into EXACTLY ONE of
 the five CUJ paths defined below.
 
 Why this matters: most datasets only test the "Happy Path" -- a perfectly phrased

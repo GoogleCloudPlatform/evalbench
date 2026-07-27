@@ -36,7 +36,7 @@ _TOOL_FETCH_ATTEMPTS = 3
 _TOOL_FETCH_BACKOFF_S = 1.0
 
 
-# Sub-scorers, keyed by the name used under the nested ``scorers:`` block.
+# Sub-scorers, keyed by the name used under the nested ``sub_scorers:`` block.
 SCORER_REGISTRY = {
     "trajectory_coverage": TrajectoryCoverageScorer,
     "naming_distribution": NamingDistributionScorer,
@@ -70,9 +70,11 @@ class DatasetQualityScorer(Comparator):
             {"timeout": config.get("tools_timeout", 30)}
         )
 
-        scorers_config = config.get("scorers") or {}
+        scorers_config = config.get("sub_scorers") or {}
         if not scorers_config:
-            raise ValueError("dataset_quality scorer requires a 'scorers' block")
+            raise ValueError(
+                "dataset_quality scorer requires a 'sub_scorers' block"
+            )
         self.scorers = []
         for name, scorer_config in scorers_config.items():
             scorer_cls = SCORER_REGISTRY.get(name)

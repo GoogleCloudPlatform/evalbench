@@ -3,11 +3,11 @@
 The orchestrator loads a product's CUJ scenarios and tool schema once, then hands
 every configured scorer the same :class:`DatasetQualityContext` and collects each
 scorer's :class:`SubScoreContribution`. A new scorer plugs in by registering its
-class in the orchestrator's registry and adding a block under ``scorers:`` in the
-run config.
+class in the orchestrator's registry and adding a block under ``sub_scorers:`` in
+the run config.
 
 Each dataset_quality scorer implements:
-  - ``name``: str, matches its key under ``scorers:`` (also its comparator).
+  - ``name``: str, matches its key under ``sub_scorers:`` (also its comparator).
   - ``weight``: float, its share of the weighted global score.
   - ``run(context) -> SubScoreContribution``: grade one product's dataset.
 

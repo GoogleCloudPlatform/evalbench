@@ -19,7 +19,7 @@ ERROR_RECOVERY_MODES = (
 ERROR_RECOVERY_COVERAGE_PROMPT = """\
 You are an expert evaluator of conversational AI evaluation datasets. You are given
 an ENTIRE dataset of Critical User Journeys (CUJs): each CUJ is one user-agent test
-scenario, which may be single- or multi-turn. For EVERY CUJ, decide which ERROR /
+scenario, which may be single or multi-turn. For EVERY CUJ, decide which ERROR /
 RECOVERY modes it genuinely exercises -- zero, one, or several.
 
 Why this matters: production tools fail in many distinct ways, and a robust agent

@@ -1,7 +1,7 @@
 COMPOSITION_COVERAGE_PROMPT = """\
 You are an expert evaluator of conversational AI evaluation datasets. You are given
 an ENTIRE dataset of Critical User Journeys (CUJs): each CUJ is one user-agent test
-scenario, which may be single- or multi-turn. For EVERY CUJ, make two independent
+scenario, which may be single or multi-turn. For EVERY CUJ, make two independent
 judgments about how it exercises TOOL COMPOSITION.
 
 Why this matters: real tasks rarely resolve with a single isolated tool call. Strong
