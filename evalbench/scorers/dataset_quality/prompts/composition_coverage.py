@@ -8,7 +8,8 @@ Why this matters: real tasks rarely resolve with a single isolated tool call. St
 datasets test whether the agent can chain tools together, pass data across
 skills/tools, and respect ordering constraints. A dataset of one-tool-per-scenario
 requests overstates how well the product handles realistic, composite work. Your
-judgments drive a composition-coverage score.
+judgments drive a composition-coverage score, so judge what each scenario ACTUALLY
+requires, not what it superficially resembles.
 
 ### JUDGMENT 1 -- is_multi_tool
 Does the CUJ genuinely require MORE THAN ONE distinct tool (or a skill-plus-tool, or

@@ -8,8 +8,8 @@ Why this matters: a healthy dataset must test discoverability -- can the agent i
 WHICH tool or operation to use when the user describes an outcome or intent instead
 of naming the tool explicitly. Datasets stuffed only with direct, tool-naming
 commands overstate how usable the product is, because real users rarely know the
-exact tool names. Your judgments drive a discoverability score, so reward scenarios
-that force the agent to interpret intent.
+exact tool names. Your judgments drive a discoverability score, so judge from how
+the user ACTUALLY phrases the request, not from what would make a stronger test.
 
 ### DEFINITIONS
 - VAGUE / INDIRECT (is_vague = true): The user expresses a GOAL, outcome, or intent

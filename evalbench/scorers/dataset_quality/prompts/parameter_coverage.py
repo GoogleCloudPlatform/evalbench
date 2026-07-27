@@ -16,9 +16,10 @@ what each scenario actually demands.
 A CUJ exercises a tool's parameter when the scenario would require the agent to
 supply a meaningful, scenario-specific value for that parameter while calling that
 tool -- i.e. the request cannot succeed as described unless that parameter is set.
-- Count a parameter for a CUJ only if that parameter's tool is actually used by the
-  CUJ. Use expected_trajectory as the authoritative signal for which tools a CUJ
-  invokes; a parameter belonging to a tool the CUJ never calls is NOT exercised.
+- Count a parameter for a CUJ only if the CUJ actually calls that parameter's tool
+  -- use expected_trajectory as the ground truth for which tools run, since whether a
+  tool fires is a fact to read off the trajectory, not something to infer from the
+  prompt. A parameter whose tool never appears in the trajectory is NOT exercised.
 - A required parameter is exercised whenever its tool is invoked (the call cannot be
   made without it). An optional parameter is exercised only when the scenario
   explicitly demands its behavior -- e.g. a filter, page size, enum choice, ordering,
