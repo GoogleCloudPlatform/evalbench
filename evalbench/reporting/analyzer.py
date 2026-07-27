@@ -70,10 +70,7 @@ def analyze_one_metric(
                 if custom_name:
                     comparator_name = custom_name
 
-        if metric_name == "binary_rubric_scorer":
-            df_metric = df[df["comparator"].astype(str).str.startswith("binary_rubric_scorer")]
-        else:
-            df_metric = df[df["comparator"] == comparator_name]
+        df_metric = df[df["comparator"] == comparator_name]
 
         if (
             "prompt_id" in df_metric.columns
