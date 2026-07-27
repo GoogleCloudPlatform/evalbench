@@ -248,5 +248,7 @@ def compare(
         score_dict["dialects"] = eval_output_item["dialects"]
         score_dict["database"] = eval_output_item["database"]
         score_dict["job_id"] = eval_output_item["job_id"]
+        if "prompt_id" in eval_output_item:
+            score_dict["prompt_id"] = eval_output_item["prompt_id"]
         logging.debug("scoring: %d %s %d", score_dict["id"], comp.name, score)
         scoring_results.append(score_dict)
