@@ -27,9 +27,10 @@ error recovery, guardrails). Your classification drives a dataset-diversity scor
 so judge what each scenario ACTUALLY exercises, not what it superficially resembles.
 
 ### CUJ PATHS (choose exactly one per CUJ)
-- "Happy": Standard query. A direct, well-formed request that leads straight to an
-  accurate response. Necessary as a baseline. Example: "Who are our top customers?"
-  -> [accurate list].
+- "Happy": Standard query. A direct, well-formed request the agent can satisfy in one
+  straightforward pass, with no ambiguity, refinement, error, or guardrail dynamic
+  along the way. Necessary as a baseline. Example: "Who are our top customers?" ->
+  [the requested list].
 - "Ambiguity & Clarification": The user's initial request is incomplete or
   underspecified, and the agent must ask for specific details before it can
   proceed. Example: user says "I need a database." and the agent must ask what kind
@@ -41,11 +42,12 @@ so judge what each scenario ACTUALLY exercises, not what it superficially resemb
   -- a query/tool fails, returns an error, hits a nonexistent resource, or the user
   identifies a mistake and asks the agent to correct course. Example: "That query
   failed with a syntax error, can you fix the join?".
-- "Out-of-Domain": The user requests something out-of-scope or disallowed that the
-  agent should refuse or redirect -- e.g. PII/sensitive data, disallowed actions, or
-  data the product is not meant to serve -- and the expected behavior is a polite
-  refusal plus redirection (guardrail). The request itself is illegitimate; the point
-  is the refusal, not fixing anything.
+- "Out-of-Domain": The user requests something the product is not meant to serve or is
+  disallowed from doing, and the expected behavior is to decline (and redirect where
+  appropriate). What counts as out-of-domain is relative to the product's scope -- e.g.
+  unsupported actions, or sensitive data it isn't meant to expose (the same data may be
+  fully in-domain for a product built to serve it). The request is out-of-scope; the
+  point is the refusal, not fixing anything.
 
 ### How to classify
 For each CUJ, base your judgment primarily on the conversation_plan (it describes
