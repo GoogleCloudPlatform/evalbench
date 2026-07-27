@@ -1,6 +1,7 @@
 """Analyze accuracy result from dataframe."""
 
 import logging
+import os
 import pandas as pd
 
 
@@ -56,7 +57,6 @@ def analyze_one_metric(
     else:
         comparator_name = metric_name
         if metric_name.startswith("python_scorer") and experiment_config:
-            import os
             scorers_config = experiment_config.get("scorers", {})
             scorer_config = scorers_config.get(metric_name)
             if isinstance(scorer_config, dict):
@@ -70,7 +70,10 @@ def analyze_one_metric(
                 if custom_name:
                     comparator_name = custom_name
 
-        df_metric = df[df["comparator"] == comparator_name]
+        if metric_name == "binary_rubric_scorer":
+            df_metric = df[df["comparator"].astype(str).str.startswith("binary_rubric_scorer")]
+        else:
+            df_metric = df[df["comparator"] == comparator_name]
 
         if (
             "prompt_id" in df_metric.columns
