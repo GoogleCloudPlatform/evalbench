@@ -88,12 +88,12 @@ class BigQueryReporter(Reporter):
             reporting_config.get("gcp_project_id"))
         self.location = reporting_config.get("dataset_location") or "US"
         self.client = bigquery.Client(project=self.project_id)
-        self.dataset_name = reporting_config.get("dataset_name") or "evalbench"
-        self.dataset_id = "{}.{}".format(self.project_id, self.dataset_name)
-        self.configs_table = "{}.configs".format(self.dataset_id)
-        self.results_table = "{}.results".format(self.dataset_id)
-        self.scores_table = "{}.scores".format(self.dataset_id)
-        self.summary_table = "{}.summary".format(self.dataset_id)
+        self.dataset_id = reporting_config.get("dataset_id") or "evalbench"
+        self.dataset_path = "{}.{}".format(self.project_id, self.dataset_id)
+        self.configs_table = "{}.configs".format(self.dataset_path)
+        self.results_table = "{}.results".format(self.dataset_path)
+        self.scores_table = "{}.scores".format(self.dataset_path)
+        self.summary_table = "{}.summary".format(self.dataset_path)
 
         # Make chunk size configurable, defaulting to 500
         self.chunk_size = int(reporting_config.get(
@@ -104,7 +104,7 @@ class BigQueryReporter(Reporter):
             logging.info(f"No results to store for {type}")
             return
 
-        dataset = bigquery.Dataset(self.dataset_id)
+        dataset = bigquery.Dataset(self.dataset_path)
         dataset.location = self.location
         dataset = self.client.create_dataset(
             dataset, exists_ok=True, timeout=30)
@@ -199,7 +199,7 @@ class BigQueryReporter(Reporter):
         report_params = "{" + f'"eval_results.eval_id": "{self.job_id}"' + "}"
         report_query = _REPORT_QUERY.replace(
             "__PROJECT_ID__", self.project_id
-        ).replace("__DATASET__", self.dataset_name)
+        ).replace("__DATASET__", self.dataset_id)
         report_link = (
             "https://lookerstudio.google.com/reporting/create?"
             + "c.reportId=e7d7fc00-4268-45d6-b17b-160ca271a4d0"
