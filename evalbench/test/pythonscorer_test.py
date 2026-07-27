@@ -87,6 +87,102 @@ class TestPythonScorer(unittest.TestCase):
         self.assertEqual(score, 0.0)
         self.assertIn("FAIL: 'uv' command not found", reason)
 
+    @patch('scorers.pythonscorer.subprocess.run')
+    def test_multiple_python_scorers_in_compare(self, mock_run):
+        from scorers import score as score_module
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = '{"score": 100.0, "reason": "PASS"}'
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+
+        experiment_config = {
+            "scorers": {
+                "python_scorer_accuracy": {
+                    "script_path": "acc_script.py"
+                },
+                "python_scorer_style": {
+                    "script_path": "style_script.py",
+                    "scorer_name": "custom_style_name"
+                }
+            }
+        }
+        eval_output_item = {
+            "id": 1,
+            "nl_prompt": "test",
+            "golden_sql": "SELECT 1",
+            "query_type": "SELECT",
+            "golden_result": "",
+            "golden_eval_results": "",
+            "golden_error": "",
+            "generated_sql": "SELECT 1",
+            "generated_result": "",
+            "eval_results": "",
+            "generated_error": None,
+            "dialects": "bigquery",
+            "database": "db",
+            "job_id": "job123",
+        }
+        scoring_results = []
+        score_module.compare(eval_output_item, experiment_config, scoring_results, global_models=None)
+
+        comparators = [res["comparator"] for res in scoring_results]
+        self.assertIn("python_scorer_accuracy", comparators)
+        self.assertIn("python_scorer_style", comparators)
+        self.assertEqual(len(scoring_results), 2)
+
+    def test_multiple_python_scorers_aggregation(self):
+        from reporting.analyzer import analyze_result
+
+        scores = [
+            {
+                "id": "1",
+                "comparator": "python_scorer_accuracy",
+                "score": 100,
+                "generated_sql": "SELECT 1",
+                "generated_error": None,
+            },
+            {
+                "id": "2",
+                "comparator": "python_scorer_accuracy",
+                "score": 0,
+                "generated_sql": "SELECT 1",
+                "generated_error": None,
+            },
+            {
+                "id": "1",
+                "comparator": "python_scorer_style",
+                "score": 100,
+                "generated_sql": "SELECT 1",
+                "generated_error": None,
+            },
+            {
+                "id": "2",
+                "comparator": "python_scorer_style",
+                "score": 100,
+                "generated_sql": "SELECT 1",
+                "generated_error": None,
+            },
+        ]
+        experiment_config = {
+            "scorers": {
+                "python_scorer_accuracy": {"script_path": "accuracy.py"},
+                "python_scorer_style": {"script_path": "style.py", "scorer_name": "custom_style_name"},
+            }
+        }
+
+        _, summary_df = analyze_result(scores, experiment_config)
+        summary_dict = summary_df.set_index("metric_name").to_dict(orient="index")
+
+        self.assertIn("python_scorer_accuracy", summary_dict)
+        self.assertEqual(summary_dict["python_scorer_accuracy"]["correct_results_count"], 1)
+        self.assertEqual(summary_dict["python_scorer_accuracy"]["total_results_count"], 2)
+
+        self.assertIn("python_scorer_style", summary_dict)
+        self.assertEqual(summary_dict["python_scorer_style"]["correct_results_count"], 2)
+        self.assertEqual(summary_dict["python_scorer_style"]["total_results_count"], 2)
+
 
 if __name__ == '__main__':
     unittest.main()

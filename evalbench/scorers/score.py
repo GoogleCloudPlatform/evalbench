@@ -164,20 +164,14 @@ def compare(
                 )
             )
     for key, scorer_config in scorers.items():
-        if key == "python_scorer":
-            custom_name = scorer_config.get("scorer_name")
-            if custom_name and isinstance(custom_name, str):
-                custom_name = custom_name.strip()
-            if not custom_name:
-                script_path = scorer_config.get("script_path")
-                if script_path and isinstance(script_path, str) and script_path.strip():
-                    custom_name = os.path.splitext(os.path.basename(script_path))[0].strip()
-                if not custom_name:
-                    custom_name = key
-            scorer_config["database_configs"] = experiment_config.get(
+        if key.startswith("python_scorer"):
+            if not isinstance(scorer_config, dict):
+                scorer_config = {}
+            config_copy = dict(scorer_config)
+            config_copy["database_configs"] = experiment_config.get(
                 "database_configs", []
             )
-            comparators.append(pythonscorer.PythonScorer(scorer_config, name=custom_name))
+            comparators.append(pythonscorer.PythonScorer(config_copy, name=key))
     if "dataform_compile" in scorers:
         comparators.append(
             dataformscorer.DataformCompileScorer(scorers["dataform_compile"])
