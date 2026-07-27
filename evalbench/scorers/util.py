@@ -115,3 +115,26 @@ def filter_conversation_history_json(
         })
 
     return json.dumps(cleaned_history, indent=2)
+
+
+def get_python_scorer_name(scorer_config: dict, default_key: str = "") -> str:
+    """Resolves the comparator name for a python_scorer entry.
+
+    Resolution order:
+    1. Explicit `scorer_name` parameter in scorer_config.
+    2. Basename of `script_path` (without extension).
+    3. `default_key` (YAML key string).
+    """
+    if not isinstance(scorer_config, dict):
+        return default_key
+    custom_name = scorer_config.get("scorer_name")
+    if custom_name and isinstance(custom_name, str):
+        return custom_name.strip()
+    script_path = scorer_config.get("script_path")
+    if script_path and isinstance(script_path, str) and script_path.strip():
+        import os
+        base_name = os.path.splitext(os.path.basename(script_path))[0].strip()
+        if base_name:
+            return base_name
+    return default_key
+

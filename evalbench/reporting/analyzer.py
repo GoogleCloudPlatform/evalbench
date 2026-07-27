@@ -3,6 +3,7 @@
 import logging
 import os
 import pandas as pd
+from scorers.util import get_python_scorer_name
 
 
 def analyze_one_metric(
@@ -59,16 +60,7 @@ def analyze_one_metric(
         if metric_name.startswith("python_scorer") and experiment_config:
             scorers_config = experiment_config.get("scorers", {})
             scorer_config = scorers_config.get(metric_name)
-            if isinstance(scorer_config, dict):
-                custom_name = scorer_config.get("scorer_name")
-                if custom_name and isinstance(custom_name, str):
-                    custom_name = custom_name.strip()
-                if not custom_name:
-                    script_path = scorer_config.get("script_path")
-                    if script_path and isinstance(script_path, str) and script_path.strip():
-                        custom_name = os.path.splitext(os.path.basename(script_path))[0].strip()
-                if custom_name:
-                    comparator_name = custom_name
+            comparator_name = get_python_scorer_name(scorer_config, default_key=metric_name)
 
         df_metric = df[df["comparator"] == comparator_name]
 

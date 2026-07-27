@@ -67,3 +67,23 @@ def test_filter_conversation_history_json_with_dict_agent():
     agent_1 = json.loads(filtered[0]["agent"])
     assert "tool_calls" not in agent_1
     assert agent_1["response"] == "Sure, looking."
+
+
+def test_get_python_scorer_name():
+    from scorers.util import get_python_scorer_name
+
+    # 1. Explicit scorer_name
+    cfg1 = {"scorer_name": "custom_name", "script_path": "path/to/script.py"}
+    assert get_python_scorer_name(cfg1, "default_key") == "custom_name"
+
+    # 2. Script path basename fallback
+    cfg2 = {"script_path": "path/to/accuracy_judge.py"}
+    assert get_python_scorer_name(cfg2, "default_key") == "accuracy_judge"
+
+    # 3. Default key fallback
+    cfg3 = {}
+    assert get_python_scorer_name(cfg3, "default_key") == "default_key"
+
+    # 4. Invalid config fallback
+    assert get_python_scorer_name(None, "default_key") == "default_key"
+
