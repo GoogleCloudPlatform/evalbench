@@ -1,8 +1,9 @@
 """Utility functions to aid the scorers."""
 
 from typing import Any
-import logging
 import hashlib
+import logging
+import os
 import pickle
 from util.safe_pickle import safe_pickle_loads
 
@@ -132,7 +133,6 @@ def get_python_scorer_name(scorer_config: dict, default_key: str = "") -> str:
         return custom_name.strip()
     script_path = scorer_config.get("script_path")
     if script_path and isinstance(script_path, str) and script_path.strip():
-        import os
         base_name = os.path.splitext(os.path.basename(script_path))[0].strip()
         if base_name:
             return base_name
