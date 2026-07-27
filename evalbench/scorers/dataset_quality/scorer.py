@@ -113,6 +113,21 @@ class DatasetQualityScorer(Comparator):
         **kwargs,
     ) -> list[Tuple[str, float | None, str]]:
         scenarios = self._extract_cujs(generated_eval_result)
+        if not scenarios:
+            # Null score, not 0, so an empty/malformed all_cujs stays
+            # distinguishable from a genuine F on the trends page.
+            return [(
+                self.name,
+                None,
+                json.dumps(
+                    {
+                        "product_name": self.product_name,
+                        "graded": False,
+                        "error": "no CUJs to grade (missing or empty all_cujs)",
+                    },
+                    default=str,
+                ),
+            )]
         try:
             tools = self._fetch_tools()
         except McpToolsError as e:
