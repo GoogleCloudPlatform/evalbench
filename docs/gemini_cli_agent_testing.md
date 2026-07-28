@@ -662,8 +662,15 @@ The `python_scorer` allows you to run arbitrary Python scripts to evaluate agent
 
 ```yaml
 scorers:
+  # Single Python Scorer
   python_scorer:
     script_path: "path/to/your_script.py"
+
+  # Multiple Python Scorers (use python_scorer_* prefix)
+  python_scorer_accuracy:
+    script_path: "path/to/accuracy_script.py"
+  python_scorer_style:
+    script_path: "path/to/style_script.py"
 ```
 
 **How it works:**

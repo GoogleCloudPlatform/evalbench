@@ -2,6 +2,7 @@
 
 import logging
 import pandas as pd
+from scorers.util import get_python_scorer_name
 
 
 def analyze_one_metric(
@@ -12,6 +13,7 @@ def analyze_one_metric(
     num_scorers: int = 1,
     num_prompts: int = None,
     num_trials: int = None,
+    experiment_config: dict = None,
 ) -> dict:
     """Analyze one metric from dataframe with flexibility."""
     num_scorers = max(1, num_scorers)
@@ -53,7 +55,13 @@ def analyze_one_metric(
                 .drop_duplicates()
             )
     else:
-        df_metric = df[df["comparator"] == metric_name]
+        comparator_name = metric_name
+        if metric_name.startswith("python_scorer") and experiment_config:
+            scorers_config = experiment_config.get("scorers", {})
+            scorer_config = scorers_config.get(metric_name)
+            comparator_name = get_python_scorer_name(scorer_config, default_key=metric_name)
+
+        df_metric = df[df["comparator"] == comparator_name]
 
         if (
             "prompt_id" in df_metric.columns
@@ -188,6 +196,7 @@ def analyze_result(
             num_scorers=num_scorers,
             num_prompts=num_prompts,
             num_trials=num_trials,
+            experiment_config=experiment_config,
         )
         summary_scores.append(summary)
 
