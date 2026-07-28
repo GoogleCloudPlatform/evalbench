@@ -25,7 +25,7 @@ def test_parse_stream_response_accumulates_text():
     )
 
     response_stream = [chunk1, chunk2]
-    
+
     result = _parse_stream_response(response_stream)
     assert result == "SELECT 1 FROM table;"
 
