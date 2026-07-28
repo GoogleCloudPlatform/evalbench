@@ -5,6 +5,9 @@ success genuinely need more than one distinct tool/skill) and
 ``has_sequence_dependency`` (does success need a specific ordering). The two
 sub-shares are averaged: a dataset of one-tool-per-scenario requests overstates
 how well the product handles realistic, composite work.
+
+Not applicable when the product exposes fewer than two composable units -- there
+is no composition to test. A dataset that simply never composes still scores 0.
 """
 
 import logging
@@ -46,6 +49,16 @@ class CompositionScorer:
         n = context.n
         if n == 0:
             return SubScoreContribution(applicable=False, logs="no scenarios")
+
+        # Schema tools union trajectory entries, so skill-only products (whose
+        # composable units are scripts, not MCP tools) still get scored.
+        surface = set(context.tool_names)
+        for scenario in context.scenarios:
+            surface.update(scenario.get("expected_trajectory") or [])
+        if len(surface) < 2:
+            return SubScoreContribution(
+                applicable=False, logs="nothing to compose (single-tool product)"
+            )
 
         prompt = COMPOSITION_COVERAGE_PROMPT.format(
             tool_names=context.tool_names_str,
