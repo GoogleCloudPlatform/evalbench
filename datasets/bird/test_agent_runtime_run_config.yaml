@@ -1,0 +1,41 @@
+############################################################
+### Dataset / Eval Items (Vertex AI Multi-Agent Test)
+############################################################
+dataset_config: datasets/bird/prompts_california.json
+
+databases:
+ - california_schools
+num_trials: 1
+
+database_configs:
+ - datasets/bat/db_configs/bigquery.yaml
+ - datasets/bird/db_configs/sqlite.yaml
+dialects:
+ - bigquery
+dialect: bigquery
+query_types:
+ - dql
+dataset_format: bird-standard-format
+
+############################################################
+### Prompt and Generation Modules
+############################################################
+model_config: datasets/model_configs/agent_runtime.yaml
+prompt_generator: 'NOOPGenerator'
+
+############################################################
+### Scorer Related Configs
+############################################################
+scorers:
+  python_scorer:
+    script_path: 'evalbench/scorers/judges/hybrid_xa_judge.py'
+    scorer_name: 'hybrid_cross_db'
+
+############################################################
+### Reporting Related Configs
+############################################################
+reporting:
+  bigquery:
+    dataset_location: "US"
+    gcp_project_id: "arielj-argolis-1"
+  csv: {}

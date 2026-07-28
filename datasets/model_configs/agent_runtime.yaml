@@ -1,0 +1,14 @@
+# Agent Runtime (Gemini Enterprise Agent Platform) Generator Manifest
+# Enables native NL2SQL evaluation benchmarking against deployed Agent Runtime endpoints.
+generator: agent_runtime
+
+# Explicit resource URI string (e.g. "projects/12345/locations/us-central1/reasoningEngines/67890")
+# Leave empty string "" to dynamically read MULTI_AGENT_ENGINE_RESOURCE or AGENT_ENGINE_RESOURCE from env.
+resource_name: "projects/743100398377/locations/us-central1/reasoningEngines/7921856483556327424"
+
+gcp_project_id: "arielj-argolis-1"
+gcp_region: "us-central1"
+
+# Rate limiting and retry mechanics
+execs_per_minute: 10
+max_attempts: 3
