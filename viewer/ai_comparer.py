@@ -10,6 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../eval
 
 from evalbench.generators.models import get_generator
 from evalbench.util.config import load_yaml_config
+from summarizer import get_summarizer
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -39,8 +40,6 @@ def get_results_dir():
             
     logger.warning("Results directory not found in candidates, defaulting to current directory results")
     return os.path.join(os.getcwd(), "results")
-
-from summarizer import get_summarizer
 
 def compare_evals(id1, id2):
     """Compares two evaluation runs using Gemini."""
