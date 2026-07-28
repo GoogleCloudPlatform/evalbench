@@ -84,34 +84,24 @@ and "expected_trajectory".
 {cujs_json}
 
 ### Output Format
-Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
+Return ONLY a JSON object (no markdown, no prose) with exactly this shape -- one key
+per CUJ path, listing the ids of the CUJs on that path:
 {{
-  "tags": [
-    {{
-      "id": "<the CUJ id, copied verbatim from the input>",
-      "cuj_path": "Happy | Ambiguity & Clarification | Iterative Refinement | Error Recovery | Out-of-Domain"
-    }}
-  ]
+  "Happy": ["<CUJ id, copied verbatim from the input>", "..."],
+  "Ambiguity & Clarification": [],
+  "Iterative Refinement": [],
+  "Error Recovery": [],
+  "Out-of-Domain": []
 }}
-Return one entry in "tags" for EVERY CUJ in the input. Each "id" MUST match an input
-CUJ id exactly. Each "cuj_path" value MUST be exactly one of the five strings listed
-above."""
+Include all five keys, using an empty list for a path no CUJ takes. EVERY input CUJ
+id MUST appear in exactly one list, matching an input id exactly."""
 
 
 CUJ_PATH_CLASSIFICATION_SCHEMA = {
     "type": "OBJECT",
     "properties": {
-        "tags": {
-            "type": "ARRAY",
-            "items": {
-                "type": "OBJECT",
-                "properties": {
-                    "id": {"type": "STRING"},
-                    "cuj_path": {"type": "STRING", "enum": list(CUJ_PATHS)},
-                },
-                "required": ["id", "cuj_path"],
-            },
-        },
+        path: {"type": "ARRAY", "items": {"type": "STRING"}}
+        for path in CUJ_PATHS
     },
-    "required": ["tags"],
+    "required": list(CUJ_PATHS),
 }

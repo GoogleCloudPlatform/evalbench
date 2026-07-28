@@ -1,6 +1,6 @@
 """Discoverability scorer: how many CUJs pose a vague / indirect request.
 
-The judge tags each CUJ ``is_vague``; the score rewards datasets whose vague
+The judge lists the vague / indirect CUJs; the score rewards datasets whose vague
 share approaches ``target_fraction`` (default 0.5), capped at 100. Datasets of
 only direct, tool-naming commands overstate how usable the product is.
 """
@@ -14,8 +14,9 @@ from scorers.dataset_quality.context import (
     SubScoreContribution,
 )
 from scorers.dataset_quality.grading import fraction_score
-from scorers.dataset_quality.llm import tag_cujs
+from scorers.dataset_quality.llm import group_cuj_ids
 from scorers.dataset_quality.prompts.vague_examples import (
+    KEY_VAGUE,
     VAGUE_EXAMPLES_PROMPT,
     VAGUE_EXAMPLES_SCHEMA,
 )
@@ -49,16 +50,19 @@ class VagueExamplesScorer:
                 ["starting_prompt", "conversation_plan"]
             ),
         )
-        tags = tag_cujs(self.model, prompt, VAGUE_EXAMPLES_SCHEMA)
-        if tags is None:
+        grouped = group_cuj_ids(
+            self.model,
+            prompt,
+            VAGUE_EXAMPLES_SCHEMA,
+            (KEY_VAGUE,),
+            context.cuj_ids,
+        )
+        if grouped is None:
             return SubScoreContribution(applicable=False, logs="judge call failed")
-        vague_ids, direct_ids = [], []
-        for s in context.scenarios:
-            sid = s.get("id")
-            if tags.get(sid, {}).get("is_vague") is True:
-                vague_ids.append(sid)
-            else:
-                direct_ids.append(sid)
+
+        vague_ids = grouped[KEY_VAGUE]
+        vague = set(vague_ids)
+        direct_ids = [sid for sid in context.cuj_ids if sid not in vague]
         n_vague = len(vague_ids)
         score = fraction_score(n_vague, n, self.target_fraction)
 

@@ -1,3 +1,10 @@
+# Output keys the judge groups CUJ ids under; the scorer reads the same constants
+# so prompt and scorer can't desync.
+KEY_MULTI_TOOL = "multi_tool_ids"
+KEY_SEQUENCE_DEPENDENCY = "sequence_dependency_ids"
+COMPOSITION_KEYS = (KEY_MULTI_TOOL, KEY_SEQUENCE_DEPENDENCY)
+
+
 COMPOSITION_COVERAGE_PROMPT = """\
 You are an expert evaluator of conversational AI evaluation datasets. You are given
 an ENTIRE dataset of Critical User Journeys (CUJs): each CUJ is one user-agent test
@@ -9,7 +16,7 @@ dataset of one-tool-per-scenario requests overstates how well the product handle
 realistic, composite work. Your judgments drive a composition-coverage score, so
 judge what each scenario ACTUALLY requires, not what it superficially resembles.
 
-### JUDGMENT 1 -- is_multi_tool
+### JUDGMENT 1 -- multi_tool_ids
 Does the CUJ genuinely require MORE THAN ONE distinct tool (or a skill-plus-tool, or
 cross-skill data passing) working together to succeed?
 - Judge from what the starting_prompt and conversation_plan actually demand, using
@@ -22,7 +29,7 @@ cross-skill data passing) working together to succeed?
 - false: the task is satisfiable with a single tool/skill (even if called more than
   once).
 
-### JUDGMENT 2 -- has_sequence_dependency
+### JUDGMENT 2 -- sequence_dependency_ids
 Does success require a SPECIFIC ORDER of operations -- tool A must happen before
 tool B, and doing them out of order would fail or produce a wrong result?
 - true: there is a real ordering constraint (e.g. create the table before inserting
@@ -42,37 +49,22 @@ and "expected_trajectory".
 {cujs_json}
 
 ### Output Format
-Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
+Return ONLY a JSON object (no markdown, no prose) with exactly this shape -- one key
+per judgment, listing only the ids of the CUJs it is TRUE for:
 {{
-  "tags": [
-    {{
-      "id": "<the CUJ id, copied verbatim from the input>",
-      "is_multi_tool": true|false,
-      "has_sequence_dependency": true|false
-    }}
-  ]
+  "multi_tool_ids": ["<CUJ id, copied verbatim from the input>", "..."],
+  "sequence_dependency_ids": []
 }}
-Return one entry in "tags" for EVERY CUJ in the input. Each "id" MUST match an input
-CUJ id exactly."""
+Include both keys, using an empty list when no CUJ qualifies. Every id MUST match an
+input CUJ id exactly. The judgments are independent, so a CUJ may appear in both
+lists, one, or neither; a CUJ you judge false for both appears in no list."""
 
 
 COMPOSITION_COVERAGE_SCHEMA = {
     "type": "OBJECT",
     "properties": {
-        "tags": {
-            "type": "ARRAY",
-            "items": {
-                "type": "OBJECT",
-                "properties": {
-                    "id": {"type": "STRING"},
-                    "is_multi_tool": {"type": "BOOLEAN"},
-                    "has_sequence_dependency": {"type": "BOOLEAN"},
-                },
-                "required": [
-                    "id", "is_multi_tool", "has_sequence_dependency",
-                ],
-            },
-        },
+        key: {"type": "ARRAY", "items": {"type": "STRING"}}
+        for key in COMPOSITION_KEYS
     },
-    "required": ["tags"],
+    "required": list(COMPOSITION_KEYS),
 }

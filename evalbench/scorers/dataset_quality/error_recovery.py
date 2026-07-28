@@ -1,8 +1,8 @@
 """Error & recovery coverage scorer: how much of the failure taxonomy a dataset tests.
 
 Tags each CUJ with the failure/recovery modes it exercises (Access Denied,
-Latency/Throttling, Output Validation Failure, Null Results, Incomplete Data Set,
-Cascading Failure) and scores the fraction of that taxonomy the dataset covers. A
+Transient Failure, Malformed Output, Empty Result, Partial Result, Cascading
+Failure) and scores the fraction of that taxonomy the dataset covers. A
 dataset can hit a healthy unhappy-path share yet still test only one failure mode --
 coverage catches that. (Interaction-path diversity is graded separately by the
 cuj_diversity scorer.)
@@ -17,7 +17,7 @@ from scorers.dataset_quality.context import (
     DatasetQualityContext,
     SubScoreContribution,
 )
-from scorers.dataset_quality.llm import tag_cujs
+from scorers.dataset_quality.llm import group_cuj_ids
 from scorers.dataset_quality.prompts.error_recovery_coverage import (
     ERROR_RECOVERY_COVERAGE_PROMPT,
     ERROR_RECOVERY_COVERAGE_SCHEMA,
@@ -50,16 +50,15 @@ class ErrorRecoveryScorer:
             tool_names=context.tool_names_str,
             cujs_json=context.cujs_json(DEFAULT_CUJ_FIELDS),
         )
-        tags = tag_cujs(self.model, prompt, ERROR_RECOVERY_COVERAGE_SCHEMA)
-        if tags is None:
+        mode_ids = group_cuj_ids(
+            self.model,
+            prompt,
+            ERROR_RECOVERY_COVERAGE_SCHEMA,
+            ERROR_RECOVERY_MODES,
+            context.cuj_ids,
+        )
+        if mode_ids is None:
             return SubScoreContribution(applicable=False, logs="judge call failed")
-
-        mode_ids: dict[str, list] = {mode: [] for mode in ERROR_RECOVERY_MODES}
-        for scenario in context.scenarios:
-            sid = scenario.get("id")
-            for mode in tags.get(sid, {}).get("modes") or []:
-                if mode in mode_ids:
-                    mode_ids[mode].append(sid)
 
         covered = [mode for mode in ERROR_RECOVERY_MODES if mode_ids[mode]]
         uncovered = [mode for mode in ERROR_RECOVERY_MODES if not mode_ids[mode]]

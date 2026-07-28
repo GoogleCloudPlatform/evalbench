@@ -1,9 +1,8 @@
 """Composition scorer: multi-tool interaction + sequencing sensitivity.
 
-The judge tags each CUJ with two independent booleans -- ``is_multi_tool`` (does
-success genuinely need more than one distinct tool/skill) and
-``has_sequence_dependency`` (does success need a specific ordering). The two
-sub-shares are averaged: a dataset of one-tool-per-scenario requests overstates
+The judge makes two independent judgments per CUJ -- multi-tool (does success
+genuinely need more than one distinct tool/skill) and sequence dependency (does
+success need a specific ordering). The two sub-shares are averaged: a dataset of one-tool-per-scenario requests overstates
 how well the product handles realistic, composite work.
 
 Not applicable when the product exposes fewer than two composable units -- there
@@ -19,10 +18,13 @@ from scorers.dataset_quality.context import (
     DatasetQualityContext,
     SubScoreContribution,
 )
-from scorers.dataset_quality.llm import tag_cujs
+from scorers.dataset_quality.llm import group_cuj_ids
 from scorers.dataset_quality.prompts.composition_coverage import (
     COMPOSITION_COVERAGE_PROMPT,
     COMPOSITION_COVERAGE_SCHEMA,
+    COMPOSITION_KEYS,
+    KEY_MULTI_TOOL,
+    KEY_SEQUENCE_DEPENDENCY,
 )
 
 # Below this share (%), a composition dimension is flagged in suggestions only.
@@ -64,18 +66,18 @@ class CompositionScorer:
             tool_names=context.tool_names_str,
             cujs_json=context.cujs_json(DEFAULT_CUJ_FIELDS),
         )
-        tags = tag_cujs(self.model, prompt, COMPOSITION_COVERAGE_SCHEMA)
-        if tags is None:
+        grouped = group_cuj_ids(
+            self.model,
+            prompt,
+            COMPOSITION_COVERAGE_SCHEMA,
+            COMPOSITION_KEYS,
+            context.cuj_ids,
+        )
+        if grouped is None:
             return SubScoreContribution(applicable=False, logs="judge call failed")
 
-        multi_ids, seq_ids = [], []
-        for s in context.scenarios:
-            sid = s.get("id")
-            tag = tags.get(sid, {})
-            if tag.get("is_multi_tool") is True:
-                multi_ids.append(sid)
-            if tag.get("has_sequence_dependency") is True:
-                seq_ids.append(sid)
+        multi_ids = grouped[KEY_MULTI_TOOL]
+        seq_ids = grouped[KEY_SEQUENCE_DEPENDENCY]
         n_multi, n_seq = len(multi_ids), len(seq_ids)
 
         multitool_score = round(n_multi / n * 100, 2)

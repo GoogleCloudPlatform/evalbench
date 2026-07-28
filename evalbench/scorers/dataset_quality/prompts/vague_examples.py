@@ -1,3 +1,8 @@
+# Output key the judge groups CUJ ids under; the scorer reads the same constant
+# so prompt and scorer can't desync.
+KEY_VAGUE = "vague_ids"
+
+
 VAGUE_EXAMPLES_PROMPT = """\
 You are an expert evaluator of conversational AI evaluation datasets. You are given
 an ENTIRE dataset of Critical User Journeys (CUJs): each CUJ is one user-agent test
@@ -12,11 +17,11 @@ exact tool names. Your judgments drive a discoverability score, so judge from ho
 the user ACTUALLY phrases the request, not from what would make a stronger test.
 
 ### DEFINITIONS
-- VAGUE / INDIRECT (is_vague = true): The user expresses a GOAL, outcome, or intent
+- VAGUE / INDIRECT (list its id): The user expresses a GOAL, outcome, or intent
   without naming the specific tool, operation, or exact object to act on. The agent
   must infer what to do. Examples: "My tests are flaky, can you help?"; "I want to
   understand where our latency is coming from"; "Clean up this file."
-- DIRECT (is_vague = false): The user names the operation, tool, or exact target so
+- DIRECT (omit its id): The user names the operation, tool, or exact target so
   there is little inference needed. Examples: "Run pytest on test_auth.py";
   "Read config.yaml and list the keys"; "Call the search_customers tool for 'Acme'".
 
@@ -35,33 +40,19 @@ exact operation and target, it is DIRECT. When genuinely borderline, prefer DIRE
 {cujs_json}
 
 ### Output Format
-Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
+Return ONLY a JSON object (no markdown, no prose) with exactly this shape, listing
+only the ids of the VAGUE / INDIRECT CUJs:
 {{
-  "tags": [
-    {{
-      "id": "<the CUJ id, copied verbatim from the input>",
-      "is_vague": true|false
-    }}
-  ]
+  "vague_ids": ["<CUJ id, copied verbatim from the input>", "..."]
 }}
-Return one entry in "tags" for EVERY CUJ in the input. Each "id" MUST match an input
-CUJ id exactly."""
+Every id MUST match an input CUJ id exactly. Use an empty list when no CUJ is vague.
+Leave DIRECT CUJs out entirely -- any id you do not list counts as DIRECT."""
 
 
 VAGUE_EXAMPLES_SCHEMA = {
     "type": "OBJECT",
     "properties": {
-        "tags": {
-            "type": "ARRAY",
-            "items": {
-                "type": "OBJECT",
-                "properties": {
-                    "id": {"type": "STRING"},
-                    "is_vague": {"type": "BOOLEAN"},
-                },
-                "required": ["id", "is_vague"],
-            },
-        },
+        KEY_VAGUE: {"type": "ARRAY", "items": {"type": "STRING"}},
     },
-    "required": ["tags"],
+    "required": [KEY_VAGUE],
 }

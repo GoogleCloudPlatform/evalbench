@@ -50,6 +50,10 @@ class DatasetQualityContext:
         return len(self.scenarios)
 
     @property
+    def cuj_ids(self) -> list[str]:
+        return [scenario.get("id") for scenario in self.scenarios]
+
+    @property
     def tool_names(self) -> list[str]:
         names = []
         for tool in self.tools:

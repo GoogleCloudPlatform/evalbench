@@ -1,7 +1,7 @@
 """Shared LLM plumbing for the dataset-quality judge scorers.
 
 Each LLM scorer owns its own prompt and call but shares this low-level plumbing:
-JSON-mode generation, defensive JSON extraction, and tag alignment by CUJ id.
+JSON-mode generation, defensive JSON extraction, and CUJ id grouping by label.
 Mirrors ``scorers.mcp_style_readability`` so a slightly malformed model response
 degrades gracefully instead of crashing the run.
 """
@@ -102,15 +102,23 @@ def _log_parse_failure(raw: str, err: Exception) -> None:
     )
 
 
-def tag_cujs(
-    model, prompt: str, response_schema: dict | None = None
-) -> dict[str, dict] | None:
-    """Run one tagging prompt and return the per-CUJ tags indexed by id.
+def group_cuj_ids(
+    model,
+    prompt: str,
+    response_schema: dict,
+    labels,
+    dataset_ids: list[str],
+) -> dict[str, list[str]] | None:
+    """Run one tagging prompt and return ``{label: [cuj_id]}`` for ``labels``.
+
+    Tagging prompts list CUJ ids under each label rather than emitting a row per
+    CUJ, so the judge's output scales with the ids that matter instead of with
+    the dataset. Ids absent from ``dataset_ids`` and repeats within a label are
+    dropped; each list follows dataset order.
 
     Returns ``None`` when the judge call itself failed (empty/unparseable
-    response, or a response missing the ``tags`` list) so the caller can drop
-    the metric as inapplicable instead of scoring a confident 0. A successfully
-    parsed response returns the indexed tags (possibly empty).
+    response, or not a single label list) so the caller can drop the metric as
+    inapplicable instead of scoring a confident 0.
     """
     raw = generate_json(model, prompt, response_schema)
     try:
@@ -118,15 +126,18 @@ def tag_cujs(
     except ValueError as e:
         _log_parse_failure(raw, e)
         return None
-    tags = data.get("tags")
-    if not isinstance(tags, list):
-        _log_parse_failure(raw, ValueError("response missing 'tags' list"))
+    if not any(isinstance(data.get(label), list) for label in labels):
+        _log_parse_failure(raw, ValueError("response has no label id lists"))
         return None
-    indexed = {}
-    for tag in tags:
-        if isinstance(tag, dict) and tag.get("id") is not None:
-            indexed[tag["id"]] = tag
-    return indexed
+    order = {cuj_id: i for i, cuj_id in enumerate(dataset_ids)}
+    grouped = {}
+    for label in labels:
+        ids = data.get(label)
+        ids = ids if isinstance(ids, list) else []
+        grouped[label] = sorted(
+            {i for i in ids if i in order}, key=order.__getitem__
+        )
+    return grouped
 
 
 def judge_coverage(
@@ -134,7 +145,7 @@ def judge_coverage(
 ) -> list[dict] | None:
     """Run one coverage prompt and return the judge's list of entries.
 
-    Unlike ``tag_cujs`` (keyed per CUJ id), coverage prompts return a flat list
+    Unlike ``group_cuj_ids`` (keyed per label), coverage prompts return a flat list
     under ``coverage``. Returns ``None`` when the judge call itself failed
     (empty/unparseable response, or a response missing the ``coverage`` list) so
     the caller can drop the metric as inapplicable instead of scoring a confident

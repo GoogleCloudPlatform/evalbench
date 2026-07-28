@@ -17,7 +17,7 @@ from scorers.dataset_quality.context import (
     DatasetQualityContext,
     SubScoreContribution,
 )
-from scorers.dataset_quality.llm import tag_cujs
+from scorers.dataset_quality.llm import group_cuj_ids
 from scorers.dataset_quality.prompts.cuj_path_classification import (
     CUJ_PATHS,
     CUJ_PATH_CLASSIFICATION_PROMPT,
@@ -50,16 +50,15 @@ class CujDiversityScorer:
             tool_names=context.tool_names_str,
             cujs_json=context.cujs_json(DEFAULT_CUJ_FIELDS),
         )
-        tags = tag_cujs(self.model, prompt, CUJ_PATH_CLASSIFICATION_SCHEMA)
-        if tags is None:
+        path_ids = group_cuj_ids(
+            self.model,
+            prompt,
+            CUJ_PATH_CLASSIFICATION_SCHEMA,
+            CUJ_PATHS,
+            context.cuj_ids,
+        )
+        if path_ids is None:
             return SubScoreContribution(applicable=False, logs="judge call failed")
-
-        path_ids: dict[str, list] = {path: [] for path in CUJ_PATHS}
-        for scenario in context.scenarios:
-            sid = scenario.get("id")
-            path = tags.get(sid, {}).get("cuj_path")
-            if path in path_ids:
-                path_ids[path].append(sid)
         counts = {path: len(ids) for path, ids in path_ids.items()}
 
         covered = [path for path in CUJ_PATHS if path_ids[path]]
