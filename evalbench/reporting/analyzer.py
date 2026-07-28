@@ -1,7 +1,6 @@
 """Analyze accuracy result from dataframe."""
 
 import logging
-import os
 import pandas as pd
 from scorers.util import get_python_scorer_name
 
