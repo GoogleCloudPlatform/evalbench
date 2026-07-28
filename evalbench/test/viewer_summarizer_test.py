@@ -55,7 +55,7 @@ class TestViewerSummarizer(unittest.TestCase):
         mock_generator = MagicMock()
         mock_get_generator.return_value = mock_generator
 
-        generator = get_summarizer(results_dir=self.temp_dir.name)
+        get_summarizer(results_dir=self.temp_dir.name)
 
         mock_get_generator.assert_called_once()
         args, _ = mock_get_generator.call_args
@@ -78,7 +78,7 @@ class TestViewerSummarizer(unittest.TestCase):
         mock_generator = MagicMock()
         mock_get_generator.return_value = mock_generator
 
-        generator = get_summarizer(results_dir=self.temp_dir.name)
+        get_summarizer(results_dir=self.temp_dir.name)
 
         mock_get_generator.assert_called_once()
         args, _ = mock_get_generator.call_args
@@ -101,7 +101,7 @@ class TestViewerSummarizer(unittest.TestCase):
         mock_generator = MagicMock()
         mock_get_generator.return_value = mock_generator
 
-        generator = get_summarizer(dataset_name="agy-cli-tools")
+        get_summarizer(dataset_name="agy-cli-tools")
 
         mock_get_generator.assert_called_once()
         args, _ = mock_get_generator.call_args
@@ -118,7 +118,7 @@ class TestViewerSummarizer(unittest.TestCase):
         mock_generator = MagicMock()
         mock_get_generator.return_value = mock_generator
 
-        generator = get_summarizer(model_config_path=custom_config_path)
+        get_summarizer(model_config_path=custom_config_path)
 
         mock_get_generator.assert_called_once()
         args, _ = mock_get_generator.call_args
