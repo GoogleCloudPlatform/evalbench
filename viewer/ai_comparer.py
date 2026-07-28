@@ -40,24 +40,7 @@ def get_results_dir():
     logger.warning("Results directory not found in candidates, defaulting to current directory results")
     return os.path.join(os.getcwd(), "results")
 
-def get_summarizer():
-    """Loads the generator based on the config in viewer/summarizer_config.yaml."""
-    config_path = os.path.join(os.path.dirname(__file__), "config", "summarizer_config.yaml")
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(f"Config file not found at {config_path}")
-        
-    config = load_yaml_config(config_path)
-    model_config_path = config.get("model_config_path")
-    if not model_config_path:
-        raise ValueError("model_config_path not specified in summarizer_config.yaml")
-        
-    # Resolve path relative to the config file if it's relative
-    if not os.path.isabs(model_config_path):
-        model_config_path = os.path.abspath(os.path.join(os.path.dirname(config_path), model_config_path))
-        
-    logger.info(f"Loading generator using config: {model_config_path}")
-    generator = get_generator(global_models, model_config_path)
-    return generator
+from summarizer import get_summarizer
 
 def compare_evals(id1, id2):
     """Compares two evaluation runs using Gemini."""
