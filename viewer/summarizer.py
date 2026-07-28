@@ -8,6 +8,7 @@ import logging
 import threading
 import pandas as pd
 from evalbench.util.config import load_yaml_config
+from evalbench.generators.models import get_generator
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -19,6 +20,7 @@ global_models = {"lock": threading.Lock(), "registered_models": {}}
 def get_summarizer(results_dir: str = None, dataset_name: str = None, model_config_path: str = None):
     """Loads the generator based on explicit parameter, run_config.yaml, dataset_models mapping, or viewer/config/summarizer_config.yaml fallback."""
     selected_config_path = model_config_path
+    base_dir = os.getcwd() if selected_config_path else None
 
     # Check run_config.yaml inside results_dir if provided
     if not selected_config_path and results_dir and os.path.exists(results_dir):
@@ -28,6 +30,7 @@ def get_summarizer(results_dir: str = None, dataset_name: str = None, model_conf
                 run_config = load_yaml_config(run_config_file)
                 selected_config_path = run_config.get("summarizer_model_config")
                 if selected_config_path:
+                    base_dir = results_dir
                     logger.info(f"Found run-specific summarizer model config: {selected_config_path}")
             except Exception as e:
                 logger.warning(f"Could not load run_config.yaml from {run_config_file}: {e}")
@@ -38,24 +41,26 @@ def get_summarizer(results_dir: str = None, dataset_name: str = None, model_conf
         config = load_yaml_config(config_path)
 
         if not selected_config_path and dataset_name:
-            dataset_models = config.get("dataset_models", {})
+            dataset_models = config.get("dataset_models") or {}
             if dataset_name in dataset_models:
                 selected_config_path = dataset_models[dataset_name]
+                base_dir = os.path.dirname(config_path)
                 logger.info(f"Found dataset-specific summarizer model config for '{dataset_name}': {selected_config_path}")
 
         if not selected_config_path:
             selected_config_path = config.get("model_config_path")
+            base_dir = os.path.dirname(config_path)
 
     if not selected_config_path:
         raise ValueError("No valid model_config_path specified for summarizer.")
 
-    # Resolve path relative to config directory if it's relative
+    # Resolve path relative to base_dir if it's relative
     if not os.path.isabs(selected_config_path):
-        base_dir = os.path.dirname(config_path) if os.path.exists(config_path) else os.path.dirname(__file__)
+        if not base_dir:
+            base_dir = os.path.dirname(config_path) if os.path.exists(config_path) else os.path.dirname(__file__)
         selected_config_path = os.path.abspath(os.path.join(base_dir, selected_config_path))
 
     logger.info(f"Loading generator using config: {selected_config_path}")
-    from evalbench.generators.models import get_generator
     generator = get_generator(global_models, selected_config_path)
     return generator
 
