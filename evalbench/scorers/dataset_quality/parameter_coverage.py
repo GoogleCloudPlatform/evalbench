@@ -1,23 +1,20 @@
 """Parameter-coverage scorer: how much of the tool param surface CUJs exercise.
 
-A judge decides, per ``(tool, parameter)``, which CUJs actually EXERCISE it --
-i.e. which scenarios would force the agent to supply a value for that parameter,
-inferred from the scenario text (CUJs carry no literal argument values). A
-parameter is covered when at least ``min_items`` CUJs exercise it; the score is
-``covered / total * 100``. The denominator is taken from the tool schema itself
-(ground truth), not the judge, so a parameter the judge omits counts as uncovered.
-A dataset that never varies a parameter can't tell you whether it's discoverable
-or handled -- uncovered params are blind spots.
+A judge decides, per ``(tool, parameter)``, which CUJs would force the agent to
+supply a value for it (CUJs carry no literal argument values, so this is inferred
+from the scenario text). A parameter is covered when at least ``min_items`` CUJs
+exercise it. The denominator comes from the tool schema, not the judge, so a
+parameter the judge omits counts as uncovered.
 """
 
 import logging
 from collections import Counter, defaultdict
 
-from generators.models import get_generator
 from scorers.dataset_quality.context import (
     CATEGORY_DISCOVERABILITY,
     DEFAULT_CUJ_FIELDS,
     DatasetQualityContext,
+    JudgeSubScorer,
     SubScoreContribution,
 )
 from scorers.dataset_quality.llm import judge_coverage
@@ -27,22 +24,16 @@ from scorers.dataset_quality.prompts.parameter_coverage import (
 )
 
 
-class ParameterCoverageScorer:
+class ParameterCoverageScorer(JudgeSubScorer):
     """Fraction of schema parameters exercised by at least ``min_items`` CUJs."""
 
+    name = "parameter_coverage"
     category = CATEGORY_DISCOVERABILITY
+    default_weight = 13
 
     def __init__(self, config: dict, global_models):
-        self.name = "parameter_coverage"
-        config = config or {}
-        self.weight = float(config.get("weight", 13))
-        self.min_items = int(config.get("min_items", 1))
-        model_config = config.get("model_config")
-        if not model_config:
-            raise ValueError(
-                "model_config is required for the parameter_coverage scorer"
-            )
-        self.model = get_generator(global_models, model_config)
+        super().__init__(config, global_models)
+        self.min_items = int((config or {}).get("min_items", 1))
 
     def run(self, context: DatasetQualityContext) -> SubScoreContribution:
         n = context.n
@@ -59,7 +50,7 @@ class ParameterCoverageScorer:
             tool_schema=context.tool_schema_json(),
             cujs_json=context.cujs_json(DEFAULT_CUJ_FIELDS),
         )
-        valid_ids = {s.get("id") for s in context.scenarios}
+        valid_ids = set(context.cuj_ids)
 
         coverage = judge_coverage(
             self.model, prompt, response_schema=PARAMETER_COVERAGE_SCHEMA

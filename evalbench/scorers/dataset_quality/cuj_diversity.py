@@ -10,11 +10,11 @@ as the dataset's path distribution.
 
 import logging
 
-from generators.models import get_generator
 from scorers.dataset_quality.context import (
     CATEGORY_DIVERSITY,
     DEFAULT_CUJ_FIELDS,
     DatasetQualityContext,
+    JudgeSubScorer,
     SubScoreContribution,
 )
 from scorers.dataset_quality.llm import group_cuj_ids
@@ -25,21 +25,12 @@ from scorers.dataset_quality.prompts.cuj_path_classification import (
 )
 
 
-class CujDiversityScorer:
+class CujDiversityScorer(JudgeSubScorer):
     """Fraction of the five CUJ interaction paths the dataset exercises."""
 
+    name = "cuj_diversity"
     category = CATEGORY_DIVERSITY
-
-    def __init__(self, config: dict, global_models):
-        self.name = "cuj_diversity"
-        config = config or {}
-        self.weight = float(config.get("weight", 15))
-        model_config = config.get("model_config")
-        if not model_config:
-            raise ValueError(
-                "model_config is required for the cuj_diversity scorer"
-            )
-        self.model = get_generator(global_models, model_config)
+    default_weight = 15
 
     def run(self, context: DatasetQualityContext) -> SubScoreContribution:
         n = context.n

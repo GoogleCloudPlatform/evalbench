@@ -10,11 +10,11 @@ cuj_diversity scorer.)
 
 import logging
 
-from generators.models import get_generator
 from scorers.dataset_quality.context import (
     CATEGORY_ERROR_RECOVERY,
     DEFAULT_CUJ_FIELDS,
     DatasetQualityContext,
+    JudgeSubScorer,
     SubScoreContribution,
 )
 from scorers.dataset_quality.llm import group_cuj_ids
@@ -25,21 +25,12 @@ from scorers.dataset_quality.prompts.error_recovery_coverage import (
 )
 
 
-class ErrorRecoveryScorer:
+class ErrorRecoveryScorer(JudgeSubScorer):
     """Fraction of the failure/recovery taxonomy the dataset exercises."""
 
+    name = "error_recovery"
     category = CATEGORY_ERROR_RECOVERY
-
-    def __init__(self, config: dict, global_models):
-        self.name = "error_recovery"
-        config = config or {}
-        self.weight = float(config.get("weight", 28))
-        model_config = config.get("model_config")
-        if not model_config:
-            raise ValueError(
-                "model_config is required for the error_recovery scorer"
-            )
-        self.model = get_generator(global_models, model_config)
+    default_weight = 28
 
     def run(self, context: DatasetQualityContext) -> SubScoreContribution:
         n = context.n

@@ -15,10 +15,10 @@ crashing the run.
 import html
 import json
 import logging
-import re
 
 from generators.models import get_generator
 from scorers.mcp_readability_scoring import EndpointContext, ScoreContribution
+from scorers.util import extract_json
 
 
 # Output-token ceiling for the JSON-mode judge call. Gemini 3.x is a *thinking*
@@ -255,32 +255,9 @@ class McpStyleReadabilityScorer:
     # ------------------------------------------------------------------
     # parsing / rendering
     # ------------------------------------------------------------------
-    @staticmethod
-    def _extract_json(text: str) -> dict:
-        """Pull a JSON object out of a model response (handles code fences)."""
-        if not text:
-            raise ValueError("empty model response")
-        text = text.strip()
-        # Strip ```json ... ``` or ``` ... ``` fences (tolerating trailing ws).
-        fence = re.match(r"^```(?:json)?\s*(.*?)\s*```\s*$", text, re.DOTALL)
-        if fence:
-            text = fence.group(1).strip()
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            # Fallback: grab the outermost {...} span.
-            start = text.find("{")
-            end = text.rfind("}")
-            if start != -1 and end > start:
-                try:
-                    return json.loads(text[start:end + 1])
-                except json.JSONDecodeError:
-                    pass
-            raise ValueError("no JSON object found in model response")
-
     def _parse(self, raw: str) -> dict:
         """Normalize the model output into a stable feedback dict."""
-        data = self._extract_json(raw)
+        data = extract_json(raw)
         findings = data.get("findings") or []
         if not isinstance(findings, list):
             findings = []

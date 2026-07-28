@@ -1,12 +1,8 @@
 """Naming-distribution scorer: how many CUJs name a tool instead of intent.
 
-Static (no judge). A discoverable product is one a user can drive by describing
-their goal ("which databases cost the most?"), not by naming the operation
-("run list_instances"). This counts CUJs whose user-facing text echoes a tool's
-name and scores the *indirect* share -- ``(N - k) / N * 100``. A healthy dataset
-keeps direct mentions at or below ~10% (score >= 90). Matching is lexical
-(tool name, its un-prefixed form, and the underscores-as-spaces form), so it
-catches prompts that read like tool invocations rather than real-world goals.
+Static (no judge). Counts CUJs whose user-facing text echoes a tool's name and
+scores the *indirect* share -- ``(N - k) / N * 100``. Matching is lexical: the
+tool name, its un-prefixed form, and the underscores-as-spaces form.
 """
 
 import logging
@@ -15,22 +11,20 @@ from scorers.dataset_quality.context import (
     CATEGORY_DISCOVERABILITY,
     DatasetQualityContext,
     SubScoreContribution,
+    SubScorer,
 )
 
+# Above this share of tool-naming CUJs, flag it in suggestions. Does not affect
+# the score, which is a plain proportion.
+_TARGET_NAMED_FRACTION = 0.10
 
-class NamingDistributionScorer:
+
+class NamingDistributionScorer(SubScorer):
     """Fraction of CUJs that express intent instead of naming a tool."""
 
+    name = "naming_distribution"
     category = CATEGORY_DISCOVERABILITY
-
-    def __init__(self, config: dict, global_models):
-        self.name = "naming_distribution"
-        config = config or {}
-        self.weight = float(config.get("weight", 5))
-        # Only shapes the suggestion, not the score (which is a plain proportion).
-        self.target_named_fraction = float(
-            config.get("target_named_fraction", 0.10)
-        )
+    default_weight = 5
 
     @staticmethod
     def _surface_forms(tool_name: str) -> set[str]:
@@ -70,10 +64,10 @@ class NamingDistributionScorer:
         score = round((n - n_named) / n * 100, 2)
 
         suggestions = []
-        if n_named / n > self.target_named_fraction:
+        if n_named / n > _TARGET_NAMED_FRACTION:
             suggestions.append(
                 f"{n_named}/{n} CUJs name a tool directly; aim for "
-                f"<={int(self.target_named_fraction * 100)}% so users are graded "
+                f"<={int(_TARGET_NAMED_FRACTION * 100)}% so users are graded "
                 "on discovering tools from intent."
             )
         logging.info(
@@ -84,6 +78,6 @@ class NamingDistributionScorer:
             score=score,
             row_fields={"dq_tool_named_count": n_named},
             suggestions=suggestions,
-            evidence={"names_tool": named_ids, "intent_based": intent_ids},
+            evidence={"names_tool_ids": named_ids, "intent_based_ids": intent_ids},
             logs=f"named={n_named}/{n}",
         )

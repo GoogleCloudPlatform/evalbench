@@ -56,8 +56,9 @@ def _weighted_average(metrics: list[ScoredMetric]) -> float | None:
 def compute_grade(metrics: list[ScoredMetric]) -> dict:
     """Roll metrics up into a dataset quality score, letter grade, and category scores.
 
-    Returns ``dataset_quality_score`` (None when nothing applies), ``letter_grade``,
-    and ``category_scores`` (weight-normalized per category, applicable metrics only).
+    ``dataset_quality_score`` and ``letter_grade`` are None when nothing applies
+    (every scorer dropped out), so an ungraded dataset stays distinguishable from
+    a genuine F. ``category_scores`` is weight-normalized over applicable metrics.
     """
     applicable = [
         m for m in metrics if m.applicable and m.score is not None
@@ -83,7 +84,7 @@ def compute_grade(metrics: list[ScoredMetric]) -> dict:
         "letter_grade": (
             letter_grade(dataset_quality_score)
             if dataset_quality_score is not None
-            else "F"
+            else None
         ),
         "category_scores": category_scores,
     }

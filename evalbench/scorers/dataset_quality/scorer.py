@@ -9,6 +9,7 @@ the product's tool schema, runs every configured sub-scorer, and rolls the
 sub-scores up into a single weighted global score + letter grade.
 """
 
+import concurrent.futures
 import json
 import logging
 import time
@@ -18,7 +19,10 @@ from generators.models import get_generator
 from generators.models.mcp_tools import McpToolsError, McpToolsGenerator
 from scorers.comparator import Comparator
 from scorers.dataset_quality.composition import CompositionScorer
-from scorers.dataset_quality.context import DatasetQualityContext
+from scorers.dataset_quality.context import (
+    DatasetQualityContext,
+    SubScoreContribution,
+)
 from scorers.dataset_quality.cuj_diversity import CujDiversityScorer
 from scorers.dataset_quality.error_recovery import ErrorRecoveryScorer
 from scorers.dataset_quality.grading import ScoredMetric, compute_grade
@@ -34,6 +38,11 @@ from util.config import load_yaml_config
 # network/ADC blip. A deterministic failure still surfaces after the last try.
 _TOOL_FETCH_ATTEMPTS = 3
 _TOOL_FETCH_BACKOFF_S = 1.0
+
+# Judge scorers share one generator, and their calls bypass its rate limiter, so
+# an unbounded fan-out puts every sub-scorer on the same quota at once and buys
+# 429 backoff instead of speed.
+_MAX_SCORER_WORKERS = 3
 
 
 # Sub-scorers, keyed by the name used under the nested ``sub_scorers:`` block.
@@ -85,10 +94,7 @@ class DatasetQualityScorer(Comparator):
                 )
             self.scorers.append(scorer_cls(scorer_config or {}, global_models))
 
-        # Optional LLM synthesis pass. Absent -> deterministic report only. When
-        # set, a single call turns the graded report (scores, counts, suggestions,
-        # per-CUJ evidence) into an overall summary + prioritized actions, plus a
-        # per-category assessment and recommendations merged into each category.
+        # Optional; absent -> deterministic report only. See ``synthesis``.
         synthesis_config = config.get("synthesis") or {}
         synthesis_model_config = synthesis_config.get("model_config")
         self.synthesis_model = (
@@ -132,9 +138,8 @@ class DatasetQualityScorer(Comparator):
             tools = self._fetch_tools()
         except McpToolsError as e:
             # Tool discovery is infrastructure (network / ADC), not a property of
-            # the dataset. Emit one ungraded row (null score) so a transient blip
-            # is distinguishable from a genuine low grade rather than reading as
-            # an F on the trends page. Unexpected errors are left to propagate.
+            # the dataset, so an ungraded null row keeps a transient blip
+            # distinguishable from a genuine F.
             logging.error("dataset_quality: tool discovery failed: %s", e)
             return [(
                 self.name,
@@ -154,15 +159,15 @@ class DatasetQualityScorer(Comparator):
             tools=tools,
         )
 
-        # Group every scorer's output under the category it grades, so the report
-        # is one card-per-category structure instead of parallel flat blocks.
+        contributions = self._run_scorers(context)
+
         # Dataset-wide distributions (e.g. the CUJ-path breakdown) are hoisted to
         # the report's top level rather than nested under any one category.
         categories: dict[str, dict] = {}
         distributions: dict[str, Any] = {}
         metrics = []
         for scorer in self.scorers:
-            contribution = scorer.run(context)
+            contribution = contributions[scorer]
             metrics.append(
                 ScoredMetric(
                     name=scorer.name,
@@ -211,22 +216,62 @@ class DatasetQualityScorer(Comparator):
             grade["letter_grade"],
         )
 
-        # Emit one row per category plus a top-level summary row, so each
-        # sub-score lands on its own scores.csv row (mirroring how per-CUJ
-        # scorers each get a row) rather than a single JSON blob. The summary
-        # row carries the rollup that belongs to no single category.
-        overall = grade["dataset_quality_score"]
+        # One row per category plus a top-level summary row, so each sub-score
+        # lands on its own scores.csv row rather than in a single JSON blob. A
+        # None score means nothing was gradeable, and stays null rather than
+        # collapsing to a 0 that would read as a genuine F.
         summary = {k: v for k, v in report.items() if k != "categories"}
-        rows = [(self.name, overall if overall is not None else 0,
-                 json.dumps(summary, default=str))]
+        rows = [(
+            self.name,
+            grade["dataset_quality_score"],
+            json.dumps(summary, default=str),
+        )]
         for category in report["categories"]:
-            cat_score = category.get("score")
             rows.append((
                 category["name"],
-                cat_score if cat_score is not None else 0,
+                category.get("score"),
                 json.dumps(category, default=str),
             ))
         return rows
+
+    def _run_scorers(self, context: DatasetQualityContext) -> dict:
+        """Run every sub-scorer, returning ``{scorer: SubScoreContribution}``.
+
+        Sub-scorers are independent and LLM-bound, so a bounded pool pays roughly
+        the slowest scorer's latency instead of the sum. Each completion is logged
+        so a slow judge is visibly in flight rather than looking like a hang.
+        """
+        total = len(self.scorers)
+        workers = min(_MAX_SCORER_WORKERS, total)
+        logging.info(
+            "dataset_quality: running %d sub-scorers (%d at a time)",
+            total, workers,
+        )
+        contributions = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(s.run, context): s for s in self.scorers}
+            for done, future in enumerate(
+                concurrent.futures.as_completed(futures), start=1
+            ):
+                scorer = futures[future]
+                try:
+                    contributions[scorer] = future.result()
+                except Exception:
+                    # One broken scorer drops out of the weighted score rather
+                    # than discarding every other scorer's completed work.
+                    logging.exception(
+                        "dataset_quality: %s raised; dropping it (%d/%d)",
+                        scorer.name, done, total,
+                    )
+                    contributions[scorer] = SubScoreContribution(
+                        applicable=False, logs="scorer raised"
+                    )
+                else:
+                    logging.info(
+                        "dataset_quality: %s finished (%d/%d)",
+                        scorer.name, done, total,
+                    )
+        return contributions
 
     def _extract_cujs(self, eval_results: Any) -> list[dict]:
         """Pull the bundled CUJs out of the single wrapper scenario."""
@@ -264,6 +309,4 @@ class DatasetQualityScorer(Comparator):
                     "retrying", attempt, _TOOL_FETCH_ATTEMPTS,
                 )
                 time.sleep(_TOOL_FETCH_BACKOFF_S * attempt)
-        # Unreachable: the last attempt re-raises. Explicit terminal outcome so
-        # the function never implicitly returns None against its -> list contract.
         raise McpToolsError("dataset_quality: tool discovery exhausted retries")

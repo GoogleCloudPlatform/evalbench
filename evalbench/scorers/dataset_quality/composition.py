@@ -2,20 +2,18 @@
 
 The judge makes two independent judgments per CUJ -- multi-tool (does success
 genuinely need more than one distinct tool/skill) and sequence dependency (does
-success need a specific ordering). The two sub-shares are averaged: a dataset of one-tool-per-scenario requests overstates
-how well the product handles realistic, composite work.
-
-Not applicable when the product exposes fewer than two composable units -- there
-is no composition to test. A dataset that simply never composes still scores 0.
+success need a specific ordering) -- and the two shares are averaged. Not
+applicable when the product exposes fewer than two composable units; a dataset
+that simply never composes still scores 0.
 """
 
 import logging
 
-from generators.models import get_generator
 from scorers.dataset_quality.context import (
     CATEGORY_COMPOSITION,
     DEFAULT_CUJ_FIELDS,
     DatasetQualityContext,
+    JudgeSubScorer,
     SubScoreContribution,
 )
 from scorers.dataset_quality.llm import group_cuj_ids
@@ -31,21 +29,12 @@ from scorers.dataset_quality.prompts.composition_coverage import (
 _LOW_SHARE = 50.0
 
 
-class CompositionScorer:
+class CompositionScorer(JudgeSubScorer):
     """Average of the multi-tool share and the sequencing-dependency share."""
 
+    name = "composition"
     category = CATEGORY_COMPOSITION
-
-    def __init__(self, config: dict, global_models):
-        self.name = "composition"
-        config = config or {}
-        self.weight = float(config.get("weight", 15))
-        model_config = config.get("model_config")
-        if not model_config:
-            raise ValueError(
-                "model_config is required for the composition scorer"
-            )
-        self.model = get_generator(global_models, model_config)
+    default_weight = 15
 
     def run(self, context: DatasetQualityContext) -> SubScoreContribution:
         n = context.n
@@ -109,7 +98,7 @@ class CompositionScorer:
                 "dq_sequencing_score": sequencing_score,
             },
             suggestions=suggestions,
-            evidence={"multi_tool": multi_ids, "sequence_dependency": seq_ids},
+            evidence={KEY_MULTI_TOOL: multi_ids, KEY_SEQUENCE_DEPENDENCY: seq_ids},
             logs=(
                 f"multitool={n_multi}/{n} ({multitool_score}), "
                 f"sequencing={n_seq}/{n} ({sequencing_score})"

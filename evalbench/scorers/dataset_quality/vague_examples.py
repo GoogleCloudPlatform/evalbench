@@ -7,10 +7,10 @@ only direct, tool-naming commands overstate how usable the product is.
 
 import logging
 
-from generators.models import get_generator
 from scorers.dataset_quality.context import (
     CATEGORY_DISCOVERABILITY,
     DatasetQualityContext,
+    JudgeSubScorer,
     SubScoreContribution,
 )
 from scorers.dataset_quality.grading import fraction_score
@@ -22,22 +22,16 @@ from scorers.dataset_quality.prompts.vague_examples import (
 )
 
 
-class VagueExamplesScorer:
+class VagueExamplesScorer(JudgeSubScorer):
     """Fraction of CUJs whose request is vague / indirect, vs a target share."""
 
+    name = "vague_examples"
     category = CATEGORY_DISCOVERABILITY
+    default_weight = 12
 
     def __init__(self, config: dict, global_models):
-        self.name = "vague_examples"
-        config = config or {}
-        self.weight = float(config.get("weight", 12))
-        self.target_fraction = float(config.get("target_fraction", 0.5))
-        model_config = config.get("model_config")
-        if not model_config:
-            raise ValueError(
-                "model_config is required for the vague_examples scorer"
-            )
-        self.model = get_generator(global_models, model_config)
+        super().__init__(config, global_models)
+        self.target_fraction = float((config or {}).get("target_fraction", 0.5))
 
     def run(self, context: DatasetQualityContext) -> SubScoreContribution:
         n = context.n
@@ -78,6 +72,6 @@ class VagueExamplesScorer:
             score=score,
             row_fields={"dq_vague_count": n_vague},
             suggestions=suggestions,
-            evidence={"vague": vague_ids, "direct": direct_ids},
+            evidence={KEY_VAGUE: vague_ids, "direct_ids": direct_ids},
             logs=f"vague={n_vague}/{n}, target_fraction={self.target_fraction}",
         )

@@ -1,16 +1,15 @@
 """Synthesis pass: turn the deterministic report into LLM recommendations.
 
 Runs once, after all sub-scorers have graded the dataset. Feeds only the
-already-computed report (scores, counts, suggestions, per-CUJ evidence) to the
-model -- never the raw dataset -- so the model reasons over final signals instead
-of re-judging CUJs. Returns ``{}`` on any parse failure so a malformed response
-leaves the deterministic report intact rather than aborting the run.
+already-computed report to the model -- never the raw dataset -- so the model
+reasons over final signals instead of re-judging CUJs.
 """
 
 import json
 import logging
 
-from scorers.dataset_quality.llm import extract_json, generate_json
+from scorers.dataset_quality.llm import generate_json
+from scorers.util import extract_json
 from scorers.dataset_quality.prompts.synthesis import (
     SYNTHESIS_PROMPT,
     SYNTHESIS_SCHEMA,
@@ -22,8 +21,7 @@ def synthesize(model, report: dict) -> None:
 
     Adds ``overall_summary`` and ``prioritized_actions`` at the top level and
     merges each category's ``assessment`` + ``recommendations`` into the matching
-    entry in ``report["categories"]`` (by name), so the LLM's prose lands next to
-    the deterministic score it describes. Leaves the report untouched on any parse
+    entry in ``report["categories"]``. Leaves the report untouched on a parse
     failure, so a malformed response degrades to the deterministic report.
     """
     prompt = SYNTHESIS_PROMPT.format(report_json=json.dumps(report, default=str))
