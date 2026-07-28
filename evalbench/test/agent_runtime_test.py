@@ -17,7 +17,7 @@ def test_parse_stream_response_accumulates_text():
     # Mock gRPC chunks returned by the stream client.
     chunk1 = MagicMock()
     chunk1.data = b'{"content": {"parts": [{"text": "SELECT "}]}}'
-    
+
     chunk2 = MagicMock()
     chunk2.data = (
         b'{"content": {"parts": [{"text": "1 FROM "}]}}\n'
@@ -34,10 +34,10 @@ def test_parse_stream_response_handles_invalid_chunks():
     # Test that decoding or JSON errors in one chunk don't crash the loop.
     chunk_valid = MagicMock()
     chunk_valid.data = b'{"content": {"parts": [{"text": "SELECT * "}]}}'
-    
+
     chunk_invalid = MagicMock()
     chunk_invalid.data = b'invalid-non-json-bytes'
-    
+
     response_stream = [chunk_valid, chunk_invalid]
     result = _parse_stream_response(response_stream)
     assert result == "SELECT * "
@@ -113,11 +113,11 @@ def test_generate_internal_queries_stream_api(mock_agent_engine, mock_vertexai_i
         "gcp_project_id": "test-project",
         "gcp_region": "us-central1"
     }
-    
+
     # Setup mock clients and streaming responses.
     mock_client = MagicMock()
     mock_agent_engine.return_value.execution_api_client = mock_client
-    
+
     mock_chunk = MagicMock()
     mock_chunk.data = b'{"content": {"parts": [{"text": "SELECT 5;"}]}}'
     mock_client.stream_query_reasoning_engine.return_value = [mock_chunk]
@@ -130,7 +130,7 @@ def test_generate_internal_queries_stream_api(mock_agent_engine, mock_vertexai_i
     call_args = (
         mock_client.stream_query_reasoning_engine.call_args[1]["request"]
     )
-    
+
     assert call_args.name == "projects/p/locations/l/reasoningEngines/r"
     assert call_args.input["message"] == "run query 5"
     assert call_args.class_method == "stream_query"
