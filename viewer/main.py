@@ -6,6 +6,7 @@ import logging
 import json
 import subprocess
 import precompute_trends
+import dataset_quality
 from summarizer import summarize_eval_scoring
 from ai_comparer import compare_evals
 
@@ -2186,7 +2187,18 @@ def render_app_content():
 
     
             if state.selected_directory:
-    
+
+                # Dataset quality runs have no agent trajectory, so the eval-shaped
+                # Dashboard/Configs/Conversations panes below are empty for them.
+                dq_report = dataset_quality.load_report(
+                    results_dir, state.selected_directory
+                )
+                if dq_report is not None:
+                    dataset_quality.dataset_quality_detail_component(
+                        results_dir, dq_report, state.selected_directory
+                    )
+                    return
+
                 def on_tab_change(e: me.ButtonToggleChangeEvent):
                     state.selected_tab = e.value
                     
@@ -2396,6 +2408,7 @@ def render_app_content():
                                     me.ButtonToggleButton(label="Status", value="Status"),
                                     me.ButtonToggleButton(label="List", value="List"),
                                     me.ButtonToggleButton(label="Charts", value="Charts"),
+                                    me.ButtonToggleButton(label="Dataset Quality", value="Dataset Quality"),
                                 ]
                                 if state.compare_tab_visible:
                                     buttons.append(me.ButtonToggleButton(label="Compare", value="Compare"))
@@ -2414,6 +2427,8 @@ def render_app_content():
                                     me.text(f"Error: {e}")
                             elif state.selected_main_tab == "Charts":
                                 trends_component()
+                            elif state.selected_main_tab == "Dataset Quality":
+                                dataset_quality.dataset_quality_component()
                             elif state.selected_main_tab == "Status":
                                 status_component()
                             elif state.selected_main_tab == "Compare":
