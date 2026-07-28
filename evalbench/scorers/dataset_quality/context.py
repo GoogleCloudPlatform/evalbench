@@ -114,7 +114,8 @@ class SubScoreContribution:
     - ``score``: 0-100, or ``None`` when the scorer could not produce a number.
     - ``applicable``: False drops the scorer from the weighted global score
       (e.g. an empty dataset or a metric that doesn't apply to this product).
-    - ``row_fields``: extra detail counters merged into the category's metrics.
+    - ``metrics``: raw counters behind the score, merged into the category's
+      metrics and cited by the synthesis pass.
     - ``suggestions``: human-readable improvement notes (non-weighted).
     - ``evidence``: per-CUJ classifier tags grouped by label (which CUJ ids got
       which classification), surfaced for the UI and to ground the synthesis pass.
@@ -122,16 +123,14 @@ class SubScoreContribution:
       they belong under (e.g. ``{"cuj_path_distribution": {...}}``). The
       orchestrator hoists these to the report's top level instead of nesting them
       under the scorer's category, since they describe the whole dataset.
-    - ``logs``: short human-readable summary for logging.
     """
 
     score: float | None = None
     applicable: bool = True
-    row_fields: dict[str, Any] = field(default_factory=dict)
+    metrics: dict[str, Any] = field(default_factory=dict)
     suggestions: list[str] = field(default_factory=list)
     evidence: dict[str, list[str]] = field(default_factory=dict)
     distribution: dict[str, Any] = field(default_factory=dict)
-    logs: str = ""
 
 
 class SubScorer:

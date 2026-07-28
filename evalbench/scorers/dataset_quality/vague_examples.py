@@ -36,7 +36,7 @@ class VagueExamplesScorer(JudgeSubScorer):
     def run(self, context: DatasetQualityContext) -> SubScoreContribution:
         n = context.n
         if n == 0:
-            return SubScoreContribution(applicable=False, logs="no scenarios")
+            return SubScoreContribution(applicable=False)
 
         prompt = VAGUE_EXAMPLES_PROMPT.format(
             tool_names=context.tool_names_str,
@@ -52,7 +52,7 @@ class VagueExamplesScorer(JudgeSubScorer):
             context.cuj_ids,
         )
         if grouped is None:
-            return SubScoreContribution(applicable=False, logs="judge call failed")
+            return SubScoreContribution(applicable=False)
 
         vague_ids = grouped[KEY_VAGUE]
         vague = set(vague_ids)
@@ -70,8 +70,7 @@ class VagueExamplesScorer(JudgeSubScorer):
         logging.info("vague_examples: \t%d/%d vague -> %.2f", n_vague, n, score)
         return SubScoreContribution(
             score=score,
-            row_fields={"dq_vague_count": n_vague},
+            metrics={"dq_vague_count": n_vague},
             suggestions=suggestions,
             evidence={KEY_VAGUE: vague_ids, "direct_ids": direct_ids},
-            logs=f"vague={n_vague}/{n}, target_fraction={self.target_fraction}",
         )

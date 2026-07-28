@@ -38,13 +38,11 @@ class ParameterCoverageScorer(JudgeSubScorer):
     def run(self, context: DatasetQualityContext) -> SubScoreContribution:
         n = context.n
         if n == 0:
-            return SubScoreContribution(applicable=False, logs="no scenarios")
+            return SubScoreContribution(applicable=False)
 
         params = context.tool_parameters()
         if not params:
-            return SubScoreContribution(
-                applicable=False, logs="no parameters in schema"
-            )
+            return SubScoreContribution(applicable=False)
 
         prompt = PARAMETER_COVERAGE_PROMPT.format(
             tool_schema=context.tool_schema_json(),
@@ -56,7 +54,7 @@ class ParameterCoverageScorer(JudgeSubScorer):
             self.model, prompt, response_schema=PARAMETER_COVERAGE_SCHEMA
         )
         if coverage is None:
-            return SubScoreContribution(applicable=False, logs="judge call failed")
+            return SubScoreContribution(applicable=False)
 
         counts: dict[tuple[str, str], set] = {}
         for entry in coverage:
@@ -94,10 +92,9 @@ class ParameterCoverageScorer(JudgeSubScorer):
         )
         return SubScoreContribution(
             score=score,
-            row_fields={
+            metrics={
                 "dq_param_covered": len(covered),
                 "dq_param_total": len(params),
             },
             suggestions=suggestions,
-            logs=f"covered={len(covered)}/{len(params)}",
         )

@@ -35,7 +35,7 @@ class CujDiversityScorer(JudgeSubScorer):
     def run(self, context: DatasetQualityContext) -> SubScoreContribution:
         n = context.n
         if n == 0:
-            return SubScoreContribution(applicable=False, logs="no scenarios")
+            return SubScoreContribution(applicable=False)
 
         prompt = CUJ_PATH_CLASSIFICATION_PROMPT.format(
             tool_names=context.tool_names_str,
@@ -49,7 +49,7 @@ class CujDiversityScorer(JudgeSubScorer):
             context.cuj_ids,
         )
         if path_ids is None:
-            return SubScoreContribution(applicable=False, logs="judge call failed")
+            return SubScoreContribution(applicable=False)
         counts = {path: len(ids) for path, ids in path_ids.items()}
 
         covered = [path for path in CUJ_PATHS if path_ids[path]]
@@ -71,12 +71,11 @@ class CujDiversityScorer(JudgeSubScorer):
         )
         return SubScoreContribution(
             score=score,
-            row_fields={
+            metrics={
                 "dq_paths_covered": len(covered),
                 "dq_paths_total": len(CUJ_PATHS),
             },
             suggestions=suggestions,
             evidence=path_ids,
             distribution={"cuj_path_distribution": counts},
-            logs=f"paths_covered={len(covered)}/{len(CUJ_PATHS)}, counts={counts}",
         )

@@ -35,7 +35,7 @@ class ErrorRecoveryScorer(JudgeSubScorer):
     def run(self, context: DatasetQualityContext) -> SubScoreContribution:
         n = context.n
         if n == 0:
-            return SubScoreContribution(applicable=False, logs="no scenarios")
+            return SubScoreContribution(applicable=False)
 
         prompt = ERROR_RECOVERY_COVERAGE_PROMPT.format(
             tool_names=context.tool_names_str,
@@ -49,7 +49,7 @@ class ErrorRecoveryScorer(JudgeSubScorer):
             context.cuj_ids,
         )
         if mode_ids is None:
-            return SubScoreContribution(applicable=False, logs="judge call failed")
+            return SubScoreContribution(applicable=False)
 
         covered = [mode for mode in ERROR_RECOVERY_MODES if mode_ids[mode]]
         uncovered = [mode for mode in ERROR_RECOVERY_MODES if not mode_ids[mode]]
@@ -70,11 +70,10 @@ class ErrorRecoveryScorer(JudgeSubScorer):
         )
         return SubScoreContribution(
             score=score,
-            row_fields={
+            metrics={
                 "dq_error_modes_covered": len(covered),
                 "dq_error_modes_total": len(ERROR_RECOVERY_MODES),
             },
             suggestions=suggestions,
             evidence=mode_ids,
-            logs=f"modes={len(covered)}/{len(ERROR_RECOVERY_MODES)}",
         )

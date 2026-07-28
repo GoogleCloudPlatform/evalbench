@@ -38,15 +38,13 @@ class NamingDistributionScorer(SubScorer):
     def run(self, context: DatasetQualityContext) -> SubScoreContribution:
         n = context.n
         if n == 0:
-            return SubScoreContribution(applicable=False, logs="no scenarios")
+            return SubScoreContribution(applicable=False)
 
         forms = set()
         for tool_name in context.tool_names:
             forms.update(self._surface_forms(tool_name))
         if not forms:
-            return SubScoreContribution(
-                applicable=False, logs="no tools in schema"
-            )
+            return SubScoreContribution(applicable=False)
 
         named_ids, intent_ids = [], []
         for scenario in context.scenarios:
@@ -76,8 +74,7 @@ class NamingDistributionScorer(SubScorer):
         )
         return SubScoreContribution(
             score=score,
-            row_fields={"dq_tool_named_count": n_named},
+            metrics={"dq_tool_named_count": n_named},
             suggestions=suggestions,
             evidence={"names_tool_ids": named_ids, "intent_based_ids": intent_ids},
-            logs=f"named={n_named}/{n}",
         )

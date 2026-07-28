@@ -28,6 +28,7 @@ from scorers.dataset_quality.error_recovery import ErrorRecoveryScorer
 from scorers.dataset_quality.grading import ScoredMetric, compute_grade
 from scorers.dataset_quality.naming_distribution import NamingDistributionScorer
 from scorers.dataset_quality.parameter_coverage import ParameterCoverageScorer
+from scorers.dataset_quality.render import render_report
 from scorers.dataset_quality.synthesis import synthesize
 from scorers.dataset_quality.trajectory_coverage import TrajectoryCoverageScorer
 from scorers.dataset_quality.vague_examples import VagueExamplesScorer
@@ -191,7 +192,7 @@ class DatasetQualityScorer(Comparator):
             category["sub_scores"][scorer.name] = contribution.score
             category["gaps"].extend(contribution.suggestions)
             category["evidence"].update(contribution.evidence)
-            category["metrics"].update(contribution.row_fields)
+            category["metrics"].update(contribution.metrics)
             distributions.update(contribution.distribution)
 
         grade = compute_grade(metrics)
@@ -209,12 +210,7 @@ class DatasetQualityScorer(Comparator):
         }
         if self.synthesis_model is not None:
             synthesize(self.synthesis_model, report)
-        logging.info(
-            "dataset_quality: %s -> %s (%s)",
-            self.product_name,
-            grade["dataset_quality_score"],
-            grade["letter_grade"],
-        )
+        logging.info("\n%s", render_report(report))
 
         # One row per category plus a top-level summary row, so each sub-score
         # lands on its own scores.csv row rather than in a single JSON blob. A
@@ -263,9 +259,7 @@ class DatasetQualityScorer(Comparator):
                         "dataset_quality: %s raised; dropping it (%d/%d)",
                         scorer.name, done, total,
                     )
-                    contributions[scorer] = SubScoreContribution(
-                        applicable=False, logs="scorer raised"
-                    )
+                    contributions[scorer] = SubScoreContribution(applicable=False)
                 else:
                     logging.info(
                         "dataset_quality: %s finished (%d/%d)",

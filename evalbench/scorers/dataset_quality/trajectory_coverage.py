@@ -28,7 +28,7 @@ class TrajectoryCoverageScorer(SubScorer):
     def run(self, context: DatasetQualityContext) -> SubScoreContribution:
         schema_tools = set(context.tool_names)
         if not schema_tools:
-            return SubScoreContribution(applicable=False, logs="no tools in schema")
+            return SubScoreContribution(applicable=False)
 
         trajectory_tools = set()
         for scenario in context.scenarios:
@@ -49,10 +49,9 @@ class TrajectoryCoverageScorer(SubScorer):
         )
         return SubScoreContribution(
             score=score,
-            row_fields={
+            metrics={
                 "dq_covered_tools": len(covered),
                 "dq_total_tools": len(schema_tools),
             },
             suggestions=suggestions,
-            logs=f"covered={len(covered)}/{len(schema_tools)}",
         )

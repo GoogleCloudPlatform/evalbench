@@ -39,7 +39,7 @@ class CompositionScorer(JudgeSubScorer):
     def run(self, context: DatasetQualityContext) -> SubScoreContribution:
         n = context.n
         if n == 0:
-            return SubScoreContribution(applicable=False, logs="no scenarios")
+            return SubScoreContribution(applicable=False)
 
         # Schema tools union trajectory entries, so skill-only products (whose
         # composable units are scripts, not MCP tools) still get scored.
@@ -47,9 +47,7 @@ class CompositionScorer(JudgeSubScorer):
         for scenario in context.scenarios:
             surface.update(scenario.get("expected_trajectory") or [])
         if len(surface) < 2:
-            return SubScoreContribution(
-                applicable=False, logs="nothing to compose (single-tool product)"
-            )
+            return SubScoreContribution(applicable=False)
 
         prompt = COMPOSITION_COVERAGE_PROMPT.format(
             tool_names=context.tool_names_str,
@@ -63,7 +61,7 @@ class CompositionScorer(JudgeSubScorer):
             context.cuj_ids,
         )
         if grouped is None:
-            return SubScoreContribution(applicable=False, logs="judge call failed")
+            return SubScoreContribution(applicable=False)
 
         multi_ids = grouped[KEY_MULTI_TOOL]
         seq_ids = grouped[KEY_SEQUENCE_DEPENDENCY]
@@ -91,7 +89,7 @@ class CompositionScorer(JudgeSubScorer):
         )
         return SubScoreContribution(
             score=score,
-            row_fields={
+            metrics={
                 "dq_multitool_count": n_multi,
                 "dq_sequence_count": n_seq,
                 "dq_multitool_score": multitool_score,
@@ -99,8 +97,4 @@ class CompositionScorer(JudgeSubScorer):
             },
             suggestions=suggestions,
             evidence={KEY_MULTI_TOOL: multi_ids, KEY_SEQUENCE_DEPENDENCY: seq_ids},
-            logs=(
-                f"multitool={n_multi}/{n} ({multitool_score}), "
-                f"sequencing={n_seq}/{n} ({sequencing_score})"
-            ),
         )
