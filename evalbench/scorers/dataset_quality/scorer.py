@@ -16,7 +16,8 @@ import time
 from typing import Any, Tuple
 
 from generators.models import get_generator
-from generators.models.mcp_tools import McpToolsError, McpToolsGenerator
+from generators.models.agent_cli import AgentCliGenerator
+from generators.models.mcp_client import McpToolsError
 from scorers.comparator import Comparator
 from scorers.dataset_quality.composition import CompositionScorer
 from scorers.dataset_quality.context import (
@@ -76,9 +77,7 @@ class DatasetQualityScorer(Comparator):
                 "model config providing setup.mcp_servers for tool discovery)"
             )
 
-        self.tools_generator = McpToolsGenerator(
-            {"timeout": config.get("tools_timeout", 30)}
-        )
+        self.tools_timeout = config.get("tools_timeout", 30)
 
         scorers_config = config.get("sub_scorers") or {}
         if not scorers_config:
@@ -292,8 +291,8 @@ class DatasetQualityScorer(Comparator):
         mcp_servers = setup.get("mcp_servers") or {}
         for attempt in range(1, _TOOL_FETCH_ATTEMPTS + 1):
             try:
-                return self.tools_generator.fetch_tools_from_mcp_servers(
-                    mcp_servers
+                return AgentCliGenerator.fetch_mcp_tools(
+                    mcp_servers, self.tools_timeout
                 )
             except McpToolsError:
                 if attempt == _TOOL_FETCH_ATTEMPTS:
