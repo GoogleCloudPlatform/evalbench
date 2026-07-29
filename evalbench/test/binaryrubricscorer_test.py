@@ -98,6 +98,55 @@ class TestBinaryRubricScorer(unittest.TestCase):
         self.assertIn("No rubric defined", reason)
         mock_model.generate.assert_not_called()
 
+    def test_binary_rubric_scorer_aggregation(self):
+        from reporting.analyzer import analyze_result
+
+        scores = [
+            {
+                "id": "1",
+                "comparator": "binary_rubric_scorer_0",
+                "score": 100,
+                "generated_sql": "SELECT 1",
+                "generated_error": None,
+            },
+            {
+                "id": "1",
+                "comparator": "binary_rubric_scorer_1",
+                "score": 100,
+                "generated_sql": "SELECT 1",
+                "generated_error": None,
+            },
+            {
+                "id": "2",
+                "comparator": "binary_rubric_scorer_0",
+                "score": 0,
+                "generated_sql": "SELECT 1",
+                "generated_error": None,
+            },
+            {
+                "id": "2",
+                "comparator": "binary_rubric_scorer_1",
+                "score": 100,
+                "generated_sql": "SELECT 1",
+                "generated_error": None,
+            },
+        ]
+        experiment_config = {
+            "scorers": {
+                "binary_rubric_scorer": {
+                    "model_config": "fake_config"
+                }
+            }
+        }
+
+        _, summary_df = analyze_result(scores, experiment_config)
+        summary_dict = summary_df.set_index("metric_name").to_dict(orient="index")
+
+        self.assertIn("binary_rubric_scorer", summary_dict)
+        # Total scores = 4 rows, 3 scored 100 -> 3/4 = 75%
+        self.assertEqual(summary_dict["binary_rubric_scorer"]["correct_results_count"], 3)
+        self.assertEqual(summary_dict["binary_rubric_scorer"]["total_results_count"], 4)
+
 
 if __name__ == '__main__':
     unittest.main()
