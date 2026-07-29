@@ -7,8 +7,10 @@ readability *scorer* then evaluates against the style guide.
 
 The source is pluggable per endpoint via ``tools_source.type``. The type names
 the *transport*, not the protocol -- ``http`` and ``stdio`` both speak MCP:
-  - ``http``: live MCP ``tools/list`` over Streamable HTTP. The fetch URL is
-    ``tools_source.url``; ``headers`` and ``authProviderType`` are honoured.
+  - ``http``: live MCP ``tools/list`` over Streamable HTTP using the official
+    ``mcp`` Python SDK. The fetch URL is ``tools_source.url``. No authentication
+    is configured -- the public endpoints are reached unauthenticated; auth can
+    be added back later if a future endpoint requires it.
   - ``stdio``: launch a local MCP server via a command and speak MCP over its
     stdio pipes (official ``mcp`` SDK). The process is started before fetching,
     ``tools/list`` is called, then it is shut down. For local / command-launched
@@ -17,16 +19,25 @@ the *transport*, not the protocol -- ``http`` and ``stdio`` both speak MCP:
     (``{"tools": [...]}``); dependency-free, for offline / deterministic runs.
 """
 
+import functools
 import json
+import logging
 import os
 
-from mcp import types as mcp_types
+import anyio
 
-from . import mcp_client
+from mcp import types as mcp_types
+from mcp import StdioServerParameters
+from mcp.client.session import ClientSession
+from mcp.client.stdio import stdio_client
+from mcp.client.streamable_http import streamablehttp_client
+
 from .generator import QueryGenerator
-from .mcp_client import McpToolsError
 from .mcp_tool_formatter import format_tools_to_man_page
-from .tool_naming import canonical_tool_name
+
+
+class McpToolsError(Exception):
+    """Raised when a tools spec cannot be fetched or parsed."""
 
 
 class McpToolsGenerator(QueryGenerator):
@@ -78,110 +89,48 @@ class McpToolsGenerator(QueryGenerator):
         """The endpoint's ``tools_source`` (or ``{}`` to default to ``http``)."""
         return dict(endpoint.get("tools_source") or {})
 
+    @staticmethod
+    def sanitize_url(url: str) -> str:
+        """Ensure the URL has a scheme and ends with ``/mcp``.
+
+        ``/mcp`` is the conventional path where the MCP protocol is exposed.
+        """
+        stripped_url = (url or "").strip()
+        if stripped_url.startswith(("http://", "https://")):
+            url_with_scheme = stripped_url
+        elif "localhost" in stripped_url:
+            url_with_scheme = f"http://{stripped_url}"
+        else:
+            url_with_scheme = f"https://{stripped_url}"
+
+        rstripped_url = url_with_scheme.rstrip("/")
+        if not rstripped_url.endswith("/mcp"):
+            return f"{rstripped_url}/mcp"
+        return rstripped_url
+
     # ------------------------------------------------------------------
-    # http source (official SDK over Streamable HTTP)
+    # http source (official SDK over Streamable HTTP, no auth)
     # ------------------------------------------------------------------
     def _from_http(self, source: dict) -> list[mcp_types.Tool]:
         raw_url = source.get("url")
         if not raw_url:
             raise McpToolsError("tools_source.type 'http' requires a 'url'")
-        return self._fetch_http(raw_url, self._auth_headers(source))
-
-    def _fetch_http(
-        self, raw_url: str, headers: dict | None
-    ) -> list[mcp_types.Tool]:
         url = self.sanitize_url(raw_url)
         try:
-            return anyio.run(
-                functools.partial(self._async_fetch_tools, url, headers)
-            )
+            return anyio.run(functools.partial(self._async_fetch_tools, url))
         except McpToolsError:
             raise
         except Exception as e:
             raise McpToolsError(f"Failed to fetch tools from {url}: {e}") from e
 
-    async def _async_fetch_tools(
-        self, url: str, headers: dict | None = None
-    ) -> list[mcp_types.Tool]:
+    async def _async_fetch_tools(self, url: str) -> list[mcp_types.Tool]:
         """Connect to the MCP server over Streamable HTTP and list its tools."""
-        async with streamablehttp_client(
-            url, headers=headers, timeout=self.timeout
-        ) as streams:
+        async with streamablehttp_client(url, timeout=self.timeout) as streams:
             reader, writer, _ = streams
             async with ClientSession(reader, writer) as session:
                 await session.initialize()
                 tools_response = await session.list_tools()
         return list(tools_response.tools)
-
-    @staticmethod
-    def _auth_headers(server_config: dict) -> dict | None:
-        """Build request headers for an MCP server (configured headers + auth).
-
-        ``authProviderType: google_credentials`` mints a bearer token from ADC
-        for the server's OAuth scopes (default: cloud-platform). Returns ``None``
-        when the server needs no headers.
-        """
-        headers = dict(server_config.get("headers") or {})
-        if server_config.get("authProviderType") == "google_credentials":
-            import google.auth
-            import google.auth.transport.requests
-
-            scopes = (server_config.get("oauth") or {}).get("scopes")
-            if not scopes:
-                raise McpToolsError(
-                    "google_credentials auth requires oauth.scopes on the MCP "
-                    "server config; none provided"
-                )
-            try:
-                creds, _ = google.auth.default(scopes=scopes)
-                creds.refresh(google.auth.transport.requests.Request())
-            except Exception as e:
-                raise McpToolsError(
-                    "Failed to acquire GCP Application Default Credentials. "
-                    "Run `gcloud auth application-default login`."
-                ) from e
-            headers["Authorization"] = f"Bearer {creds.token}"
-        return headers or None
-
-    def _fetch_server_tools(
-        self, server_name: str, server_config: dict
-    ) -> list[mcp_types.Tool]:
-        """Raw tools/list for one MCP server (original names).
-
-        Servers without an ``httpUrl`` are skipped (only Streamable HTTP servers
-        are queried) and yield an empty list.
-        """
-        server_config = server_config or {}
-        url = server_config.get("httpUrl") or server_config.get("url")
-        if not url:
-            logging.warning(
-                "mcp_tools: server %r has no httpUrl; skipping", server_name
-            )
-            return []
-        tools = self._fetch_http(url, self._auth_headers(server_config))
-        logging.info("mcp_tools: %s -> %d tools", server_name, len(tools))
-        return tools
-
-    def fetch_tools_from_mcp_servers(
-        self, mcp_servers: dict
-    ) -> list[mcp_types.Tool]:
-        """Aggregate tools across all configured MCP servers.
-
-        Each tool is namespaced ``<server>__<tool>`` to match the
-        ``expected_trajectory`` format in CUJ datasets. Raw per-server tools
-        (original names) are available via :meth:`_fetch_server_tools`.
-        """
-        aggregated: list[mcp_types.Tool] = []
-        for server_name, server_config in (mcp_servers or {}).items():
-            aggregated.extend(
-                mcp_types.Tool(
-                    name=canonical_tool_name(server_name, t.name),
-                    description=t.description or "",
-                    inputSchema=t.inputSchema,
-                )
-                for t in self._fetch_server_tools(server_name, server_config)
-            )
-        return aggregated
 
     # ------------------------------------------------------------------
     # stdio source (official SDK over a launched local process)
@@ -190,6 +139,7 @@ class McpToolsGenerator(QueryGenerator):
         command = source.get("command")
         if not command:
             raise McpToolsError("tools_source.type 'stdio' requires a 'command'")
+        args = list(source.get("args") or [])
         # Merge the current environment with any per-source overrides so the
         # launched server inherits PATH etc. but can be given extra config.
         env = source.get("env")
@@ -197,9 +147,30 @@ class McpToolsGenerator(QueryGenerator):
             merged_env = dict(os.environ)
             merged_env.update({str(k): str(v) for k, v in env.items()})
             env = merged_env
-        return mcp_client.fetch_tools_stdio(
-            command, source.get("args"), env, source.get("cwd")
+        cwd = source.get("cwd")
+        server_params = StdioServerParameters(
+            command=command, args=args, env=env, cwd=cwd
         )
+        try:
+            return anyio.run(
+                functools.partial(self._async_fetch_tools_stdio, server_params)
+            )
+        except McpToolsError:
+            raise
+        except Exception as e:
+            raise McpToolsError(
+                f"Failed to fetch tools from stdio server '{command}': {e}"
+            ) from e
+
+    async def _async_fetch_tools_stdio(
+        self, server_params: StdioServerParameters
+    ) -> list[mcp_types.Tool]:
+        """Launch the local MCP server and list its tools over stdio."""
+        async with stdio_client(server_params) as (reader, writer):
+            async with ClientSession(reader, writer) as session:
+                await session.initialize()
+                tools_response = await session.list_tools()
+        return list(tools_response.tools)
 
     # ------------------------------------------------------------------
     # file source
