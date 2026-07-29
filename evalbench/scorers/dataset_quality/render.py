@@ -18,6 +18,13 @@ def _distribution_lines(report: dict) -> list[str]:
     return lines
 
 
+def _weight_note(report: dict) -> str:
+    graded, total = report.get("graded_weight"), report.get("total_weight")
+    if graded is None or total is None:
+        return ""
+    return f" | graded on {graded:g}/{total:g} weight"
+
+
 def _bullets(label: str, items) -> list[str]:
     if not items:
         return []
@@ -29,8 +36,14 @@ def render_report(report: dict) -> str:
     lines = [
         f"=== Dataset Quality: {report.get('product_name')} ===",
         f"Score: {report.get('dataset_quality_score')} "
-        f"({report.get('letter_grade')}) | {report.get('total_cujs')} CUJs",
+        f"({report.get('letter_grade')}) | {report.get('total_cujs')} CUJs"
+        + _weight_note(report),
     ]
+    if report.get("excluded_scorers"):
+        lines.append(
+            "Excluded from the score (not applicable or failed): "
+            + ", ".join(report["excluded_scorers"])
+        )
     lines += _distribution_lines(report)
     if report.get("overall_summary"):
         lines += ["", f"Summary: {report['overall_summary']}"]

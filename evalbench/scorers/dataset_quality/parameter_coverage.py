@@ -2,9 +2,9 @@
 
 A judge decides, per ``(tool, parameter)``, which CUJs would force the agent to
 supply a value for it (CUJs carry no literal argument values, so this is inferred
-from the scenario text). A parameter is covered when at least ``min_items`` CUJs
-exercise it. The denominator comes from the tool schema, not the judge, so a
-parameter the judge omits counts as uncovered.
+from the scenario text). A parameter is covered when at least one CUJ exercises
+it. The denominator comes from the tool schema, not the judge, so a parameter the
+judge omits counts as uncovered.
 """
 
 import logging
@@ -25,15 +25,11 @@ from scorers.dataset_quality.prompts.parameter_coverage import (
 
 
 class ParameterCoverageScorer(JudgeSubScorer):
-    """Fraction of schema parameters exercised by at least ``min_items`` CUJs."""
+    """Fraction of schema parameters exercised by at least one CUJ."""
 
     name = "parameter_coverage"
     category = CATEGORY_DISCOVERABILITY
     default_weight = 13
-
-    def __init__(self, config: dict, global_models):
-        super().__init__(config, global_models)
-        self.min_items = int((config or {}).get("min_items", 1))
 
     def run(self, context: DatasetQualityContext) -> SubScoreContribution:
         n = context.n
@@ -66,7 +62,7 @@ class ParameterCoverageScorer(JudgeSubScorer):
                 i for i in ids if i in valid_ids
             )
 
-        covered = {k for k in params if len(counts.get(k, set())) >= self.min_items}
+        covered = {k for k in params if counts.get(k)}
         uncovered = sorted(params - covered)
         score = round(len(covered) / len(params) * 100)
 
@@ -83,8 +79,7 @@ class ParameterCoverageScorer(JudgeSubScorer):
                 for tool in sorted(uncovered_by_tool)
             ]
             suggestions.append(
-                f"No CUJ (>= {self.min_items}) exercises these parameters, "
-                "by tool: " + "; ".join(groups)
+                "No CUJ exercises these parameters, by tool: " + "; ".join(groups)
             )
         logging.info(
             "parameter_coverage: \t%d/%d params covered -> %d",

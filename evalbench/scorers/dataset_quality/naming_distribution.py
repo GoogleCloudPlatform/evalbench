@@ -1,11 +1,13 @@
 """Naming-distribution scorer: how many CUJs name a tool instead of intent.
 
-Static (no judge). Counts CUJs whose user-facing text echoes a tool's name and
-scores the *indirect* share -- ``(N - k) / N * 100``. Matching is lexical: the
-tool name, its un-prefixed form, and the underscores-as-spaces form.
+Static (no judge). Counts CUJs whose starting prompt echoes a tool's name and
+scores the *indirect* share -- ``(N - k) / N * 100``. Matching is lexical and
+word-anchored: the tool name, its un-prefixed form, and the underscores-as-spaces
+form.
 """
 
 import logging
+import re
 
 from scorers.dataset_quality.context import (
     CATEGORY_DISCOVERABILITY,
@@ -45,15 +47,19 @@ class NamingDistributionScorer(SubScorer):
             forms.update(self._surface_forms(tool_name))
         if not forms:
             return SubScoreContribution(applicable=False)
+        # Word-anchored so a short tool name (ls, glob, read) can't match inside
+        # an unrelated word.
+        pattern = re.compile(
+            r"\b(?:" + "|".join(re.escape(f) for f in sorted(forms)) + r")\b"
+        )
 
         named_ids, intent_ids = [], []
         for scenario in context.scenarios:
             sid = scenario.get("id")
-            text = " ".join(
-                str(scenario.get(field) or "")
-                for field in ("starting_prompt", "conversation_plan")
-            ).lower()
-            if any(form in text for form in forms):
+            # Only the user's own words. conversation_plan is author metadata
+            # that routinely names the tool the agent is expected to call.
+            text = str(scenario.get("starting_prompt") or "").lower()
+            if pattern.search(text):
                 named_ids.append(sid)
             else:
                 intent_ids.append(sid)

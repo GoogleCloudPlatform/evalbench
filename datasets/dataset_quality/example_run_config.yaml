@@ -46,7 +46,6 @@ scorers:
         # weight: 5   (default)
       parameter_coverage:
         # weight: 13  (default)
-        # min_items: 1  (default; min CUJs that must exercise a parameter to count it covered)
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       vague_examples:
         # weight: 12  (default)

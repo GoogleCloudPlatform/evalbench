@@ -206,6 +206,9 @@ class DatasetQualityScorer(Comparator):
             "total_cujs": context.n,
             "dataset_quality_score": grade["dataset_quality_score"],
             "letter_grade": grade["letter_grade"],
+            "graded_weight": grade["graded_weight"],
+            "total_weight": grade["total_weight"],
+            "excluded_scorers": grade["excluded_scorers"],
             "categories": list(categories.values()),
             **distributions,
         }
@@ -291,9 +294,13 @@ class DatasetQualityScorer(Comparator):
                 "tool discovery; only setup.mcp_servers is queried."
             )
         mcp_servers = setup.get("mcp_servers") or {}
+        if not mcp_servers:
+            raise McpToolsError(
+                f"{self.model_config_path} declares no setup.mcp_servers to query"
+            )
         for attempt in range(1, _TOOL_FETCH_ATTEMPTS + 1):
             try:
-                return AgentCliGenerator.fetch_mcp_tools(
+                tools = AgentCliGenerator.fetch_mcp_tools(
                     mcp_servers, self.tools_timeout
                 )
             except McpToolsError:
@@ -304,4 +311,16 @@ class DatasetQualityScorer(Comparator):
                     "retrying", attempt, _TOOL_FETCH_ATTEMPTS,
                 )
                 time.sleep(_TOOL_FETCH_BACKOFF_S * attempt)
+            else:
+                # An empty catalog is deterministic, so it is not retried. It
+                # would otherwise grade the dataset on the judge scorers alone,
+                # with no tool catalog to judge against.
+                if not tools:
+                    raise McpToolsError(
+                        "MCP servers returned an empty tool catalog ("
+                        + ", ".join(sorted(mcp_servers))
+                        + "); only Streamable HTTP servers with an httpUrl/url "
+                        "are queried"
+                    )
+                return tools
         raise McpToolsError("dataset_quality: tool discovery exhausted retries")
