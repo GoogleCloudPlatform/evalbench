@@ -27,9 +27,7 @@ from evaluator.mcp_readability.orchestrator import (
     _validate_endpoint_type,
 )
 from mcp import types as mcp_types
-from generators.models import mcp_client
-from generators.models.mcp_client import McpToolsError
-from generators.models.mcp_tools import McpToolsGenerator
+from generators.models.mcp_tools import McpToolsGenerator, McpToolsError
 from generators.models.mcp_tool_formatter import format_tools_to_man_page
 from scorers.mcp_readability_scoring import EndpointContext
 from scorers.mcp_style_readability import McpStyleReadabilityScorer
@@ -119,7 +117,7 @@ def test_metrics_scorer_run_pass_and_fail():
 # URL sanitization
 # --------------------------------------------------------------------------
 def test_sanitize_url():
-    s = mcp_client.sanitize_url
+    s = McpToolsGenerator.sanitize_url
     assert s("example.com") == "https://example.com/mcp"
     assert s("https://x.com/mcp") == "https://x.com/mcp"
     assert s("https://x.com/mcp/") == "https://x.com/mcp"
