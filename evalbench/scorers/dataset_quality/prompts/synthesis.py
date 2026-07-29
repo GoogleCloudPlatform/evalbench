@@ -44,20 +44,12 @@ Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
       "assessment": "<1-2 sentences on what this score means for the dataset>",
       "recommendations": ["<concrete, actionable step>", "..."]
     }}
-  ],
-  "prioritized_actions": [
-    {{
-      "priority": <integer, 1 = do first>,
-      "area": "<the category or sub-metric this targets>",
-      "action": "<what to add or change, concretely>",
-      "rationale": "<the specific signal from the report that motivates this>"
-    }}
   ]
 }}
 Include one ``category_analysis`` entry per entry in ``categories`` (use its
 ``name`` as the ``category``); in each ``assessment``, name the weakest
-``sub_score`` driving that category. Order
-``prioritized_actions`` lowest-scoring gaps first (rank by score; no weights are
+``sub_score`` driving that category. Order each category's
+``recommendations`` lowest-scoring gaps first (rank by score; no weights are
 provided)."""
 
 
@@ -84,23 +76,9 @@ SYNTHESIS_SCHEMA = {
                 ],
             },
         },
-        "prioritized_actions": {
-            "type": "ARRAY",
-            "items": {
-                "type": "OBJECT",
-                "properties": {
-                    "priority": {"type": "INTEGER"},
-                    "area": {"type": "STRING"},
-                    "action": {"type": "STRING"},
-                    "rationale": {"type": "STRING"},
-                },
-                "required": ["priority", "area", "action", "rationale"],
-            },
-        },
     },
     "required": [
         "overall_summary",
         "category_analysis",
-        "prioritized_actions",
     ],
 }

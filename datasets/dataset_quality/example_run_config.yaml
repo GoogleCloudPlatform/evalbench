@@ -63,8 +63,8 @@ scorers:
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
     # Optional LLM synthesis pass. Absent -> deterministic report only. When set,
     # a single call turns the graded report (scores, counts, suggestions, per-CUJ
-    # evidence) into an overall summary + prioritized actions, plus a per-category
-    # assessment and recommendations merged into each category.
+    # evidence) into an overall summary, plus a per-category assessment and
+    # recommendations merged into each category.
     synthesis:
       model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
 

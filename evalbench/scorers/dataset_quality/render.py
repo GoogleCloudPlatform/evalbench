@@ -44,14 +44,4 @@ def render_report(report: dict) -> str:
         lines += _bullets("Gaps", category.get("gaps"))
         lines += _bullets("Recommendations", category.get("recommendations"))
 
-    actions = report.get("prioritized_actions") or []
-    if actions:
-        lines += ["", "Prioritized actions:"]
-        for action in actions:
-            lines.append(
-                f"  {action.get('priority')}. [{action.get('area')}] "
-                f"{action.get('action')}"
-            )
-            if action.get("rationale"):
-                lines.append(f"     Why: {action['rationale']}")
     return "\n".join(lines)
