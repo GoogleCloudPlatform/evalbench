@@ -1,6 +1,11 @@
 from abc import abstractmethod
 
+from mcp import types as mcp_types
+
+from . import mcp_client
 from .generator import QueryGenerator
+from .tool_naming import canonical_tool_name
+import logging
 import os
 import shutil
 
@@ -43,6 +48,39 @@ class AgentCliGenerator(QueryGenerator):
             env["CLOUDSDK_CONFIG"] = os.path.join(
                 real_home, ".config", "gcloud"
             )
+
+    @staticmethod
+    def fetch_mcp_tools(
+        mcp_servers: dict, timeout: int = 30
+    ) -> list[mcp_types.Tool]:
+        """Aggregate ``tools/list`` across a ``setup.mcp_servers`` block.
+
+        Each tool is namespaced ``<server>__<tool>`` to match the
+        ``expected_trajectory`` format in CUJ datasets. Only Streamable HTTP
+        servers are queried; others are skipped.
+        """
+        aggregated: list[mcp_types.Tool] = []
+        for server_name, server_config in (mcp_servers or {}).items():
+            server_config = server_config or {}
+            url = server_config.get("httpUrl") or server_config.get("url")
+            if not url:
+                logging.warning(
+                    "mcp: server %r has no httpUrl; skipping", server_name
+                )
+                continue
+            tools = mcp_client.fetch_tools_http(
+                url, mcp_client.auth_headers(server_config), timeout
+            )
+            logging.info("mcp: %s -> %d tools", server_name, len(tools))
+            aggregated.extend(
+                mcp_types.Tool(
+                    name=canonical_tool_name(server_name, t.name),
+                    description=t.description or "",
+                    inputSchema=t.inputSchema,
+                )
+                for t in tools
+            )
+        return aggregated
 
     @property
     @abstractmethod

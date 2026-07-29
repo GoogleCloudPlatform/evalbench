@@ -7,10 +7,8 @@ readability *scorer* then evaluates against the style guide.
 
 The source is pluggable per endpoint via ``tools_source.type``. The type names
 the *transport*, not the protocol -- ``http`` and ``stdio`` both speak MCP:
-  - ``http``: live MCP ``tools/list`` over Streamable HTTP using the official
-    ``mcp`` Python SDK. The fetch URL is ``tools_source.url``. No authentication
-    is configured -- the public endpoints are reached unauthenticated; auth can
-    be added back later if a future endpoint requires it.
+  - ``http``: live MCP ``tools/list`` over Streamable HTTP. The fetch URL is
+    ``tools_source.url``; ``headers`` and ``authProviderType`` are honoured.
   - ``stdio``: launch a local MCP server via a command and speak MCP over its
     stdio pipes (official ``mcp`` SDK). The process is started before fetching,
     ``tools/list`` is called, then it is shut down. For local / command-launched
@@ -19,25 +17,15 @@ the *transport*, not the protocol -- ``http`` and ``stdio`` both speak MCP:
     (``{"tools": [...]}``); dependency-free, for offline / deterministic runs.
 """
 
-import functools
 import json
-import logging
 import os
 
-import anyio
-
 from mcp import types as mcp_types
-from mcp import StdioServerParameters
-from mcp.client.session import ClientSession
-from mcp.client.stdio import stdio_client
-from mcp.client.streamable_http import streamablehttp_client
 
+from . import mcp_client
 from .generator import QueryGenerator
+from .mcp_client import McpToolsError
 from .mcp_tool_formatter import format_tools_to_man_page
-
-
-class McpToolsError(Exception):
-    """Raised when a tools spec cannot be fetched or parsed."""
 
 
 class McpToolsGenerator(QueryGenerator):
@@ -89,48 +77,16 @@ class McpToolsGenerator(QueryGenerator):
         """The endpoint's ``tools_source`` (or ``{}`` to default to ``http``)."""
         return dict(endpoint.get("tools_source") or {})
 
-    @staticmethod
-    def sanitize_url(url: str) -> str:
-        """Ensure the URL has a scheme and ends with ``/mcp``.
-
-        ``/mcp`` is the conventional path where the MCP protocol is exposed.
-        """
-        stripped_url = (url or "").strip()
-        if stripped_url.startswith(("http://", "https://")):
-            url_with_scheme = stripped_url
-        elif "localhost" in stripped_url:
-            url_with_scheme = f"http://{stripped_url}"
-        else:
-            url_with_scheme = f"https://{stripped_url}"
-
-        rstripped_url = url_with_scheme.rstrip("/")
-        if not rstripped_url.endswith("/mcp"):
-            return f"{rstripped_url}/mcp"
-        return rstripped_url
-
     # ------------------------------------------------------------------
-    # http source (official SDK over Streamable HTTP, no auth)
+    # http source (official SDK over Streamable HTTP)
     # ------------------------------------------------------------------
     def _from_http(self, source: dict) -> list[mcp_types.Tool]:
         raw_url = source.get("url")
         if not raw_url:
             raise McpToolsError("tools_source.type 'http' requires a 'url'")
-        url = self.sanitize_url(raw_url)
-        try:
-            return anyio.run(functools.partial(self._async_fetch_tools, url))
-        except McpToolsError:
-            raise
-        except Exception as e:
-            raise McpToolsError(f"Failed to fetch tools from {url}: {e}") from e
-
-    async def _async_fetch_tools(self, url: str) -> list[mcp_types.Tool]:
-        """Connect to the MCP server over Streamable HTTP and list its tools."""
-        async with streamablehttp_client(url, timeout=self.timeout) as streams:
-            reader, writer, _ = streams
-            async with ClientSession(reader, writer) as session:
-                await session.initialize()
-                tools_response = await session.list_tools()
-        return list(tools_response.tools)
+        return mcp_client.fetch_tools_http(
+            raw_url, mcp_client.auth_headers(source), self.timeout
+        )
 
     # ------------------------------------------------------------------
     # stdio source (official SDK over a launched local process)
@@ -139,7 +95,6 @@ class McpToolsGenerator(QueryGenerator):
         command = source.get("command")
         if not command:
             raise McpToolsError("tools_source.type 'stdio' requires a 'command'")
-        args = list(source.get("args") or [])
         # Merge the current environment with any per-source overrides so the
         # launched server inherits PATH etc. but can be given extra config.
         env = source.get("env")
@@ -147,30 +102,9 @@ class McpToolsGenerator(QueryGenerator):
             merged_env = dict(os.environ)
             merged_env.update({str(k): str(v) for k, v in env.items()})
             env = merged_env
-        cwd = source.get("cwd")
-        server_params = StdioServerParameters(
-            command=command, args=args, env=env, cwd=cwd
+        return mcp_client.fetch_tools_stdio(
+            command, source.get("args"), env, source.get("cwd")
         )
-        try:
-            return anyio.run(
-                functools.partial(self._async_fetch_tools_stdio, server_params)
-            )
-        except McpToolsError:
-            raise
-        except Exception as e:
-            raise McpToolsError(
-                f"Failed to fetch tools from stdio server '{command}': {e}"
-            ) from e
-
-    async def _async_fetch_tools_stdio(
-        self, server_params: StdioServerParameters
-    ) -> list[mcp_types.Tool]:
-        """Launch the local MCP server and list its tools over stdio."""
-        async with stdio_client(server_params) as (reader, writer):
-            async with ClientSession(reader, writer) as session:
-                await session.initialize()
-                tools_response = await session.list_tools()
-        return list(tools_response.tools)
 
     # ------------------------------------------------------------------
     # file source
