@@ -1,6 +1,11 @@
 # EvalBench
 
-EvalBench is a flexible framework designed to measure the quality of generative AI (GenAI) workflows around database specific tasks. As of now, it provides a comprehensive set of tools, and modules to evaluate models on NL2SQL tasks, including capability of running and scoring DQL, DML, and DDL queries across multiple supported databases. Its modular, plug-and-play architecture allows you to seamlessly integrate custom components while leveraging a robust evaluation pipeline, result storage, scoring strategies, and dashboarding capabilities.
+EvalBench is a flexible framework designed to measure the quality of generative AI (GenAI) workflows. It supports two broad classes of evaluation:
+
+- **NL2SQL / database tasks** — running and scoring DQL, DML, and DDL queries across multiple supported databases (AlloyDB, BigQuery, Spanner, PostgreSQL, MySQL, SQLite, and more).
+- **Agentic evaluations** — driving real coding agents and CLIs (Gemini CLI, Claude Code, Codex CLI, Antigravity CLI) through multi-turn scenarios with an LLM-based simulated user, then scoring their tool-call trajectories, goal completion, and behavior.
+
+Its modular, plug-and-play architecture allows you to seamlessly integrate custom components while leveraging a robust evaluation pipeline, result storage, scoring strategies, and dashboarding capabilities.
 
 ---
 
@@ -76,11 +81,90 @@ Start the evaluation process using the provided shell script:
 
 ---
 
+## Agentic Evaluations
+
+Beyond single-turn NL2SQL, EvalBench evaluates **agents** — coding CLIs and data agents that reason across multiple turns, call tools, and act on their environment.
+
+Each scenario starts from a prompt and is driven forward by an **LLM-based simulated user** that follows a `conversation_plan` until the goal is met, a terminal state is detected, or `max_turns` is reached. Every turn is captured — text, tool calls, parameters, latency, and tokens — and then scored.
+
+### Supported Agents
+
+| Agent | Generator | Orchestrator | Docs |
+|---|---|---|---|
+| Gemini CLI | `gemini_cli` | `agent` / `geminicli` | [Gemini CLI guide](/docs/gemini_cli_agent_testing.md) |
+| Claude Code | `claude_code` | `agent` | [Claude Code guide](/docs/claude_code_agent_testing.md) |
+| Codex CLI | `codex_cli` | `agent` | [Codex CLI guide](/docs/codex_cli_agent_testing.md) |
+| Antigravity (agy) CLI | `agy_cli` | `agent` | [Antigravity CLI guide](/docs/agy_cli_agent_testing.md) |
+| Conversational data agents | `dataagent` | `dataagent` / `interact` | [Data agent spec](/docs/dataagent_spec.md) |
+
+Each run is **sandboxed** — agents execute against an isolated fake home directory (e.g. `.venv/fake_home`) so evaluations never contaminate your local machine's CLI settings, and scenarios can run concurrently.
+
+### Tool Paradigms
+
+Agents can be evaluated against the tools they are given, regardless of how those tools are wired up:
+
+| Paradigm | How it Works |
+|---|---|
+| **MCP Servers** | Remote HTTP/SSE or local stdio Model Context Protocol servers, mounted into the agent's sandbox |
+| **Extensions** | GitHub-hosted plugin packages installed idempotently via the CLI |
+| **Skills** | Skill packages installed through each CLI's native mechanism |
+| **Fake MCP** | A deterministic local MCP stub for fast, offline, zero-cost testing of your harness and datasets |
+
+### Agentic Scorers
+
+| Scorer | Type | What it Measures |
+|---|---|---|
+| `trajectory_matcher` | Deterministic | Expected vs. actual tool calls (Jaccard by default, Levenshtein with `enforce_order: true`) |
+| `goal_completion` | LLM | Whether the agent actually accomplished the conversation plan's intent |
+| `behavioral_metrics` | LLM | Hallucination rate and unnecessary-clarification rate |
+| `parameter_analysis` | LLM | Qualitative feedback on the arguments passed to each tool |
+| `binary_rubric_scorer` | LLM | Pass/fail against your own rubric criteria |
+| `turn_count` / `agent_steps` | Deterministic | Conversation turns and internal agent steps taken |
+| `end_to_end_latency` / `tool_call_latency` | Deterministic | Total wall-clock latency and time spent inside tools |
+| `token_consumption` / `tokens_processed` / `effective_billed_tokens` | Deterministic | Cost and context efficiency |
+| `python_scorer` | Custom | Delegates to any external Python script via `uv run` — no need to fork EvalBench |
+
+### Quick Start: Agentic Eval
+
+Define a scenario in an evalset:
+
+```json
+{
+  "scenarios": [
+    {
+      "id": "list-instances-01",
+      "starting_prompt": "List all Cloud SQL instances in project my-evaluation-project",
+      "conversation_plan": "Ensure the agent accurately calls list_instances and returns the output.",
+      "expected_trajectory": ["cloud-sql__list_instances"],
+      "max_turns": 4
+    }
+  ]
+}
+```
+
+Point a run config at it, then run:
+
+```bash
+# Offline / no-cost smoke test against a fake MCP server:
+export EVAL_CONFIG=datasets/gemini-cli-tools/example_run_fake_config.yaml
+
+# Or a real agent against a real MCP server:
+export EVAL_CONFIG=datasets/claude-code-tools/example_run_config.yaml
+
+./evalbench/run.sh
+```
+
+Ready-to-run configs live under [datasets/gemini-cli-tools/](/datasets/gemini-cli-tools/), [datasets/claude-code-tools/](/datasets/claude-code-tools/), [datasets/codex-cli-tools/](/datasets/codex-cli-tools/), and [datasets/agy-cli-tools/](/datasets/agy-cli-tools/).
+
+---
+
 ## Overview
 
 EvalBench's architecture is built around a modular design that supports diverse evaluation needs:
 - **Modular and Plug-and-Play:** Easily integrate custom scoring modules, data processors, and dashboard components.
 - **Flexible Evaluation Pipeline:** Seamlessly run DQL, DML, and DDL tasks while using a consistent base pipeline.
+- **Single-Turn and Agentic:** Use the same pipeline, scorers, and reporting for one-shot NL2SQL generation and for multi-turn agent journeys driven by a simulated user.
+- **Sandboxed Agent Execution:** Run real CLIs and MCP servers in isolated environments, in parallel, without touching your local configuration.
 - **Result Storage and Reporting:** Store results in various formats (e.g., CSV, BigQuery) and visualize performance with built-in dashboards.
 - **Customizability:** Configure and extend EvalBench to measure the performance of GenAI workflows tailored to your specific requirements.
 
