@@ -13,9 +13,7 @@ from unittest.mock import patch
 
 from mcp import types as mcp_types
 
-from generators.models import mcp_client
-from generators.models.mcp_client import McpToolsError
-from generators.models.mcp_tools import McpToolsGenerator
+from generators.models.mcp_tools import McpToolsError, McpToolsGenerator
 
 
 _TOOLS_SPEC = {
@@ -92,19 +90,19 @@ class McpToolsGeneratorTest(unittest.TestCase):
     # ---- url sanitization --------------------------------------------
     def test_sanitize_url_adds_scheme_and_mcp_suffix(self):
         self.assertEqual(
-            mcp_client.sanitize_url("example.googleapis.com"),
+            self.gen.sanitize_url("example.googleapis.com"),
             "https://example.googleapis.com/mcp",
         )
 
     def test_sanitize_url_localhost_uses_http(self):
         self.assertEqual(
-            mcp_client.sanitize_url("localhost:8080"),
+            self.gen.sanitize_url("localhost:8080"),
             "http://localhost:8080/mcp",
         )
 
     def test_sanitize_url_preserves_existing_mcp_suffix(self):
         self.assertEqual(
-            mcp_client.sanitize_url("https://x.dev/mcp/"),
+            self.gen.sanitize_url("https://x.dev/mcp/"),
             "https://x.dev/mcp",
         )
 
