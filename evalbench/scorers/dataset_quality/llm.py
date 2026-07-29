@@ -73,19 +73,15 @@ def _log_parse_failure(raw: str, err: Exception) -> None:
     )
 
 
-def group_cuj_ids(
-    model,
-    prompt: str,
-    response_schema: dict,
-    labels,
-    dataset_ids: list[str],
-) -> dict[str, list[str]] | None:
-    """Run one tagging prompt and return ``{label: [cuj_id]}`` for ``labels``.
+def judge_labeled_json(
+    model, prompt: str, response_schema: dict, labels
+) -> dict | None:
+    """Run one tagging prompt and return the whole parsed response.
 
-    Ids absent from ``dataset_ids`` and repeats within a label are dropped; each
-    list follows dataset order. Returns ``None`` when the judge call itself failed
-    (empty/unparseable response, or not a single label list) so the caller can
-    drop the metric as inapplicable instead of scoring a confident 0.
+    Use over :func:`group_cuj_ids` when the prompt returns keys beyond the label
+    lists. Returns ``None`` when the judge call itself failed (empty/unparseable
+    response, or not a single label list) so the caller can drop the metric as
+    inapplicable instead of scoring a confident 0.
     """
     raw = generate_json(model, prompt, response_schema)
     try:
@@ -96,6 +92,15 @@ def group_cuj_ids(
     if not any(isinstance(data.get(label), list) for label in labels):
         _log_parse_failure(raw, ValueError("response has no label id lists"))
         return None
+    return data
+
+
+def group_ids(data: dict, labels, dataset_ids: list[str]) -> dict[str, list[str]]:
+    """Pull ``{label: [cuj_id]}`` out of an already-parsed judge response.
+
+    Ids absent from ``dataset_ids`` and repeats within a label are dropped; each
+    list follows dataset order.
+    """
     order = {cuj_id: i for i, cuj_id in enumerate(dataset_ids)}
     grouped = {}
     for label in labels:
@@ -105,6 +110,20 @@ def group_cuj_ids(
             {i for i in ids if i in order}, key=order.__getitem__
         )
     return grouped
+
+
+def group_cuj_ids(
+    model,
+    prompt: str,
+    response_schema: dict,
+    labels,
+    dataset_ids: list[str],
+) -> dict[str, list[str]] | None:
+    """Run one tagging prompt and return ``{label: [cuj_id]}`` for ``labels``."""
+    data = judge_labeled_json(model, prompt, response_schema, labels)
+    if data is None:
+        return None
+    return group_ids(data, labels, dataset_ids)
 
 
 def judge_coverage(

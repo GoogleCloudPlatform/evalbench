@@ -53,28 +53,54 @@ When genuinely borderline on whether a mode is exercised, do NOT list it.
 ### Input Data
 **Available Tools:** {tool_names}
 
+**Tool Catalog (JSON):** each tool's name and description. Read the descriptions as
+the evidence for which failures a tool can actually produce -- documented limits,
+pagination, required roles, and resource lookups tell you which modes are reachable
+on that tool.
+{tool_catalog}
+
 **CUJs (JSON list):** Each object has "id", "starting_prompt", "conversation_plan",
 and "expected_trajectory".
 {cujs_json}
 
+### Recommendations
+For every mode whose id list you leave EMPTY, write one example starting_prompt: the
+single sentence a user would type to walk the agent into that failure, aimed at a real
+tool from the catalog. Recommend nothing for a mode that already has ids.
+
+Write it the way that user would really speak. They do not know the call is about to
+fail, so the prompt must NOT narrate the failure, cite the IAM permission they lack,
+or mention the limit the result will exceed -- an agent handed that explanation is no
+longer being tested on whether it notices. Ask for the thing plainly and let the
+failure come from what the request names. Copy the shape of this existing CUJ:
+"Update the instance 'non-existent-db-123' to have 8 cores."
+
 ### Output Format
 Return ONLY a JSON object (no markdown, no prose) with exactly this shape -- one key
-per mode, listing the ids of the CUJs that exercise it:
+per mode listing the ids of the CUJs that exercise it, plus "recommendations":
 {{
   "Invalid Request": ["<CUJ id, copied verbatim from the input>", "..."],
   "Permission Denied": [],
-  "Incomplete Result": []
+  "Incomplete Result": [],
+  "recommendations": ["<one sentence a user would type to provoke it>", "..."]
 }}
-Include all three keys, using an empty list for a mode no CUJ exercises. Every id
+Include all three mode keys, using an empty list for a mode no CUJ exercises. Every id
 MUST match an input CUJ id exactly. List a CUJ under every mode it exercises; a CUJ
-that exercises none appears in no list."""
+that exercises none appears in no list. Include "recommendations" always, using an
+empty list when every mode is already covered."""
+
+
+RECOMMENDATIONS_KEY = "recommendations"
 
 
 ERROR_RECOVERY_COVERAGE_SCHEMA = {
     "type": "OBJECT",
     "properties": {
-        mode: {"type": "ARRAY", "items": {"type": "STRING"}}
-        for mode in ERROR_RECOVERY_MODES
+        **{
+            mode: {"type": "ARRAY", "items": {"type": "STRING"}}
+            for mode in ERROR_RECOVERY_MODES
+        },
+        RECOMMENDATIONS_KEY: {"type": "ARRAY", "items": {"type": "STRING"}},
     },
-    "required": list(ERROR_RECOVERY_MODES),
+    "required": [*ERROR_RECOVERY_MODES, RECOMMENDATIONS_KEY],
 }

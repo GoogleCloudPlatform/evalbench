@@ -77,6 +77,17 @@ class DatasetQualityContext:
                 params.add((name, param))
         return params
 
+    def tool_catalog_json(self) -> str:
+        """JSON string of the tool catalog (name + description per tool)."""
+        tools = [
+            {
+                "name": self._tool_field(tool, "name"),
+                "description": self._tool_field(tool, "description") or "",
+            }
+            for tool in self.tools
+        ]
+        return json.dumps({"tools": tools}, indent=2, default=str)
+
     def tool_schema_json(self) -> str:
         """JSON string of the tool schema (name + inputSchema per tool)."""
         tools = []
@@ -117,6 +128,10 @@ class SubScoreContribution:
     - ``metrics``: raw counters behind the score, merged into the category's
       metrics and cited by the synthesis pass.
     - ``suggestions``: human-readable improvement notes (non-weighted).
+    - ``example_prompts``: example starting prompts for CUJs the dataset is
+      missing. Not rendered directly; the synthesis pass turns them into
+      recommendations, so they are stated once rather than alongside a
+      near-identical gap.
     - ``evidence``: per-CUJ classifier tags grouped by label (which CUJ ids got
       which classification), surfaced for the UI and to ground the synthesis pass.
     - ``distribution``: dataset-wide descriptive counts keyed by the report field
@@ -129,6 +144,7 @@ class SubScoreContribution:
     applicable: bool = True
     metrics: dict[str, Any] = field(default_factory=dict)
     suggestions: list[str] = field(default_factory=list)
+    example_prompts: list[str] = field(default_factory=list)
     evidence: dict[str, list[str]] = field(default_factory=dict)
     distribution: dict[str, Any] = field(default_factory=dict)
 

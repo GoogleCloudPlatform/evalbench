@@ -16,12 +16,26 @@ from scorers.dataset_quality.context import (
     JudgeSubScorer,
     SubScoreContribution,
 )
-from scorers.dataset_quality.llm import group_cuj_ids
+from scorers.dataset_quality.llm import group_ids, judge_labeled_json
 from scorers.dataset_quality.prompts.error_recovery_coverage import (
     ERROR_RECOVERY_COVERAGE_PROMPT,
     ERROR_RECOVERY_COVERAGE_SCHEMA,
     ERROR_RECOVERY_MODES,
+    RECOMMENDATIONS_KEY,
 )
+
+
+def _example_prompts(data: dict) -> list[str]:
+    """The judge's example prompts, deduped.
+
+    Whitespace is collapsed because the report renders one suggestion per line.
+    """
+    examples = []
+    for item in data.get(RECOMMENDATIONS_KEY) or []:
+        example = " ".join(item.split()) if isinstance(item, str) else ""
+        if example and example not in examples:
+            examples.append(example)
+    return examples
 
 
 class ErrorRecoveryScorer(JudgeSubScorer):
@@ -38,17 +52,18 @@ class ErrorRecoveryScorer(JudgeSubScorer):
 
         prompt = ERROR_RECOVERY_COVERAGE_PROMPT.format(
             tool_names=context.tool_names_str,
+            tool_catalog=context.tool_catalog_json(),
             cujs_json=context.cujs_json(DEFAULT_CUJ_FIELDS),
         )
-        mode_ids = group_cuj_ids(
+        data = judge_labeled_json(
             self.model,
             prompt,
             ERROR_RECOVERY_COVERAGE_SCHEMA,
             ERROR_RECOVERY_MODES,
-            context.cuj_ids,
         )
-        if mode_ids is None:
+        if data is None:
             return SubScoreContribution(applicable=False)
+        mode_ids = group_ids(data, ERROR_RECOVERY_MODES, context.cuj_ids)
 
         covered = [mode for mode in ERROR_RECOVERY_MODES if mode_ids[mode]]
         uncovered = [mode for mode in ERROR_RECOVERY_MODES if not mode_ids[mode]]
@@ -74,5 +89,6 @@ class ErrorRecoveryScorer(JudgeSubScorer):
                 "dq_error_modes_total": len(ERROR_RECOVERY_MODES),
             },
             suggestions=suggestions,
+            example_prompts=_example_prompts(data) if uncovered else [],
             evidence=mode_ids,
         )

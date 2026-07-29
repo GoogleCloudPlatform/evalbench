@@ -18,6 +18,11 @@ clear, prioritized analysis the dataset author can act on.
     category is best explained by its weakest sub_score.
   - ``metrics``: raw counts behind those scores (tools/params covered, etc.).
   - ``gaps``: precomputed, factual gap statements for this category.
+  - ``example_prompts``: starting prompts illustrating CUJs this category is
+    missing. They reach the author only through you, so give each one its own
+    recommendation: say what to add and what it covers, then introduce the prompt
+    with "for example:" and quote it verbatim. Do not call it a proposal, a
+    proposed prompt, or a suggestion -- it is an example.
   - ``evidence``: per-CUJ classifications (which CUJ ids were tagged vague,
     which are multi-tool, etc.).
 - ``cuj_path_distribution``: dataset-wide count of CUJs per interaction path

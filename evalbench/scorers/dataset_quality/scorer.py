@@ -185,11 +185,13 @@ class DatasetQualityScorer(Comparator):
                     "sub_scores": {},
                     "metrics": {},
                     "gaps": [],
+                    "example_prompts": [],
                     "evidence": {},
                 },
             )
             category["sub_scores"][scorer.name] = contribution.score
             category["gaps"].extend(contribution.suggestions)
+            category["example_prompts"].extend(contribution.example_prompts)
             category["evidence"].update(contribution.evidence)
             category["metrics"].update(contribution.metrics)
             distributions.update(contribution.distribution)
