@@ -37,12 +37,12 @@ def letter_grade(score: float) -> str:
     return "F"
 
 
-def fraction_score(hits: int, n: int, target_fraction: float) -> float:
+def fraction_score(hits: int, n: int, target_fraction: float) -> int:
     """Score a share against a target: 100 once ``hits/n`` reaches the target."""
     denom = target_fraction * n
     if denom <= 0:
-        return 0.0
-    return round(min(100.0, hits / denom * 100), 2)
+        return 0
+    return round(min(100.0, hits / denom * 100))
 
 
 def _weighted_average(metrics: list[ScoredMetric]) -> float | None:
@@ -65,6 +65,10 @@ def compute_grade(metrics: list[ScoredMetric]) -> dict:
     ]
 
     dataset_quality_score = _weighted_average(applicable)
+    if dataset_quality_score is not None:
+        # Round before grading, so the reported number and its letter can never
+        # disagree (an unrounded 59.7 shown as 60 would otherwise read as a D).
+        dataset_quality_score = round(dataset_quality_score)
 
     by_category: dict[str, list[ScoredMetric]] = defaultdict(list)
     for metric in applicable:
@@ -73,14 +77,10 @@ def compute_grade(metrics: list[ScoredMetric]) -> dict:
     for category, members in by_category.items():
         avg = _weighted_average(members)
         if avg is not None:
-            category_scores[category] = round(avg, 2)
+            category_scores[category] = round(avg)
 
     return {
-        "dataset_quality_score": (
-            round(dataset_quality_score, 2)
-            if dataset_quality_score is not None
-            else None
-        ),
+        "dataset_quality_score": dataset_quality_score,
         "letter_grade": (
             letter_grade(dataset_quality_score)
             if dataset_quality_score is not None

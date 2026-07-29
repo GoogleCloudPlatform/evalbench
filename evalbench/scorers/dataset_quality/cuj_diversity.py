@@ -54,7 +54,7 @@ class CujDiversityScorer(JudgeSubScorer):
 
         covered = [path for path in CUJ_PATHS if path_ids[path]]
         missing = [path for path in CUJ_PATHS if not path_ids[path]]
-        score = round(len(covered) / len(CUJ_PATHS) * 100, 2)
+        score = round(len(covered) / len(CUJ_PATHS) * 100)
 
         suggestions = []
         if missing:
@@ -65,7 +65,7 @@ class CujDiversityScorer(JudgeSubScorer):
             )
 
         logging.info(
-            "cuj_diversity: \t%d/%d paths covered -> %.2f | %s",
+            "cuj_diversity: \t%d/%d paths covered -> %d | %s",
             len(covered), len(CUJ_PATHS), score,
             ", ".join(f"{path}={counts[path]}" for path in CUJ_PATHS),
         )

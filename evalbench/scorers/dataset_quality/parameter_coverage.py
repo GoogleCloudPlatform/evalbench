@@ -68,7 +68,7 @@ class ParameterCoverageScorer(JudgeSubScorer):
 
         covered = {k for k in params if len(counts.get(k, set())) >= self.min_items}
         uncovered = sorted(params - covered)
-        score = round(len(covered) / len(params) * 100, 2)
+        score = round(len(covered) / len(params) * 100)
 
         suggestions = []
         if uncovered:
@@ -87,7 +87,7 @@ class ParameterCoverageScorer(JudgeSubScorer):
                 "by tool: " + "; ".join(groups)
             )
         logging.info(
-            "parameter_coverage: \t%d/%d params covered -> %.2f",
+            "parameter_coverage: \t%d/%d params covered -> %d",
             len(covered), len(params), score,
         )
         return SubScoreContribution(

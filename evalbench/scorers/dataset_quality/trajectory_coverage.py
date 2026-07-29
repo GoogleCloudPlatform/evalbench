@@ -36,7 +36,7 @@ class TrajectoryCoverageScorer(SubScorer):
 
         covered = schema_tools & trajectory_tools
         uncovered = sorted(schema_tools - covered)
-        score = round(len(covered) / len(schema_tools) * 100, 2)
+        score = round(len(covered) / len(schema_tools) * 100)
 
         suggestions = []
         if uncovered:
@@ -44,7 +44,7 @@ class TrajectoryCoverageScorer(SubScorer):
                 "No CUJ exercises these tools: " + ", ".join(uncovered)
             )
         logging.info(
-            "trajectory_coverage: \t%d/%d tools covered -> %.2f",
+            "trajectory_coverage: \t%d/%d tools covered -> %d",
             len(covered), len(schema_tools), score,
         )
         return SubScoreContribution(

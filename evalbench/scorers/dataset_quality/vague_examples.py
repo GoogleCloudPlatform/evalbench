@@ -67,7 +67,7 @@ class VagueExamplesScorer(JudgeSubScorer):
                 f"{int(self.target_fraction * 100)}%. Add CUJs that state a goal "
                 "without naming the tool, so the agent is tested on inferring intent."
             )
-        logging.info("vague_examples: \t%d/%d vague -> %.2f", n_vague, n, score)
+        logging.info("vague_examples: \t%d/%d vague -> %d", n_vague, n, score)
         return SubScoreContribution(
             score=score,
             metrics={"dq_vague_count": n_vague},

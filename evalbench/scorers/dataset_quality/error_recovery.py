@@ -1,11 +1,10 @@
 """Error & recovery coverage scorer: how much of the failure taxonomy a dataset tests.
 
-Tags each CUJ with the failure/recovery modes it exercises (Access Denied,
-Transient Failure, Malformed Output, Empty Result, Partial Result, Cascading
-Failure) and scores the fraction of that taxonomy the dataset covers. A
-dataset can hit a healthy unhappy-path share yet still test only one failure mode --
-coverage catches that. (Interaction-path diversity is graded separately by the
-cuj_diversity scorer.)
+Tags each CUJ with the failure/recovery modes it exercises (Invalid Request,
+Permission Denied, Incomplete Result) and scores the fraction of that taxonomy the
+dataset covers. A dataset can hit a healthy unhappy-path share yet still test only
+one failure mode -- coverage catches that. (Interaction-path diversity is graded
+separately by the cuj_diversity scorer.)
 """
 
 import logging
@@ -53,7 +52,7 @@ class ErrorRecoveryScorer(JudgeSubScorer):
 
         covered = [mode for mode in ERROR_RECOVERY_MODES if mode_ids[mode]]
         uncovered = [mode for mode in ERROR_RECOVERY_MODES if not mode_ids[mode]]
-        score = round(len(covered) / len(ERROR_RECOVERY_MODES) * 100, 2)
+        score = round(len(covered) / len(ERROR_RECOVERY_MODES) * 100)
 
         suggestions = []
         if uncovered:
@@ -65,7 +64,7 @@ class ErrorRecoveryScorer(JudgeSubScorer):
             )
 
         logging.info(
-            "error_recovery: \t%d/%d modes covered -> %.2f",
+            "error_recovery: \t%d/%d modes covered -> %d",
             len(covered), len(ERROR_RECOVERY_MODES), score,
         )
         return SubScoreContribution(

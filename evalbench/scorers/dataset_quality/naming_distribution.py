@@ -59,7 +59,7 @@ class NamingDistributionScorer(SubScorer):
                 intent_ids.append(sid)
         n_named = len(named_ids)
 
-        score = round((n - n_named) / n * 100, 2)
+        score = round((n - n_named) / n * 100)
 
         suggestions = []
         if n_named / n > _TARGET_NAMED_FRACTION:
@@ -69,7 +69,7 @@ class NamingDistributionScorer(SubScorer):
                 "on discovering tools from intent."
             )
         logging.info(
-            "naming_distribution: \t%d/%d name a tool -> %.2f",
+            "naming_distribution: \t%d/%d name a tool -> %d",
             n_named, n, score,
         )
         return SubScoreContribution(

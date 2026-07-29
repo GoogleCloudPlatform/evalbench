@@ -1,20 +1,17 @@
 # Canonical failure/recovery modes, named for how the call fails rather than for
 # any one product's domain, so the taxonomy applies to any tool-calling product.
+# Deliberately coarse: evalbench injects no faults, so a mode belongs here only if
+# a CUJ can provoke it from a live server using prompt text and env alone, and only
+# if recovering from it demands something distinct of the agent.
 # The judge MUST return only these exact strings; the scorer keys coverage off the
 # named constants so they can't desync.
-MODE_ACCESS_DENIED = "Access Denied"
-MODE_TRANSIENT_FAILURE = "Transient Failure"
-MODE_MALFORMED_OUTPUT = "Malformed Output"
-MODE_EMPTY_RESULT = "Empty Result"
-MODE_PARTIAL_RESULT = "Partial Result"
-MODE_CASCADING_FAILURE = "Cascading Failure"
+MODE_INVALID_REQUEST = "Invalid Request"
+MODE_PERMISSION_DENIED = "Permission Denied"
+MODE_INCOMPLETE_RESULT = "Incomplete Result"
 ERROR_RECOVERY_MODES = (
-    MODE_ACCESS_DENIED,
-    MODE_TRANSIENT_FAILURE,
-    MODE_MALFORMED_OUTPUT,
-    MODE_EMPTY_RESULT,
-    MODE_PARTIAL_RESULT,
-    MODE_CASCADING_FAILURE,
+    MODE_INVALID_REQUEST,
+    MODE_PERMISSION_DENIED,
+    MODE_INCOMPLETE_RESULT,
 )
 
 
@@ -35,22 +32,20 @@ A CUJ exercises a mode when its scenario genuinely puts the agent in that failur
 situation and success depends on the agent detecting or recovering from it -- judged
 from the starting_prompt, conversation_plan, and expected_trajectory, NOT from
 surface wording.
-- "Access Denied": a call is rejected for permission/auth reasons (forbidden
-  resource, missing scope, expired or invalid credentials) and the agent must
-  surface or work around the denial.
-- "Transient Failure": a call fails in a way that could succeed on a retry -- it is
-  slow, times out, is rate-limited/throttled, or the backend is temporarily
-  unavailable -- and the agent must retry, back off, or adapt.
-- "Malformed Output": a call returns output the agent cannot take at face value --
-  unparseable, schema-invalid, or otherwise unusable -- and the agent must detect
-  that rather than act on it.
-- "Empty Result": a call succeeds but returns nothing (no match, empty set), and the
-  agent must handle the empty case instead of assuming a result exists.
-- "Partial Result": a call returns only part of what was asked for (truncated,
-  paginated, missing fields, partial coverage) and the agent must recognize and
-  account for the gap.
-- "Cascading Failure": one failure triggers or compounds another across steps, and
-  the agent must recover without making the situation worse.
+- "Invalid Request": the call is rejected because of what it names or passes -- a
+  resource that does not exist (bad id, wrong name, wrong project or region), or an
+  argument that is missing, malformed, or out of range. The agent must recognize the
+  bad request and fix it (correct the reference, look the right value up, ask the
+  user) rather than reissuing it unchanged.
+- "Permission Denied": the call is rejected for permission or auth reasons --
+  forbidden resource, missing scope, expired or invalid credentials. Distinct from
+  "Invalid Request": the request is well formed and the target exists, but this
+  caller is not allowed to touch it, so reissuing it cannot help and the agent must
+  surface the denial or route around it.
+- "Incomplete Result": the call succeeds but does not return everything the task
+  needs -- an empty set, no match, a truncated or paginated page, or missing fields.
+  The agent must notice the gap (page through, broaden the query, report that
+  nothing was found) instead of treating what came back as the whole answer.
 
 A single CUJ may exercise several modes; list every mode it genuinely exercises.
 When genuinely borderline on whether a mode is exercised, do NOT list it.
@@ -66,16 +61,13 @@ and "expected_trajectory".
 Return ONLY a JSON object (no markdown, no prose) with exactly this shape -- one key
 per mode, listing the ids of the CUJs that exercise it:
 {{
-  "Access Denied": ["<CUJ id, copied verbatim from the input>", "..."],
-  "Transient Failure": [],
-  "Malformed Output": [],
-  "Empty Result": [],
-  "Partial Result": [],
-  "Cascading Failure": []
+  "Invalid Request": ["<CUJ id, copied verbatim from the input>", "..."],
+  "Permission Denied": [],
+  "Incomplete Result": []
 }}
-Include all six keys, using an empty list for a mode no CUJ exercises. Every id MUST
-match an input CUJ id exactly. List a CUJ under every mode it exercises; a CUJ that
-exercises none appears in no list."""
+Include all three keys, using an empty list for a mode no CUJ exercises. Every id
+MUST match an input CUJ id exactly. List a CUJ under every mode it exercises; a CUJ
+that exercises none appears in no list."""
 
 
 ERROR_RECOVERY_COVERAGE_SCHEMA = {
