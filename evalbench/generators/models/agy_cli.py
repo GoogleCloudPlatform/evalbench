@@ -33,7 +33,8 @@ class AgyCliGenerator(AgentCliGenerator):
     """Generator that queries via the Antigravity CLI (``agy``).
 
     The eval turn runs ``agy -p <prompt> --dangerously-skip-permissions
-    --output-format stream-json [--model <label>] [--continue]``. The on-disk
+    --output-format stream-json [--model <label>] [--print-timeout <timeout>]
+    [--continue]``. The on-disk
     layout lives under ``~/.gemini/antigravity-cli/`` (the binary calls this
     ``appDataDir``). Skills are delivered via plugins (see _setup_skills).
     ``--output-format stream-json`` emits newline-delimited events (an
@@ -59,6 +60,9 @@ class AgyCliGenerator(AgentCliGenerator):
         # flag (None -> flag omitted). See _base_agy_command for the value
         # format and resolution semantics.
         self.model = querygenerator_config.get("model")
+        self.timeout = querygenerator_config.get("timeout")
+
+        self._validate_timeout(self.timeout)
 
         # Order is load-bearing: paths/dirs must exist before the binary
         # installs and settings/auth write into them, and self.env must carry
@@ -73,6 +77,21 @@ class AgyCliGenerator(AgentCliGenerator):
         self.setup_config = querygenerator_config.get("setup", {})
         if self.setup_config:
             self._setup_tools()
+
+    @staticmethod
+    def _validate_timeout(timeout):
+        if timeout is not None:
+            if not isinstance(timeout, str):
+                raise TypeError(
+                    "timeout must be a string (e.g., '20m', '1h30m', '300s')"
+                )
+            # Strict regex for common units (s, m, h).
+            # Allows things like "20m", "1h30m", "300s".
+            if not re.match(r'^(\d+(s|m|h))+$', timeout):
+                raise ValueError(
+                    f"Invalid timeout format: '{timeout}'. "
+                    "Must be a valid duration string (e.g., '20m', '1h30m', '300s')."
+                )
 
     def _init_paths(self, querygenerator_config):
         """Resolves the sandbox ``HOME`` and all derived agy paths, and
@@ -183,30 +202,7 @@ class AgyCliGenerator(AgentCliGenerator):
         so the sandboxed CLI authenticates without an interactive login."""
         self._mirror_agy_auth_state()
 
-        adc_path = self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
-        if not adc_path:
-            adc_path = os.path.join(
-                self.real_home,
-                ".config",
-                "gcloud",
-                "application_default_credentials.json",
-            )
-            if os.path.exists(adc_path):
-                self.env["GOOGLE_APPLICATION_CREDENTIALS"] = adc_path
-
-        if adc_path and os.path.exists(adc_path):
-            fake_gcloud_dir = os.path.join(self.fake_home, ".config", "gcloud")
-            os.makedirs(fake_gcloud_dir, exist_ok=True)
-            fake_adc_path = os.path.join(
-                fake_gcloud_dir, "application_default_credentials.json"
-            )
-            if os.path.abspath(adc_path) != os.path.abspath(fake_adc_path):
-                shutil.copy2(adc_path, fake_adc_path)
-
-        if "CLOUDSDK_CONFIG" not in self.env:
-            self.env["CLOUDSDK_CONFIG"] = os.path.join(
-                self.real_home, ".config", "gcloud"
-            )
+        self._setup_gcloud_credentials(self.env, self.real_home, self.fake_home)
 
     def _mirror_agy_auth_state(self):
         """Mirrors agy's OAuth token + installation id from the host's real
@@ -441,7 +437,9 @@ class AgyCliGenerator(AgentCliGenerator):
         before = set(os.listdir(log_dir)) if os.path.isdir(log_dir) else set()
 
         env = self._merged_env()
-        cmd = self._base_agy_command(self.agy_bin, "ping", model=self.model)
+        cmd = self._base_agy_command(
+            self.agy_bin, "ping", model=self.model
+        )
         try:
             subprocess.run(
                 cmd, env=env, cwd=self.fake_home,
@@ -452,8 +450,8 @@ class AgyCliGenerator(AgentCliGenerator):
             raise RuntimeError(
                 f"agy MCP verification probe failed to run: {e}. "
                 f"Configured MCP servers: {configured_servers}.\n"
-                f"STDOUT:\n{getattr(e, 'stdout', '')}\n"
-                f"STDERR:\n{getattr(e, 'stderr', '')}"
+                f"STDOUT: \n{getattr(e, 'stdout', '')}\n"
+                f"STDERR: \n{getattr(e, 'stderr', '')}"
             ) from e
 
         # Collect fatal log markers (diagnostic context for any failure).
@@ -755,6 +753,7 @@ class AgyCliGenerator(AgentCliGenerator):
     def _base_agy_command(
         cli: str, prompt: str, resume: bool = False, model: str = None,
         output_format: str = None, log_file: str = None,
+        timeout: str = None,
     ) -> list:
         """Builds the non-interactive ``agy -p`` argv shared by the eval
         turn path and the setup-time MCP probe.
@@ -771,6 +770,9 @@ class AgyCliGenerator(AgentCliGenerator):
 
         ``log_file`` maps to ``--log-file``, pinning the CLI log to a known
         path for deterministic model detection.
+
+        ``timeout`` maps to ``--print-timeout`` (e.g. "20m"). If omitted,
+        defaults to agy's internal default (5 minutes).
         """
         command = [cli, "-p", prompt, "--dangerously-skip-permissions"]
         if model:
@@ -779,6 +781,8 @@ class AgyCliGenerator(AgentCliGenerator):
             command += ["--output-format", output_format]
         if log_file:
             command += ["--log-file", log_file]
+        if timeout:
+            command += ["--print-timeout", timeout]
         if resume:
             command.append("--continue")
         return command
@@ -818,6 +822,7 @@ class AgyCliGenerator(AgentCliGenerator):
         command = self._base_agy_command(
             self.agy_bin, cli_cmd.prompt, cli_cmd.resume, self.model,
             output_format="stream-json", log_file=self.cli_log_path,
+            timeout=self.timeout,
         )
         cwd = cli_cmd.cwd if cli_cmd.cwd else self.fake_home
         result = self._execute_cli_command(command, env=env, cwd=cwd)

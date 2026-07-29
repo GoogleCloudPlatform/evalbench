@@ -46,15 +46,15 @@ gcp_project_id: !ENV ${EVAL_GCP_PROJECT_ID}
 gcp_region: !ENV ${EVAL_GCP_PROJECT_REGION}
 
 # Parameterized Agent Options:
-model_env: local                # Target environment: "local", "staging", or "prod" (defaults to "prod")
-port: 9876                      # Required port for local Boq servers when env="local"
+model_env: local                # Target environment: "local", "staging", "autopush", or "prod" (defaults to "prod")
+port: 9876                      # Required port for local Boq servers when model_env="local"
 agent_type: sparkagent          # Desired agent persona (e.g., "sparkagent", "dataengineeringagent")
 
 ```
 
-* **`model_env`**: Configures the host environment (`local` uses `http://localhost:{port}`, `staging` uses `https://staging-geminidataanalytics.sandbox.googleapis.com`, `prod` uses `https://geminidataanalytics.googleapis.com`).
+* **`model_env`**: Configures the host environment (`local` uses `http://localhost:{port}`, `staging` uses `https://staging-geminidataanalytics.sandbox.googleapis.com`, `autopush` uses `https://autopush-geminidataanalytics.sandbox.googleapis.com`, `prod` uses `https://geminidataanalytics.googleapis.com`).
 
-* **`port`**: Specifies the HTTP port for local Boq servers (required when `env="local"`).
+* **`port`**: Specifies the HTTP port for local Boq servers (required when `model_env="local"`).
 * **`agent_type`**: Sets the desired agent persona (e.g., "sparkagent", "dataengineeringagent").
 
 ## 4. Run EvalBench

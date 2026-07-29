@@ -92,7 +92,7 @@ The `reporting` section specifies how and where the evaluation results will be r
 | ---------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `truncate_execution_outputs`| Optional (defaults to 250 rows)          | This allows overriding the truncation of outputs in reporting (CSVs, BQ) to the number of rows specified. This affects the following reporting fields: `generated_result`, `golden_result`, `golden_eval_results` `eval_results`. This prevents logging incredibly large results with potentially thousands or millions of rows. *NOTE: This does not affect any logic other than reporting.* |
 | `csv`      | Optional     | Configuration for CSV reporting. <br>**Subkey:** `output_directory` specifies the directory where CSV results will be saved (e.g., `'results'`).          |
-| `bigquery` | Optional     | Configuration for reporting to Google BigQuery. <br>**Subkey:** `gcp_project_id` specifies the Google Cloud Project ID for BigQuery integration (e.g., `my_cool_gcp_project`). |
+| `bigquery` | Optional     | Configuration for reporting to Google BigQuery. <br>**Subkeys:** `gcp_project_id` specifies the Google Cloud Project ID for BigQuery integration (e.g., `my_cool_gcp_project`). `dataset_id` overrides the BigQuery dataset that results are written to (`<project>.<dataset_id>`), defaulting to `evalbench`. |
 
 ---
 > bigquery project_id: You can globally set your GCP project_id using the environment variables `EVAL_GCP_PROJECT_ID` or identify it separately.
@@ -141,4 +141,5 @@ reporting:
     output_directory: 'results'
   bigquery:
     gcp_project_id: my_cool_gcp_project
+    dataset_id: evalbench # Optional, defaults to 'evalbench'
 ```

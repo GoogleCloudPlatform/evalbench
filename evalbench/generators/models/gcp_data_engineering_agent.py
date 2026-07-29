@@ -340,12 +340,17 @@ class DataEngineeringAgentGenerator(QueryGenerator):
                 "https://staging-geminidataanalytics."
                 "sandbox.googleapis.com"
             )
+        elif env == "autopush":
+            host = (
+                "https://autopush-geminidataanalytics."
+                "sandbox.googleapis.com"
+            )
         elif env == "prod":
             host = "https://geminidataanalytics.googleapis.com"
         else:
             raise ValueError(
                 f"Unsupported env: '{env}'. "
-                "Expected 'local', 'staging', or 'prod'."
+                "Expected 'local', 'staging', 'autopush', or 'prod'."
             )
 
         self.endpoint = (

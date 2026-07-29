@@ -39,7 +39,7 @@ WITH all_runs_with_set_tag AS (
         eval_results AS generated_eval_result,
         golden_eval_results AS golden_eval_result,
         DATE(run_time) AS date_of_eval
-    FROM evalbench.results
+    FROM __DATASET__.results
     WHERE job_id = @eval_id
 )
 SELECT
@@ -56,7 +56,7 @@ LEFT JOIN (
         database,
         comparator,
         IFNULL(comparison_logs, '') AS comparison_logs
-    FROM evalbench.scores
+    FROM __DATASET__.scores
 ) AS scores USING (job_id, id, dialect, database)
 ORDER BY date_of_eval DESC;
 """
@@ -88,11 +88,12 @@ class BigQueryReporter(Reporter):
             reporting_config.get("gcp_project_id"))
         self.location = reporting_config.get("dataset_location") or "US"
         self.client = bigquery.Client(project=self.project_id)
-        self.dataset_id = "{}.evalbench".format(self.project_id)
-        self.configs_table = "{}.configs".format(self.dataset_id)
-        self.results_table = "{}.results".format(self.dataset_id)
-        self.scores_table = "{}.scores".format(self.dataset_id)
-        self.summary_table = "{}.summary".format(self.dataset_id)
+        self.dataset_id = reporting_config.get("dataset_id") or "evalbench"
+        self.dataset_path = "{}.{}".format(self.project_id, self.dataset_id)
+        self.configs_table = "{}.configs".format(self.dataset_path)
+        self.results_table = "{}.results".format(self.dataset_path)
+        self.scores_table = "{}.scores".format(self.dataset_path)
+        self.summary_table = "{}.summary".format(self.dataset_path)
 
         # Make chunk size configurable, defaulting to 500
         self.chunk_size = int(reporting_config.get(
@@ -103,7 +104,7 @@ class BigQueryReporter(Reporter):
             logging.info(f"No results to store for {type}")
             return
 
-        dataset = bigquery.Dataset(self.dataset_id)
+        dataset = bigquery.Dataset(self.dataset_path)
         dataset.location = self.location
         dataset = self.client.create_dataset(
             dataset, exists_ok=True, timeout=30)
@@ -196,7 +197,9 @@ class BigQueryReporter(Reporter):
         report_date = self.run_time.strftime("%Y-%m-%d")
         report_name = f"{report_date} Evalbench Report (eval_id={self.job_id})"
         report_params = "{" + f'"eval_results.eval_id": "{self.job_id}"' + "}"
-        report_query = _REPORT_QUERY.replace("__PROJECT_ID__", self.project_id)
+        report_query = _REPORT_QUERY.replace(
+            "__PROJECT_ID__", self.project_id
+        ).replace("__DATASET__", self.dataset_id)
         report_link = (
             "https://lookerstudio.google.com/reporting/create?"
             + "c.reportId=e7d7fc00-4268-45d6-b17b-160ca271a4d0"
