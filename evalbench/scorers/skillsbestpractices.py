@@ -8,9 +8,9 @@ and progressive disclosure design.
 from typing import Tuple, Any
 import logging
 import os
+import re
 import json
 from scorers import comparator
-from scorers.util import extract_json
 from generators.models import get_generator
 from .prompt.skillsbestpractices import SKILLS_BEST_PRACTICES_PROMPT
 
@@ -71,6 +71,27 @@ class SkillsBestPractices(comparator.Comparator):
         "content_quality",
     )
 
+    @staticmethod
+    def _extract_json(response_text: str) -> dict | None:
+        """Parses a JSON object from an LLM response, tolerating Markdown fences
+        and surrounding prose. Returns None if no valid JSON object is found."""
+        text = response_text.strip()
+        fence = re.match(r"^```(?:json)?\s*(.*?)\s*```\s*$", text, re.DOTALL)
+        if fence:
+            text = fence.group(1).strip()
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end > start:
+            try:
+                return json.loads(text[start:end + 1])
+            except json.JSONDecodeError:
+                return None
+        return None
+
     def _score_skill(self, skill_name: str, skills_dir: str) -> Tuple[float, str]:
         skill_md_path = self._find_skill_md(skill_name, skills_dir)
         if not skill_md_path:
@@ -95,7 +116,7 @@ class SkillsBestPractices(comparator.Comparator):
 
             logging.debug(f"Full LLM response for '{skill_name}': {response_text[:500]}")
 
-            data = extract_json(response_text)
+            data = self._extract_json(response_text)
             if not isinstance(data, dict) or "score" not in data:
                 logging.error(
                     f"Could not parse JSON score from response for '{skill_name}': "
