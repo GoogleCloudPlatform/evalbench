@@ -65,7 +65,8 @@ class AgentCliGenerator(QueryGenerator):
             url = server_config.get("httpUrl") or server_config.get("url")
             if not url:
                 logging.warning(
-                    "mcp: server %r has no httpUrl; skipping", server_name
+                    "mcp: server %r has no httpUrl or url configured; skipping",
+                    server_name,
                 )
                 continue
             tools = mcp_client.fetch_tools_http(
