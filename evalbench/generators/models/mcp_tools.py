@@ -22,9 +22,13 @@ import os
 
 from mcp import types as mcp_types
 
-from . import mcp_client
 from .generator import QueryGenerator
-from .mcp_client import McpToolsError
+from .mcp_client import (
+    McpToolsError,
+    auth_headers,
+    fetch_tools_http,
+    fetch_tools_stdio,
+)
 from .mcp_tool_formatter import format_tools_to_man_page
 
 
@@ -84,9 +88,7 @@ class McpToolsGenerator(QueryGenerator):
         raw_url = source.get("url")
         if not raw_url:
             raise McpToolsError("tools_source.type 'http' requires a 'url'")
-        return mcp_client.fetch_tools_http(
-            raw_url, mcp_client.auth_headers(source), self.timeout
-        )
+        return fetch_tools_http(raw_url, auth_headers(source), self.timeout)
 
     # ------------------------------------------------------------------
     # stdio source (official SDK over a launched local process)
@@ -102,7 +104,7 @@ class McpToolsGenerator(QueryGenerator):
             merged_env = dict(os.environ)
             merged_env.update({str(k): str(v) for k, v in env.items()})
             env = merged_env
-        return mcp_client.fetch_tools_stdio(
+        return fetch_tools_stdio(
             command, source.get("args"), env, source.get("cwd")
         )
 
