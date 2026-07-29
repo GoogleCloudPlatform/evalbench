@@ -41,7 +41,7 @@ scorers:
     # naming_distribution are static.
     sub_scorers:
       trajectory_coverage:
-        # weight: 12  (default)
+        # weight: 20  (default)
       naming_distribution:
         # weight: 5   (default)
       parameter_coverage:
@@ -53,7 +53,7 @@ scorers:
         # target_fraction: 0.5   (default; scores 100 once >= this fraction of CUJs are vague/indirect)
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       error_recovery:
-        # weight: 28  (default; scores the fraction of the failure/recovery taxonomy the dataset covers)
+        # weight: 20  (default; scores the fraction of the failure/recovery taxonomy the dataset covers)
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       composition:
         # weight: 15  (default)

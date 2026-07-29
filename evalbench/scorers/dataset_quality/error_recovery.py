@@ -30,7 +30,7 @@ class ErrorRecoveryScorer(JudgeSubScorer):
 
     name = "error_recovery"
     category = CATEGORY_ERROR_RECOVERY
-    default_weight = 28
+    default_weight = 20
 
     def run(self, context: DatasetQualityContext) -> SubScoreContribution:
         n = context.n
