@@ -20,6 +20,7 @@ import logging
 import os
 import re
 
+from google.api_core.exceptions import ResourceExhausted
 from google.cloud.aiplatform_v1.types import (
     reasoning_engine_execution_service as aip_types,
 )
@@ -27,6 +28,9 @@ import vertexai
 from vertexai import agent_engines
 
 from generators.models.generator import QueryGenerator
+from util.gcp import get_gcp_project, get_gcp_region
+from util.rate_limit import ResourceExhaustedError
+from util.sanitizer import sanitize_sql
 
 
 def _parse_stream_response(response) -> str:
@@ -55,23 +59,25 @@ def _parse_stream_response(response) -> str:
 
 def _extract_sql(text: str) -> str:
     """Extracts SQL query from JSON envelope or markdown blocks in text."""
-    # Try to locate and extract a JSON envelope anywhere in the text first.
+    # 1. Try to locate and extract a JSON envelope anywhere in the text first.
     json_match = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL)
     if json_match:
         try:
             data = json.loads(json_match.group(1).strip())
             if isinstance(data, dict) and "sql" in data:
-                return str(data["sql"])
+                return sanitize_sql(str(data["sql"]))
         except json.JSONDecodeError:
             pass
 
-    # Fallback: Split by markdown blocks and take the first segment.
-    if "```" in text:
-        candidate = text.split("```")[0].strip()
-        if candidate:
-            return candidate
+    # 2. Try to locate any markdown code block (e.g. ```sql or ```)
+    sql_match = (
+        re.search(r"```(?:sql)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
+    )
+    if sql_match:
+        return sanitize_sql(sql_match.group(1).strip())
 
-    return text.strip()
+    # 3. Fallback: Treat as raw SQL query
+    return sanitize_sql(text)
 
 
 class AgentRuntimeGenerator(QueryGenerator):
@@ -91,25 +97,9 @@ class AgentRuntimeGenerator(QueryGenerator):
             )
 
         project_id = (
-            querygenerator_config.get("gcp_project_id")
-            or os.environ.get("GOOGLE_CLOUD_PROJECT")
+            get_gcp_project(querygenerator_config.get("gcp_project_id"))
         )
-        if not project_id:
-            raise ValueError(
-                "AgentRuntimeGenerator requires `gcp_project_id` in model "
-                "config YAML or GOOGLE_CLOUD_PROJECT env variable."
-            )
-
-        location = (
-            querygenerator_config.get("gcp_region")
-            or os.environ.get("GOOGLE_CLOUD_REGION")
-            or os.environ.get("GOOGLE_CLOUD_LOCATION")
-        )
-        if not location:
-            raise ValueError(
-                "AgentRuntimeGenerator requires `gcp_region` in model config "
-                "YAML or GOOGLE_CLOUD_REGION/LOCATION env vars."
-            )
+        location = get_gcp_region(querygenerator_config.get("gcp_region"))
         logging.info(
             "Initializing Vertex AI (Project: %s, Location: %s)",
             project_id,
@@ -142,6 +132,8 @@ class AgentRuntimeGenerator(QueryGenerator):
             complete_text = _parse_stream_response(response)
             return _extract_sql(complete_text)
 
+        except ResourceExhausted as e:
+            raise ResourceExhaustedError(e)
         except Exception as e:
             logging.exception(
                 f"Error querying remote Agent Runtime: {e}"

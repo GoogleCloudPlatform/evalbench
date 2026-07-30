@@ -65,13 +65,39 @@ def test_extract_sql_from_mixed_response():
     assert _extract_sql(text) == "SELECT * FROM users;"
 
 
-def test_extract_sql_from_plain_markdown_fallback():
-    # Fallback when no JSON envelope can be parsed, splits by block wrapper.
-    text = """SELECT * FROM users;
-```
-Explanation of query below...
+def test_extract_sql_from_plain_markdown_fence():
+    # Content inside plain fence is extracted.
+    text = """```
+SELECT * FROM users;
 ```"""
     assert _extract_sql(text) == "SELECT * FROM users;"
+
+
+def test_extract_sql_from_sql_markdown_fence():
+    # Case 1: Simple fenced block without any prose
+    text = """```sql
+SELECT COUNT(*) FROM schools;
+```"""
+    assert _extract_sql(text) == "SELECT COUNT(*) FROM schools;"
+
+
+def test_extract_sql_from_fenced_block_with_preamble():
+    # Case 2: Fenced block preceded by prose preamble
+    text = """Here is the query:
+```sql
+SELECT COUNT(*) FROM schools;
+```"""
+    assert _extract_sql(text) == "SELECT COUNT(*) FROM schools;"
+
+
+def test_extract_sql_from_fenced_block_with_preamble_and_postamble():
+    # Case 3: Fenced block with preamble and post-amble text
+    text = """Sure!
+```sql
+SELECT 1;
+```
+Hope that helps."""
+    assert _extract_sql(text) == "SELECT 1;"
 
 
 def test_extract_sql_raw_fallback():

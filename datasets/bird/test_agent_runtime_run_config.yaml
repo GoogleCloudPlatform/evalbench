@@ -1,7 +1,7 @@
 ############################################################
 ### Dataset / Eval Items (Vertex AI Multi-Agent Test)
 ############################################################
-dataset_config: datasets/bird/prompts_california.json
+dataset_config: datasets/bird/prompts.json
 
 databases:
  - california_schools
@@ -37,5 +37,5 @@ scorers:
 reporting:
   bigquery:
     dataset_location: "US"
-    gcp_project_id: "arielj-argolis-1"
+    gcp_project_id: !ENV ${EVAL_GCP_PROJECT_ID}
   csv: {}
