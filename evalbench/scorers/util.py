@@ -1,10 +1,34 @@
 """Utility functions to aid the scorers."""
 
 from typing import Any
+import json
 import logging
 import hashlib
 import pickle
+import re
 from util.safe_pickle import safe_pickle_loads
+
+
+def extract_json(text: str) -> dict:
+    """Pull a JSON object out of a model response (handles code fences)."""
+    if not text:
+        raise ValueError("empty model response")
+    text = text.strip()
+    fence = re.match(r"^```(?:json)?\s*(.*?)\s*```\s*$", text, re.DOTALL)
+    if fence:
+        text = fence.group(1).strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    # Fall back to the outermost {...} span for prose-wrapped responses.
+    start, end = text.find("{"), text.rfind("}")
+    if start != -1 and end > start:
+        try:
+            return json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            pass
+    raise ValueError("no JSON object found in model response")
 
 
 def with_cache_execute(

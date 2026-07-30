@@ -1,0 +1,70 @@
+# Output keys the judge groups CUJ ids under; the scorer reads the same constants
+# so prompt and scorer can't desync.
+KEY_MULTI_TOOL = "multi_tool_ids"
+KEY_SEQUENCE_DEPENDENCY = "sequence_dependency_ids"
+COMPOSITION_KEYS = (KEY_MULTI_TOOL, KEY_SEQUENCE_DEPENDENCY)
+
+
+COMPOSITION_COVERAGE_PROMPT = """\
+You are an expert evaluator of conversational AI evaluation datasets. You are given
+an ENTIRE dataset of Critical User Journeys (CUJs): each CUJ is one user-agent test
+scenario, which may be single or multi-turn. For EVERY CUJ, make two independent
+judgments about how it exercises TOOL COMPOSITION.
+
+Why this matters: real tasks rarely resolve with a single isolated tool call. A
+dataset of one-tool-per-scenario requests overstates how well the product handles
+realistic, composite work. Your judgments drive a composition-coverage score, so
+judge what each scenario ACTUALLY requires, not what it superficially resembles.
+
+### JUDGMENT 1 -- multi_tool_ids
+Does the CUJ genuinely require MORE THAN ONE distinct tool (or a skill-plus-tool, or
+cross-skill data passing) working together to succeed?
+- Judge from what the starting_prompt and conversation_plan actually demand, using
+  expected_trajectory as a strong hint -- NOT from the trajectory list alone. A
+  trajectory may list several tools that the task does not truly require, or the same
+  tool repeated; treat repeats of one tool as single-tool.
+- true: the task's success depends on two or more DIFFERENT tools/skills
+  contributing (e.g. read a file, then run a test; search, then summarize; produce
+  data in one skill and consume it in another).
+- false: the task is satisfiable with a single tool/skill (even if called more than
+  once).
+
+### JUDGMENT 2 -- sequence_dependency_ids
+Does success require a SPECIFIC ORDER of operations -- tool A must happen before
+tool B, and doing them out of order would fail or produce a wrong result?
+- true: there is a real ordering constraint (e.g. create the table before inserting
+  rows; check out the branch before editing; fetch an id before using it).
+- false: the tools are independent / order does not matter, or there is only one
+  operation.
+- Note: needing multiple tools (Judgment 1 = true) does NOT by itself imply an
+  ordering constraint. Judge ordering separately.
+
+When genuinely borderline on either judgment, answer false.
+
+### Input Data
+**Available Tools:** {tool_names}
+
+**CUJs (JSON list):** Each object has "id", "starting_prompt", "conversation_plan",
+and "expected_trajectory".
+{cujs_json}
+
+### Output Format
+Return ONLY a JSON object (no markdown, no prose) with exactly this shape -- one key
+per judgment, listing only the ids of the CUJs it is TRUE for:
+{{
+  "multi_tool_ids": ["<CUJ id, copied verbatim from the input>", "..."],
+  "sequence_dependency_ids": []
+}}
+Include both keys, using an empty list when no CUJ qualifies. Every id MUST match an
+input CUJ id exactly. The judgments are independent, so a CUJ may appear in both
+lists, one, or neither; a CUJ you judge false for both appears in no list."""
+
+
+COMPOSITION_COVERAGE_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        key: {"type": "ARRAY", "items": {"type": "STRING"}}
+        for key in COMPOSITION_KEYS
+    },
+    "required": list(COMPOSITION_KEYS),
+}

@@ -1,0 +1,79 @@
+############################################################
+### Dataset Quality — example run config
+############################################################
+# Grades the intrinsic quality of a CUJ dataset (no eval / agent run). Runs on the
+# standard agent pipeline: a no-op generator does nothing, and the `dataset_quality`
+# scorer grades the whole dataset holistically (each sub-scorer computes a 0-100
+# sub-score; grading rolls them into a weighted global score + letter grade).
+
+# Forced by dataset_format below; listed here only to document what runs.
+orchestrator: agent
+
+# Bundles every CUJ into one wrapper scenario so the scorer is invoked once with
+# the whole dataset, rather than once per CUJ as the agent formats would.
+dataset_format: dataset-quality-format
+dataset_config: datasets/gemini-cli-tools/gemini-cli.evalset.json
+
+# No-op agent generator: satisfies AgentEvaluator's AgentCliGenerator requirement
+# while producing no output (no CLI, no API call).
+model_config: datasets/model_configs/noop_agent_model.yaml
+
+# Never actually called (single-turn wrapper scenario); only needs to construct.
+simulated_user_model_config: datasets/model_configs/noop_agent_model.yaml
+
+############################################################
+### Scorers
+############################################################
+# The `dataset_quality` scorer fetches the product's tool catalog live from its own
+# model_config (each setup.mcp_servers entry with an httpUrl/url is queried via MCP
+# tools/list; names are namespaced <server>__<tool> to match expected_trajectory).
+# google_credentials servers use ADC, so this needs credentials + network (e.g.
+# `gcloud auth application-default login`). Run the LLM judges with
+# EVAL_GCP_PROJECT_REGION=global.
+scorers:
+  dataset_quality:
+    product_name: "Cloud SQL"
+    model_config: datasets/model_configs/gemini_cli_model.yaml
+    # tools_timeout: 30   # optional; live tools/list fetch timeout in seconds
+    # Each sub-scorer's weight defaults in its scorer class; the commented value
+    # below is that default. Uncomment `weight:` to override. A `model_config` is
+    # required only by the judge sub-scorers; trajectory_coverage and
+    # naming_distribution are static.
+    sub_scorers:
+      trajectory_coverage:
+        # weight: 20  (default)
+      naming_distribution:
+        # weight: 5   (default)
+      parameter_coverage:
+        # weight: 13  (default)
+        model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+      vague_examples:
+        # weight: 12  (default)
+        # target_fraction: 0.5   (default; scores 100 once >= this fraction of CUJs are vague/indirect)
+        model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+      error_recovery:
+        # weight: 20  (default; scores the fraction of the failure/recovery taxonomy the dataset covers)
+        model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+      composition:
+        # weight: 15  (default)
+        model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+      cuj_diversity:
+        # weight: 15  (default; scores the fraction of the 5 CUJ interaction paths the dataset exercises)
+        model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+    # Optional LLM synthesis pass. Absent -> deterministic report only. When set,
+    # a single call turns the graded report (scores, counts, suggestions, per-CUJ
+    # evidence) into an overall summary, plus a per-category assessment and
+    # recommendations merged into each category.
+    synthesis:
+      model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+
+############################################################
+### Reporting
+############################################################
+# The grade lands as one summary scoring row plus one row per category; uncomment
+# bigquery to also append to the table.
+reporting:
+  csv:
+    output_directory: 'results'
+  # bigquery:
+  #   gcp_project_id: your-gcp-project
