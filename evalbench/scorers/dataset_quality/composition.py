@@ -67,9 +67,9 @@ class CompositionScorer(JudgeSubScorer):
         seq_ids = grouped[KEY_SEQUENCE_DEPENDENCY]
         n_multi, n_seq = len(multi_ids), len(seq_ids)
 
-        multitool_score = round(n_multi / n * 100, 2)
-        sequencing_score = round(n_seq / n * 100, 2)
-        score = round((multitool_score + sequencing_score) / 2, 2)
+        multitool_score = round(n_multi / n * 100)
+        sequencing_score = round(n_seq / n * 100)
+        score = round((multitool_score + sequencing_score) / 2)
 
         suggestions = []
         weak = []
@@ -84,7 +84,7 @@ class CompositionScorer(JudgeSubScorer):
                 "test realistic multi-step work."
             )
         logging.info(
-            "composition: \tmulti=%d/%d seq=%d/%d -> %.2f",
+            "composition: \tmulti=%d/%d seq=%d/%d -> %d",
             n_multi, n, n_seq, n, score,
         )
         return SubScoreContribution(

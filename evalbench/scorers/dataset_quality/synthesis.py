@@ -19,10 +19,10 @@ from scorers.dataset_quality.prompts.synthesis import (
 def synthesize(model, report: dict) -> None:
     """Enrich ``report`` in place with the LLM synthesis pass.
 
-    Adds ``overall_summary`` and ``prioritized_actions`` at the top level and
-    merges each category's ``assessment`` + ``recommendations`` into the matching
-    entry in ``report["categories"]``. Leaves the report untouched on a parse
-    failure, so a malformed response degrades to the deterministic report.
+    Adds ``overall_summary`` at the top level and merges each category's
+    ``assessment`` + ``recommendations`` into the matching entry in
+    ``report["categories"]``. Leaves the report untouched on a parse failure,
+    so a malformed response degrades to the deterministic report.
     """
     prompt = SYNTHESIS_PROMPT.format(report_json=json.dumps(report, default=str))
     raw = generate_json(model, prompt, SYNTHESIS_SCHEMA)
@@ -33,7 +33,6 @@ def synthesize(model, report: dict) -> None:
         return
 
     report["overall_summary"] = synth.get("overall_summary")
-    report["prioritized_actions"] = synth.get("prioritized_actions") or []
 
     analysis = {
         entry.get("category"): entry

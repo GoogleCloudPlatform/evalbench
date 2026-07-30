@@ -16,7 +16,8 @@ import time
 from typing import Any, Tuple
 
 from generators.models import get_generator
-from generators.models.mcp_tools import McpToolsError, McpToolsGenerator
+from generators.models.agent_cli import AgentCliGenerator
+from generators.models.mcp_client import McpToolsError
 from scorers.comparator import Comparator
 from scorers.dataset_quality.composition import CompositionScorer
 from scorers.dataset_quality.context import (
@@ -76,9 +77,7 @@ class DatasetQualityScorer(Comparator):
                 "model config providing setup.mcp_servers for tool discovery)"
             )
 
-        self.tools_generator = McpToolsGenerator(
-            {"timeout": config.get("tools_timeout", 30)}
-        )
+        self.tools_timeout = config.get("tools_timeout", 30)
 
         scorers_config = config.get("sub_scorers") or {}
         if not scorers_config:
@@ -186,11 +185,13 @@ class DatasetQualityScorer(Comparator):
                     "sub_scores": {},
                     "metrics": {},
                     "gaps": [],
+                    "example_prompts": [],
                     "evidence": {},
                 },
             )
             category["sub_scores"][scorer.name] = contribution.score
             category["gaps"].extend(contribution.suggestions)
+            category["example_prompts"].extend(contribution.example_prompts)
             category["evidence"].update(contribution.evidence)
             category["metrics"].update(contribution.metrics)
             distributions.update(contribution.distribution)
@@ -205,6 +206,9 @@ class DatasetQualityScorer(Comparator):
             "total_cujs": context.n,
             "dataset_quality_score": grade["dataset_quality_score"],
             "letter_grade": grade["letter_grade"],
+            "graded_weight": grade["graded_weight"],
+            "total_weight": grade["total_weight"],
+            "excluded_scorers": grade["excluded_scorers"],
             "categories": list(categories.values()),
             **distributions,
         }
@@ -290,10 +294,14 @@ class DatasetQualityScorer(Comparator):
                 "tool discovery; only setup.mcp_servers is queried."
             )
         mcp_servers = setup.get("mcp_servers") or {}
+        if not mcp_servers:
+            raise McpToolsError(
+                f"{self.model_config_path} declares no setup.mcp_servers to query"
+            )
         for attempt in range(1, _TOOL_FETCH_ATTEMPTS + 1):
             try:
-                return self.tools_generator.fetch_tools_from_mcp_servers(
-                    mcp_servers
+                tools = AgentCliGenerator.fetch_mcp_tools(
+                    mcp_servers, self.tools_timeout
                 )
             except McpToolsError:
                 if attempt == _TOOL_FETCH_ATTEMPTS:
@@ -303,4 +311,16 @@ class DatasetQualityScorer(Comparator):
                     "retrying", attempt, _TOOL_FETCH_ATTEMPTS,
                 )
                 time.sleep(_TOOL_FETCH_BACKOFF_S * attempt)
+            else:
+                # An empty catalog is deterministic, so it is not retried. It
+                # would otherwise grade the dataset on the judge scorers alone,
+                # with no tool catalog to judge against.
+                if not tools:
+                    raise McpToolsError(
+                        "MCP servers returned an empty tool catalog ("
+                        + ", ".join(sorted(mcp_servers))
+                        + "); only Streamable HTTP servers with an httpUrl/url "
+                        "are queried"
+                    )
+                return tools
         raise McpToolsError("dataset_quality: tool discovery exhausted retries")

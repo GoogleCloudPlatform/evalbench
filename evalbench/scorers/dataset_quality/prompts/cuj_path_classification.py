@@ -83,25 +83,47 @@ conversation_plan clearly describes that dynamic; otherwise classify as "Happy".
 and "expected_trajectory".
 {cujs_json}
 
+### Recommendations
+For every path whose id list you leave EMPTY, write one example starting_prompt: the
+single sentence a user would open with in a CUJ that takes that path, aimed at a real
+tool from the available tools. Recommend nothing for a path that already has ids.
+
+Write it the way that user would really speak, and let the path follow from what the
+request itself does -- an ask too underspecified to act on for "Ambiguity &
+Clarification", a first step the user will narrow later for "Iterative Refinement", a
+request this product is not meant to serve for "Out-of-Domain". The prompt must NOT
+narrate the dynamic or script the agent's reply ("then ask me which region") -- an
+agent handed the script is no longer being tested on recognizing the situation. Copy
+the shape of this existing CUJ:
+"list all instances in project gcp-project-name"
+
 ### Output Format
 Return ONLY a JSON object (no markdown, no prose) with exactly this shape -- one key
-per CUJ path, listing the ids of the CUJs on that path:
+per CUJ path, listing the ids of the CUJs on that path, plus "recommendations":
 {{
   "Happy": ["<CUJ id, copied verbatim from the input>", "..."],
   "Ambiguity & Clarification": [],
   "Iterative Refinement": [],
   "Error Recovery": [],
-  "Out-of-Domain": []
+  "Out-of-Domain": [],
+  "recommendations": ["<one sentence a user would open with>", "..."]
 }}
-Include all five keys, using an empty list for a path no CUJ takes. EVERY input CUJ
-id MUST appear in exactly one list, matching an input id exactly."""
+Include all five path keys, using an empty list for a path no CUJ takes. EVERY input
+CUJ id MUST appear in exactly one path list, matching an input id exactly. Include
+"recommendations" always, using an empty list when every path is already taken."""
+
+
+RECOMMENDATIONS_KEY = "recommendations"
 
 
 CUJ_PATH_CLASSIFICATION_SCHEMA = {
     "type": "OBJECT",
     "properties": {
-        path: {"type": "ARRAY", "items": {"type": "STRING"}}
-        for path in CUJ_PATHS
+        **{
+            path: {"type": "ARRAY", "items": {"type": "STRING"}}
+            for path in CUJ_PATHS
+        },
+        RECOMMENDATIONS_KEY: {"type": "ARRAY", "items": {"type": "STRING"}},
     },
-    "required": list(CUJ_PATHS),
+    "required": [*CUJ_PATHS, RECOMMENDATIONS_KEY],
 }

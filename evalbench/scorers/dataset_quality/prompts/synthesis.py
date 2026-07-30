@@ -18,6 +18,12 @@ clear, prioritized analysis the dataset author can act on.
     category is best explained by its weakest sub_score.
   - ``metrics``: raw counts behind those scores (tools/params covered, etc.).
   - ``gaps``: precomputed, factual gap statements for this category.
+  - ``example_prompts``: starting prompts illustrating CUJs this category is
+    missing. They reach the author only through you, so give each one its own
+    recommendation: say what to add and what it covers, then introduce the prompt
+    with "for example:" and quote it verbatim. Name at most two or
+    three representative tools or parameters it covers; never restate a list
+    ``gaps`` already spells out in full.
   - ``evidence``: per-CUJ classifications (which CUJ ids were tagged vague,
     which are multi-tool, etc.).
 - ``cuj_path_distribution``: dataset-wide count of CUJs per interaction path
@@ -44,20 +50,12 @@ Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
       "assessment": "<1-2 sentences on what this score means for the dataset>",
       "recommendations": ["<concrete, actionable step>", "..."]
     }}
-  ],
-  "prioritized_actions": [
-    {{
-      "priority": <integer, 1 = do first>,
-      "area": "<the category or sub-metric this targets>",
-      "action": "<what to add or change, concretely>",
-      "rationale": "<the specific signal from the report that motivates this>"
-    }}
   ]
 }}
 Include one ``category_analysis`` entry per entry in ``categories`` (use its
 ``name`` as the ``category``); in each ``assessment``, name the weakest
-``sub_score`` driving that category. Order
-``prioritized_actions`` lowest-scoring gaps first (rank by score; no weights are
+``sub_score`` driving that category. Order each category's
+``recommendations`` lowest-scoring gaps first (rank by score; no weights are
 provided)."""
 
 
@@ -84,23 +82,9 @@ SYNTHESIS_SCHEMA = {
                 ],
             },
         },
-        "prioritized_actions": {
-            "type": "ARRAY",
-            "items": {
-                "type": "OBJECT",
-                "properties": {
-                    "priority": {"type": "INTEGER"},
-                    "area": {"type": "STRING"},
-                    "action": {"type": "STRING"},
-                    "rationale": {"type": "STRING"},
-                },
-                "required": ["priority", "area", "action", "rationale"],
-            },
-        },
     },
     "required": [
         "overall_summary",
         "category_analysis",
-        "prioritized_actions",
     ],
 }

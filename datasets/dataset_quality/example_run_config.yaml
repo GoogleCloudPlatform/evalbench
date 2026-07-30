@@ -41,19 +41,18 @@ scorers:
     # naming_distribution are static.
     sub_scorers:
       trajectory_coverage:
-        # weight: 12  (default)
+        # weight: 20  (default)
       naming_distribution:
         # weight: 5   (default)
       parameter_coverage:
         # weight: 13  (default)
-        # min_items: 1  (default; min CUJs that must exercise a parameter to count it covered)
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       vague_examples:
         # weight: 12  (default)
         # target_fraction: 0.5   (default; scores 100 once >= this fraction of CUJs are vague/indirect)
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       error_recovery:
-        # weight: 28  (default; scores the fraction of the failure/recovery taxonomy the dataset covers)
+        # weight: 20  (default; scores the fraction of the failure/recovery taxonomy the dataset covers)
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
       composition:
         # weight: 15  (default)
@@ -63,8 +62,8 @@ scorers:
         model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
     # Optional LLM synthesis pass. Absent -> deterministic report only. When set,
     # a single call turns the graded report (scores, counts, suggestions, per-CUJ
-    # evidence) into an overall summary + prioritized actions, plus a per-category
-    # assessment and recommendations merged into each category.
+    # evidence) into an overall summary, plus a per-category assessment and
+    # recommendations merged into each category.
     synthesis:
       model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
 
