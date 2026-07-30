@@ -367,15 +367,24 @@ def _bullets(title, items):
     me.text(
         title,
         style=me.Style(
-            font_size="12px",
-            font_weight="600",
-            color="#64748b",
+            font_size="14px",
+            font_weight="700",
+            color="#0f172a",
             text_transform="uppercase",
-            margin=me.Margin(top="12px", bottom="4px"),
+            letter_spacing="0.05em",
+            margin=me.Margin(top="16px", bottom="8px"),
         ),
     )
     for item in items:
-        me.text(f"• {item}", style=me.Style(color="#334155", margin=me.Margin(bottom="4px")))
+        me.text(
+            f"• {item}",
+            style=me.Style(
+                font_size="15px",
+                line_height="1.6",
+                color="#1f2937",
+                margin=me.Margin(bottom="8px"),
+            ),
+        )
 
 
 def dataset_quality_detail_component(results_dir, report, job_id):

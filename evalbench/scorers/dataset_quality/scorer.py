@@ -58,6 +58,9 @@ SCORER_REGISTRY = {
     "cuj_diversity": CujDiversityScorer,
 }
 
+def _as_float(score: int | float | None) -> float | None: 
+    """Grades are rounded ints; the shared scores column is FLOAT64."""
+    return None if score is None else float(score)
 
 class DatasetQualityScorer(Comparator):
     """Grades one CUJ dataset holistically; emits one weighted global score."""
@@ -223,13 +226,13 @@ class DatasetQualityScorer(Comparator):
         summary = {k: v for k, v in report.items() if k != "categories"}
         rows = [(
             self.name,
-            grade["dataset_quality_score"],
+            _as_float(grade["dataset_quality_score"]),
             json.dumps(summary, default=str),
         )]
         for category in report["categories"]:
             rows.append((
                 category["name"],
-                category.get("score"),
+                _as_float(category.get("score")),
                 json.dumps(category, default=str),
             ))
         return rows
