@@ -18,8 +18,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 CACHE_FILENAME = "dataset_quality_cache.json"
 PROCESSED_DIRS_FILENAME = "dataset_quality_processed_dirs.json"
 
-# Marks a run as dataset quality: these runs carry no experiment_config.product_name,
-# so the scorer's own key is both the detector and the product label.
+# Identifies a dataset quality run
+DATASET_FORMAT_CONFIG_KEY = "experiment_config.dataset_format"
+DATASET_QUALITY_FORMAT = "dataset-quality-format"
+
 PRODUCT_CONFIG_KEY = "experiment_config.scorers.dataset_quality.product_name"
 
 SUMMARY_COMPARATOR = "dataset_quality"
@@ -60,17 +62,23 @@ def _read_configs(configs_file):
     return values, run_time
 
 
+def artifact_paths(results_dir, job_id):
+    """The two files a run must have written before it can be graded or skipped."""
+    run_dir = os.path.join(results_dir, job_id)
+    return (
+        os.path.join(run_dir, "configs.csv"),
+        os.path.join(run_dir, "scores.csv"),
+    )
+
+
 def process_directory(job_id, results_dir):
     """Return the cache entry for a dataset quality run, or None for anything else."""
-    run_dir = os.path.join(results_dir, job_id)
-    configs_file = os.path.join(run_dir, "configs.csv")
-    scores_file = os.path.join(run_dir, "scores.csv")
+    configs_file, scores_file = artifact_paths(results_dir, job_id)
     if not (os.path.exists(configs_file) and os.path.exists(scores_file)):
         return None
 
     configs, run_time = _read_configs(configs_file)
-    product_name = configs.get(PRODUCT_CONFIG_KEY)
-    if not product_name:
+    if configs.get(DATASET_FORMAT_CONFIG_KEY) != DATASET_QUALITY_FORMAT:
         return None
 
     summary = {}
@@ -89,6 +97,11 @@ def process_directory(job_id, results_dir):
                 summary = payload
             else:
                 category_scores[comparator] = payload.get("score")
+
+    product_name = configs.get(PRODUCT_CONFIG_KEY)
+    if not product_name:
+        logging.warning("%s: dataset quality run carries no product_name", job_id)
+        return None
 
     dataset_config = configs.get("experiment_config.dataset_config", "")
 
@@ -140,11 +153,14 @@ def precompute():
 
     found = 0
     for job_id in directories:
+        # A run writes its artifacts only once it finishes, so a directory caught
+        # mid-write must stay unprocessed — marking it here would blacklist it
+        # from every later scan and its grade would never reach the tab.
+        if not all(os.path.exists(p) for p in artifact_paths(results_dir, job_id)):
+            continue
         try:
             entry = process_directory(job_id, results_dir)
         except Exception:
-            # A malformed run shouldn't be retried forever, but it also shouldn't
-            # be marked processed until we know why it failed.
             logging.exception("Dataset quality: failed to process %s", job_id)
             continue
         processed.add(job_id)

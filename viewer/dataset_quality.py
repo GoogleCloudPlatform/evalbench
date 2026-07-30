@@ -13,7 +13,14 @@ import os
 
 import mesop as me
 
-from precompute_dataset_quality import CACHE_FILENAME, SUMMARY_COMPARATOR
+from precompute_dataset_quality import (
+    CACHE_FILENAME,
+    DATASET_FORMAT_CONFIG_KEY,
+    DATASET_QUALITY_FORMAT,
+    SUMMARY_COMPARATOR,
+    artifact_paths,
+    get_results_dir,
+)
 
 csv.field_size_limit(10**9)
 
@@ -42,26 +49,6 @@ _CARD_BASE = dict(
 
 def _card_style(**overrides):
     return me.Style(**{**_CARD_BASE, **overrides})
-
-
-def get_results_dir():
-    # Try to read from environment variable
-    res_dir = os.environ.get("RESULTS_DIR")
-    if res_dir:
-        return res_dir
-
-    # Check multiple locations for results directory
-    results_dir_candidates = [
-        "/tmp_session_files/results",
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), "results"),
-        os.path.join(os.getcwd(), "results"),
-    ]
-
-    for candidate in results_dir_candidates:
-        if os.path.exists(candidate) and os.path.isdir(candidate):
-            return candidate
-
-    return results_dir_candidates[1]  # Fallback to default
 
 
 def score_color(score):
@@ -136,9 +123,30 @@ def ordered_categories(entries):
     return seen + extra
 
 
+def _is_dataset_quality_run(results_dir, job_id):
+    """Marker lookup in the small configs.csv, so a regular eval run's much larger
+    scores.csv is never parsed just to rule it out."""
+    configs_file, _ = artifact_paths(results_dir, job_id)
+    if not os.path.exists(configs_file):
+        return False
+    try:
+        with open(configs_file, newline="") as f:
+            return any(
+                row.get("config") == DATASET_FORMAT_CONFIG_KEY
+                and row.get("value") == DATASET_QUALITY_FORMAT
+                for row in csv.DictReader(f)
+            )
+    except Exception as e:
+        logging.warning("Could not read configs.csv for %s: %s", job_id, e)
+        return False
+
+
 def load_report(results_dir, job_id):
     """Reassemble the full report from a run's scores.csv, or None if not a DQ run."""
-    scores_file = os.path.join(results_dir, job_id, "scores.csv")
+    if not _is_dataset_quality_run(results_dir, job_id):
+        return None
+
+    _, scores_file = artifact_paths(results_dir, job_id)
     if not os.path.exists(scores_file):
         return None
 
