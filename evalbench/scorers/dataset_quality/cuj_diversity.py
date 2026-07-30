@@ -17,11 +17,16 @@ from scorers.dataset_quality.context import (
     JudgeSubScorer,
     SubScoreContribution,
 )
-from scorers.dataset_quality.llm import group_cuj_ids
+from scorers.dataset_quality.llm import (
+    example_prompts,
+    group_ids,
+    judge_labeled_json,
+)
 from scorers.dataset_quality.prompts.cuj_path_classification import (
     CUJ_PATHS,
     CUJ_PATH_CLASSIFICATION_PROMPT,
     CUJ_PATH_CLASSIFICATION_SCHEMA,
+    RECOMMENDATIONS_KEY,
 )
 
 
@@ -41,15 +46,15 @@ class CujDiversityScorer(JudgeSubScorer):
             tool_names=context.tool_names_str,
             cujs_json=context.cujs_json(DEFAULT_CUJ_FIELDS),
         )
-        path_ids = group_cuj_ids(
+        data = judge_labeled_json(
             self.model,
             prompt,
             CUJ_PATH_CLASSIFICATION_SCHEMA,
             CUJ_PATHS,
-            context.cuj_ids,
         )
-        if path_ids is None:
+        if data is None:
             return SubScoreContribution(applicable=False)
+        path_ids = group_ids(data, CUJ_PATHS, context.cuj_ids)
         counts = {path: len(ids) for path, ids in path_ids.items()}
 
         covered = [path for path in CUJ_PATHS if path_ids[path]]
@@ -76,6 +81,9 @@ class CujDiversityScorer(JudgeSubScorer):
                 "dq_paths_total": len(CUJ_PATHS),
             },
             suggestions=suggestions,
+            example_prompts=(
+                example_prompts(data, RECOMMENDATIONS_KEY) if missing else []
+            ),
             evidence=path_ids,
             distribution={"cuj_path_distribution": counts},
         )
