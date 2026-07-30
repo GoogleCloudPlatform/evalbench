@@ -58,9 +58,11 @@ SCORER_REGISTRY = {
     "cuj_diversity": CujDiversityScorer,
 }
 
-def _as_float(score: int | float | None) -> float | None: 
+
+def _as_float(score: int | float | None) -> float | None:
     """Grades are rounded ints; the shared scores column is FLOAT64."""
     return None if score is None else float(score)
+
 
 class DatasetQualityScorer(Comparator):
     """Grades one CUJ dataset holistically; emits one weighted global score."""

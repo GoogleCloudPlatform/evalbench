@@ -202,14 +202,10 @@ def _fleet_summary(entries):
 
     total_cujs = sum(e.get("total_cujs") or 0 for e in entries)
 
-    # Unweighted mean over products, so a product with a large dataset doesn't
-    # drown out a small one — every product's dataset is owned by its own team.
-    average = sum(e["score"] for e in graded) / len(graded) if graded else None
-
     with me.box(
         style=me.Style(
             display="grid",
-            grid_template_columns="repeat(3, 1fr)",
+            grid_template_columns="repeat(2, 1fr)",
             gap="16px",
             margin=me.Margin(bottom="20px"),
         )
@@ -218,12 +214,6 @@ def _fleet_summary(entries):
             "Products graded",
             str(len(graded)),
             detail=grades or "no grades yet",
-        )
-        _stat_card(
-            "Average score",
-            _fmt_score(average),
-            color=score_color(average),
-            detail=f"across {len(graded)} products" if graded else "",
         )
         _stat_card(
             "Total CUJs",
@@ -458,29 +448,6 @@ def dataset_quality_detail_component(results_dir, report, job_id):
                             ),
                         )
                         me.text(path, style=me.Style(font_size="12px", color="#64748b"))
-
-    actions = sorted(
-        report.get("prioritized_actions") or [], key=lambda a: a.get("priority", 0)
-    )
-    if actions:
-        with me.box(style=_card_style(margin=me.Margin(bottom="16px"))):
-            me.text("Prioritized actions", type="headline-6")
-            for action in actions:
-                with me.box(style=me.Style(margin=me.Margin(top="12px"))):
-                    me.text(
-                        f"{action.get('priority')}. [{action.get('area')}] "
-                        f"{action.get('action')}",
-                        style=me.Style(font_weight="600", color="#0f172a"),
-                    )
-                    if action.get("rationale"):
-                        me.text(
-                            action["rationale"],
-                            style=me.Style(
-                                color="#64748b",
-                                font_size="13px",
-                                margin=me.Margin(top="2px"),
-                            ),
-                        )
 
     me.text("Categories", type="headline-6")
     for category in sorted(
