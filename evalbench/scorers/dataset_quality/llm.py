@@ -128,12 +128,14 @@ def group_cuj_ids(
 
 def judge_coverage(
     model, prompt: str, response_schema: dict | None = None
-) -> list[dict] | None:
-    """Run one coverage prompt and return the judge's flat ``coverage`` list.
+) -> dict | None:
+    """Run one coverage prompt and return the whole parsed response.
 
-    Returns ``None`` when the judge call itself failed (empty/unparseable
-    response, or a response missing the ``coverage`` list) so the caller can drop
-    the metric as inapplicable instead of scoring a confident 0.
+    ``coverage`` is normalized to a list of dicts; keys beyond it (e.g.
+    recommendations) are passed through untouched. Returns ``None`` when the
+    judge call itself failed (empty/unparseable response, or a response missing
+    the ``coverage`` list) so the caller can drop the metric as inapplicable
+    instead of scoring a confident 0.
     """
     raw = generate_json(model, prompt, response_schema)
     try:
@@ -145,4 +147,18 @@ def judge_coverage(
     if not isinstance(items, list):
         _log_parse_failure(raw, ValueError("response missing 'coverage' list"))
         return None
-    return [item for item in items if isinstance(item, dict)]
+    data["coverage"] = [item for item in items if isinstance(item, dict)]
+    return data
+
+
+def example_prompts(data: dict, key: str) -> list[str]:
+    """The judge's example prompts under ``key``, deduped.
+
+    Whitespace is collapsed because the report renders one suggestion per line.
+    """
+    examples = []
+    for item in data.get(key) or []:
+        example = " ".join(item.split()) if isinstance(item, str) else ""
+        if example and example not in examples:
+            examples.append(example)
+    return examples

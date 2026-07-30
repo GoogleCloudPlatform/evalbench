@@ -16,26 +16,17 @@ from scorers.dataset_quality.context import (
     JudgeSubScorer,
     SubScoreContribution,
 )
-from scorers.dataset_quality.llm import group_ids, judge_labeled_json
+from scorers.dataset_quality.llm import (
+    example_prompts,
+    group_ids,
+    judge_labeled_json,
+)
 from scorers.dataset_quality.prompts.error_recovery_coverage import (
     ERROR_RECOVERY_COVERAGE_PROMPT,
     ERROR_RECOVERY_COVERAGE_SCHEMA,
     ERROR_RECOVERY_MODES,
     RECOMMENDATIONS_KEY,
 )
-
-
-def _example_prompts(data: dict) -> list[str]:
-    """The judge's example prompts, deduped.
-
-    Whitespace is collapsed because the report renders one suggestion per line.
-    """
-    examples = []
-    for item in data.get(RECOMMENDATIONS_KEY) or []:
-        example = " ".join(item.split()) if isinstance(item, str) else ""
-        if example and example not in examples:
-            examples.append(example)
-    return examples
 
 
 class ErrorRecoveryScorer(JudgeSubScorer):
@@ -89,6 +80,8 @@ class ErrorRecoveryScorer(JudgeSubScorer):
                 "dq_error_modes_total": len(ERROR_RECOVERY_MODES),
             },
             suggestions=suggestions,
-            example_prompts=_example_prompts(data) if uncovered else [],
+            example_prompts=(
+                example_prompts(data, RECOMMENDATIONS_KEY) if uncovered else []
+            ),
             evidence=mode_ids,
         )

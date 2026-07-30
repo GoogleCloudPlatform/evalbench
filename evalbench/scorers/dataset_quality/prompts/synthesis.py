@@ -21,8 +21,9 @@ clear, prioritized analysis the dataset author can act on.
   - ``example_prompts``: starting prompts illustrating CUJs this category is
     missing. They reach the author only through you, so give each one its own
     recommendation: say what to add and what it covers, then introduce the prompt
-    with "for example:" and quote it verbatim. Do not call it a proposal, a
-    proposed prompt, or a suggestion -- it is an example.
+    with "for example:" and quote it verbatim. Name at most two or
+    three representative tools or parameters it covers; never restate a list
+    ``gaps`` already spells out in full.
   - ``evidence``: per-CUJ classifications (which CUJ ids were tagged vague,
     which are multi-tool, etc.).
 - ``cuj_path_distribution``: dataset-wide count of CUJs per interaction path

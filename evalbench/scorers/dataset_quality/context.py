@@ -67,10 +67,24 @@ class DatasetQualityContext:
             value = tool.get(key)
         return value
 
-    def tool_parameters(self) -> set[tuple[str, str]]:
-        """Every named parameter as a ``(tool_name, parameter)`` pair."""
+    def exercised_tools(self) -> list:
+        """Schema tools named by at least one CUJ's ``expected_trajectory``.
+
+        A tool no trajectory names has no reachable parameters, so any scorer
+        grading against it would restate trajectory_coverage's tool gap.
+        """
+        named = set()
+        for scenario in self.scenarios:
+            named.update(scenario.get("expected_trajectory") or [])
+        return [
+            tool for tool in self.tools
+            if self._tool_field(tool, "name") in named
+        ]
+
+    def tool_parameters(self, tools) -> set[tuple[str, str]]:
+        """Every named parameter of ``tools`` as a ``(tool_name, parameter)`` pair."""
         params = set()
-        for tool in self.tools:
+        for tool in tools:
             name = self._tool_field(tool, "name")
             schema = self._tool_field(tool, "inputSchema") or {}
             for param in (schema.get("properties") or {}):
@@ -88,19 +102,19 @@ class DatasetQualityContext:
         ]
         return json.dumps({"tools": tools}, indent=2, default=str)
 
-    def tool_schema_json(self) -> str:
-        """JSON string of the tool schema (name + inputSchema per tool)."""
-        tools = []
-        for tool in self.tools:
+    def tool_schema_json(self, tools) -> str:
+        """JSON string of ``tools`` (name + inputSchema per tool)."""
+        entries = []
+        for tool in tools:
             schema = self._tool_field(tool, "inputSchema") or {}
-            tools.append({
+            entries.append({
                 "name": self._tool_field(tool, "name"),
                 "inputSchema": {
                     "properties": schema.get("properties") or {},
                     "required": schema.get("required") or [],
                 },
             })
-        return json.dumps({"tools": tools}, indent=2, default=str)
+        return json.dumps({"tools": entries}, indent=2, default=str)
 
     def cujs_json(self, fields: list[str]) -> str:
         """JSON string of each scenario projected to ``id`` + ``fields``.

@@ -5,6 +5,11 @@ supply a value for it (CUJs carry no literal argument values, so this is inferre
 from the scenario text). A parameter is covered when at least one CUJ exercises
 it. The denominator comes from the tool schema, not the judge, so a parameter the
 judge omits counts as uncovered.
+
+Scored over tools named by at least one ``expected_trajectory``. Parameters of a
+tool no CUJ invokes can only ever be uncovered, so grading them here would
+restate trajectory_coverage's tool gap once per parameter instead of measuring
+how deeply the dataset drives the tools it does reach.
 """
 
 import logging
@@ -17,10 +22,11 @@ from scorers.dataset_quality.context import (
     JudgeSubScorer,
     SubScoreContribution,
 )
-from scorers.dataset_quality.llm import judge_coverage
+from scorers.dataset_quality.llm import example_prompts, judge_coverage
 from scorers.dataset_quality.prompts.parameter_coverage import (
     PARAMETER_COVERAGE_PROMPT,
     PARAMETER_COVERAGE_SCHEMA,
+    RECOMMENDATIONS_KEY,
 )
 
 
@@ -36,24 +42,25 @@ class ParameterCoverageScorer(JudgeSubScorer):
         if n == 0:
             return SubScoreContribution(applicable=False)
 
-        params = context.tool_parameters()
+        tools = context.exercised_tools()
+        params = context.tool_parameters(tools)
         if not params:
             return SubScoreContribution(applicable=False)
 
         prompt = PARAMETER_COVERAGE_PROMPT.format(
-            tool_schema=context.tool_schema_json(),
+            tool_schema=context.tool_schema_json(tools),
             cujs_json=context.cujs_json(DEFAULT_CUJ_FIELDS),
         )
         valid_ids = set(context.cuj_ids)
 
-        coverage = judge_coverage(
+        data = judge_coverage(
             self.model, prompt, response_schema=PARAMETER_COVERAGE_SCHEMA
         )
-        if coverage is None:
+        if data is None:
             return SubScoreContribution(applicable=False)
 
         counts: dict[tuple[str, str], set] = {}
-        for entry in coverage:
+        for entry in data["coverage"]:
             key = (entry.get("tool"), entry.get("parameter"))
             if key not in params:
                 continue
@@ -79,17 +86,22 @@ class ParameterCoverageScorer(JudgeSubScorer):
                 for tool in sorted(uncovered_by_tool)
             ]
             suggestions.append(
-                "No CUJ exercises these parameters, by tool: " + "; ".join(groups)
+                f"Over the {len(tools)} of {len(context.tool_names)} schema tools"
+                " some CUJ invokes, no CUJ exercises these parameters, by tool: "
+                + "; ".join(groups)
             )
         logging.info(
-            "parameter_coverage: \t%d/%d params covered -> %d",
-            len(covered), len(params), score,
+            "parameter_coverage: \t%d/%d params over %d exercised tools -> %d",
+            len(covered), len(params), len(tools), score,
         )
         return SubScoreContribution(
             score=score,
             metrics={
                 "dq_param_covered": len(covered),
-                "dq_param_total": len(params),
+                "dq_param_in_scope": len(params),
             },
             suggestions=suggestions,
+            example_prompts=(
+                example_prompts(data, RECOMMENDATIONS_KEY) if uncovered else []
+            ),
         )
