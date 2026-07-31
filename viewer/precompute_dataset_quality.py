@@ -22,7 +22,7 @@ PROCESSED_DIRS_FILENAME = "dataset_quality_processed_dirs.json"
 DATASET_FORMAT_CONFIG_KEY = "experiment_config.dataset_format"
 DATASET_QUALITY_FORMAT = "dataset-quality-format"
 
-PRODUCT_CONFIG_KEY = "experiment_config.scorers.dataset_quality.product_name"
+PRODUCT_CONFIG_KEY = "experiment_config.product_name"
 
 SUMMARY_COMPARATOR = "dataset_quality"
 

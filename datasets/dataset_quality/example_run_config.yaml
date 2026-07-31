@@ -9,6 +9,8 @@
 # Forced by dataset_format below; listed here only to document what runs.
 orchestrator: agent
 
+product_name: "Cloud SQL"
+
 # Bundles every CUJ into one wrapper scenario so the scorer is invoked once with
 # the whole dataset, rather than once per CUJ as the agent formats would.
 dataset_format: dataset-quality-format
@@ -32,7 +34,6 @@ simulated_user_model_config: datasets/model_configs/noop_agent_model.yaml
 # EVAL_GCP_PROJECT_REGION=global.
 scorers:
   dataset_quality:
-    product_name: "Cloud SQL"
     model_config: datasets/model_configs/gemini_cli_model.yaml
     # tools_timeout: 30   # optional; live tools/list fetch timeout in seconds
     # Each sub-scorer's weight defaults in its scorer class; the commented value
