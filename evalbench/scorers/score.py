@@ -208,6 +208,9 @@ def compare(
             dbtscorer.DbtRunScorer(scorers["dbt_run"])
         )
     if "dataset_quality" in scorers:
+        scorers["dataset_quality"]["product_name"] = experiment_config.get(
+            "product_name"
+        )
         comparators.append(
             DatasetQualityScorer(scorers["dataset_quality"], global_models)
         )
