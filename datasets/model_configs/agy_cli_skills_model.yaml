@@ -1,8 +1,8 @@
 # Antigravity (agy) CLI -- self-updating native binary. The `agy` command on
 # PATH is what runs.
 #
-# Model selection: the harness passes the model via agy's `--model` flag
-# (agy >=1.0.5). The value must be the exact agy UI label (e.g.
+# Model selection: the harness passes the model via agy's `--model` flag.
+# The value must be the exact agy UI label (e.g.
 # "Gemini 3.1 Pro (High)"), as listed by `agy models`. Left unset here so the
 # flag is omitted and agy uses its own default model.
 generator: agy_cli

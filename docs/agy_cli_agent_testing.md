@@ -161,12 +161,12 @@ dataset_config: datasets/agy-cli-tools/agy-cli.evalset.json
 dataset_format: agent-format
 orchestrator: agent
 model_config: datasets/model_configs/agy_cli_model.yaml
-simulated_user_model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+simulated_user_model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
 
 scorers:
   trajectory_matcher: {}
   goal_completion:
-    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+    model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
   turn_count: {}
 
 reporting:
@@ -181,7 +181,7 @@ reporting:
 | Key | Required | Description |
 |-----|----------|-------------|
 | `generator` | Yes | Must be `agy_cli` |
-| `model` | Optional | agy UI model label, e.g. `"Gemini 3.1 Pro (High)"`. Passed via the `--model` flag. Must be a valid label, not an API id. |
+| `model` | Optional | Model for the run, passed via the `--model` flag. Accepts either the UI label (`"Gemini 3.1 Pro (High)"`) or the slug (`gemini-3.1-pro-high`) -- see the note below. |
 | `timeout` | Optional | Timeout duration string, e.g. `"20m"`. Passed via the `--print-timeout` flag. If omitted, defaults to agy's internal default (5 minutes). |
 | `env` | Optional | Environment variables passed to the CLI process |
 | `setup` | Optional | Tool setup block containing `mcp_servers`, `skills`, or `fake_mcp_servers` |
@@ -190,13 +190,15 @@ reporting:
 > **Explicit Project Configuration Required:** agy does not read GCP project details from the host environment. You **must** explicitly set `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION` in the `env` block of your model config. If omitted, agy will return empty responses and fail to make tool calls, even if those variables are exported in your shell.
 
 > [!NOTE]
-> **Model selection uses the `--model` flag; use a UI label.** The harness
-> passes the configured `model` via agy's `--model` flag (agy >=1.0.5). The
-> value must be the **exact agy UI label** (e.g. `"Gemini 3.1 Pro (High)"`,
-> `"Gemini 3.5 Flash (Medium)"`), not an API id like `gemini-2.5-pro` -- an
-> unrecognized value is silently ignored and agy falls back to its default
-> model. List the valid labels with `agy models`. Omit the key to leave the
-> flag off, so agy uses its own default model.
+> **Model selection uses the `--model` flag.** `agy models` lists both
+> accepted spellings side by side: the slug (`gemini-3.1-pro-high`) and the
+> UI label (`"Gemini 3.1 Pro (High)"`). Matching is case-insensitive. A bare
+> slug with no effort suffix (`gemini-3.1-pro`) is rejected unless you also
+> pass `--effort`. An unrecognized value is **not** silently ignored -- agy
+> exits non-zero with an empty response and prints the valid models on
+> stderr. Prefer the label form: it is what the harness records when `model`
+> is omitted, so report buckets stay consistent across configs. Omit the key
+> to leave the flag off, so agy uses its own default model.
 
 ---
 
@@ -220,7 +222,7 @@ the block under the `mcpServers` key of a sandboxed
 `settings.json`) and lets agy pick it up at startup.
 
 > [!IMPORTANT]
-> **Use `serverUrl` for the HTTP endpoint** (`url` also works as of v1.0.5);
+> **Use `serverUrl` for the HTTP endpoint** (`url` also works);
 > a Gemini-style `httpUrl` is auto-translated by the harness.
 > `authProviderType`, `oauth.scopes`, and `headers` are native agy fields, so
 > Google auth works without Bearer-header injection (unlike `claude_code`).
@@ -243,7 +245,7 @@ with the offending server name rather than silently degrading.
 > paths and are configured independently.
 
 Configured under `setup.skills`. Skills are delivered via **plugins**:
-verified against agy v1.0.5, `agy plugin install <target>` reads a plugin
+`agy plugin install <target>` reads a plugin
 manifest (Claude/Gemini/Codex formats), processes any bundled skills,
 materializes them under `<HOME>/.gemini/config/plugins/<name>/`, and
 records the install in `<HOME>/.gemini/config/import_manifest.json`. There
@@ -304,9 +306,9 @@ for a working example.
 | Skill management | `gemini skills <link\|install\|enable\|...>` subcommands | `agy plugin install <target>` (plugin manifests carry skills); no `agy skills` subcommand |
 | Extensions | Supported via `setup.extensions` | Not modeled; drop the block |
 | MCP config location | `mcpServers` in `settings.json` | `mcpServers` in a separate `~/.gemini/config/mcp_config.json` |
-| MCP HTTP transport field | `httpUrl` | `serverUrl` (native); `url` also accepted as of v1.0.5; a Gemini-style `httpUrl` is auto-translated to `serverUrl` by the harness |
+| MCP HTTP transport field | `httpUrl` | `serverUrl` (native); `url` also accepted; a Gemini-style `httpUrl` is auto-translated to `serverUrl` by the harness |
 | MCP tool name format | `mcp_<server>_<tool>` (single underscore) | No per-tool functions -- every MCP call goes through a single native `call_mcp_tool` wrapper whose args carry `ServerName`/`ToolName`/`Arguments`; the harness unwraps it to the canonical `<server>__<tool>` |
-| Model selection | `GEMINI_API_MODEL` / `GEMINI_MODEL` env var | `--model` flag (agy >=1.0.5); value is a UI label (e.g. `"Gemini 3.1 Pro (High)"`), not an API id |
+| Model selection | `GEMINI_API_MODEL` / `GEMINI_MODEL` env var | `--model` flag; UI label or slug, both listed by `agy models` |
 | Auth | NPM auth token via `gcloud auth print-access-token` plus ADC | OAuth (keyring-backed); ADC not required by agy itself |
 | Token-usage stats | Reported per request | Exposed via the stream-json `result` event's `usage` block (input/output/thinking/total tokens) |
 

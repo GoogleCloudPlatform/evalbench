@@ -4,8 +4,8 @@
 
 generator: agy_cli
 
-# Model to use. The harness passes this via agy's `--model` flag (agy
-# >=1.0.5). The value must be the exact agy UI label (NOT an API id like
+# Model to use. The harness passes this via agy's `--model` flag.
+# The value must be the exact agy UI label (NOT an API id like
 # "gemini-2.5-pro") -- list the valid labels with `agy models`. An
 # unrecognized label is silently ignored and agy falls back to its default
 # model. Omit this key to leave the flag off, so agy uses its own default.
@@ -24,8 +24,8 @@ env:
 setup:
   mcp_servers:
     "cloud-sql":
-      # agy's native HTTP endpoint field is "serverUrl"; "url" also works
-      # as of v1.0.5. A gemini-style "httpUrl" is auto-translated to
+      # agy's native HTTP endpoint field is "serverUrl"; "url" also works.
+      # A gemini-style "httpUrl" is auto-translated to
       # "serverUrl" by the harness (_translate_mcp_config), so it works
       # too -- but prefer "serverUrl" here. authProviderType/oauth/headers
       # are native agy fields, so Google auth works without Bearer-header

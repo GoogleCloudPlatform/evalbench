@@ -731,7 +731,7 @@ class AgyCliGenerator(AgentCliGenerator):
         """Normalizes a cross-harness MCP server config into agy's schema.
 
         Maps the common gemini-style ``httpUrl`` alias to ``serverUrl``, agy's
-        native field. ``serverUrl`` and ``url`` (v1.0.5+) are accepted by agy
+        native field. ``serverUrl`` and ``url`` are accepted by agy
         directly and need no translation. Other fields like
         ``authProviderType``, ``oauth.scopes``, and stdio fields pass through
         natively.
@@ -758,7 +758,7 @@ class AgyCliGenerator(AgentCliGenerator):
         """Builds the non-interactive ``agy -p`` argv shared by the eval
         turn path and the setup-time MCP probe.
 
-        The model is selected with agy's ``--model`` flag (agy >=1.0.5). The
+        The model is selected with agy's ``--model`` flag. The
         value is an agy UI label like "Gemini 3.1 Pro (High)" (the exact
         strings ``agy models`` lists), not an API id; an unrecognized value is
         silently ignored and agy falls back to its default model. When no
