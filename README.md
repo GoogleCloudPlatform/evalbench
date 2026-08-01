@@ -85,11 +85,9 @@ Start the evaluation process using the provided shell script:
 
 Beyond single-turn NL2SQL, EvalBench evaluates **agents** — coding CLIs and data agents that reason across multiple turns, call tools, and act on their environment.
 
-Each scenario starts from a prompt and is driven forward by an **LLM-based simulated user** that follows a `conversation_plan` until the goal is met, a terminal state is detected, or `max_turns` is reached. Every turn is captured — text, tool calls, parameters, latency, and tokens — and then scored.
+Each scenario starts from a prompt and is driven forward by an **LLM-based simulated user** that follows a `conversation_plan` until the goal is met, a terminal state is detected, or `max_turns` is reached. Every turn is captured — text, tool calls, parameters, latency, and tokens — and then scored. Runs are **sandboxed**, so agents never touch your local CLI settings and scenarios can run concurrently.
 
-### Supported Agents
-
-| Agent | Generator | Orchestrator | Docs |
+| Agent | Generator | Orchestrator | Guide |
 |---|---|---|---|
 | Gemini CLI | `gemini_cli` | `agent` / `geminicli` | [Gemini CLI guide](/docs/gemini_cli_agent_testing.md) |
 | Claude Code | `claude_code` | `agent` | [Claude Code guide](/docs/claude_code_agent_testing.md) |
@@ -97,64 +95,16 @@ Each scenario starts from a prompt and is driven forward by an **LLM-based simul
 | Antigravity (agy) CLI | `agy_cli` | `agent` | [Antigravity CLI guide](/docs/agy_cli_agent_testing.md) |
 | Conversational data agents | `dataagent` | `dataagent` / `interact` | [Data agent spec](/docs/dataagent_spec.md) |
 
-Each run is **sandboxed** — agents execute against an isolated fake home directory (e.g. `.venv/fake_home`) so evaluations never contaminate your local machine's CLI settings, and scenarios can run concurrently.
+Agents can be evaluated against tools wired up as **MCP servers**, **plugins**, **extensions**, or **skills** — or against a **fake MCP** stub for fast, offline, zero-cost testing. Plugins are installed from a git repo or local directory through each CLI's marketplace and may bundle skills, MCP servers, or both. Trajectories are scored for tool-call accuracy, goal completion, hallucination and clarification behavior, latency, and token cost; see the [scorer reference](/docs/scorers.md#agentic-scorers) for all of them.
 
-### Tool Paradigms
-
-Agents can be evaluated against the tools they are given, regardless of how those tools are wired up:
-
-| Paradigm | How it Works |
-|---|---|
-| **MCP Servers** | Remote HTTP/SSE or local stdio Model Context Protocol servers, mounted into the agent's sandbox |
-| **Extensions** | GitHub-hosted plugin packages installed idempotently via the CLI |
-| **Skills** | Skill packages installed through each CLI's native mechanism |
-| **Fake MCP** | A deterministic local MCP stub for fast, offline, zero-cost testing of your harness and datasets |
-
-### Agentic Scorers
-
-| Scorer | Type | What it Measures |
-|---|---|---|
-| `trajectory_matcher` | Deterministic | Expected vs. actual tool calls (Jaccard by default, Levenshtein with `enforce_order: true`) |
-| `goal_completion` | LLM | Whether the agent actually accomplished the conversation plan's intent |
-| `behavioral_metrics` | LLM | Hallucination rate and unnecessary-clarification rate |
-| `parameter_analysis` | LLM | Qualitative feedback on the arguments passed to each tool |
-| `binary_rubric_scorer` | LLM | Pass/fail against your own rubric criteria |
-| `turn_count` / `agent_steps` | Deterministic | Conversation turns and internal agent steps taken |
-| `end_to_end_latency` / `tool_call_latency` | Deterministic | Total wall-clock latency and time spent inside tools |
-| `token_consumption` / `tokens_processed` / `effective_billed_tokens` | Deterministic | Cost and context efficiency |
-| `python_scorer` | Custom | Delegates to any external Python script via `uv run` — no need to fork EvalBench |
-
-### Quick Start: Agentic Eval
-
-Define a scenario in an evalset:
-
-```json
-{
-  "scenarios": [
-    {
-      "id": "list-instances-01",
-      "starting_prompt": "List all Cloud SQL instances in project my-evaluation-project",
-      "conversation_plan": "Ensure the agent accurately calls list_instances and returns the output.",
-      "expected_trajectory": ["cloud-sql__list_instances"],
-      "max_turns": 4
-    }
-  ]
-}
-```
-
-Point a run config at it, then run:
+To try it without any cloud resources or cost:
 
 ```bash
-# Offline / no-cost smoke test against a fake MCP server:
 export EVAL_CONFIG=datasets/gemini-cli-tools/example_run_fake_config.yaml
-
-# Or a real agent against a real MCP server:
-export EVAL_CONFIG=datasets/claude-code-tools/example_run_config.yaml
-
 ./evalbench/run.sh
 ```
 
-Ready-to-run configs live under [datasets/gemini-cli-tools/](/datasets/gemini-cli-tools/), [datasets/claude-code-tools/](/datasets/claude-code-tools/), [datasets/codex-cli-tools/](/datasets/codex-cli-tools/), and [datasets/agy-cli-tools/](/datasets/agy-cli-tools/).
+Read [Agentic evaluations](/docs/agentic-evals.md) for the execution model, sandboxing, and tool paradigms, and the [agentic dataset format](/docs/configs/agentic-dataset-config.md) for how to write scenarios.
 
 ---
 
@@ -181,10 +131,21 @@ And allowing digging deeper into the exact details of the improvements and regre
 <img width="911" alt="Evalbench Reporting by Databaes / Dialects" src="https://github.com/user-attachments/assets/861696b5-42f1-44c7-a7d0-710f7a32918f" />
 <br><br>
 
-A complete guide of Evalbench's available functionality can be found in [run-config documentation](/docs/configs/run-config.md)
-
-Please explore the repository to learn more about customizing your evaluation workflows, integrating new metrics, and leveraging the full potential of EvalBench.
-
-
 ---
-For additional documentation, examples, and support, please refer to the [EvalBench documentation](https://github.com/GoogleCloudPlatform/evalbench). Enjoy evaluating your GenAI models!
+
+## Documentation
+
+Full reference documentation lives in [docs/](/docs/README.md).
+
+| Doc | Contents |
+|---|---|
+| [Run config](/docs/configs/run-config.md) | The top-level YAML that drives an evaluation run |
+| [Scorers](/docs/scorers.md) | Every available scorer and its configuration options |
+| [Agentic evaluations](/docs/agentic-evals.md) | Execution model, sandboxing, and tool paradigms |
+| [NL2SQL dataset format](/docs/configs/dataset-config.md) | Prompts, golden SQL, and eval queries |
+| [Agentic dataset format](/docs/configs/agentic-dataset-config.md) | Scenarios, conversation plans, and expected trajectories |
+| [Database config](/docs/configs/db-config.md) | Connection details and supported dialects |
+| [Model config](/docs/configs/model-config.md) | Model selection and generation settings |
+| [Examples](/docs/examples/) | Runnable notebooks for SQLite, Cloud SQL, and BigQuery |
+
+Contributions are welcome — see [contributing](/docs/contributing.md). Enjoy evaluating your GenAI models!
