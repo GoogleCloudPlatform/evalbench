@@ -1692,7 +1692,7 @@ requires-dist = [
     { name = "grpcio", specifier = ">=1.80.0" },
     { name = "grpcio-tools", specifier = ">=1.80.0" },
     { name = "jsonschema" },
-    { name = "mcp" },
+    { name = "mcp", specifier = ">=1.8,<2" },
     { name = "mongomock" },
     { name = "pandas" },
     { name = "pandas-gbq" },
