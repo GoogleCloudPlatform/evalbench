@@ -257,6 +257,28 @@ class JudgeParsingTest(unittest.TestCase):
     def test_example_prompts_missing_key_is_empty(self):
         self.assertEqual(llm.example_prompts({}, "recommendations"), [])
 
+    def test_example_prompts_ignores_a_bare_string(self):
+        # Iterating a str yields one prompt per character.
+        self.assertEqual(
+            llm.example_prompts({"recommendations": "abc"}, "recommendations"), []
+        )
+
+    def test_an_array_wrapping_one_object_is_unwrapped(self):
+        model = _StubModel(json.dumps([{"a_ids": ["c1"]}]))
+
+        data = llm.judge_labeled_json(model, "prompt", None, ["a_ids"])
+
+        self.assertEqual(data, {"a_ids": ["c1"]})
+
+    def test_judges_return_none_on_an_objectless_array(self):
+        # json.loads accepts an array, so the callers used to hit .get() on a list.
+        model = _StubModel(json.dumps(["c1", "c2"]))
+
+        self.assertIsNone(
+            llm.judge_labeled_json(model, "prompt", None, ["a_ids"])
+        )
+        self.assertIsNone(llm.judge_coverage(model, "prompt"))
+
 
 class TrajectoryCoverageScorerTest(unittest.TestCase):
 
@@ -279,6 +301,19 @@ class TrajectoryCoverageScorerTest(unittest.TestCase):
         self.assertEqual(contribution.metrics["dq_covered_tools"], 1)
         self.assertEqual(contribution.metrics["dq_total_tools"], 4)
         self.assertIn("beta, delta, gamma", contribution.suggestions[0])
+
+    def test_a_string_trajectory_is_ignored_rather_than_split(self):
+        # Iterating a str registers each letter as a covered tool name, so a
+        # single-character tool is spuriously credited.
+        context = _context(
+            [{"id": "c1", "expected_trajectory": "alpha"}],
+            [_tool("a"), _tool("alpha")],
+        )
+
+        contribution = TrajectoryCoverageScorer({}, {}).run(context)
+
+        self.assertEqual(contribution.score, 0)
+        self.assertEqual(context.exercised_tools(), [])
 
     def test_full_coverage_scores_100_without_suggestions(self):
         context = _context(
@@ -416,6 +451,19 @@ class _FakeDiscoverabilityScorer(SubScorer):
         return SubScoreContribution(score=0, suggestions=["fake gap"])
 
 
+class _CollidingDistributionScorer(SubScorer):
+    """Emits a distribution keyed like a reserved report field."""
+
+    name = "colliding_distribution"
+    category = CATEGORY_DISCOVERABILITY
+    default_weight = 10
+
+    def run(self, context):
+        return SubScoreContribution(
+            score=100, distribution={"letter_grade": "clobbered"}
+        )
+
+
 class DatasetQualityScorerConfigTest(unittest.TestCase):
 
     def test_product_name_is_required(self):
@@ -471,6 +519,23 @@ class ExtractCujsTest(unittest.TestCase):
         self.assertEqual(self.scorer._extract_cujs(""), [])
         self.assertEqual(self.scorer._extract_cujs(None), [])
         self.assertEqual(self.scorer._extract_cujs({"scenario": {}}), [])
+
+    def test_unexpected_payload_shapes_return_empty_rather_than_raise(self):
+        # A raise here escapes compare() and the caller turns it into a score of
+        # 0, which is indistinguishable from a genuine F.
+        self.assertEqual(self.scorer._extract_cujs("[1, 2]"), [])
+        self.assertEqual(self.scorer._extract_cujs('{"scenario": "oops"}'), [])
+        self.assertEqual(self.scorer._extract_cujs({"scenario": []}), [])
+        self.assertEqual(
+            self.scorer._extract_cujs({"scenario": {"all_cujs": "c1"}}), []
+        )
+
+    def test_non_dict_cujs_are_dropped(self):
+        cujs = self.scorer._extract_cujs(
+            {"scenario": {"all_cujs": [{"id": "c1"}, "junk", None]}}
+        )
+
+        self.assertEqual(cujs, [{"id": "c1"}])
 
 
 class FetchToolsTest(unittest.TestCase):
@@ -648,6 +713,25 @@ class DatasetQualityScorerCompareTest(unittest.TestCase):
             {"naming_distribution": 100, "fake_discoverability": 0},
         )
         self.assertEqual(category["gaps"], ["fake gap"])
+
+    @patch("scorers.dataset_quality.scorer.AgentCliGenerator.fetch_mcp_tools")
+    @patch("scorers.dataset_quality.scorer.load_yaml_config")
+    def test_a_distribution_cannot_overwrite_a_report_field(
+        self, mock_load, mock_fetch
+    ):
+        mock_load.return_value = _model_config()
+        mock_fetch.return_value = [_tool("alpha")]
+        registry = dict(
+            SCORER_REGISTRY, colliding_distribution=_CollidingDistributionScorer
+        )
+        with patch("scorers.dataset_quality.scorer.SCORER_REGISTRY", registry):
+            scorer = DatasetQualityScorer(
+                _config(sub_scorers={"colliding_distribution": {}}), {}
+            )
+            rows = _compare(scorer, _wrapper([{"id": "c1"}]))
+
+        summary = json.loads(rows[0][2])
+        self.assertEqual(summary["letter_grade"], "A")
 
     @patch.object(NamingDistributionScorer, "run", side_effect=RuntimeError("boom"))
     @patch("scorers.dataset_quality.scorer.AgentCliGenerator.fetch_mcp_tools")
