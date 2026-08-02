@@ -24,6 +24,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from generators.models.mcp_client import McpToolsError
 from scorers.dataset_quality import llm
+from scorers.dataset_quality.composition import CompositionScorer
 from scorers.dataset_quality.context import (
     CATEGORY_DISCOVERABILITY,
     DatasetQualityContext,
@@ -37,6 +38,10 @@ from scorers.dataset_quality.grading import (
     letter_grade,
 )
 from scorers.dataset_quality.naming_distribution import NamingDistributionScorer
+from scorers.dataset_quality.prompts.composition_coverage import (
+    KEY_MULTI_TOOL,
+    KEY_SEQUENCE_DEPENDENCY,
+)
 from scorers.dataset_quality.scorer import SCORER_REGISTRY, DatasetQualityScorer
 from scorers.dataset_quality.trajectory_coverage import TrajectoryCoverageScorer
 
@@ -328,6 +333,41 @@ class TrajectoryCoverageScorerTest(unittest.TestCase):
 
         self.assertEqual(contribution.score, 100)
         self.assertEqual(contribution.suggestions, [])
+
+
+class CompositionScorerTest(unittest.TestCase):
+    """Only the composable-surface gate; the judge itself is out of scope."""
+
+    # A judge response that grades cleanly, so an inapplicable result can only
+    # have come from the surface gate and never from a failed judge call.
+    _RESPONSE = json.dumps({
+        KEY_MULTI_TOOL: ["c1"],
+        KEY_SEQUENCE_DEPENDENCY: ["c1"],
+    })
+
+    def _scorer(self):
+        with patch("scorers.dataset_quality.context.get_generator") as generator:
+            generator.return_value = _StubModel(self._RESPONSE)
+            return CompositionScorer({"model_config": "model.yaml"}, {})
+
+    def test_a_string_trajectory_does_not_fabricate_a_composable_surface(self):
+        # Iterating a str makes one CUJ look like a surface of 9 distinct units,
+        # so the gate opens and composition is graded on a product it cannot see.
+        context = _context([{"id": "c1", "expected_trajectory": "run_script"}], [])
+
+        contribution = self._scorer().run(context)
+
+        self.assertFalse(contribution.applicable)
+
+    def test_a_list_trajectory_still_opens_the_gate(self):
+        context = _context(
+            [{"id": "c1", "expected_trajectory": ["alpha", "beta"]}], []
+        )
+
+        contribution = self._scorer().run(context)
+
+        self.assertTrue(contribution.applicable)
+        self.assertEqual(contribution.score, 100)
 
 
 class NamingDistributionScorerTest(unittest.TestCase):
