@@ -15,6 +15,7 @@ from scorers.dataset_quality.context import (
     DatasetQualityContext,
     SubScoreContribution,
     SubScorer,
+    expected_trajectory,
 )
 
 
@@ -32,7 +33,7 @@ class TrajectoryCoverageScorer(SubScorer):
 
         trajectory_tools = set()
         for scenario in context.scenarios:
-            trajectory_tools.update(scenario.get("expected_trajectory") or [])
+            trajectory_tools.update(expected_trajectory(scenario))
 
         covered = schema_tools & trajectory_tools
         uncovered = sorted(schema_tools - covered)
