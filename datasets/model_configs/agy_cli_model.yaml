@@ -3,7 +3,7 @@
 generator: agy_cli
 
 # UI label or slug listed by `agy models`. Omit to use agy's default.
-model: "Gemini 3.1 Pro (High)"
+model: "gemini-3.1-pro-high"
 
 # Print-mode timeout (agy default 5m).
 timeout: "20m"
@@ -17,7 +17,7 @@ env:
 setup:
   mcp_servers:
     "cloud-sql":
-      serverUrl: "https://sqladmin.googleapis.com/mcp"
+      httpUrl: "https://sqladmin.googleapis.com/mcp"
       authProviderType: google_credentials
       oauth:
         scopes:
