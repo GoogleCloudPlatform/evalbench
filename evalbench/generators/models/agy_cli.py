@@ -758,11 +758,11 @@ class AgyCliGenerator(AgentCliGenerator):
         """Builds the non-interactive ``agy -p`` argv shared by the eval
         turn path and the setup-time MCP probe.
 
-        The model is selected with agy's ``--model`` flag. The
-        value is an agy UI label like "Gemini 3.1 Pro (High)" (the exact
-        strings ``agy models`` lists), not an API id; an unrecognized value is
-        silently ignored and agy falls back to its default model. When no
-        model is configured the flag is omitted and agy uses its default.
+        The model is selected with agy's ``--model`` flag, which takes either
+        the UI label ("Gemini 3.1 Pro (High)") or the slug
+        ("gemini-3.1-pro-high") that ``agy models`` lists; an unrecognized
+        value fails the run. When no model is configured the flag is omitted
+        and agy uses its default. See docs/agy_cli_agent_testing.md.
 
         ``output_format`` maps to agy's ``--output-format`` (values ``json``
         and ``stream-json``); the eval turn passes ``stream-json`` to get the

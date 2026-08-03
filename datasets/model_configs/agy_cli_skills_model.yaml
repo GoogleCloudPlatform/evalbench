@@ -1,14 +1,8 @@
-# Antigravity (agy) CLI -- self-updating native binary. The `agy` command on
-# PATH is what runs.
-#
-# Model selection: the harness passes the model via agy's `--model` flag.
-# The value must be the exact agy UI label (e.g.
-# "Gemini 3.1 Pro (High)"), as listed by `agy models`. Left unset here so the
-# flag is omitted and agy uses its own default model.
+# Antigravity (agy) CLI. See docs/agy_cli_agent_testing.md.
+# No `model` key, so agy uses its default.
 generator: agy_cli
 env:
   # Set to your project, or export EVAL_GCP_PROJECT_ID and keep the !ENV form.
-  # Key stays GOOGLE_CLOUD_PROJECT -- the var the agy subprocess reads.
   GOOGLE_CLOUD_PROJECT: !ENV ${EVAL_GCP_PROJECT_ID}
   GOOGLE_CLOUD_LOCATION: "global"
   GOOGLE_GENAI_USE_VERTEXAI: "true"
@@ -22,11 +16,8 @@ env:
   CLOUD_SQL_POSTGRES_PASSWORD: <password>
   CLOUD_SQL_POSTGRES_IP_TYPE: "PUBLIC"
 setup:
-  # `skills` is named for parity with the claude_code/codex_cli harnesses.
-  # For agy each entry installs a *plugin* (`agy plugin install`), which may
-  # bundle both skills and its own MCP servers. To attach a standalone MCP
-  # server not packaged in a plugin, use a separate top-level `mcp_servers`
-  # block instead.
+  # Each entry installs a plugin (`agy plugin install`), which may bundle
+  # skills and its own MCP servers.
   skills:
     - action: install_from_repo
       path: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git"
