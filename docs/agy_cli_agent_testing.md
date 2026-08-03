@@ -187,24 +187,13 @@ reporting:
 | Key | Required | Description |
 |-----|----------|-------------|
 | `generator` | Yes | Must be `agy_cli` |
-| `model` | Optional | Model for the run, passed via the `--model` flag. Accepts either the UI label (`"Gemini 3.1 Pro (High)"`) or the slug (`gemini-3.1-pro-high`) -- see the note below. |
+| `model` | Optional | Model for the run -- either the UI label (`"Gemini 3.1 Pro (High)"`) or the full slug (`gemini-3.1-pro-high`), both listed by `agy models`. An unrecognized value fails the run. Omit to use agy's default. |
 | `timeout` | Optional | Timeout duration string, e.g. `"20m"`. Passed via the `--print-timeout` flag. If omitted, defaults to agy's internal default (5 minutes). |
 | `env` | Optional | Environment variables passed to the CLI process |
 | `setup` | Optional | Tool setup block containing `mcp_servers`, `skills`, or `fake_mcp_servers` |
 
 > [!IMPORTANT]
 > **Explicit Project Configuration Required:** agy does not read GCP project details from the host environment. You **must** explicitly set `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION` in the `env` block of your model config. If omitted, agy will return empty responses and fail to make tool calls, even if those variables are exported in your shell.
-
-> [!NOTE]
-> **Model selection uses the `--model` flag.** `agy models` lists both
-> accepted spellings side by side: the slug (`gemini-3.1-pro-high`) and the
-> UI label (`"Gemini 3.1 Pro (High)"`). Matching is case-insensitive. A bare
-> slug with no effort suffix (`gemini-3.1-pro`) is rejected unless you also
-> pass `--effort`. An unrecognized value is **not** silently ignored -- agy
-> exits non-zero with an empty response and prints the valid models on
-> stderr. Prefer the label form: it is what the harness records when `model`
-> is omitted, so report buckets stay consistent across configs. Omit the key
-> to leave the flag off, so agy uses its own default model.
 
 ---
 
