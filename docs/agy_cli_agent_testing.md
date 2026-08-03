@@ -224,9 +224,8 @@ Two independent credentials, neither a substitute for the other: agy's own
 **OAuth token** (its model backend, every turn) and **gcloud ADC** (outbound
 calls from `authProviderType: google_credentials` MCP servers).
 
-### agy login (one-time, interactive)
-
-Run `agy` on the host and pick a login method:
+The OAuth token comes from a one-time interactive login. Run `agy` on the host
+and pick a login method:
 
 - **Google OAuth** -- personal Google accounts.
 - **Use a Google Cloud project** -- required for managed Workspace or corporate
@@ -248,13 +247,6 @@ logging in once is enough.
 > mirrors the **file**, so if the keyring holds your token there is nothing to
 > copy and the run hangs on the login prompt.
 
-### GCP project
-
-agy reads the project for its model backend from `settings.json` -> `gcp.project`,
-**not** from the environment. The harness writes that block into the sandbox from
-`env.GOOGLE_CLOUD_PROJECT` / `env.GOOGLE_CLOUD_LOCATION` in your model config --
-without them every turn returns an empty response and makes no tool calls.
-
 ---
 
 ## Tool Paradigms
@@ -266,11 +258,11 @@ the block under the `mcpServers` key of a sandboxed
 `<fake_home>/.gemini/config/mcp_config.json` (a separate file from
 `settings.json`) and lets agy pick it up at startup.
 
-> [!IMPORTANT]
-> **Use `serverUrl` for the HTTP endpoint** (`url` also works);
-> a Gemini-style `httpUrl` is auto-translated by the harness.
-> `authProviderType`, `oauth.scopes`, and `headers` are native agy fields, so
-> Google auth works without Bearer-header injection (unlike `claude_code`).
+> [!NOTE]
+> **Use `httpUrl` for the HTTP endpoint**, same as the other harnesses -- EvalBench
+> translates it to agy's native `serverUrl`. `authProviderType`, `oauth.scopes`,
+> and `headers` are native agy fields, so Google auth works without
+> Bearer-header injection (unlike `claude_code`).
 
 The harness pre-verifies attach: at setup it runs
 a short probe, then confirms each configured server discovered
@@ -351,7 +343,7 @@ for a working example.
 | Skill management | `gemini skills <link\|install\|enable\|...>` subcommands | `agy plugin install <target>` (plugin manifests carry skills); no `agy skills` subcommand |
 | Extensions | Supported via `setup.extensions` | Not modeled; drop the block |
 | MCP config location | `mcpServers` in `settings.json` | `mcpServers` in a separate `~/.gemini/config/mcp_config.json` |
-| MCP HTTP transport field | `httpUrl` | `serverUrl` (native); `url` also accepted; a Gemini-style `httpUrl` is auto-translated to `serverUrl` by the harness |
+| MCP HTTP transport field | `httpUrl` | `httpUrl`, translated by the harness to agy's native `serverUrl` (`url` also works natively) |
 | MCP tool name format | `mcp_<server>_<tool>` (single underscore) | No per-tool functions -- every MCP call goes through a single native `call_mcp_tool` wrapper whose args carry `ServerName`/`ToolName`/`Arguments`; the harness unwraps it to the canonical `<server>__<tool>` |
 | Model selection | `GEMINI_API_MODEL` / `GEMINI_MODEL` env var | `--model` flag; UI label or slug, both listed by `agy models` |
 | Auth | NPM auth token via `gcloud auth print-access-token` plus ADC | One-time interactive OAuth login, mirrored from the host; ADC only for MCP servers |

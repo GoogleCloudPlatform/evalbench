@@ -499,8 +499,7 @@ class AgyCliGenerator(AgentCliGenerator):
                 f"agy MCP server(s) {failed} attached no tools "
                 f"(no schemas under {mcp_schema_root}/<server>/). The "
                 "server likely failed to load -- check the URL field "
-                "(use 'serverUrl' or 'url'; a gemini-style 'httpUrl' is "
-                "auto-translated), auth, and "
+                "(use 'httpUrl'; 'serverUrl' and 'url' also work), auth, and "
                 "reachability. agy degrades silently to shell-outs when "
                 "MCP tools are missing."
             )
