@@ -15,6 +15,7 @@ from scorers.dataset_quality.context import (
     DatasetQualityContext,
     JudgeSubScorer,
     SubScoreContribution,
+    expected_trajectory,
 )
 from scorers.dataset_quality.llm import group_cuj_ids
 from scorers.dataset_quality.prompts.composition_coverage import (
@@ -45,7 +46,7 @@ class CompositionScorer(JudgeSubScorer):
         # composable units are scripts, not MCP tools) still get scored.
         surface = set(context.tool_names)
         for scenario in context.scenarios:
-            surface.update(scenario.get("expected_trajectory") or [])
+            surface.update(expected_trajectory(scenario))
         if len(surface) < 2:
             return SubScoreContribution(applicable=False)
 
