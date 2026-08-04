@@ -221,15 +221,9 @@ and pick a login method:
   domain accounts, which the plain OAuth path rejects with an auth error.
 
 There is no `agy login` subcommand, service-account flag, or API-key env var for
-agy's own backend. The login writes `antigravity-oauth-token` and
-`installation_id` to `~/.gemini/antigravity-cli/`. The harness copies both into
-the sandbox before every run, so the sandboxed CLI never re-prompts and always
-has a fresh token; the copy is chmod'd to `0600` (owner-only). Only the token is
-load-bearing.
-
-The `access_token` lasts ~1h and agy refreshes it headlessly -- which is why the
-copy happens per-run rather than once. The `refresh_token` does not rotate, so
-logging in once is enough.
+agy's own backend. Once you have logged in on the host, the harness picks the
+token up automatically and the sandboxed CLI never re-prompts. The login does
+not expire on its own, so logging in once is enough.
 
 > [!NOTE]
 > agy prefers the system keyring and only falls back to the file. The harness
