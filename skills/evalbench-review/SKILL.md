@@ -1,7 +1,6 @@
 ---
 name: evalbench-review
 description: Review a change in the EvalBench repo for (a) does it actually work — verified by running the tests and style checks, (b) does it follow EvalBench architecture — base-class contracts, config-key registration, PYTHONPATH-relative imports, sandbox isolation, concurrency safety, docs, (c) does it still build and deploy — Docker image, GKE manifests, Cloud Run, Cloud Build, and (d) is it a good PR — under ~400 lines, single-purpose, with a what-and-why description, and clear, simple, concise, maintainable, idiomatic code. Use for reviewing the working diff, a branch against main, or a PR touching scorers, generators, evaluators, orchestrators, work items, datasets, configs, reporting, the Dockerfile or k8s manifests.
-when_to_use: Triggers on "review my changes", "review this PR", "did I break anything", "will this break docker/GKE/the deployment", "is this PR too big", "does this follow best practices", "is this the right way to add a scorer/generator/evaluator", "does this follow evalbench architecture", or before opening a PR against main.
 allowed-tools: Read, Grep, Glob, Bash(git diff *), Bash(git log *), Bash(git status *), Bash(git merge-base *), Bash(git stash list), Bash(python -m pytest *), Bash(python -m grpc_tools.protoc *), Bash(pycodestyle *), Bash(make proto), Bash(uv lock --check), Bash(docker build *), Bash(gh pr view *), Bash(gh pr diff *)
 ---
 
