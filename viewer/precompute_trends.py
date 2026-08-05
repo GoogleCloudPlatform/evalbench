@@ -8,16 +8,22 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # A pass used to submit every unprocessed run at once, hold all of it in memory,
 # and write only after the last one finished. In production that pass never
-# finished: it was SIGKILLed roughly every three minutes having got through ~183
-# of 8166 directories, and because nothing had been written it restarted from the
-# same 8166 every time. The cache stood still for six weeks.
+# finished: it was SIGKILLed roughly every two and a half minutes having got
+# through exactly 183 of 8168 directories, and because nothing had been written
+# it restarted from the same 8168 every time. The cache stood still for six
+# weeks. What exhausted the memory is fixed in summarizer.py; batching is what
+# stops a kill from costing the whole pass.
 #
-# Batching bounds how much is in flight and checkpoints as it goes, so a kill
-# costs one batch instead of the whole pass. The batch size is deliberately well
-# under the ~183 directories a cycle managed before dying, so several checkpoints
-# land inside a cycle even if the kills continue.
+# The batch size is deliberately well under the 183 directories a cycle managed
+# before dying, so several checkpoints land inside a cycle even if the kills
+# continue for some other reason.
 BATCH_SIZE = int(os.environ.get("PRECOMPUTE_BATCH_SIZE", 50))
-MAX_WORKERS = int(os.environ.get("PRECOMPUTE_WORKERS", 16))
+
+# Each directory costs one Gemini call, so the pass is latency-bound rather than
+# CPU-bound and the thread count sets the drain rate: 50 threads clear the
+# backlog in about two hours, 16 would take closer to six. 50 is also about
+# where the summarizer starts seeing 429s, so raising it further buys nothing.
+MAX_WORKERS = int(os.environ.get("PRECOMPUTE_WORKERS", 50))
 
 
 def get_results_dir():
