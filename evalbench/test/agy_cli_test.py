@@ -28,6 +28,7 @@ def sandbox(tmp_path, monkeypatch):
     real_home.mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("HOME", str(real_home))
+    monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
     return real_home
 
 
@@ -1063,6 +1064,22 @@ def test_missing_adc_warns_but_is_non_fatal(sandbox, caplog):
 
 def test_adc_present_does_not_warn(sandbox, caplog):
     _seed_adc(sandbox)
+
+    with caplog.at_level(logging.WARNING):
+        AgyCliGenerator({})
+
+    assert not any(
+        "application default credentials" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def test_shell_exported_adc_does_not_warn(sandbox, monkeypatch, tmp_path, caplog):
+    """A shell-exported GOOGLE_APPLICATION_CREDENTIALS (the service-account/CI
+    pattern) reaches agy through the merged env, so it is not missing ADC."""
+    key = tmp_path / "sa_key.json"
+    key.write_text('{"type": "service_account"}')
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(key))
 
     with caplog.at_level(logging.WARNING):
         AgyCliGenerator({})

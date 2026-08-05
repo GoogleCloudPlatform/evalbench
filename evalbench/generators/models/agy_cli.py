@@ -213,9 +213,12 @@ class AgyCliGenerator(AgentCliGenerator):
         self.env[ADC_AUTH_ENV_VAR] = "true"
         self._setup_gcloud_credentials(self.env, self.real_home, self.fake_home)
 
-        # ADC is the only credential agy has here, so its absence is fatal at
-        # turn time rather than a fallback to interactive login.
-        adc_path = self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
+        # Without readable ADC agy falls back to interactive OAuth and the run
+        # dies on "authentication required", so warn up front. agy reads the
+        # merged env, where a shell-exported path counts just as much as a
+        # config-supplied one.
+        adc_path = (self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
+                    or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"))
         if not adc_path or not os.path.exists(adc_path):
             logging.warning(
                 "No application default credentials found -- run "

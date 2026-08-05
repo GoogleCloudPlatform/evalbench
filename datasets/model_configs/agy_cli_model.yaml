@@ -2,7 +2,7 @@
 
 generator: agy_cli
 
-# UI label or slug listed by `agy models`. Omit to use agy's default.
+# UI label listed by `agy models`. Omit to use agy's default.
 # ADC is entitled to a smaller model set than an interactive login.
 model: "Gemini 3.1 Pro (Low)"
 
