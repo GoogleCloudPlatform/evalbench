@@ -5,11 +5,6 @@ agent workflows using **MCP Servers** and **Skills**. It mirrors the structure
 of [`gemini_cli_agent_testing.md`](gemini_cli_agent_testing.md) and only calls
 out where the two harnesses differ.
 
-> [!IMPORTANT]
-> **First-run auth:** agy has no headless login. Run `agy` once interactively
-> on the host to mint a refreshable token; the harness mirrors it into every
-> eval sandbox after that. See [Authentication](#authentication).
-
 ---
 
 ## Table of Contents
@@ -75,44 +70,26 @@ The `orchestrator: agent` keyword in your run config selects the `AgentOrchestra
    uv sync
    ```
 
-2. **Antigravity CLI installed (for the one-time interactive auth)**:
-   ```bash
-   curl -fsSL https://antigravity.google/cli/install.sh | sh -s -- --dir ~/.local/bin
-   export PATH="$HOME/.local/bin:$PATH"
-   agy --version  # sanity check
-   ```
-
-   The installer writes a native binary; it self-updates in the background
-   and does not expose a pinning flag.
-
-> [!NOTE]
-> **The harness does not run this host binary.** The testing harness
-> installs its own isolated copy of `agy` per session into
-> `<fake_home>/.local/bin` and always
-> launches that one, never the host `PATH` binary. Installing on the host
-> is only needed for the one-time interactive login (next step) that
-> seeds the OAuth token the harness mirrors into the sandbox.
-> Per-session install keeps concurrent evals isolated and stops agy's
-> background self-update from swapping the binary mid-run.
-
-3. **agy login** (one-time, interactive -- seeds the token the harness
-   mirrors into each sandbox; see [Authentication](#authentication)):
-   ```bash
-   agy   # pick a login method -- see Authentication for which one
-   ```
-
-4. **GCP Authentication** (ADC -- for Google-auth MCP servers' outbound
-   credentials; agy's own model backend uses the first-run OAuth token, not
-   ADC):
+2. **GCP Authentication** (ADC -- agy's own backend, plus outbound credentials
+   for Google-auth MCP servers; see [Authentication](#authentication)):
    ```bash
    gcloud auth application-default login
    ```
 
-5. **Environment Variables**:
+3. **Environment Variables**:
    ```bash
    export EVAL_GCP_PROJECT_ID=your_project_id
-   export EVAL_GCP_PROJECT_REGION=us-central1
+   export EVAL_GCP_PROJECT_REGION=global
    ```
+
+> [!NOTE]
+> **You do not need `agy` on the host.** The harness installs its own copy per
+> session into `<fake_home>/.local/bin` and always launches that one, never the
+> host `PATH` binary. Install it on the host only to run `agy models` yourself,
+> pointing `--dir` at a directory on your `PATH`:
+> ```bash
+> curl -fsSL https://antigravity.google/cli/install.sh | sh -s -- --dir ~/.local/bin
+> ```
 
 ---
 
@@ -187,7 +164,7 @@ reporting:
 | Key | Required | Description |
 |-----|----------|-------------|
 | `generator` | Yes | Must be `agy_cli` |
-| `model` | Optional | Model for the run -- either the UI label (`"Gemini 3.1 Pro (High)"`) or the full slug (`gemini-3.1-pro-high`), both listed by `agy models`. An unrecognized value fails the run. Omit to use agy's default. |
+| `model` | Optional | Model for the run -- the UI label listed by `agy models`, e.g. `"Gemini 3.1 Pro (Low)"`. An unrecognized value fails the run. Omit to use agy's default. |
 | `timeout` | Optional | Timeout duration string, e.g. `"20m"`. Passed via the `--print-timeout` flag. If omitted, defaults to agy's internal default (5 minutes). |
 | `env` | Optional | Environment variables passed to the CLI process |
 | `setup` | Optional | Tool setup block containing `mcp_servers`, `skills`, or `fake_mcp_servers` |
@@ -209,26 +186,16 @@ identical baseline.
 
 ## Authentication
 
-Two independent credentials, neither a substitute for the other: agy's own
-**OAuth token** (its model backend, every turn) and **gcloud ADC** (outbound
-calls from `authProviderType: google_credentials` MCP servers).
+agy authenticates from **gcloud ADC** (agy >= 1.1.10), which the harness opts
+into by setting `AGY_ADC_AUTH` on every run. The same ADC supplies outbound
+credentials for `authProviderType: google_credentials` MCP servers, so one
+`gcloud auth application-default login` covers both, and runs are fully
+non-interactive.
 
-The OAuth token comes from a one-time interactive login. Run `agy` on the host
-and pick a login method:
-
-- **Google OAuth** -- personal Google accounts.
-- **Use a Google Cloud project** -- required for managed Workspace or corporate
-  domain accounts, which the plain OAuth path rejects with an auth error.
-
-There is no `agy login` subcommand, service-account flag, or API-key env var for
-agy's own backend. Once you have logged in on the host, the harness picks the
-token up automatically and the sandboxed CLI never re-prompts. The login does
-not expire on its own, so logging in once is enough.
-
-> [!NOTE]
-> agy prefers the system keyring and only falls back to the file. The harness
-> mirrors the **file**, so if the keyring holds your token there is nothing to
-> copy and the run hangs on the login prompt.
+agy's own interactive OAuth login is not used: the harness never mirrors a host
+token into the eval sandbox. One consequence is the entitled **model set** --
+ADC does not reach `Gemini 3.1 Pro (High)`. Run `agy models` under ADC to see
+which labels the `model` key can use.
 
 ---
 
@@ -328,8 +295,8 @@ for a working example.
 | MCP config location | `mcpServers` in `settings.json` | `mcpServers` in a separate `~/.gemini/config/mcp_config.json` |
 | MCP HTTP transport field | `httpUrl` | `httpUrl`, translated by the harness to agy's native `serverUrl` (`url` also works natively) |
 | MCP tool name format | `mcp_<server>_<tool>` (single underscore) | No per-tool functions -- every MCP call goes through a single native `call_mcp_tool` wrapper whose args carry `ServerName`/`ToolName`/`Arguments`; the harness unwraps it to the canonical `<server>__<tool>` |
-| Model selection | `GEMINI_API_MODEL` / `GEMINI_MODEL` env var | `--model` flag; UI label or slug, both listed by `agy models` |
-| Auth | NPM auth token via `gcloud auth print-access-token` plus ADC | One-time interactive OAuth login, mirrored from the host; ADC only for MCP servers |
+| Model selection | `GEMINI_API_MODEL` / `GEMINI_MODEL` env var | `--model` flag; UI label as listed by `agy models` |
+| Auth | NPM auth token via `gcloud auth print-access-token` plus ADC | ADC via `AGY_ADC_AUTH`, covering both the backend and MCP servers |
 | Token-usage stats | Reported per request | Exposed via the stream-json `result` event's `usage` block (input/output/thinking/total tokens) |
 
 ### Tool-call extraction
@@ -363,12 +330,16 @@ BigQuery under `reporting.bigquery.gcp_project_id`.
 
 ## Troubleshooting
 
-### `agy: command not found`
+### Run prompts for a login / `authentication timed out`
 
-This affects the **host** `agy` command -- used for the first-run auth and
-for `agy models` / `agy --version` -- not the eval run, which launches the
-harness's own per-session binary. Re-run the installer with `--dir` pointing
-at a directory on your `PATH`, or symlink the binary into one.
+agy fell back to its interactive login because ADC was unreadable. Run
+`gcloud auth application-default login` and re-run; the harness logs a warning
+at setup when it finds no ADC file.
+
+### `invalid model selection`
+
+ADC is entitled to a smaller model set than agy's interactive login. Run
+`agy models` and use a label it lists.
 
 ### MCP Server Doesn't Attach
 
@@ -386,8 +357,8 @@ server discovered no tools. If you hit that error:
   `<fake_home>/.gemini/antigravity-cli/mcp/<server>/*.json` -- an empty
   directory means the server failed to attach.
 - For Google-auth servers, run `gcloud auth application-default login`
-  (used for outbound credentials to the MCP server -- agy's own auth is
-  separate OAuth).
+  (the same ADC agy authenticates with, also used for outbound credentials to
+  the MCP server).
 - Verify OAuth scopes and project ID in the headers.
 
 ### Skill Not Picked Up

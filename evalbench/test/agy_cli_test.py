@@ -1009,24 +1009,74 @@ def test_configured_model_overrides_detected_log_model(sandbox):
     assert _MODEL_LABEL in _stats_models(generator)
 
 
-def test_oauth_token_mirrored_from_host_disk(sandbox):
-    """The host's on-disk token is mirrored into the sandbox appDataDir."""
+def _seed_adc(real_home):
+    adc_dir = real_home / ".config" / "gcloud"
+    adc_dir.mkdir(parents=True)
+    adc = adc_dir / "application_default_credentials.json"
+    adc.write_text('{"type": "authorized_user"}')
+    return adc
+
+
+def test_adc_auth_env_var_always_set(sandbox):
+    """ADC is the harness's only auth mode, so the flag is not config-driven
+    and cannot be turned off from the model config."""
+    generator = AgyCliGenerator({"env": {"AGY_ADC_AUTH": "false"}})
+
+    assert generator.env["AGY_ADC_AUTH"] == "true"
+
+
+def test_host_oauth_token_is_not_mirrored(sandbox):
+    """A host token is deliberately left behind: agy authenticates from ADC."""
     real_app_data = sandbox / APP_DATA_SUBPATH
     real_app_data.mkdir(parents=True)
-    with open(real_app_data / "antigravity-oauth-token", "w") as f:
-        f.write("DISK_TOKEN")
+    (real_app_data / "antigravity-oauth-token").write_text("DISK_TOKEN")
 
-    generator = AgyCliGenerator({})
-
-    token_file = os.path.join(generator.app_data_dir, "antigravity-oauth-token")
-    with open(token_file) as f:
-        assert f.read() == "DISK_TOKEN"
-
-
-def test_missing_host_token_is_non_fatal(sandbox):
-    """A missing host token does not raise at init; the warning path is
-    exercised and no token file is written into the sandbox."""
     generator = AgyCliGenerator({})
 
     token_file = os.path.join(generator.app_data_dir, "antigravity-oauth-token")
     assert not os.path.exists(token_file)
+
+
+def test_adc_staged_into_sandbox(sandbox):
+    """The host's ADC file is copied into the sandbox home and pointed at."""
+    _seed_adc(sandbox)
+
+    generator = AgyCliGenerator({})
+
+    staged = os.path.join(
+        generator.fake_home, ".config", "gcloud",
+        "application_default_credentials.json",
+    )
+    assert os.path.exists(staged)
+    assert generator.env["GOOGLE_APPLICATION_CREDENTIALS"]
+
+
+def test_missing_adc_warns_but_is_non_fatal(sandbox, caplog):
+    with caplog.at_level(logging.WARNING):
+        AgyCliGenerator({})
+
+    assert any(
+        "application default credentials" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def test_adc_present_does_not_warn(sandbox, caplog):
+    _seed_adc(sandbox)
+
+    with caplog.at_level(logging.WARNING):
+        AgyCliGenerator({})
+
+    assert not any(
+        "application default credentials" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def test_merged_env_stringifies_non_string_values(sandbox):
+    """Unquoted YAML scalars arrive as bool/int; subprocess rejects those."""
+    generator = AgyCliGenerator({"env": {"FLAG": True, "COUNT": 3}})
+
+    env = generator._merged_env()
+    assert env["FLAG"] == "True"
+    assert env["COUNT"] == "3"

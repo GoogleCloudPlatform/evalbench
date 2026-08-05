@@ -19,6 +19,10 @@ AGY_CLI = "agy"
 # location and skips the download when the binary already exists at the target.
 AGY_INSTALL_URL = "https://antigravity.google/cli/install.sh"
 
+# Makes agy authenticate from Application Default Credentials
+# instead of its interactive OAuth login. See _setup_auth.
+ADC_AUTH_ENV_VAR = "AGY_ADC_AUTH"
+
 
 class CLICommand:
     def __init__(self, cli, prompt, env=None, resume=False, cwd=None):
@@ -198,53 +202,25 @@ class AgyCliGenerator(AgentCliGenerator):
         logging.info("Installed agy into session sandbox at %s.", self.agy_bin)
 
     def _setup_auth(self):
-        """Seeds agy's OAuth state into the sandbox and wires up gcloud ADC
-        so the sandboxed CLI authenticates without an interactive login."""
-        self._mirror_agy_auth_state()
+        """Stages gcloud ADC into the sandbox so the sandboxed CLI
+        authenticates without an interactive login.
 
+        ``AGY_ADC_AUTH`` is what makes agy read ADC instead of its own OAuth
+        token, and is set unconditionally: the harness overrides ``HOME``, so
+        the sandbox has no token and agy would otherwise block on the
+        device-code URL.
+        """
+        self.env[ADC_AUTH_ENV_VAR] = "true"
         self._setup_gcloud_credentials(self.env, self.real_home, self.fake_home)
 
-    def _mirror_agy_auth_state(self):
-        """Mirrors agy's OAuth token + installation id from the host's real
-        appDataDir into the sandboxed appDataDir so the sandboxed CLI does not
-        re-prompt for an interactive login.
-
-        agy is OAuth-only (no env-var API key, no ADC), and the harness
-        overrides ``HOME``, so without this the sandbox looks like a
-        brand-new install and ``agy -p`` blocks on the device-code URL.
-
-        Auth comes from the host's real appDataDir at
-        ``~/.gemini/antigravity-cli/`` -- run ``agy`` once interactively to
-        seed it; this then refreshes the copy on every run. The token is
-        load-bearing (required=True); a missing installation_id is non-fatal
-        for agy (required=False).
-        """
-        real_app_data = os.path.join(self.real_home, self.APP_DATA_SUBPATH)
-
-        auth_files = (
-            ("antigravity-oauth-token", True),
-            ("installation_id", False),
-        )
-
-        for fname, required in auth_files:
-            dst = os.path.join(self.app_data_dir, fname)
-            src = os.path.join(real_app_data, fname)
-            if not os.path.exists(src):
-                if required:
-                    logging.warning(
-                        "agy OAuth token not found at %s -- run `agy` "
-                        "interactively once to authenticate.",
-                        src,
-                    )
-                continue
-            try:
-                shutil.copy2(src, dst)
-                os.chmod(dst, 0o600)
-            except OSError as e:
-                logging.warning(
-                    "Failed to mirror agy auth file %s -> %s: %s",
-                    src, dst, e,
-                )
+        # ADC is the only credential agy has here, so its absence is fatal at
+        # turn time rather than a fallback to interactive login.
+        adc_path = self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
+        if not adc_path or not os.path.exists(adc_path):
+            logging.warning(
+                "No application default credentials found -- run "
+                "`gcloud auth application-default login`."
+            )
 
     def _initialize_settings_file(self):
         """Writes the ``gcp.project``/``gcp.location`` block into agy's
@@ -743,9 +719,10 @@ class AgyCliGenerator(AgentCliGenerator):
         """Returns the process environment overlaid with the generator's
         configured env (and an optional per-call ``extra``)."""
         env = os.environ.copy()
-        env.update(self.env)
+        # YAML gives ints/bools for unquoted scalars; subprocess needs strings.
+        env.update({str(k): str(v) for k, v in self.env.items()})
         if extra:
-            env.update(extra)
+            env.update({str(k): str(v) for k, v in extra.items()})
         return env
 
     @staticmethod
