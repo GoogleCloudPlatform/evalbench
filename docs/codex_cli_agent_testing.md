@@ -248,7 +248,7 @@ setup:
 
 ### 3. Evaluation Dataset (Evalset)
 
-**Identical schema** to the Gemini CLI / Claude Code evalset. See [Gemini CLI doc — Evalset](./gemini_cli_agent_testing.md#3-evaluation-dataset-evalset) for full details, including the canonical [tool name format](./gemini_cli_agent_testing.md#tool-name-format) used in `expected_trajectory`.
+Uses the shared scenario schema. See the [agentic dataset format](/docs/configs/agentic-dataset-config.md) for the full field reference, including the canonical [tool name format](/docs/configs/agentic-dataset-config.md#tool-name-format) used in `expected_trajectory`.
 
 Minimal example ([codex-cli.evalset.json](../datasets/codex-cli-tools/codex-cli.evalset.json)):
 
@@ -448,7 +448,7 @@ If `pricing` is missing or malformed, `cost_usd` is reported as `0.0` (rather th
 
 ## Scorers
 
-**Identical** to the Gemini CLI / Claude Code scorers. See [Gemini CLI doc — Scorers](./gemini_cli_agent_testing.md#scorers) for the full list.
+See the [scorer reference](/docs/scorers.md#agentic-scorers) for the full catalog and configuration options.
 
 Quick reference:
 

@@ -199,8 +199,8 @@ reporting:
 
 ### 3. Evaluation Dataset (Evalset)
 
-Same format as Gemini CLI. See the [Gemini guide's evalset section](gemini_cli_agent_testing.md#3-evaluation-dataset-evalset)
-for full field reference; the same `expected_trajectory` canonical form
+Uses the shared scenario schema. See the [agentic dataset format](/docs/configs/agentic-dataset-config.md)
+for the full field reference; the same `expected_trajectory` canonical form
 (`<server>__<tool>`) applies. The `agy-cli-tools/` directory ships copies of
 the Gemini Cloud SQL evalsets so the two harnesses score against an
 identical baseline.
@@ -347,10 +347,9 @@ captured too.
 
 ## Scorers
 
-Identical to Gemini CLI -- see the
-[scorers section of the Gemini guide](gemini_cli_agent_testing.md#scorers).
-The `trajectory_matcher` default of dropping native/harness-internal tools
-also applies.
+See the [scorer reference](/docs/scorers.md#agentic-scorers) for the full
+catalog and configuration options. The `trajectory_matcher` default of
+dropping native/harness-internal tools also applies.
 
 ---
 
