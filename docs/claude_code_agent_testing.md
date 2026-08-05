@@ -213,7 +213,7 @@ The model config defines the Claude Code CLI version, model, auth, environment, 
 
 ### 3. Evaluation Dataset (Evalset)
 
-**Identical schema** to the Gemini CLI evalset. See [Gemini CLI doc — Evalset](./gemini_cli_agent_testing.md#3-evaluation-dataset-evalset) for details, including the canonical [tool name format](./gemini_cli_agent_testing.md#tool-name-format) used in `expected_trajectory`.
+Uses the shared scenario schema. See the [agentic dataset format](/docs/configs/agentic-dataset-config.md) for the full field reference, including the canonical [tool name format](/docs/configs/agentic-dataset-config.md#tool-name-format) used in `expected_trajectory`.
 
 Minimal example:
 
@@ -341,7 +341,7 @@ setup:
 
 ## Scorers
 
-**Identical** to the Gemini CLI scorers. See [Gemini CLI doc — Scorers](./gemini_cli_agent_testing.md#scorers) for the full list.
+See the [scorer reference](/docs/scorers.md#agentic-scorers) for the full catalog and configuration options.
 
 Quick reference:
 
