@@ -4,7 +4,7 @@ generator: agy_cli
 
 # UI label listed by `agy models`. Omit to use agy's default.
 # ADC is entitled to a smaller model set than an interactive login.
-model: "Gemini 3.1 Pro (Low)"
+model: "Gemini 3.1 Pro (High)"
 
 # Print-mode timeout (agy default 5m).
 timeout: "20m"

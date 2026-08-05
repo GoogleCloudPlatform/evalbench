@@ -728,6 +728,38 @@ def test_verify_mcp_runtime_includes_fatal_markers_in_error(mock_run, sandbox):
         AgyCliGenerator(config)
 
 
+def test_verify_mcp_runtime_raises_on_invalid_model(mock_run, sandbox):
+    """agy populates the tool-schema cache before it resolves ``--model``, so
+    an unrecognized model attaches tools normally and only then fails every
+    turn with an empty response. Verification must reject it rather than let
+    the run score a configuration error as poor model behaviour."""
+    config = {
+        "model": "gemini-9.9-nonexistent",
+        "setup": {
+            "mcp_servers": {
+                "cloud-sql": {"serverUrl": "https://example.com/mcp"},
+            }
+        }
+    }
+
+    def fake_run(cmd, *args, **kwargs):
+        _write_mcp_schemas(
+            _local_app_data_dir(), "cloud-sql", ["list_instances"],
+        )
+        _write_probe_log(
+            _local_app_data_dir(), "cli-probe.log",
+            'E0805 15:58:17 printmode.go:224] Print mode: invalid model '
+            'selection (--model "gemini-9.9-nonexistent" --effort ""): model '
+            'gemini-9.9-nonexistent is not recognized as a known model or '
+            'custom model in settings\n',
+        )
+        return MagicMock(returncode=1, stdout="", stderr="")
+
+    mock_run.side_effect = fake_run
+    with pytest.raises(RuntimeError, match="gemini-9.9-nonexistent"):
+        AgyCliGenerator(config)
+
+
 def test_verify_mcp_runtime_passes_when_tools_attach(mock_run, sandbox):
     """When the probe populates the tool-schema cache, setup completes."""
     config = {

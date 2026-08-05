@@ -392,6 +392,11 @@ class AgyCliGenerator(AgentCliGenerator):
         "failed to parse mcp_config_json",
     )
 
+    # agy resolves --model only after it has populated the MCP schema cache, so
+    # an unrecognized model leaves tool discovery looking healthy while every
+    # turn exits 1 with an empty response and scores as poor model behaviour.
+    _MODEL_FATAL_MARKER = "invalid model selection"
+
     def _verify_mcp_runtime(self, configured_servers: list):
         """Spawns a short-lived ``agy -p`` probe and confirms each
         configured MCP server actually attached and discovered tools.
@@ -437,6 +442,7 @@ class AgyCliGenerator(AgentCliGenerator):
         after = set(os.listdir(log_dir)) if os.path.isdir(log_dir) else set()
         new_logs = sorted(after - before)
         marker_hits = []
+        model_hits = []
         if new_logs:
             probe_log = os.path.join(log_dir, new_logs[-1])
             try:
@@ -444,10 +450,20 @@ class AgyCliGenerator(AgentCliGenerator):
                     for line in f:
                         if any(m in line for m in self._MCP_FATAL_MARKERS):
                             marker_hits.append(line.rstrip())
+                        if self._MODEL_FATAL_MARKER in line:
+                            model_hits.append(line.rstrip())
             except OSError as e:
                 logging.warning(
                     "agy MCP probe log %s unreadable: %s", probe_log, e,
                 )
+
+        if model_hits:
+            raise RuntimeError(
+                f"agy rejected the configured model {self.model!r}. Run "
+                "`agy models` for the accepted labels and slugs; the set "
+                "depends on the auth method and changes as agy updates.\n"
+                + "\n".join(f"  {h}" for h in model_hits)
+            )
 
         # Authoritative check: each server must have discovered >=1 tool.
         failed = []
@@ -738,8 +754,7 @@ class AgyCliGenerator(AgentCliGenerator):
         turn path and the setup-time MCP probe.
 
         The model is selected with agy's ``--model`` flag, which takes either
-        the UI label ("Gemini 3.1 Pro (High)") or the slug
-        ("gemini-3.1-pro-high") that ``agy models`` lists; an unrecognized
+        the UI label or the slug that ``agy models`` lists; an unrecognized
         value fails the run. When no model is configured the flag is omitted
         and agy uses its default. See docs/agy_cli_agent_testing.md.
 
