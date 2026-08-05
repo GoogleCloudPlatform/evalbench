@@ -156,8 +156,11 @@ def example_prompts(data: dict, key: str) -> list[str]:
 
     Whitespace is collapsed because the report renders one suggestion per line.
     """
+    items = data.get(key)
+    if not isinstance(items, list):
+        return []
     examples = []
-    for item in data.get(key) or []:
+    for item in items:
         example = " ".join(item.split()) if isinstance(item, str) else ""
         if example and example not in examples:
             examples.append(example)

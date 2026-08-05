@@ -35,6 +35,16 @@ DEFAULT_CUJ_FIELDS = [
 ]
 
 
+def expected_trajectory(scenario: dict) -> list:
+    """A scenario's ``expected_trajectory``, or empty when it isn't a list.
+
+    A bare string would otherwise iterate per character into the tool sets, which
+    scores silently wrong rather than failing.
+    """
+    trajectory = scenario.get("expected_trajectory")
+    return trajectory if isinstance(trajectory, list) else []
+
+
 @dataclass
 class DatasetQualityContext:
     """Everything a scorer needs to grade one product's CUJ dataset."""
@@ -75,7 +85,7 @@ class DatasetQualityContext:
         """
         named = set()
         for scenario in self.scenarios:
-            named.update(scenario.get("expected_trajectory") or [])
+            named.update(expected_trajectory(scenario))
         return [
             tool for tool in self.tools
             if self._tool_field(tool, "name") in named
