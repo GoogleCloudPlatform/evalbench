@@ -9,6 +9,7 @@ import shutil
 import sys
 import threading
 import time
+from util.context import rpc_id_var
 
 
 _SECRET_MANAGER_PATH_RE = re.compile(
@@ -64,7 +65,10 @@ class CodexCliGenerator(AgentCliGenerator):
         self.real_home = os.environ.get("HOME", os.path.expanduser("~"))
 
         if sys.argv[0].endswith("eval_server.py"):
-            session_id = querygenerator_config.get("session_id", "default")
+            session_id = querygenerator_config.get("session_id")
+            if not session_id:
+                ctx_id = rpc_id_var.get()
+                session_id = ctx_id if ctx_id != "default" else "default"
             self.fake_home = os.path.join(
                 "/tmp_sessions", session_id, "fake_home")
         else:
