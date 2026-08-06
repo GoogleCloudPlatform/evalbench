@@ -11,10 +11,13 @@ import precompute_dataset_quality
 def main():
     interval = int(os.environ.get("PRECOMPUTE_INTERVAL", 300))
     while True:
-        # Each pass is guarded separately so one failing doesn't starve the other.
+        # Dataset quality runs first because it is cheap and always finishes. The
+        # trends pass makes an LLM call per unprocessed run and gets SIGKILLed
+        # mid-pass on a large backlog, which the try/except below cannot catch and
+        # which would otherwise starve every pass after it.
         for precompute in (
-            precompute_trends.precompute,
             precompute_dataset_quality.precompute,
+            precompute_trends.precompute,
         ):
             try:
                 precompute()
