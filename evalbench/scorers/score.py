@@ -18,6 +18,7 @@ from scorers import exactmatcher
 from scorers import generatedqueryregexpmatcher
 from scorers import goalcompletionrate
 from scorers import llmrater
+from scorers import namedscorer
 from scorers import parameteranalysis
 from scorers import pythonscorer
 from scorers import recallmatcher
@@ -77,17 +78,28 @@ def _build_instances(
     config = dict(config) if isinstance(config, dict) else {}
     sig_params = inspect.signature(scorer_cls.__init__).parameters
 
-    if "database_configs" in sig_params or scorer_cls in (llmrater.LLMRater, pythonscorer.PythonScorer):
-        config["database_configs"] = experiment_config.get("database_configs", [])
+    if (
+        "database_configs" in sig_params
+        or scorer_cls in (llmrater.LLMRater, pythonscorer.PythonScorer)
+    ):
+        config["database_configs"] = experiment_config.get(
+            "database_configs", []
+        )
 
     if scorer_cls == DatasetQualityScorer and not config.get("product_name"):
         config["product_name"] = experiment_config.get("product_name")
 
     if scorer_cls == binaryrubricscorer.BinaryRubricScorer:
         import json
-        context_str = eval_output_item.get("eval_results", "") if eval_output_item else ""
+        context_str = (
+            eval_output_item.get("eval_results", "")
+            if eval_output_item else ""
+        )
         try:
-            context = context_str if isinstance(context_str, dict) else (json.loads(context_str) if context_str else {})
+            if isinstance(context_str, dict):
+                context = context_str
+            else:
+                context = json.loads(context_str) if context_str else {}
             rubric = context.get("scenario", {}).get("binary_rubric", [])
             if rubric:
                 return [
@@ -106,8 +118,11 @@ def _build_instances(
 
     if scorer_cls == pythonscorer.PythonScorer:
         custom_name = config.get("scorer_name")
-        if not custom_name and config.get("script_path") and isinstance(config["script_path"], str):
-            custom_name = os.path.splitext(os.path.basename(config["script_path"]))[0].strip()
+        script_path = config.get("script_path")
+        if not custom_name and script_path and isinstance(script_path, str):
+            custom_name = os.path.splitext(
+                os.path.basename(script_path)
+            )[0].strip()
         if custom_name:
             kwargs["name"] = custom_name
 
@@ -121,15 +136,48 @@ def get_scorer_instance(
     eval_output_item: EvalOutput,
     global_models: Any,
 ) -> list[comparator.Comparator]:
-    """Resolve and return comparator instances for a given scorer config entry."""
+    """Resolve comparator instances for a given scorer config entry."""
     if not isinstance(scorer_config, dict):
         return []
 
     # Direct match in global DEFAULT_SCORERS map
     if scorer_name in DEFAULT_SCORERS:
         return _build_instances(
-            DEFAULT_SCORERS[scorer_name], scorer_config, experiment_config, eval_output_item, global_models
+            DEFAULT_SCORERS[scorer_name],
+            scorer_config,
+            experiment_config,
+            eval_output_item,
+            global_models,
         )
+
+    # Named Scorer: check `type` attribute or nested type dictionary
+    target_type = scorer_config.get("type")
+    cfg = scorer_config
+    if not target_type:
+        for default_type in DEFAULT_SCORERS:
+            if (
+                default_type in scorer_config
+                and isinstance(scorer_config[default_type], dict)
+            ):
+                target_type = default_type
+                cfg = scorer_config[default_type]
+                break
+
+    if target_type and target_type in DEFAULT_SCORERS:
+        base_instances = _build_instances(
+            DEFAULT_SCORERS[target_type],
+            cfg,
+            experiment_config,
+            eval_output_item,
+            global_models,
+        )
+        custom_name = scorer_config.get("scorer_name") or scorer_name
+        return [
+            namedscorer.NamedScorer(
+                name=custom_name, base_scorer=base, target_type=target_type
+            )
+            for base in base_instances
+        ]
 
     return []
 
@@ -146,7 +194,13 @@ def compare(
 
     for name, config in scorers.items():
         comparators.extend(
-            get_scorer_instance(name, config, experiment_config, eval_output_item, global_models)
+            get_scorer_instance(
+                name,
+                config,
+                experiment_config,
+                eval_output_item,
+                global_models,
+            )
         )
 
     for comp in comparators:
@@ -159,7 +213,9 @@ def compare(
                 sig = inspect.signature(comp.compare)
                 compare_kwargs = {}
                 if "database" in sig.parameters:
-                    compare_kwargs["database"] = eval_output_item.get("database", "")
+                    compare_kwargs["database"] = eval_output_item.get(
+                        "database", ""
+                    )
                 result = comp.compare(
                     eval_output_item["nl_prompt"],
                     eval_output_item["golden_sql"],
@@ -195,5 +251,7 @@ def compare(
                 "database": eval_output_item["database"],
                 "job_id": eval_output_item["job_id"],
             })
-            logging.debug("scoring: %s %s %s", score_dict["id"], name, score_val)
+            logging.debug(
+                "scoring: %s %s %s", score_dict["id"], name, score_val
+            )
             scoring_results.append(score_dict)

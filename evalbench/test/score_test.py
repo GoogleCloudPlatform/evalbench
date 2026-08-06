@@ -5,6 +5,10 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from scorers import score
+from scorers.namedscorer import NamedScorer
+from scorers.exactmatcher import ExactMatcher
+from scorers.pythonscorer import PythonScorer
+from scorers.turncount import TurnCount
 
 
 class TestScoreModule(unittest.TestCase):
@@ -130,6 +134,92 @@ class TestScoreModule(unittest.TestCase):
         self.assertIn("exact_match", results_by_comp)
         self.assertIn("turn_count", results_by_comp)
         self.assertIn("rubric", results_by_comp)
+
+    def test_get_scorer_instance_named_scorer_type_attr(self):
+        """Verify get_scorer_instance wraps custom metric names using type attribute."""
+        eval_output_item = {"id": 1, "eval_results": ""}
+        experiment_config = {"database_configs": []}
+        global_models = {}
+
+        # rubric_pass_fail -> type: python_scorer
+        instances = score.get_scorer_instance(
+            "rubric_pass_fail",
+            {"type": "python_scorer", "script_path": "rubric.py"},
+            experiment_config,
+            eval_output_item,
+            global_models,
+        )
+        self.assertEqual(len(instances), 1)
+        self.assertIsInstance(instances[0], NamedScorer)
+        self.assertEqual(instances[0].name, "rubric_pass_fail")
+        self.assertIsInstance(instances[0].base_scorer, PythonScorer)
+
+    def test_get_scorer_instance_named_scorer_nested_dict(self):
+        """Verify get_scorer_instance wraps custom metric names using nested type dict."""
+        eval_output_item = {"id": 1, "eval_results": ""}
+        experiment_config = {"database_configs": []}
+        global_models = {}
+
+        # rubric_validator -> python_scorer: { script_path: ... }
+        instances = score.get_scorer_instance(
+            "rubric_validator",
+            {"python_scorer": {"script_path": "rubric_val.py"}},
+            experiment_config,
+            eval_output_item,
+            global_models,
+        )
+        self.assertEqual(len(instances), 1)
+        self.assertIsInstance(instances[0], NamedScorer)
+        self.assertEqual(instances[0].name, "rubric_validator")
+        self.assertIsInstance(instances[0].base_scorer, PythonScorer)
+
+    @patch("scorers.pythonscorer.subprocess.run")
+    def test_score_compare_execution(self, mock_run):
+        """Verify score.compare runs both standard and NamedScorer comparators."""
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stdout = '{"score": 100.0, "reason": "Passed"}'
+        mock_res.stderr = ""
+        mock_run.return_value = mock_res
+
+        eval_output_item = {
+            "id": 1,
+            "nl_prompt": "prompt",
+            "golden_sql": "SELECT 1",
+            "query_type": "DQL",
+            "golden_result": None,
+            "golden_error": None,
+            "generated_sql": "SELECT 1",
+            "generated_result": None,
+            "generated_error": None,
+            "dialects": ["sqlite"],
+            "database": "db",
+            "job_id": "j1",
+        }
+
+        experiment_config = {
+            "scorers": {
+                "exact_match": {},
+                "rubric_pass_fail": {
+                    "type": "python_scorer",
+                    "script_path": "rubric.py",
+                },
+            }
+        }
+
+        scoring_results = []
+        score.compare(
+            eval_output_item=eval_output_item,
+            experiment_config=experiment_config,
+            scoring_results=scoring_results,
+            global_models={},
+        )
+
+        results_by_comp = {r["comparator"]: r for r in scoring_results}
+        self.assertIn("exact_match", results_by_comp)
+        self.assertIn("rubric_pass_fail", results_by_comp)
+        self.assertEqual(results_by_comp["exact_match"]["score"], 100)
+        self.assertEqual(results_by_comp["rubric_pass_fail"]["score"], 100.0)
 
 
 if __name__ == "__main__":
