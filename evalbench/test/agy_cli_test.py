@@ -498,7 +498,7 @@ def test_parse_stream_json_missing_result_uses_fallback_response(sandbox):
     assert envelope["stats"]["tools"]["byName"]["view_file"]["success"] == 1
 
 
-def test_parse_stream_json_tokens_from_usage(sandbox):
+def test_parse_stream_json_tokens_from_usage(mock_run, sandbox):
     """Real token counts flow from the result event's ``usage`` block into the
     models bucket (input mirrors prompt, output mirrors candidates)."""
     generator = AgyCliGenerator({"model": _MODEL_LABEL})
@@ -517,7 +517,7 @@ def test_parse_stream_json_tokens_from_usage(sandbox):
     }
 
 
-def test_parse_stream_json_success_status_reports_no_error(sandbox):
+def test_parse_stream_json_success_status_reports_no_error(mock_run, sandbox):
     """A SUCCESS result keeps totalErrors at 0 in both api and roles.main."""
     generator = AgyCliGenerator({"model": _MODEL_LABEL})
     stdout = _stream(_init_event(), _result_event(status="SUCCESS"))
@@ -528,7 +528,7 @@ def test_parse_stream_json_success_status_reports_no_error(sandbox):
     assert model["roles"]["main"]["totalErrors"] == 0
 
 
-def test_parse_stream_json_error_status_reports_error(sandbox):
+def test_parse_stream_json_error_status_reports_error(mock_run, sandbox):
     """A non-SUCCESS result (e.g. a timed-out/failed run) counts as one model
     error in both api and roles.main, while stats are still retained."""
     generator = AgyCliGenerator({"model": _MODEL_LABEL})
@@ -540,7 +540,7 @@ def test_parse_stream_json_error_status_reports_error(sandbox):
     assert model["roles"]["main"]["totalErrors"] == 1
 
 
-def test_parse_stream_json_missing_status_reports_no_error(sandbox):
+def test_parse_stream_json_missing_status_reports_no_error(mock_run, sandbox):
     """A partial stream with no result status is not misreported as a failure."""
     generator = AgyCliGenerator({"model": _MODEL_LABEL})
     stdout = _stream(
@@ -685,7 +685,7 @@ def _local_app_data_dir():
     )
 
 
-def test_verify_mcp_runtime_raises_when_no_tools_attach(mock_run, sandbox):
+def test_verify_runtime_raises_when_no_tools_attach(mock_run, sandbox):
     """A server that attaches zero tools (the silent failure mode caused
     by a wrong URL field) must raise RuntimeError so the eval doesn't
     degrade to gcloud shell-outs. The probe writes no schema files."""
@@ -707,7 +707,7 @@ def test_verify_mcp_runtime_raises_when_no_tools_attach(mock_run, sandbox):
         AgyCliGenerator(config)
 
 
-def test_verify_mcp_runtime_includes_fatal_markers_in_error(mock_run, sandbox):
+def test_verify_runtime_includes_fatal_markers_in_error(mock_run, sandbox):
     """When attach fails AND the probe log has a fatal marker, the marker
     is surfaced in the error for diagnosis."""
     config = {
@@ -731,7 +731,7 @@ def test_verify_mcp_runtime_includes_fatal_markers_in_error(mock_run, sandbox):
         AgyCliGenerator(config)
 
 
-def test_verify_mcp_runtime_raises_on_invalid_model(mock_run, sandbox):
+def test_verify_runtime_raises_on_invalid_model(mock_run, sandbox):
     """agy populates the tool-schema cache before it resolves ``--model``, so
     an unrecognized model attaches tools normally and only then fails every
     turn with an empty response. Verification must reject it rather than let
@@ -763,7 +763,7 @@ def test_verify_mcp_runtime_raises_on_invalid_model(mock_run, sandbox):
         AgyCliGenerator(config)
 
 
-def test_verify_mcp_runtime_passes_when_tools_attach(mock_run, sandbox):
+def test_verify_runtime_passes_when_tools_attach(mock_run, sandbox):
     """When the probe populates the tool-schema cache, setup completes."""
     config = {
         "setup": {
@@ -786,7 +786,7 @@ def test_verify_mcp_runtime_passes_when_tools_attach(mock_run, sandbox):
     assert gen.name == "agy_cli"
 
 
-def test_verify_mcp_runtime_ignores_non_schema_json(mock_run, sandbox):
+def test_verify_runtime_ignores_non_schema_json(mock_run, sandbox):
     """A ``*.json`` that isn't a tool schema (sidecar file, junk, or a
     non-object) must not be counted as a discovered tool -- otherwise a
     silent attach failure that happens to leave stray JSON behind would
@@ -813,7 +813,7 @@ def test_verify_mcp_runtime_ignores_non_schema_json(mock_run, sandbox):
         AgyCliGenerator(config)
 
 
-def test_verify_mcp_runtime_counts_only_valid_schemas(mock_run, sandbox):
+def test_verify_runtime_counts_only_valid_schemas(mock_run, sandbox):
     """A real tool schema sitting next to junk still passes, and only the
     valid schema is counted as a discovered tool."""
     config = {
@@ -836,7 +836,7 @@ def test_verify_mcp_runtime_counts_only_valid_schemas(mock_run, sandbox):
     assert gen.name == "agy_cli"
 
 
-def test_verify_mcp_runtime_clears_stale_schema_cache(mock_run, sandbox):
+def test_verify_runtime_clears_stale_schema_cache(mock_run, sandbox):
     """A stale schema dir from a previous run must not cause a false pass:
     if this run's probe writes nothing, verification must still fail."""
     # Pre-seed a stale cache before the generator runs.
@@ -859,14 +859,44 @@ def test_verify_mcp_runtime_clears_stale_schema_cache(mock_run, sandbox):
         AgyCliGenerator(config)
 
 
-def test_verify_mcp_runtime_skipped_without_mcp_servers(mock_run, sandbox):
-    """No MCP servers configured -> no probe, no subprocess call."""
+def test_verify_runtime_skipped_with_nothing_to_verify(mock_run, sandbox):
+    """No MCP servers and no configured model -> no probe, no subprocess call."""
     AgyCliGenerator({"setup": {"skills": []}})
 
     assert mock_run.call_count == 0
 
 
-def test_verify_mcp_runtime_unreadable_probe_log_does_not_mask_failure(
+def _invalid_model_probe(cmd, *args, **kwargs):
+    _write_probe_log(
+        _local_app_data_dir(), "cli-probe.log",
+        'E0805 15:58:17 printmode.go:224] Print mode: invalid model '
+        'selection (--model "gemini-9.9-nonexistent" --effort ""): model '
+        'gemini-9.9-nonexistent is not recognized as a known model or '
+        'custom model in settings\n',
+    )
+    return MagicMock(returncode=1, stdout="", stderr="")
+
+
+def test_invalid_model_rejected_on_skills_only_config(mock_run, sandbox):
+    """The model check must not ride on MCP configuration: a skills-only run
+    hits the same empty-response failure and has no server to trigger it."""
+    mock_run.side_effect = _invalid_model_probe
+    with pytest.raises(RuntimeError, match="gemini-9.9-nonexistent"):
+        AgyCliGenerator({
+            "model": "gemini-9.9-nonexistent",
+            "setup": {"skills": []},
+        })
+
+
+def test_invalid_model_rejected_without_setup_block(mock_run, sandbox):
+    """A config with no ``setup:`` at all skips _setup_tools entirely, so the
+    probe has to be driven from the model alone."""
+    mock_run.side_effect = _invalid_model_probe
+    with pytest.raises(RuntimeError, match="gemini-9.9-nonexistent"):
+        AgyCliGenerator({"model": "gemini-9.9-nonexistent"})
+
+
+def test_verify_runtime_unreadable_probe_log_does_not_mask_failure(
     mock_run, sandbox,
 ):
     """If the probe log can't be read during fatal-marker enrichment, the
@@ -941,7 +971,7 @@ def test_run_passes_configured_model_flag(mock_run, sandbox):
     assert argv[argv.index("--model") + 1] == _MODEL_LABEL
 
 
-def test_model_never_written_to_settings(sandbox):
+def test_model_never_written_to_settings(mock_run, sandbox):
     """The model is selected via the flag, not the settings.json `model`
     key -- so no `model` key is ever written there."""
     generator = AgyCliGenerator({"model": _MODEL_LABEL})
@@ -1005,7 +1035,7 @@ def test_models_bucket_uses_detected_default_model(sandbox):
     assert "agy" not in models
 
 
-def test_configured_model_overrides_detected_log_model(sandbox):
+def test_configured_model_overrides_detected_log_model(mock_run, sandbox):
     """A configured model takes precedence over whatever the log resolved."""
     generator = AgyCliGenerator({"model": _MODEL_LABEL})
     _write_cli_log(generator, _MODEL_LOG_LINE)

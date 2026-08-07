@@ -92,6 +92,12 @@ class AgyCliGenerator(AgentCliGenerator):
         if self.setup_config:
             self._setup_tools()
 
+        # Fail fast: an unusable model or a dead MCP server otherwise degrades
+        # silently to shell-outs and scores as poor model behaviour.
+        configured_servers = self._configured_mcp_servers()
+        if configured_servers or self.model:
+            self._verify_runtime(configured_servers)
+
     @staticmethod
     def _validate_timeout(timeout):
         if timeout is not None:
@@ -415,14 +421,10 @@ class AgyCliGenerator(AgentCliGenerator):
         skills_config = self.setup_config.get("skills", [])
         self._setup_skills(skills_config)
 
-        # Probe agy once now -- before any scenarios run -- to detect
-        # account-eligibility / MCP-load failures and fail fast with a
-        # clear error instead of silently degrading to gcloud shell-outs.
-        configured_servers = list(mcp_servers_config or {}) + list(
-            self.setup_config.get("fake_mcp_servers", {}) or {}
+    def _configured_mcp_servers(self) -> list:
+        return list(self.setup_config.get("mcp_servers") or {}) + list(
+            self.setup_config.get("fake_mcp_servers") or {}
         )
-        if configured_servers:
-            self._verify_mcp_runtime(configured_servers)
 
     # stream-json event/step markers (agy --output-format stream-json).
     # Each line is one JSON object: an ``init`` event, many ``step_update``
@@ -470,9 +472,10 @@ class AgyCliGenerator(AgentCliGenerator):
     # turn exits 1 with an empty response and scores as poor model behaviour.
     _MODEL_FATAL_MARKER = "invalid model selection"
 
-    def _verify_mcp_runtime(self, configured_servers: list):
-        """Spawns a short-lived ``agy -p`` probe and confirms each
-        configured MCP server actually attached and discovered tools.
+    def _verify_runtime(self, configured_servers: list):
+        """Spawns a short-lived ``agy -p`` probe and confirms the configured
+        model is accepted and each configured MCP server actually attached and
+        discovered tools.
 
         Validates attachment by checking the disk cache
         (``<appDataDir>/mcp/<server>/<tool>.json``), which agy populates
@@ -505,7 +508,7 @@ class AgyCliGenerator(AgentCliGenerator):
             )
         except (FileNotFoundError, subprocess.TimeoutExpired) as e:
             raise RuntimeError(
-                f"agy MCP verification probe failed to run: {e}. "
+                f"agy startup probe failed to run: {e}. "
                 f"Configured MCP servers: {configured_servers}.\n"
                 f"STDOUT: \n{getattr(e, 'stdout', '')}\n"
                 f"STDERR: \n{getattr(e, 'stderr', '')}"
@@ -527,13 +530,14 @@ class AgyCliGenerator(AgentCliGenerator):
                             model_hits.append(line.rstrip())
             except OSError as e:
                 logging.warning(
-                    "agy MCP probe log %s unreadable: %s", probe_log, e,
+                    "agy startup probe log %s unreadable: %s", probe_log, e,
                 )
 
         if model_hits:
             raise RuntimeError(
-                f"agy rejected configured model {self.model!r} under ADC auth. "
-                "Use 'Gemini 3.1 Pro (Low)', a Flash model, or omit 'model' for default.\n"
+                f"agy rejected the configured model {self.model!r}. Check "
+                "docs/agy_cli_agent_testing.md for ADC-supported models and "
+                "accepted labels, or omit 'model' to use agy's default.\n"
                 + "\n".join(f"  {h}" for h in model_hits)
             )
 
