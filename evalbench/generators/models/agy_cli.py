@@ -523,9 +523,8 @@ class AgyCliGenerator(AgentCliGenerator):
 
         if model_hits:
             raise RuntimeError(
-                f"agy rejected the configured model {self.model!r}. Run "
-                "`agy models` for the accepted labels and slugs; the set "
-                "depends on the auth method and changes as agy updates.\n"
+                f"agy rejected configured model {self.model!r} under ADC auth. "
+                "Use 'Gemini 3.1 Pro (Low)', a Flash model, or omit 'model' for default.\n"
                 + "\n".join(f"  {h}" for h in model_hits)
             )
 
@@ -825,8 +824,8 @@ class AgyCliGenerator(AgentCliGenerator):
         """Builds the non-interactive ``agy -p`` argv shared by the eval
         turn path and the setup-time MCP probe.
 
-        The model is selected with agy's ``--model`` flag, which takes either
-        the UI label or the slug that ``agy models`` lists; an unrecognized
+        The model is selected with agy's ``--model`` flag (e.g.
+        ``Gemini 3.1 Pro (Low)`` or ``gemini-3.1-pro-low``); an unrecognized
         value fails the run. When no model is configured the flag is omitted
         and agy uses its default. See docs/agy_cli_agent_testing.md.
 

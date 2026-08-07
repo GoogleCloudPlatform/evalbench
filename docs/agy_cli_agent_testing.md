@@ -15,13 +15,12 @@ agent workflows using **MCP Servers** and **Skills**.
   - [Run Configuration](#1-run-configuration)
   - [Model Configuration](#2-model-configuration)
   - [Evaluation Dataset (Evalset)](#3-evaluation-dataset-evalset)
-- [Authentication](#authentication)
+- [Authentication & Supported Models](#authentication--supported-models)
 - [Tool Paradigms](#tool-paradigms)
   - [MCP Servers](#mcp-servers)
   - [Skills](#skills)
   - [Fake MCP Servers (Testing)](#fake-mcp-servers-testing)
-- [Scorers](#scorers)
-- [Reporting](#reporting)
+- [Scorers & Reporting](#scorers--reporting)
 - [Comparison Reference (vs. Gemini CLI)](#comparison-reference-vs-gemini-cli)
 - [Troubleshooting](#troubleshooting)
 
@@ -43,16 +42,15 @@ scorers.
   stdio) and Skills (packaged as plugins).
 - **Fake MCP server support** for deterministic, offline testing without cloud
   resources.
-- **Built-in scoring** for trajectory matching, goal completion, and
-  behavioral metrics.
-- **Reporting** to local CSV files and Google BigQuery.
+- **Automated scoring and reporting** across trajectory matching, goal
+  completion, CSV export, and Google BigQuery.
 
 ---
 
 ## Architecture
 
 The evaluation pipeline coordinates test scenarios, user simulation, and the
-Antigravity CLI execution environment:
+sandboxed Antigravity CLI process:
 
 ```
 Run Config -> AgentOrchestrator -> AgentEvaluator -> AgyCliGenerator -> agy
@@ -64,11 +62,11 @@ Run Config -> AgentOrchestrator -> AgentEvaluator -> AgyCliGenerator -> agy
 1. **AgentOrchestrator** (`orchestrator: agent`) loads the dataset and
    dispatches evaluation scenarios.
 2. **AgentEvaluator** manages the multi-turn interaction loop between the
-   tested model generator and the **SimulatedUser** LLM.
+   generator and the **SimulatedUser** LLM.
 3. **AgyCliGenerator** (`generator: agy_cli`) manages the sandboxed agy CLI
-   process, stages credentials and MCP configurations, runs invocations
-   non-interactively via `--output-format stream-json`, and extracts tool
-   calls, responses, and token stats.
+   process, stages credentials and tool configurations, executes non-interactively
+   via `--output-format stream-json`, and extracts tool calls, responses, and
+   token stats.
 
 ---
 
@@ -80,8 +78,7 @@ Run Config -> AgentOrchestrator -> AgentEvaluator -> AgyCliGenerator -> agy
    uv sync
    ```
 
-2. **GCP Authentication** (Application Default Credentials for agy and
-   Google-authenticated MCP servers):
+2. **GCP Authentication** (Application Default Credentials):
    ```bash
    gcloud auth application-default login
    ```
@@ -93,13 +90,9 @@ Run Config -> AgentOrchestrator -> AgentEvaluator -> AgyCliGenerator -> agy
    ```
 
 > [!NOTE]
-> **You do not need `agy` installed on your host.** EvalBench installs its
+> **You do not need `agy` installed globally on the host.** EvalBench installs its
 > own isolated copy into `<fake_home>/.local/bin/` per session and always runs
-> that sandboxed binary. Install `agy` on your host only if you wish to run
-> `agy models` manually to inspect available model labels:
-> ```bash
-> curl -fsSL https://antigravity.google/cli/install.sh | sh -s -- --dir ~/.local/bin
-> ```
+> that sandboxed binary.
 
 ---
 
@@ -136,8 +129,8 @@ YAML configuration:
 | Key | Required | Description |
 |-----|----------|-------------|
 | `dataset_config` | Yes | Path to the evalset JSON file |
-| `dataset_format` | Yes | `agent-format` (recommended) or `gemini-cli-format` |
-| `orchestrator` | Yes | `agent` (recommended) or `geminicli` |
+| `dataset_format` | Yes | Must be `agent-format` (or legacy `gemini-cli-format`) |
+| `orchestrator` | Yes | Must be `agent` (or legacy `geminicli`) |
 | `model_config` | Yes | Path to the agy CLI model config YAML |
 | `simulated_user_model_config` | Yes | Path to the model config for the simulated user LLM |
 | `scorers` | Yes | Dictionary of scorer configurations |
@@ -167,31 +160,28 @@ reporting:
 
 ### 2. Model Configuration
 
-The model configuration file specifies the generator type, model label,
-timeouts, and tool setup:
+Specifies the generator, model label, execution timeouts, and environment:
 
 | Key | Required | Description |
 |-----|----------|-------------|
 | `generator` | Yes | Must be `agy_cli` |
-| `model` | Optional | Model label as listed by `agy models`, e.g. `"Gemini 3.1 Pro (Low)"`. If omitted, agy's default model is used. |
-| `timeout` | Optional | Timeout duration string, e.g. `"20m"`. Passed via the `--print-timeout` flag (defaults to agy's internal 5m timeout). |
-| `env` | Optional | Environment variables passed to the CLI process |
-| `setup` | Optional | Tool setup block containing `mcp_servers`, `skills`, or `fake_mcp_servers` |
+| `model` | Optional | Model label (e.g. `"Gemini 3.1 Pro (Low)"` or `"Gemini 3.5 Flash (Medium)"`). Omit to use agy's default. |
+| `timeout` | Optional | CLI turn timeout string (e.g. `"20m"`, passed to `--print-timeout`). Defaults to 5m. |
+| `env` | Required | Environment block containing `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION`. |
+| `setup` | Optional | Tool setup block for `mcp_servers`, `skills`, or `fake_mcp_servers`. |
 
 > [!IMPORTANT]
-> **Project Configuration Required:** agy resolves its backend project from
-> `settings.json`, which EvalBench populates from your model config. Always
-> specify `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION` inside the `env`
-> block of your model config.
+> **Project Configuration Required:** agy resolves its GCP backend project from
+> `settings.json`, which EvalBench populates from `env.GOOGLE_CLOUD_PROJECT`.
+> Always include `GOOGLE_CLOUD_PROJECT` in your model config `env` block.
 
 ---
 
 ### 3. Evaluation Dataset (Evalset)
 
-Evalsets define the testing scenarios using the standard agentic schema. See
-the [agentic dataset format](configs/agentic-dataset-config.md) for field
-definitions. Expected tool trajectories use the canonical `<server>__<tool>`
-format.
+Evalsets define the test scenarios. See the [agentic dataset format](configs/agentic-dataset-config.md)
+for field definitions. Expected tool trajectories use the canonical
+`<server>__<tool>` format.
 
 Example scenario:
 ```json
@@ -210,17 +200,17 @@ Example scenario:
 
 ---
 
-## Authentication
+## Authentication & Supported Models
 
 agy authenticates non-interactively using **Google Application Default
-Credentials (ADC)**. EvalBench enables this by setting `AGY_ADC_AUTH=true` in
-the execution environment. The same ADC credentials supply outbound
-authorization for `authProviderType: google_credentials` MCP servers.
+Credentials (ADC)** (`AGY_ADC_AUTH=true`), which also supplies outbound
+credentials for `authProviderType: google_credentials` MCP servers.
 
-Interactive OAuth login is intentionally disabled to keep evaluations hermetic
-and non-interactive. Note that ADC may have access to a distinct set of model
-slugs compared to user-interactive OAuth; run `agy models` with ADC active to
-view available models.
+### Supported Model Tiers
+* **Supported under ADC**: Flash models (e.g. `"Gemini 3.5 Flash (Medium)"`,
+  `"Gemini 3.6 Flash (Medium)"`) and **`"Gemini 3.1 Pro (Low)"`**.
+* **Not supported under ADC**: `"Gemini 3.1 Pro (High)"` requires interactive
+  OAuth user login and will fail if configured for automated ADC runs.
 
 ---
 
@@ -228,9 +218,8 @@ view available models.
 
 ### MCP Servers
 
-Standalone MCP servers are configured under `setup.mcp_servers`. EvalBench
-translates `httpUrl` entries to agy's native `serverUrl` and writes the
-configuration to `<fake_home>/.gemini/config/mcp_config.json`:
+Configured under `setup.mcp_servers`. EvalBench translates `httpUrl` to agy's
+native `serverUrl` and writes `<fake_home>/.gemini/config/mcp_config.json`:
 
 ```yaml
 setup:
@@ -240,59 +229,42 @@ setup:
       authProviderType: google_credentials
 ```
 
-EvalBench automatically pre-verifies MCP attachment during generator
-initialization: it executes a probe command and validates that tool schemas
-were materialized under `<fake_home>/.gemini/antigravity-cli/mcp/<server>/`. If
-a server fails to attach or discovers zero tools, evaluation halts immediately
-with a diagnostic error rather than silently degrading to shell commands.
+EvalBench pre-verifies MCP attachment during generator initialization by probing
+the CLI and confirming that tool schemas were materialized under
+`<fake_home>/.gemini/antigravity-cli/mcp/<server>/`.
 
 ### Skills
 
 Skills are delivered as plugin bundles under `setup.skills`. EvalBench invokes
-`agy plugin install <target>` to register each skill, supporting local
-directory paths and remote git repositories:
+`agy plugin install <target>` to install local plugin directories or remote git
+repositories:
 
 ```yaml
 setup:
   skills:
-    # String format (local directory or git URL)
+    # Local directory
     - "/path/to/local-plugin"
 
-    # Dict format with branch/tag pinning
+    # Git repository with branch/tag pinning
     - action: install_from_repo
       url: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git#v1.2.3"
 ```
-
-Installed plugins are materialized under
-`<fake_home>/.gemini/config/plugins/<name>/` and registered in
-`<fake_home>/.gemini/config/import_manifest.json`.
 
 ### Fake MCP Servers (Testing)
 
 For offline testing without live network or cloud endpoints, define a local
 stdio MCP server in `setup.fake_mcp_servers` with mock tools in
 `fake_mcp_tools`. See
-[`datasets/model_configs/agy_cli_fake_model.yaml`](../datasets/model_configs/agy_cli_fake_model.yaml)
-for a complete example.
+[`datasets/model_configs/agy_cli_fake_model.yaml`](../datasets/model_configs/agy_cli_fake_model.yaml).
 
 ---
 
-## Scorers
+## Scorers & Reporting
 
-See the [scorer reference](scorers.md#agentic-scorers) for the full catalog
-of supported agentic scorers and configuration options.
-
----
-
-## Reporting
-
-Results are aggregated per scenario and exported according to your `reporting`
-block:
-
-* **CSV**: Generates scenario breakdowns and turn metrics under
-  `reporting.csv.output_directory`.
-* **BigQuery**: Uploads structured runs and scorer results to
-  `reporting.bigquery.gcp_project_id`.
+* **Scorers**: See the [scorer reference](scorers.md#agentic-scorers) for full
+  configuration options on trajectory matching, goal completion, and turn metrics.
+* **Reporting**: Exports to local CSV files (`reporting.csv.output_directory`)
+  and Google BigQuery (`reporting.bigquery.gcp_project_id`).
 
 ---
 
@@ -303,7 +275,7 @@ operational differences:
 
 | Area | Gemini CLI | Antigravity (agy) CLI |
 |------|------------|-----------------------|
-| Installation | `npm install -g @google/gemini-cli@<ver>` | Installer script staged into `<fake_home>/.local/bin/` |
+| Installation | `npm install -g @google/gemini-cli@<ver>` | Auto-staged into `<fake_home>/.local/bin/` |
 | Invocation | `npm exec @google/gemini-cli -- ...` | `agy -p <prompt> --dangerously-skip-permissions` |
 | Output Format | `--output-format stream-json` | `--output-format stream-json` |
 | Session Resume | `--resume <id>` | `--continue` |
@@ -311,42 +283,30 @@ operational differences:
 | MCP Config | `mcpServers` in `settings.json` | `mcpServers` in `~/.gemini/config/mcp_config.json` |
 | MCP Tool Naming | `mcp_<server>_<tool>` | `call_mcp_tool` wrapper (canonicalized to `<server>__<tool>`) |
 | Skill Registration | `gemini skills <cmd>` | `agy plugin install <target>` |
-| Model Parameter | `GEMINI_API_MODEL` env var | `--model` flag (UI label from `agy models`) |
+| Model Parameter | `GEMINI_API_MODEL` env var | `--model` flag (UI label or slug) |
 | Authentication | Token + ADC | Non-interactive ADC (`AGY_ADC_AUTH=true`) |
 
 ---
 
 ## Troubleshooting
 
-### Prompted for interactive login / `authentication timed out`
-* agy fell back to interactive login because ADC credentials were missing or
-  unreadable.
-* Run `gcloud auth application-default login` on your host machine to generate
-  fresh credentials.
+### Authentication Errors / Interactive Login Prompt
+* Ensure fresh ADC credentials exist by running `gcloud auth application-default login`.
 
-### `invalid model selection`
-* The model label specified in `model_config.yaml` is not recognized by agy
-  under the active credentials.
-* Run `agy models` to view the accepted model labels and update your `model:`
-  configuration key.
+### Model Authorization / `invalid model selection`
+* Ensure the configured `model` in `model_config.yaml` is supported under ADC
+  (use `Gemini 3.1 Pro (Low)` or Flash models, not `Gemini 3.1 Pro (High)`).
 
 ### MCP Server Fails to Attach
-* **Check the URL parameter**: Ensure the server specifies `httpUrl` or
-  `serverUrl`.
-* **Verify Cache Files**: Check that tool schemas were created under
-  `<fake_home>/.gemini/antigravity-cli/mcp/<server>/*.json`.
-* **Check Auth**: For Google-authenticated endpoints, ensure
-  `authProviderType: google_credentials` is specified and ADC is active.
+* Confirm `httpUrl` is valid and points to an active MCP endpoint.
+* For Google APIs, ensure `authProviderType: google_credentials` is set and ADC is active.
 
 ### Skill / Plugin Not Loaded
-* Check `<fake_home>/.gemini/config/import_manifest.json` to see if the plugin
-  was registered.
-* Check setup logs for `agy plugin install '<target>' failed` to inspect the
-  exit code and stderr. Ensure the target directory or repository contains a
-  valid plugin manifest (`plugin.json` or `gemini-extension.json`).
+* Inspect setup logs for `agy plugin install '<target>' failed` for the exit code
+  and stderr. Ensure the target directory contains a valid manifest (`plugin.json`
+  or `gemini-extension.json`).
 
 ### Empty Responses
-* Ensure `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION` are set in the
-  `env` section of your model config.
-* Confirm `dataset_format` is set to `agent-format`.
+* Ensure `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION` are configured in the
+  `env` block of your model config.
 
