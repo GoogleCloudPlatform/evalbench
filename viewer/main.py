@@ -25,6 +25,7 @@ class State:
     open_dropdown: str = ""
     selected_main_tab: str = "Status"
     trends_product_filter: str = ""
+    trends_requester_filter: str = ""
     cache_cleared_message: str = ""
     ai_summary: str = ""
     is_summarizing: bool = False
