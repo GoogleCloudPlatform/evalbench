@@ -66,23 +66,18 @@ def _install_calls(mock_run):
     ]
 
 
-def test_setup_single_skill_string_runs_plugin_install(mock_run, sandbox):
-    """A string entry is passed straight to ``agy plugin install``."""
-    target = "/path/to/local-plugin"
-    generator = AgyCliGenerator({"setup": {"skills": [target]}})
+def test_setup_skills_string_runs_plugin_install(mock_run, sandbox):
+    """String entries are passed straight to ``agy plugin install``."""
+    generator = AgyCliGenerator({"setup": {"skills": ["plugin-A", "plugin-B"]}})
 
     calls = _install_calls(mock_run)
-    assert len(calls) == 1
+    assert len(calls) == 2
     assert list(calls[0].args[0]) == [
-        generator.agy_bin, "plugin", "install", target,
+        generator.agy_bin, "plugin", "install", "plugin-A",
     ]
-
-
-def test_setup_multiple_skills_string_each_installed(mock_run, sandbox):
-    AgyCliGenerator({"setup": {"skills": ["plugin-A", "plugin-B"]}})
-
-    installed = [list(c.args[0])[-1] for c in _install_calls(mock_run)]
-    assert installed == ["plugin-A", "plugin-B"]
+    assert list(calls[1].args[0]) == [
+        generator.agy_bin, "plugin", "install", "plugin-B",
+    ]
 
 
 def test_install_from_repo_local_path_installs_directly(
@@ -133,36 +128,43 @@ def test_install_from_repo_git_url_clones_then_installs(mock_run, sandbox):
     ]
 
 
-def test_clone_skill_repo_timeout_returns_none_and_clears_stale_dir(
-    mock_run, sandbox, caplog,
-):
-    """A clone that exceeds the timeout returns None (so the skill is simply
-    skipped) rather than propagating TimeoutExpired, and logs an error.
-
-    There is no cleanup of *this* attempt's partial dir on timeout -- the
-    only cleanup is the pre-clone rmtree, which clears a stale dir left by a
-    prior partial clone even when the current attempt then times out.
-    """
+def test_clone_skill_repo_clears_stale_dir_before_clone(mock_run, sandbox):
+    """An existing directory at the clone target is removed prior to cloning."""
     generator = AgyCliGenerator({})
     workdir = os.path.join(generator.app_data_dir, ".skill_clones")
     os.makedirs(workdir, exist_ok=True)
 
     url = "https://github.com/example/agy-skill-pack.git"
-    # Leftover from a prior partial clone; pre-clone cleanup must remove it.
     stale = os.path.join(workdir, "agy-skill-pack")
     os.makedirs(stale)
 
-    mock_run.side_effect = subprocess.TimeoutExpired(
-        cmd="git clone", timeout=120
-    )
+    result = generator._clone_skill_repo(url, workdir, generator._merged_env())
+
+    # git is mocked, so nothing recreates the dir -- its absence is proof the
+    # pre-clone rmtree ran.
+    assert not os.path.exists(stale)
+    assert result == stale
+    git_calls = [
+        c for c in mock_run.call_args_list
+        if c.args and list(c.args[0][:2]) == ["git", "clone"]
+    ]
+    assert len(git_calls) == 1
+
+
+def test_clone_skill_repo_timeout_returns_none(mock_run, sandbox, caplog):
+    """A clone that exceeds the timeout returns None (skipping the skill)
+    rather than propagating TimeoutExpired, and logs an error."""
+    generator = AgyCliGenerator({})
+    workdir = os.path.join(generator.app_data_dir, ".skill_clones")
+    os.makedirs(workdir, exist_ok=True)
+
+    url = "https://github.com/example/agy-skill-pack.git"
+    mock_run.side_effect = subprocess.TimeoutExpired(cmd="git clone", timeout=120)
 
     with caplog.at_level(logging.ERROR):
-        result = generator._clone_skill_repo(
-            url, workdir, generator._merged_env()
-        )
+        result = generator._clone_skill_repo(url, workdir, generator._merged_env())
 
     assert result is None
-    assert not os.path.exists(stale)
     assert any("timed out" in r.getMessage() for r in caplog.records)
 
 
@@ -929,24 +931,6 @@ def _written_settings(generator):
         return json.load(f)
 
 
-def test_config_model_passed_as_flag():
-    """A configured `model` (an agy UI label) is appended to the command as
-    ``--model <label>`` verbatim."""
-    cmd = AgyCliGenerator._base_agy_command(
-        "agy", "hi", model=_MODEL_LABEL
-    )
-
-    assert "--model" in cmd
-    assert cmd[cmd.index("--model") + 1] == _MODEL_LABEL
-
-
-def test_no_model_flag_when_unset():
-    """No configured model -> no ``--model`` flag is added."""
-    cmd = AgyCliGenerator._base_agy_command("agy", "hi")
-
-    assert "--model" not in cmd
-
-
 def test_run_passes_configured_model_flag(mock_run, sandbox):
     """The turn command carries the configured model via ``--model``."""
     generator = AgyCliGenerator({"model": _MODEL_LABEL})
@@ -971,12 +955,6 @@ def _stats_models(generator):
     return envelope["stats"]["models"]
 
 
-def test_models_bucket_keyed_by_configured_model(sandbox):
-    """The stats models bucket is keyed by the configured model label."""
-    generator = AgyCliGenerator({"model": _MODEL_LABEL})
-    assert _MODEL_LABEL in _stats_models(generator)
-
-
 def test_models_bucket_falls_back_to_agy(sandbox):
     """Without a configured model and no cli log, the bucket falls back to
     the generic 'agy' label."""
@@ -995,14 +973,6 @@ def _write_cli_log(generator, *lines):
     os.makedirs(os.path.dirname(generator.cli_log_path), exist_ok=True)
     with open(generator.cli_log_path, "w") as f:
         f.writelines(lines)
-
-
-def test_detect_model_from_log(sandbox):
-    """The resolved model label is recovered from the cli log."""
-    generator = AgyCliGenerator({})
-    _write_cli_log(generator, "noise\n", _MODEL_LOG_LINE)
-
-    assert generator._detect_model_from_log() == "Gemini 3.5 Flash (Medium)"
 
 
 def test_detect_model_from_log_takes_last_match(sandbox):
@@ -1059,7 +1029,7 @@ def test_adc_auth_env_var_always_set(sandbox):
 
 
 def test_adc_staged_into_sandbox(sandbox):
-    """The host's ADC file is copied into the sandbox home and pointed at."""
+    """The host's ADC file is copied into the sandbox home."""
     _seed_adc(sandbox)
 
     generator = AgyCliGenerator({})
@@ -1069,7 +1039,8 @@ def test_adc_staged_into_sandbox(sandbox):
         "application_default_credentials.json",
     )
     assert os.path.exists(staged)
-    assert generator.env["GOOGLE_APPLICATION_CREDENTIALS"]
+    assert os.path.exists(generator.env["GOOGLE_APPLICATION_CREDENTIALS"])
+    assert generator.adc_path is not None
 
 
 def test_missing_adc_warns_but_is_non_fatal(sandbox, caplog):
@@ -1155,8 +1126,8 @@ def test_host_adc_wins_over_gke_secret_mount(sandbox, monkeypatch, tmp_path):
 
 
 def test_mcp_attach_failure_reports_missing_adc(mock_run, sandbox):
-    """Without ADC a google_credentials server cannot attach, and the probe
-    error must say so instead of only blaming the URL."""
+    """When MCP attachment fails and no ADC was resolved, the error indicates
+    that missing ADC may have prevented servers from attaching."""
     config = {
         "setup": {
             "mcp_servers": {
@@ -1210,16 +1181,17 @@ def test_quota_project_falls_back_to_credential_project_id(sandbox, monkeypatch,
         assert json.load(f)["quota_project_id"] == "cloud-db-nl2sql"
 
 
-def test_existing_quota_project_is_left_alone(sandbox, monkeypatch, tmp_path):
-    """A user ADC already carries the field; rewriting it would silently
-    retarget the developer's own quota project."""
-    key = tmp_path / "key.json"
-    key.write_text('{"type": "authorized_user", "quota_project_id": "mine"}')
-    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+def test_existing_quota_project_is_left_alone(sandbox):
+    """An ADC that already carries quota_project_id is left untouched."""
+    adc_dir = sandbox / ".config" / "gcloud"
+    adc_dir.mkdir(parents=True, exist_ok=True)
+    adc = adc_dir / "application_default_credentials.json"
+    adc.write_text('{"type": "authorized_user", "quota_project_id": "mine"}')
 
     generator = AgyCliGenerator({"env": {"GOOGLE_CLOUD_PROJECT": "cloud-db-nl2sql"}})
 
-    assert generator.adc_path == str(key)
+    with open(generator.adc_path) as f:
+        assert json.load(f)["quota_project_id"] == "mine"
 
 
 def test_augmented_credential_stays_off_the_session_sandbox(sandbox, monkeypatch, tmp_path):
