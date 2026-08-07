@@ -1,3 +1,4 @@
+import gc
 import json
 import logging
 import os
@@ -1205,6 +1206,25 @@ def test_augmented_credential_stays_off_the_session_sandbox(sandbox, monkeypatch
 
     assert not generator.adc_path.startswith(generator.fake_home)
     assert oct(os.stat(generator.adc_path).st_mode)[-3:] == "600"
+
+
+def test_augmented_credential_is_removed_with_the_generator(
+    sandbox, monkeypatch, tmp_path
+):
+    """That copy is a plaintext key on shared scratch. Without cleanup every
+    session leaves one behind for the life of the node."""
+    key = tmp_path / "key.json"
+    key.write_text('{"type": "service_account", "project_id": "cloud-db-nl2sql"}')
+    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+
+    generator = AgyCliGenerator({})
+    augmented = generator.adc_path
+    assert os.path.exists(augmented)
+
+    del generator
+    gc.collect()
+
+    assert not os.path.exists(augmented)
 
 
 def test_merged_env_stringifies_non_string_values(sandbox):

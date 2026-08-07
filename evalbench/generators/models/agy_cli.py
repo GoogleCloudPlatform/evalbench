@@ -8,16 +8,13 @@ import re
 import shutil
 import sys
 import tempfile
+import weakref
 from util.context import rpc_id_var
 
-# Bare command name. agy's installer exposes no version pinning and the binary
-# self-updates in the background, so there is nothing to configure. This is the
-# reported agent_version label only -- the binary actually launched is the
-# per-session install at self.agy_bin (see _ensure_agy_installed).
+# Default CLI label reported in metadata. The executed binary is installed
+# per-session at self.agy_bin (see _ensure_agy_installed).
 AGY_CLI = "agy"
 
-# Upstream one-line installer. Honors --dir (and $HOME) for the install
-# location and skips the download when the binary already exists at the target.
 AGY_INSTALL_URL = "https://antigravity.google/cli/install.sh"
 
 # Makes agy authenticate from Application Default Credentials
@@ -26,6 +23,15 @@ ADC_AUTH_ENV_VAR = "AGY_ADC_AUTH"
 
 # Read-only secret mount in the GKE pod; the only ADC a pod carries on disk.
 GKE_SA_KEY_PATH = "/etc/evalbench-sa-key/key.json"
+
+
+def _shred_credential(path: str) -> None:
+    """Deletes a temporary credential copy. Module-level and instance-free so
+    weakref.finalize can hold it without keeping the generator alive."""
+    try:
+        os.unlink(path)
+    except OSError as e:
+        logging.warning("Failed to remove temporary agy ADC %s: %s", path, e)
 
 
 class CLICommand:
@@ -282,6 +288,9 @@ class AgyCliGenerator(AgentCliGenerator):
 
         self.adc_path = augmented
         self.env["GOOGLE_APPLICATION_CREDENTIALS"] = augmented
+        # Plaintext key on shared scratch: bound its lifetime to the generator
+        # rather than leaving one behind per session for the life of the node.
+        self._adc_cleanup = weakref.finalize(self, _shred_credential, augmented)
         logging.info(
             "agy ADC had no quota_project_id; using augmented copy at %s "
             "with project %s.", augmented, project,
