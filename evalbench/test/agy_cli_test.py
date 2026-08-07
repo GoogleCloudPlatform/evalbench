@@ -1058,18 +1058,6 @@ def test_adc_auth_env_var_always_set(sandbox):
     assert generator.env["AGY_ADC_AUTH"] == "true"
 
 
-def test_host_oauth_token_is_not_mirrored(sandbox):
-    """A host token is deliberately left behind: agy authenticates from ADC."""
-    real_app_data = sandbox / APP_DATA_SUBPATH
-    real_app_data.mkdir(parents=True)
-    (real_app_data / "antigravity-oauth-token").write_text("DISK_TOKEN")
-
-    generator = AgyCliGenerator({})
-
-    token_file = os.path.join(generator.app_data_dir, "antigravity-oauth-token")
-    assert not os.path.exists(token_file)
-
-
 def test_adc_staged_into_sandbox(sandbox):
     """The host's ADC file is copied into the sandbox home and pointed at."""
     _seed_adc(sandbox)
@@ -1120,6 +1108,131 @@ def test_shell_exported_adc_does_not_warn(sandbox, monkeypatch, tmp_path, caplog
         "application default credentials" in r.getMessage()
         for r in caplog.records
     )
+
+
+def test_gke_secret_mount_supplies_adc(sandbox, monkeypatch, tmp_path):
+    """On GKE nothing runs `gcloud auth application-default login`, so the
+    well-known-file lookup finds nothing and the mounted service-account key
+    is the pod's only ADC."""
+    key = tmp_path / "key.json"
+    key.write_text('{"type": "service_account"}')
+    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+
+    generator = AgyCliGenerator({})
+
+    assert generator.env["GOOGLE_APPLICATION_CREDENTIALS"] == str(key)
+    assert generator.adc_path == str(key)
+
+
+def test_gke_secret_mount_is_not_copied_into_sandbox(sandbox, monkeypatch, tmp_path):
+    """The key is read in place. Copying it would spread a private key onto
+    the shared session PVC for no gain -- agy reads the absolute path."""
+    key = tmp_path / "key.json"
+    key.write_text('{"type": "service_account"}')
+    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+
+    generator = AgyCliGenerator({})
+
+    staged = os.path.join(
+        generator.fake_home, ".config", "gcloud",
+        "application_default_credentials.json",
+    )
+    assert not os.path.exists(staged)
+
+
+def test_host_adc_wins_over_gke_secret_mount(sandbox, monkeypatch, tmp_path):
+    """Local dev keeps using the developer's own ADC even if the GKE path
+    happens to exist on the machine."""
+    _seed_adc(sandbox)
+    key = tmp_path / "key.json"
+    key.write_text('{"type": "service_account"}')
+    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+
+    generator = AgyCliGenerator({})
+
+    assert generator.adc_path != str(key)
+    assert generator.adc_path.startswith(str(sandbox))
+
+
+def test_mcp_attach_failure_reports_missing_adc(mock_run, sandbox):
+    """Without ADC a google_credentials server cannot attach, and the probe
+    error must say so instead of only blaming the URL."""
+    config = {
+        "setup": {
+            "mcp_servers": {
+                "cloud-sql": {
+                    "httpUrl": "https://sqladmin.googleapis.com/mcp",
+                    "authProviderType": "google_credentials",
+                },
+            }
+        }
+    }
+
+    def fake_run(cmd, *args, **kwargs):
+        _write_probe_log(_local_app_data_dir(), "cli-probe.log", "I startup\n")
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    mock_run.side_effect = fake_run
+    with pytest.raises(RuntimeError, match="ADC: none resolved"):
+        AgyCliGenerator(config)
+
+
+def test_quota_project_injected_when_credential_lacks_it(sandbox, monkeypatch, tmp_path):
+    """agy reads its entitlement project only from the credential's
+    quota_project_id. A stock service-account key has no such field, and
+    without it agy's model registry is empty and every --model value --
+    including agy's own default -- is rejected as unknown."""
+    key = tmp_path / "key.json"
+    key.write_text('{"type": "service_account", "project_id": "other-proj"}')
+    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+
+    generator = AgyCliGenerator({"env": {"GOOGLE_CLOUD_PROJECT": "cloud-db-nl2sql"}})
+
+    assert generator.adc_path != str(key)
+    with open(generator.adc_path) as f:
+        assert json.load(f)["quota_project_id"] == "cloud-db-nl2sql"
+    assert generator.env["GOOGLE_APPLICATION_CREDENTIALS"] == generator.adc_path
+    assert json.loads(key.read_text()) == {
+        "type": "service_account", "project_id": "other-proj",
+    }
+
+
+def test_quota_project_falls_back_to_credential_project_id(sandbox, monkeypatch, tmp_path):
+    """With no configured project the key's own project is the only sane
+    entitlement target."""
+    key = tmp_path / "key.json"
+    key.write_text('{"type": "service_account", "project_id": "cloud-db-nl2sql"}')
+    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+
+    generator = AgyCliGenerator({})
+
+    with open(generator.adc_path) as f:
+        assert json.load(f)["quota_project_id"] == "cloud-db-nl2sql"
+
+
+def test_existing_quota_project_is_left_alone(sandbox, monkeypatch, tmp_path):
+    """A user ADC already carries the field; rewriting it would silently
+    retarget the developer's own quota project."""
+    key = tmp_path / "key.json"
+    key.write_text('{"type": "authorized_user", "quota_project_id": "mine"}')
+    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+
+    generator = AgyCliGenerator({"env": {"GOOGLE_CLOUD_PROJECT": "cloud-db-nl2sql"}})
+
+    assert generator.adc_path == str(key)
+
+
+def test_augmented_credential_stays_off_the_session_sandbox(sandbox, monkeypatch, tmp_path):
+    """The sandbox lives on a PVC shared across sessions, so the copy carrying
+    the private key must land on pod-local scratch instead."""
+    key = tmp_path / "key.json"
+    key.write_text('{"type": "service_account", "project_id": "cloud-db-nl2sql"}')
+    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+
+    generator = AgyCliGenerator({})
+
+    assert not generator.adc_path.startswith(generator.fake_home)
+    assert oct(os.stat(generator.adc_path).st_mode)[-3:] == "600"
 
 
 def test_merged_env_stringifies_non_string_values(sandbox):

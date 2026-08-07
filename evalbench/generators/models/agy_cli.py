@@ -7,6 +7,7 @@ import logging
 import re
 import shutil
 import sys
+import tempfile
 from util.context import rpc_id_var
 
 # Bare command name. agy's installer exposes no version pinning and the binary
@@ -22,6 +23,9 @@ AGY_INSTALL_URL = "https://antigravity.google/cli/install.sh"
 # Makes agy authenticate from Application Default Credentials
 # instead of its interactive OAuth login. See _setup_auth.
 ADC_AUTH_ENV_VAR = "AGY_ADC_AUTH"
+
+# Read-only secret mount in the GKE pod; the only ADC a pod carries on disk.
+GKE_SA_KEY_PATH = "/etc/evalbench-sa-key/key.json"
 
 
 class CLICommand:
@@ -213,17 +217,75 @@ class AgyCliGenerator(AgentCliGenerator):
         self.env[ADC_AUTH_ENV_VAR] = "true"
         self._setup_gcloud_credentials(self.env, self.real_home, self.fake_home)
 
-        # Without readable ADC agy falls back to interactive OAuth and the run
-        # dies on "authentication required", so warn up front. agy reads the
-        # merged env, where a shell-exported path counts just as much as a
-        # config-supplied one.
+        # agy reads the merged env, where a shell-exported path counts just as
+        # much as a config-supplied one.
         adc_path = (self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
                     or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"))
-        if not adc_path or not os.path.exists(adc_path):
+
+        # Read in place: the session sandbox is on a PVC shared across
+        # sessions, which is no place for a private key.
+        if not (adc_path and os.path.exists(adc_path)) and os.path.exists(
+            GKE_SA_KEY_PATH
+        ):
+            adc_path = GKE_SA_KEY_PATH
+            self.env["GOOGLE_APPLICATION_CREDENTIALS"] = adc_path
+
+        self.adc_path = adc_path if adc_path and os.path.exists(adc_path) else None
+        if self.adc_path:
+            logging.info("agy ADC resolved from %s", self.adc_path)
+            self._ensure_quota_project()
+        else:
+            # Not fatal: agy also resolves ADC from the GCE/GKE metadata
+            # server, which leaves nothing on disk to detect.
             logging.warning(
-                "No application default credentials found -- run "
-                "`gcloud auth application-default login`."
+                "No application default credentials file found; agy will fall "
+                "back to the metadata server."
             )
+
+    def _ensure_quota_project(self) -> None:
+        """Adds ``quota_project_id`` to the resolved ADC when it is missing.
+
+        agy reads its entitlement project from that field alone -- not
+        GOOGLE_CLOUD_PROJECT, not settings.json. A stock service-account key
+        has none, and without it agy's model registry comes back empty and
+        every ``--model`` value, including its own default, is rejected as
+        unknown.
+        """
+        try:
+            with open(self.adc_path) as f:
+                credentials = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            logging.warning("agy ADC at %s unreadable: %s", self.adc_path, e)
+            return
+
+        if credentials.get("quota_project_id"):
+            return
+
+        project = self.gcp_project or credentials.get("project_id")
+        if not project:
+            logging.warning(
+                "agy ADC %s has no quota_project_id and no project is "
+                "configured; agy will list no models.", self.adc_path,
+            )
+            return
+
+        credentials["quota_project_id"] = project
+        # Node-local scratch: the GKE key is read in place from a read-only
+        # mount, and its copy must not land on the shared-PVC sandbox.
+        try:
+            fd, augmented = tempfile.mkstemp(prefix="agy-adc-", suffix=".json")
+            with os.fdopen(fd, "w") as f:
+                json.dump(credentials, f)
+        except OSError as e:
+            logging.warning("Failed to write augmented agy ADC: %s", e)
+            return
+
+        self.adc_path = augmented
+        self.env["GOOGLE_APPLICATION_CREDENTIALS"] = augmented
+        logging.info(
+            "agy ADC had no quota_project_id; using augmented copy at %s "
+            "with project %s.", augmented, project,
+        )
 
     def _initialize_settings_file(self):
         """Writes the ``gcp.project``/``gcp.location`` block into agy's
@@ -286,6 +348,8 @@ class AgyCliGenerator(AgentCliGenerator):
         if project:
             gcp_config["project"] = project
         gcp_config["location"] = location
+        # Reused by _setup_auth; agy's ADC path ignores this settings block.
+        self.gcp_project = project
 
         logging.info(
             "agy settings resolved: project=%s location=%s",
@@ -497,6 +561,14 @@ class AgyCliGenerator(AgentCliGenerator):
                 "(use 'httpUrl'; 'serverUrl' and 'url' also work), auth, and "
                 "reachability. agy degrades silently to shell-outs when "
                 "MCP tools are missing."
+            )
+            # A google_credentials server cannot attach without ADC, so the
+            # generic advice above sends people after the wrong cause.
+            msg += (
+                f"\nADC in use: {self.adc_path}" if self.adc_path else
+                "\nADC: none resolved -- servers using "
+                "'authProviderType: google_credentials' cannot attach without "
+                "it."
             )
             if marker_hits:
                 msg += "\nProbe log fatal markers:\n" + "\n".join(
