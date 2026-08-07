@@ -167,7 +167,7 @@ Specifies the generator, model label, execution timeouts, and environment:
 | `generator` | Yes | Must be `agy_cli` |
 | `model` | Optional | Model label (e.g. `"Gemini 3.1 Pro (Low)"` or `"Gemini 3.5 Flash (Medium)"`). Omit to use agy's default. |
 | `timeout` | Optional | CLI turn timeout string (e.g. `"20m"`, passed to `--print-timeout`). Defaults to 5m. |
-| `env` | Required | Environment block containing `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION`. |
+| `env` | Optional | Environment block. Set `GOOGLE_CLOUD_PROJECT` (see below); `GOOGLE_CLOUD_LOCATION` defaults to `global`. |
 | `setup` | Optional | Tool setup block for `mcp_servers`, `skills`, or `fake_mcp_servers`. |
 
 > [!IMPORTANT]
@@ -206,6 +206,10 @@ agy authenticates non-interactively using **Google Application Default
 Credentials (ADC)** (`AGY_ADC_AUTH=true`), which also supplies outbound
 credentials for `authProviderType: google_credentials` MCP servers.
 
+agy reads its model entitlement from the credential's `quota_project_id` field
+alone, not from `GOOGLE_CLOUD_PROJECT`. EvalBench injects it when the resolved
+ADC lacks it, which is the normal case for the service-account keys used on GKE.
+
 ### Supported Model Tiers
 * **Supported under ADC**: Flash models (e.g. `"Gemini 3.5 Flash (Medium)"`,
   `"Gemini 3.6 Flash (Medium)"`) and **`"Gemini 3.1 Pro (Low)"`**.
@@ -231,7 +235,9 @@ setup:
 
 EvalBench pre-verifies MCP attachment during generator initialization by probing
 the CLI and confirming that tool schemas were materialized under
-`<fake_home>/.gemini/antigravity-cli/mcp/<server>/`.
+`<fake_home>/.gemini/antigravity-cli/mcp/<server>/`. A server that attaches zero
+tools halts the run, because agy otherwise degrades silently to shell commands
+and the eval scores that as poor model behaviour.
 
 ### Skills
 
@@ -296,6 +302,9 @@ operational differences:
 ### Model Authorization / `invalid model selection`
 * Ensure the configured `model` in `model_config.yaml` is supported under ADC
   (use `Gemini 3.1 Pro (Low)` or Flash models, not `Gemini 3.1 Pro (High)`).
+* If *every* model is rejected, including agy's own default, the credential is
+  missing `quota_project_id` and the model registry came back empty. Ensure a
+  project is resolvable from `env.GOOGLE_CLOUD_PROJECT` or from the key itself.
 
 ### MCP Server Fails to Attach
 * Confirm `httpUrl` is valid and points to an active MCP endpoint.
@@ -305,6 +314,8 @@ operational differences:
 * Inspect setup logs for `agy plugin install '<target>' failed` for the exit code
   and stderr. Ensure the target directory contains a valid manifest (`plugin.json`
   or `gemini-extension.json`).
+* Confirm the plugin registered in
+  `<fake_home>/.gemini/config/import_manifest.json`.
 
 ### Empty Responses
 * Ensure `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION` are configured in the
