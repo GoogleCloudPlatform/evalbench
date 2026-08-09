@@ -345,7 +345,7 @@ def status_component():
             box_shadow="0 2px 4px rgba(0,0,0,0.05)",
         )
     ):
-        me.text("Product status", type="headline-5")
+        me.text("Product Status", type="headline-5")
         me.box(style=me.Style(height="16px"))
         me.text(f"Total Evaluation Jobs: {len(directories)}")
         
