@@ -2,8 +2,7 @@ import os
 import logging
 import mesop as me
 import pandas as pd
-import precompute_trends
-from main import State
+from main import State, load_trends_df
 from run_index import list_run_directories
 
 
@@ -94,20 +93,7 @@ def trends_component():
         me.text(f"Results directory not found at {results_dir}")
         return
 
-    cache_file = os.path.join(results_dir, "trends_cache.csv")
-
-    df = None
-
-    # Try to load from cache
-    if os.path.exists(cache_file):
-        try:
-            df = pd.read_csv(
-                cache_file, usecols=lambda c: c != 'ai_summary'
-            )
-            df = precompute_trends.filter_valid_cache_rows(df)
-            logging.info("Loaded trends data from cache.")
-        except Exception as e:
-            logging.error(f"Error reading cache file: {e}")
+    df = load_trends_df(results_dir)
 
     # Fallback to computing on the fly if cache is missing or failed
     if df is None:
@@ -336,7 +322,8 @@ def trends_component():
         if state.trends_requester_filter:
             df = df[df['requester'] == state.trends_requester_filter]
 
-        df['product_dataset'] = df['product'] + " (" + df['dataset'] + ")"
+        # assign, not item-set: df may be the shared cached frame from load_trends_df.
+        df = df.assign(product_dataset=df['product'] + " (" + df['dataset'] + ")")
         df = df[df['product'].notna() & (df['product'] != 'unknown') & (df['product'].str.strip() != '')]
 
         if state.trends_agent_tab == "Gemini":

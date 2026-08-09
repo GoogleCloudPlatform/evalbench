@@ -133,6 +133,48 @@ def get_results_dir():
     return results_dir_candidates[1]  # Fallback to default
 
 
+# (mtime, df). Replaced as a whole so a concurrent reader never sees a frame
+# that disagrees with the mtime it was built from.
+_TRENDS_DF_CACHE = (None, None)
+
+
+def _mtime(path):
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return None
+
+
+def load_trends_df(results_dir):
+    """Parsed trends_cache.csv, reread only when the file changes.
+
+    Shared by every request in this worker, so callers must not mutate it.
+    """
+    global _TRENDS_DF_CACHE
+
+    cache_file = os.path.join(results_dir, "trends_cache.csv")
+    mtime = _mtime(cache_file)
+    if mtime is None:
+        logging.warning(f"Trends cache file not found at {cache_file}")
+        return None
+
+    cached_mtime, df = _TRENDS_DF_CACHE
+    if cached_mtime == mtime:
+        return df
+
+    try:
+        # ai_summary is large and only needed per run; read_ai_summary covers it.
+        df = pd.read_csv(cache_file, usecols=lambda c: c != 'ai_summary')
+        df = precompute_trends.filter_valid_cache_rows(df)
+    except Exception as e:
+        logging.error(f"Error reading trends cache: {e}")
+        return None
+
+    logging.info(f"Loaded {len(df)} rows from trends cache.")
+    _TRENDS_DF_CACHE = (mtime, df)
+    return df
+
+
 def get_eval_details(results_dir, dir_name):
     details = {
         "product": "N/A",
@@ -290,13 +332,9 @@ def status_component():
 
         # Build summary data from precomputed trends cache
         data = []
-        cache_file = os.path.join(results_dir, "trends_cache.csv")
-        if os.path.exists(cache_file):
+        cache_df = load_trends_df(results_dir)
+        if cache_df is not None:
             try:
-                cache_df = pd.read_csv(
-                    cache_file, usecols=lambda c: c != 'ai_summary'
-                )
-                cache_df = precompute_trends.filter_valid_cache_rows(cache_df)
                 for _, row in cache_df.iterrows():
                     data.append({
                         'AI Score': row['ai_score'] if 'ai_score' in row else None,
@@ -314,7 +352,6 @@ def status_component():
             except Exception as e:
                 logging.error(f"Error reading trends cache: {e}")
         else:
-            logging.warning(f"Trends cache file not found at {cache_file}")
             me.text("Trends cache file not found. Please run precompute.")
             return
 
@@ -535,12 +572,8 @@ def _pct(value):
     return f"{value:.0f}%" if not pd.isna(value) else "N/A"
 
 
-def _build_summaries(cache_file):
+def _build_summaries(cache_df):
     import re
-
-    cache_df = pd.read_csv(cache_file)
-    cache_df = precompute_trends.filter_valid_cache_rows(cache_df)
-    logging.info(f"Loaded {len(cache_df)} rows from trends cache.")
 
     rows = []
     for _, row in cache_df.iterrows():
@@ -578,21 +611,22 @@ def load_summaries(results_dir):
     """
     global _SUMMARIES_CACHE
 
-    cache_file = os.path.join(results_dir, "trends_cache.csv")
-    try:
-        mtime = os.path.getmtime(cache_file)
-    except OSError:
-        logging.warning(f"Trends cache file not found at {cache_file}")
+    mtime = _mtime(os.path.join(results_dir, "trends_cache.csv"))
+    if mtime is None:
         return []
 
     cached_mtime, rows = _SUMMARIES_CACHE
     if cached_mtime == mtime:
         return rows
 
+    cache_df = load_trends_df(results_dir)
+    if cache_df is None:
+        return []
+
     try:
-        rows = _build_summaries(cache_file)
+        rows = _build_summaries(cache_df)
     except Exception as e:
-        logging.error(f"Error reading trends cache: {e}")
+        logging.error(f"Error building list rows from trends cache: {e}")
         return []
 
     _SUMMARIES_CACHE = (mtime, rows)
