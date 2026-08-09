@@ -15,7 +15,6 @@ class State:
     selected_directory: str = ""
     selected_tab: str = "Dashboard"
     conversation_index: int = 0
-    eval_summaries: str = ""
     eval_id_filter: str = ""
     product_filter: str = ""
     requester_filter: str = ""
@@ -537,6 +536,78 @@ def status_component():
             me.text("No evaluation data found in results directories.")
 
 
+# (mtime, rows). Replaced as a whole so a concurrent reader never sees rows that
+# disagree with the mtime they were built from.
+_SUMMARIES_CACHE = (None, [])
+
+
+def _pct(value):
+    return f"{value:.0f}%" if not pd.isna(value) else "N/A"
+
+
+def _build_summaries(cache_file):
+    import re
+
+    cache_df = pd.read_csv(cache_file)
+    logging.info(f"Loaded {len(cache_df)} rows from trends cache.")
+
+    rows = []
+    for _, row in cache_df.iterrows():
+        score = row['ai_score'] if 'ai_score' in row else 0.0
+        if (score == 0.0 or pd.isna(score)) and 'ai_summary' in row and not pd.isna(row['ai_summary']):
+            match = re.search(r"General Score:.*?(\d+(\.\d+)?)", row['ai_summary'])
+            if match:
+                score = float(match.group(1))
+
+        rows.append({
+            "id": str(row['job_id']),
+            "date": str(row['run_time']) if not pd.isna(row['run_time']) else "N/A",
+            "product": str(row['product']) if not pd.isna(row['product']) else "N/A",
+            "requester": str(row['requester']) if not pd.isna(row['requester']) else "N/A",
+            "dataset": str(row['dataset']) if 'dataset' in row and not pd.isna(row['dataset']) else "N/A",
+            "model_config.generator": str(row['model_config.generator']) if 'model_config.generator' in row and not pd.isna(row['model_config.generator']) else "unknown",
+            "ai_score": f"{score:.0f}%" if not pd.isna(score) and score != 0.0 else "N/A",
+            "exact_match": _pct(row['exact_match']),
+            "llmrater": _pct(row['llmrater']),
+            "trajectory_matcher": _pct(row['trajectory']),
+            "goal_completion": _pct(row['goal_completion']) if 'goal_completion' in row else "N/A",
+            "turn_count": f"{row['turn_count']:.1f}" if not pd.isna(row['turn_count']) else "N/A",
+            "executable": _pct(row['executable']),
+            "token_consumption": f"{row['tokens']:.0f}" if not pd.isna(row['tokens']) else "N/A",
+            "end_to_end_latency": f"{row['latency'] / 60000.0:.2f}m" if not pd.isna(row['latency']) else "N/A",
+        })
+    return rows
+
+
+def load_summaries(results_dir):
+    """Row dicts for the List table, reparsed only when the trends cache changes.
+
+    The returned list is shared by every request in this worker, so callers must
+    treat it as read-only.
+    """
+    global _SUMMARIES_CACHE
+
+    cache_file = os.path.join(results_dir, "trends_cache.csv")
+    try:
+        mtime = os.path.getmtime(cache_file)
+    except OSError:
+        logging.warning(f"Trends cache file not found at {cache_file}")
+        return []
+
+    cached_mtime, rows = _SUMMARIES_CACHE
+    if cached_mtime == mtime:
+        return rows
+
+    try:
+        rows = _build_summaries(cache_file)
+    except Exception as e:
+        logging.error(f"Error reading trends cache: {e}")
+        return []
+
+    _SUMMARIES_CACHE = (mtime, rows)
+    return rows
+
+
 def list_view_component(directories, results_dir):
     state = me.state(State)
     try:
@@ -597,53 +668,8 @@ def list_view_component(directories, results_dir):
         )
         me.box(style=me.Style(height="16px"))
         if directories:
-            # Compute summaries if empty
-            s = me.state(State)
-            summaries = []
-            if s.eval_summaries:
-                try:
-                    summaries = json.loads(s.eval_summaries)
-                except Exception:
-                    summaries = []
-    
-            if not summaries:
-                cache_file = os.path.join(results_dir, "trends_cache.csv")
-                logging.info(f"trends_cache.csv exists: {os.path.exists(cache_file)}")
-                if os.path.exists(cache_file):
-                    try:
-                        cache_df = pd.read_csv(cache_file)
-                        logging.info(f"Loaded {len(cache_df)} rows from trends cache.")
-                        for _, row in cache_df.iterrows():
-                            score = row['ai_score'] if 'ai_score' in row else 0.0
-                            if (score == 0.0 or pd.isna(score)) and 'ai_summary' in row and not pd.isna(row['ai_summary']):
-                                import re
-                                match = re.search(r"General Score:.*?(\d+(\.\d+)?)", row['ai_summary'])
-                                if match:
-                                    score = float(match.group(1))
-                                    
-                            summaries.append({
-                                "id": str(row['job_id']),
-                                "date": str(row['run_time']) if not pd.isna(row['run_time']) else "N/A",
-                                "product": str(row['product']) if not pd.isna(row['product']) else "N/A",
-                                "requester": str(row['requester']) if not pd.isna(row['requester']) else "N/A",
-                                "dataset": str(row['dataset']) if 'dataset' in row and not pd.isna(row['dataset']) else "N/A",
-                                "model_config.generator": str(row['model_config.generator']) if 'model_config.generator' in row and not pd.isna(row['model_config.generator']) else "unknown",
-                                "ai_score": f"{score:.0f}%" if not pd.isna(score) and score != 0.0 else "N/A",
-                                "exact_match": f"{row['exact_match']:.0f}%" if not pd.isna(row['exact_match']) else "N/A",
-                                "llmrater": f"{row['llmrater']:.0f}%" if not pd.isna(row['llmrater']) else "N/A",
-                                "trajectory_matcher": f"{row['trajectory']:.0f}%" if not pd.isna(row['trajectory']) else "N/A",
-                                "goal_completion": f"{row['goal_completion']:.0f}%" if 'goal_completion' in row and not pd.isna(row['goal_completion']) else "N/A",
-                                "turn_count": f"{row['turn_count']:.1f}" if not pd.isna(row['turn_count']) else "N/A",
-                                "executable": f"{row['executable']:.0f}%" if not pd.isna(row['executable']) else "N/A",
-                                "token_consumption": f"{row['tokens']:.0f}" if not pd.isna(row['tokens']) else "N/A",
-                                "end_to_end_latency": f"{row['latency'] / 60000.0:.2f}m" if not pd.isna(row['latency']) else "N/A"
-                            })
-                        s.eval_summaries = json.dumps(summaries)
-                    except Exception as e:
-                        logging.error(f"Error reading trends cache: {e}")
-                else:
-                    logging.warning(f"Trends cache file not found at {cache_file}")
-    
+            summaries = load_summaries(results_dir)
+
             # Sort by selected column
             reverse = state.sort_descending
             col = state.sort_column
@@ -685,16 +711,9 @@ def list_view_component(directories, results_dir):
                     return "" if reverse else "\xff\xff\xff\xff"
                 return str(val)
     
-            summaries.sort(key=get_sort_key, reverse=reverse)
-    
-            # Extract unique values for filters from ALL summaries
-            all_summaries = []
-            if s.eval_summaries:
-                try:
-                    all_summaries = json.loads(s.eval_summaries)
-                except Exception:
-                    all_summaries = []
-    
+            all_summaries = summaries
+            summaries = sorted(summaries, key=get_sort_key, reverse=reverse)
+
             filters_file = os.path.join(results_dir, "filters_cache.json")
             if os.path.exists(filters_file):
                 try:
