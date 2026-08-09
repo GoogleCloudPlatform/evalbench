@@ -24,8 +24,9 @@ def get_results_dir():
     return results_dir_candidates[1]  # Fallback to default
 
 def generate_d3_chart(df, x_col, y_col, hue_col, title, ylabel):
-    df_sorted = df.sort_values(by=x_col)
-    
+    # job_id is unplotted but read by the tooltip in chart.js.
+    df_sorted = df[[x_col, y_col, hue_col, "job_id"]].sort_values(by=x_col)
+
     # Convert dataframe to records for JSON
     data_records = df_sorted.to_dict(orient='records')
     import json
