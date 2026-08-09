@@ -133,6 +133,70 @@ def get_results_dir():
     return results_dir_candidates[1]  # Fallback to default
 
 
+# (mtime, value). Each is replaced as a whole so a concurrent reader never sees a
+# value that disagrees with the mtime it was built from.
+_TRENDS_DF_CACHE = (None, None)
+_RUN_DIRS_CACHE = (None, [])
+
+
+def _mtime(path):
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return None
+
+
+def load_trends_df(results_dir):
+    """Parsed trends_cache.csv, reread only when the file changes.
+
+    Shared by every request in this worker, so callers must not mutate it.
+    """
+    global _TRENDS_DF_CACHE
+
+    cache_file = os.path.join(results_dir, "trends_cache.csv")
+    mtime = _mtime(cache_file)
+    if mtime is None:
+        logging.warning(f"Trends cache file not found at {cache_file}")
+        return None
+
+    cached_mtime, df = _TRENDS_DF_CACHE
+    if cached_mtime == mtime:
+        return df
+
+    try:
+        df = pd.read_csv(cache_file)
+    except Exception as e:
+        logging.error(f"Error reading trends cache: {e}")
+        return None
+
+    logging.info(f"Loaded {len(df)} rows from trends cache.")
+    _TRENDS_DF_CACHE = (mtime, df)
+    return df
+
+
+def list_run_dirs(results_dir):
+    """Run directory names, restatted only when results_dir gains or loses entries.
+
+    Shared by every request in this worker, so callers must not mutate it.
+    """
+    global _RUN_DIRS_CACHE
+
+    mtime = _mtime(results_dir)
+    if mtime is None:
+        return []
+
+    cached_mtime, dirs = _RUN_DIRS_CACHE
+    if cached_mtime == mtime:
+        return dirs
+
+    dirs = [
+        d for d in os.listdir(results_dir)
+        if os.path.isdir(os.path.join(results_dir, d))
+    ]
+    _RUN_DIRS_CACHE = (mtime, dirs)
+    return dirs
+
+
 def get_eval_details(results_dir, dir_name):
     details = {
         "product": "N/A",
@@ -228,14 +292,7 @@ def get_color_for_pct(val_str):
 def on_load(e: me.LoadEvent):
     state = me.state(State)
     results_dir = get_results_dir()
-    directories = []
-    if os.path.exists(results_dir):
-        # List directories only
-        directories = [
-            d
-            for d in os.listdir(results_dir)
-            if os.path.isdir(os.path.join(results_dir, d))
-        ]
+    directories = list_run_dirs(results_dir)
 
     job_id = me.query_params.get("job_id") or me.query_params.get("jobid")
     if job_id and job_id in directories:
@@ -258,14 +315,8 @@ def on_load(e: me.LoadEvent):
 
 def status_component():
     results_dir = get_results_dir()
-    directories = []
-    if os.path.exists(results_dir):
-        directories = [
-            d
-            for d in os.listdir(results_dir)
-            if os.path.isdir(os.path.join(results_dir, d))
-        ]
-    
+    directories = list_run_dirs(results_dir)
+
     with me.box(
         style=me.Style(
             background="#ffffff",
@@ -305,10 +356,9 @@ def status_component():
         
         # Build summary data from precomputed trends cache
         data = []
-        cache_file = os.path.join(results_dir, "trends_cache.csv")
-        if os.path.exists(cache_file):
+        cache_df = load_trends_df(results_dir)
+        if cache_df is not None:
             try:
-                cache_df = pd.read_csv(cache_file)
                 for _, row in cache_df.iterrows():
                     data.append({
                         'AI Score': row['ai_score'] if 'ai_score' in row else None,
@@ -326,7 +376,6 @@ def status_component():
             except Exception as e:
                 logging.error(f"Error reading trends cache: {e}")
         else:
-            logging.warning(f"Trends cache file not found at {cache_file}")
             me.text("Trends cache file not found. Please run precompute.")
             return
                     
@@ -545,11 +594,8 @@ def _pct(value):
     return f"{value:.0f}%" if not pd.isna(value) else "N/A"
 
 
-def _build_summaries(cache_file):
+def _build_summaries(cache_df):
     import re
-
-    cache_df = pd.read_csv(cache_file)
-    logging.info(f"Loaded {len(cache_df)} rows from trends cache.")
 
     rows = []
     for _, row in cache_df.iterrows():
@@ -587,21 +633,22 @@ def load_summaries(results_dir):
     """
     global _SUMMARIES_CACHE
 
-    cache_file = os.path.join(results_dir, "trends_cache.csv")
-    try:
-        mtime = os.path.getmtime(cache_file)
-    except OSError:
-        logging.warning(f"Trends cache file not found at {cache_file}")
+    mtime = _mtime(os.path.join(results_dir, "trends_cache.csv"))
+    if mtime is None:
         return []
 
     cached_mtime, rows = _SUMMARIES_CACHE
     if cached_mtime == mtime:
         return rows
 
+    cache_df = load_trends_df(results_dir)
+    if cache_df is None:
+        return []
+
     try:
-        rows = _build_summaries(cache_file)
+        rows = _build_summaries(cache_df)
     except Exception as e:
-        logging.error(f"Error reading trends cache: {e}")
+        logging.error(f"Error building list rows from trends cache: {e}")
         return []
 
     _SUMMARIES_CACHE = (mtime, rows)
@@ -2074,15 +2121,8 @@ def render_app_content():
         results_dir = get_results_dir()
         logging.info(f"render_app_content: selected_directory='{state.selected_directory}', selected_evals='{state.selected_evals}', selected_main_tab='{state.selected_main_tab}'")
     
-        directories = []
-        if os.path.exists(results_dir):
-            # List directories only
-            directories = [
-                d
-                for d in os.listdir(results_dir)
-                if os.path.isdir(os.path.join(results_dir, d))
-            ]
-    
+        directories = list_run_dirs(results_dir)
+
         def on_title_click(e: me.ClickEvent):
             state.selected_directory = ""
             state.conversation_index = 0
@@ -2308,10 +2348,9 @@ def render_app_content():
                     me.text("AI Summary", type="headline-5")
                     
                     if not state.ai_summary and state.selected_directory:
-                        trends_cache_file = os.path.join(results_dir, "trends_cache.csv")
-                        if os.path.exists(trends_cache_file):
+                        cache_df = load_trends_df(results_dir)
+                        if cache_df is not None:
                             try:
-                                cache_df = pd.read_csv(trends_cache_file)
                                 run_data = cache_df[cache_df['job_id'] == state.selected_directory]
                                 if not run_data.empty and 'ai_summary' in run_data.columns:
                                     summary = run_data['ai_summary'].values[0]

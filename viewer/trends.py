@@ -2,7 +2,7 @@ import os
 import logging
 import mesop as me
 import pandas as pd
-from main import State
+from main import State, list_run_dirs, load_trends_df
 
 def get_results_dir():
     # Try to read from environment variable
@@ -90,26 +90,12 @@ def trends_component():
         me.text(f"Results directory not found at {results_dir}")
         return
         
-    cache_file = os.path.join(results_dir, "trends_cache.csv")
-    
-    df = None
-    
-    # Try to load from cache
-    if os.path.exists(cache_file):
-        try:
-            df = pd.read_csv(cache_file)
-            logging.info("Loaded trends data from cache.")
-        except Exception as e:
-            logging.error(f"Error reading cache file: {e}")
-            
+    df = load_trends_df(results_dir)
+
     # Fallback to computing on the fly if cache is missing or failed
     if df is None:
-        directories = [
-            d
-            for d in os.listdir(results_dir)
-            if os.path.isdir(os.path.join(results_dir, d))
-        ]
-        
+        directories = list_run_dirs(results_dir)
+
         data = []
         
         for d in directories:
@@ -333,7 +319,8 @@ def trends_component():
         if state.trends_requester_filter:
             df = df[df['requester'] == state.trends_requester_filter]
             
-        df['product_dataset'] = df['product'] + " (" + df['dataset'] + ")"
+        # assign, not item-set: df may be the shared cached frame from load_trends_df.
+        df = df.assign(product_dataset=df['product'] + " (" + df['dataset'] + ")")
         df = df[df['product'].notna() & (df['product'] != 'unknown') & (df['product'].str.strip() != '')]
         
         if state.trends_agent_tab == "Gemini":
