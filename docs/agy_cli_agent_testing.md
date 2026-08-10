@@ -207,8 +207,11 @@ Credentials (ADC)** (`AGY_ADC_AUTH=true`), which also supplies outbound
 credentials for `authProviderType: google_credentials` MCP servers.
 
 agy reads its model entitlement from the credential's `quota_project_id` field
-alone, not from `GOOGLE_CLOUD_PROJECT`. EvalBench injects it when the resolved
-ADC lacks it, which is the normal case for the service-account keys used on GKE.
+alone -- not `GOOGLE_CLOUD_PROJECT`, and not `GOOGLE_CLOUD_QUOTA_PROJECT`.
+EvalBench injects it when the resolved ADC lacks it, which is the normal case
+for the service-account keys used on GKE. A credential *file* is therefore
+required, and setup fails fast without one rather than falling through to the
+metadata server, whose tokens carry no quota project.
 
 ### Supported Model Tiers
 * **Supported under ADC**: Flash models (e.g. `"Gemini 3.5 Flash (Medium)"`,

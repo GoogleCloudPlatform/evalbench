@@ -243,43 +243,51 @@ class AgyCliGenerator(AgentCliGenerator):
             self.env["GOOGLE_APPLICATION_CREDENTIALS"] = adc_path
 
         self.adc_path = adc_path if adc_path and os.path.exists(adc_path) else None
-        if self.adc_path:
-            logging.info("agy ADC resolved from %s", self.adc_path)
-            self._ensure_quota_project()
-        else:
-            # Not fatal: agy also resolves ADC from the GCE/GKE metadata
-            # server, which leaves nothing on disk to detect.
-            logging.warning(
-                "No application default credentials file found; agy will fall "
-                "back to the metadata server."
+        if not self.adc_path:
+            raise RuntimeError(
+                "agy requires an application default credentials file: it "
+                "reads its entitlement project from the credential's "
+                "quota_project_id, which a metadata-server token does not "
+                "carry. Run 'gcloud auth application-default login', set "
+                "GOOGLE_APPLICATION_CREDENTIALS, or mount a service-account "
+                f"key at {GKE_SA_KEY_PATH}."
             )
+        logging.info("agy ADC resolved from %s", self.adc_path)
+        self._ensure_quota_project()
 
     def _ensure_quota_project(self) -> None:
         """Adds ``quota_project_id`` to the resolved ADC when it is missing.
 
         agy reads its entitlement project from that field alone -- not
-        GOOGLE_CLOUD_PROJECT, not settings.json. A stock service-account key
-        has none, and without it agy's model registry comes back empty and
-        every ``--model`` value, including its own default, is rejected as
-        unknown.
+        GOOGLE_CLOUD_PROJECT, not GOOGLE_CLOUD_QUOTA_PROJECT (verified against
+        ``agy models``: only the file field populates the registry), not
+        settings.json. A stock service-account key has none, and without it
+        agy's model registry comes back empty and every ``--model`` value,
+        including its own default, is rejected as unknown.
+
+        Raises on every path that cannot deliver the field: a run without it
+        fails every turn.
         """
         try:
             with open(self.adc_path) as f:
                 credentials = json.load(f)
         except (OSError, json.JSONDecodeError) as e:
-            logging.warning("agy ADC at %s unreadable: %s", self.adc_path, e)
-            return
+            raise RuntimeError(
+                f"agy ADC at {self.adc_path} is unreadable, so its "
+                f"quota_project_id cannot be confirmed: {e}"
+            ) from e
 
         if credentials.get("quota_project_id"):
             return
 
         project = self.gcp_project or credentials.get("project_id")
         if not project:
-            logging.warning(
-                "agy ADC %s has no quota_project_id and no project is "
-                "configured; agy will list no models.", self.adc_path,
+            raise RuntimeError(
+                f"agy ADC {self.adc_path} has no quota_project_id and no "
+                "project is configured, so agy would list no models. Set "
+                "GOOGLE_CLOUD_PROJECT in the model config's 'env' block, or "
+                "add quota_project_id to the credential."
             )
-            return
 
         credentials["quota_project_id"] = project
         # Node-local scratch: the GKE key is read in place from a read-only
@@ -574,14 +582,7 @@ class AgyCliGenerator(AgentCliGenerator):
                 "reachability. agy degrades silently to shell-outs when "
                 "MCP tools are missing."
             )
-            # A google_credentials server cannot attach without ADC, so the
-            # generic advice above sends people after the wrong cause.
-            msg += (
-                f"\nADC in use: {self.adc_path}" if self.adc_path else
-                "\nADC: none resolved -- servers using "
-                "'authProviderType: google_credentials' cannot attach without "
-                "it."
-            )
+            msg += f"\nADC in use: {self.adc_path}"
             if marker_hits:
                 msg += "\nProbe log fatal markers:\n" + "\n".join(
                     f"  {h}" for h in marker_hits

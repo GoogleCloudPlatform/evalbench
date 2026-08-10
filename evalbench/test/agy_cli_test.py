@@ -24,12 +24,17 @@ def sandbox(tmp_path, monkeypatch):
     """Isolates HOME under a throwaway dir so the generator builds its sandbox
     there instead of touching the real machine. Returns the host (real) home
     path for tests that need to pre-seed host-side files (settings.json, an
-    on-disk oauth token, ...)."""
+    on-disk oauth token, ...).
+
+    Seeds a host ADC because the generator refuses to construct without one.
+    Tests that exercise credential resolution drop it with _remove_adc.
+    """
     real_home = tmp_path / "real_home"
     real_home.mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("HOME", str(real_home))
     monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
+    _seed_adc(real_home)
     return real_home
 
 
@@ -1043,12 +1048,29 @@ def test_configured_model_overrides_detected_log_model(mock_run, sandbox):
     assert _MODEL_LABEL in _stats_models(generator)
 
 
-def _seed_adc(real_home):
-    adc_dir = real_home / ".config" / "gcloud"
-    adc_dir.mkdir(parents=True)
-    adc = adc_dir / "application_default_credentials.json"
-    adc.write_text('{"type": "authorized_user"}')
+def _adc_file(real_home):
+    return (
+        real_home / ".config" / "gcloud"
+        / "application_default_credentials.json"
+    )
+
+
+def _seed_adc(real_home, content=None):
+    """Writes a host ADC. The default carries quota_project_id, matching what
+    `gcloud auth application-default login` produces, so the generator has no
+    reason to augment it."""
+    adc = _adc_file(real_home)
+    adc.parent.mkdir(parents=True, exist_ok=True)
+    adc.write_text(content or json.dumps(
+        {"type": "authorized_user", "quota_project_id": "test-quota-project"}
+    ))
     return adc
+
+
+def _remove_adc(real_home):
+    """Drops the ADC the sandbox fixture seeds, for tests that need the
+    generator to resolve a credential from somewhere else -- or from nowhere."""
+    _adc_file(real_home).unlink()
 
 
 def test_adc_auth_env_var_always_set(sandbox):
@@ -1061,8 +1083,6 @@ def test_adc_auth_env_var_always_set(sandbox):
 
 def test_adc_staged_into_sandbox(sandbox):
     """The host's ADC file is copied into the sandbox home."""
-    _seed_adc(sandbox)
-
     generator = AgyCliGenerator({})
 
     staged = os.path.join(
@@ -1074,50 +1094,42 @@ def test_adc_staged_into_sandbox(sandbox):
     assert generator.adc_path is not None
 
 
-def test_missing_adc_warns_but_is_non_fatal(sandbox, caplog):
-    with caplog.at_level(logging.WARNING):
+def test_missing_adc_is_fatal(sandbox):
+    """agy takes its entitlement project from the credential file's
+    quota_project_id, and a metadata-server token has none -- so continuing
+    without a file guarantees an empty model registry. Fail at setup rather
+    than log a reassuring fallback and let every turn fail."""
+    _remove_adc(sandbox)
+
+    with pytest.raises(RuntimeError, match="requires an application default"):
         AgyCliGenerator({})
 
-    assert any(
-        "application default credentials" in r.getMessage()
-        for r in caplog.records
-    )
 
-
-def test_adc_present_does_not_warn(sandbox, caplog):
-    _seed_adc(sandbox)
-
-    with caplog.at_level(logging.WARNING):
-        AgyCliGenerator({})
-
-    assert not any(
-        "application default credentials" in r.getMessage()
-        for r in caplog.records
-    )
-
-
-def test_shell_exported_adc_does_not_warn(sandbox, monkeypatch, tmp_path, caplog):
+def test_shell_exported_adc_is_used(sandbox, monkeypatch, tmp_path):
     """A shell-exported GOOGLE_APPLICATION_CREDENTIALS (the service-account/CI
-    pattern) reaches agy through the merged env, so it is not missing ADC."""
+    pattern) satisfies the credential requirement: CI never runs
+    `gcloud auth application-default login`, so there is no well-known file."""
+    _remove_adc(sandbox)
     key = tmp_path / "sa_key.json"
-    key.write_text('{"type": "service_account"}')
+    key.write_text(json.dumps(
+        {"type": "service_account", "quota_project_id": "exported-proj"}
+    ))
     monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(key))
 
-    with caplog.at_level(logging.WARNING):
-        AgyCliGenerator({})
+    generator = AgyCliGenerator({})
 
-    assert not any(
-        "application default credentials" in r.getMessage()
-        for r in caplog.records
-    )
+    assert generator.adc_path == str(key)
 
 
 def test_gke_secret_mount_supplies_adc(sandbox, monkeypatch, tmp_path):
     """On GKE nothing runs `gcloud auth application-default login`, so the
     well-known-file lookup finds nothing and the mounted service-account key
     is the pod's only ADC."""
+    _remove_adc(sandbox)
     key = tmp_path / "key.json"
-    key.write_text('{"type": "service_account"}')
+    key.write_text(json.dumps(
+        {"type": "service_account", "quota_project_id": "cloud-db-nl2sql"}
+    ))
     monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
 
     generator = AgyCliGenerator({})
@@ -1129,8 +1141,11 @@ def test_gke_secret_mount_supplies_adc(sandbox, monkeypatch, tmp_path):
 def test_gke_secret_mount_is_not_copied_into_sandbox(sandbox, monkeypatch, tmp_path):
     """The key is read in place. Copying it would spread a private key onto
     the shared session PVC for no gain -- agy reads the absolute path."""
+    _remove_adc(sandbox)
     key = tmp_path / "key.json"
-    key.write_text('{"type": "service_account"}')
+    key.write_text(json.dumps(
+        {"type": "service_account", "quota_project_id": "cloud-db-nl2sql"}
+    ))
     monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
 
     generator = AgyCliGenerator({})
@@ -1145,7 +1160,6 @@ def test_gke_secret_mount_is_not_copied_into_sandbox(sandbox, monkeypatch, tmp_p
 def test_host_adc_wins_over_gke_secret_mount(sandbox, monkeypatch, tmp_path):
     """Local dev keeps using the developer's own ADC even if the GKE path
     happens to exist on the machine."""
-    _seed_adc(sandbox)
     key = tmp_path / "key.json"
     key.write_text('{"type": "service_account"}')
     monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
@@ -1156,9 +1170,9 @@ def test_host_adc_wins_over_gke_secret_mount(sandbox, monkeypatch, tmp_path):
     assert generator.adc_path.startswith(str(sandbox))
 
 
-def test_mcp_attach_failure_reports_missing_adc(mock_run, sandbox):
-    """When MCP attachment fails and no ADC was resolved, the error indicates
-    that missing ADC may have prevented servers from attaching."""
+def test_mcp_attach_failure_names_the_adc_in_use(mock_run, sandbox):
+    """Attachment failures are usually auth-shaped, so the error names the
+    credential the servers were attaching with."""
     config = {
         "setup": {
             "mcp_servers": {
@@ -1175,7 +1189,7 @@ def test_mcp_attach_failure_reports_missing_adc(mock_run, sandbox):
         return MagicMock(returncode=0, stdout="", stderr="")
 
     mock_run.side_effect = fake_run
-    with pytest.raises(RuntimeError, match="ADC: none resolved"):
+    with pytest.raises(RuntimeError, match="ADC in use:"):
         AgyCliGenerator(config)
 
 
@@ -1184,6 +1198,7 @@ def test_quota_project_injected_when_credential_lacks_it(sandbox, monkeypatch, t
     quota_project_id. A stock service-account key has no such field, and
     without it agy's model registry is empty and every --model value --
     including agy's own default -- is rejected as unknown."""
+    _remove_adc(sandbox)
     key = tmp_path / "key.json"
     key.write_text('{"type": "service_account", "project_id": "other-proj"}')
     monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
@@ -1202,6 +1217,7 @@ def test_quota_project_injected_when_credential_lacks_it(sandbox, monkeypatch, t
 def test_quota_project_falls_back_to_credential_project_id(sandbox, monkeypatch, tmp_path):
     """With no configured project the key's own project is the only sane
     entitlement target."""
+    _remove_adc(sandbox)
     key = tmp_path / "key.json"
     key.write_text('{"type": "service_account", "project_id": "cloud-db-nl2sql"}')
     monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
@@ -1210,6 +1226,28 @@ def test_quota_project_falls_back_to_credential_project_id(sandbox, monkeypatch,
 
     with open(generator.adc_path) as f:
         assert json.load(f)["quota_project_id"] == "cloud-db-nl2sql"
+
+
+def test_unresolvable_quota_project_is_fatal(sandbox, monkeypatch, tmp_path):
+    """A credential with neither quota_project_id nor project_id, and no
+    configured project, leaves agy's model registry empty -- the same doomed
+    run as no credential at all, so it fails the same way."""
+    _remove_adc(sandbox)
+    key = tmp_path / "key.json"
+    key.write_text('{"type": "service_account"}')
+    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+
+    with pytest.raises(RuntimeError, match="no quota_project_id"):
+        AgyCliGenerator({})
+
+
+def test_unreadable_credential_is_fatal(sandbox):
+    """An unparseable credential means quota_project_id cannot be confirmed,
+    so the run cannot be assumed viable."""
+    _seed_adc(sandbox, content="{ not json")
+
+    with pytest.raises(RuntimeError, match="unreadable"):
+        AgyCliGenerator({})
 
 
 def test_existing_quota_project_is_left_alone(sandbox):
@@ -1228,6 +1266,7 @@ def test_existing_quota_project_is_left_alone(sandbox):
 def test_augmented_credential_stays_off_the_session_sandbox(sandbox, monkeypatch, tmp_path):
     """The sandbox lives on a PVC shared across sessions, so the copy carrying
     the private key must land on pod-local scratch instead."""
+    _remove_adc(sandbox)
     key = tmp_path / "key.json"
     key.write_text('{"type": "service_account", "project_id": "cloud-db-nl2sql"}')
     monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
@@ -1243,6 +1282,7 @@ def test_augmented_credential_is_removed_with_the_generator(
 ):
     """That copy is a plaintext key on shared scratch. Without cleanup every
     session leaves one behind for the life of the node."""
+    _remove_adc(sandbox)
     key = tmp_path / "key.json"
     key.write_text('{"type": "service_account", "project_id": "cloud-db-nl2sql"}')
     monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
