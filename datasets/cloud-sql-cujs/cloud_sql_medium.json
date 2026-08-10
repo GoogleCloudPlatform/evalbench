@@ -1,8 +1,4 @@
 {
-  "_comment": "MEDIUM tier of the Cloud SQL CUJ set (Google-managed MCP vs gcloud-only). 2-3 step tasks: a single mutation + verification, short multi-turn negotiation, and constraint/guardrail recognition. expected_trajectory uses VERIFIED MCP tool names (cloud-sql__<tool>); in gcloud-only mode rely on goal_completion (trajectory_matcher.filter_native_tools=false). Guardrail CUJs intentionally have a read-only/empty expected_trajectory -- the CORRECT behavior is to refuse/clarify and NOT issue a doomed/destructive op.",
-  "_fixtures": "Project astana-evaluation. Persistent: 'nl2code-bbf9a3' (RUNNABLE reference/clone source, read-only here), 'my-pg-app-bbf9a3' (mutation target; reset to db-f1-micro with cleared flags by setup/teardown before & after each run). Mutating scenarios touch ONLY resources teardown_evalset.sh cleans up: databases 'analytics'/'user_data', user 'app_ro', and tier/flag patches on my-pg-app-bbf9a3.",
-  "_verified_tools": "Databases are created via execute_sql ('CREATE DATABASE ...') and listed via execute_sql_readonly -- there is NO create_database/list_databases control-plane tool. Users via create_user/list_users. Instance settings via update_instance + get_instance. There is NO delete_* or list_backups tool in the MCP (a deliberate MCP-vs-gcloud capability-gap signal).",
-  "_hermeticity": "Each mutating scenario creates a DISTINCT object (analytics db, user_data db, app_ro user, one flag patch, one tier patch) on the single shared instance my-pg-app-bbf9a3. Cloud SQL serializes operations per instance, so this file's run config sets runners.agent_runners=1 (sequential). setup/teardown reset state before and after the run.",
   "scenarios": [
     {
       "id": "csql-med-create-database-analytics",
