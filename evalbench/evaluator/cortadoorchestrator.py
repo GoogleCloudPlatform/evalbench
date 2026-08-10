@@ -34,4 +34,4 @@ class CortadoOrchestrator(Orchestrator):
             json.dump(self.total_scoring_results, f,
                       sort_keys=True, indent=4, default=str)
             scores_tf = f.name
-        return self.job_id, self.run_time, results_tf, scores_tf
+        return self.job_id, self.run_time, results_tf, scores_tf, None
