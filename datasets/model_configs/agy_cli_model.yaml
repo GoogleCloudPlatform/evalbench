@@ -1,19 +1,16 @@
-# Antigravity (agy) CLI -- self-updating native binary installed via
-# https://antigravity.google/cli/install.sh. No npm package and no pinning
-# mechanism is exposed by the installer; the `agy` binary on PATH is what runs.
+# Antigravity (agy) CLI. See docs/agy_cli_agent_testing.md.
 
 generator: agy_cli
 
-# Model to use. The harness passes this via agy's `--model` flag (agy
-# >=1.0.5). The value must be the exact agy UI label (NOT an API id like
-# "gemini-2.5-pro") -- list the valid labels with `agy models`. An
-# unrecognized label is silently ignored and agy falls back to its default
-# model. Omit this key to leave the flag off, so agy uses its own default.
-model: "Gemini 3.1 Pro (High)"
+# Model label (e.g. "Gemini 3.1 Pro (Low)" or "Gemini 3.5 Flash (Medium)").
+# Omit to use agy's default. Note: ADC does not authorize Pro (High).
+model: "Gemini 3.1 Pro (Low)"
+
+# Print-mode timeout (agy default 5m).
+timeout: "20m"
 
 env:
   # Set to your project, or export EVAL_GCP_PROJECT_ID and keep the !ENV form.
-  # Key stays GOOGLE_CLOUD_PROJECT -- the var the agy subprocess reads.
   GOOGLE_CLOUD_PROJECT: !ENV ${EVAL_GCP_PROJECT_ID}
   GOOGLE_CLOUD_LOCATION: "global"
   GOOGLE_GENAI_USE_VERTEXAI: "true"
@@ -21,13 +18,7 @@ env:
 setup:
   mcp_servers:
     "cloud-sql":
-      # agy's native HTTP endpoint field is "serverUrl"; "url" also works
-      # as of v1.0.5. A gemini-style "httpUrl" is auto-translated to
-      # "serverUrl" by the harness (_translate_mcp_config), so it works
-      # too -- but prefer "serverUrl" here. authProviderType/oauth/headers
-      # are native agy fields, so Google auth works without Bearer-header
-      # injection.
-      serverUrl: "https://sqladmin.googleapis.com/mcp"
+      httpUrl: "https://sqladmin.googleapis.com/mcp"
       authProviderType: google_credentials
       oauth:
         scopes:

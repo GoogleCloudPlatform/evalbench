@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.14.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.13.0...v1.14.0) (2026-07-25)
+
+
+### Features
+
+* allow customization of BigQuery dataset name via run configuration ([daa0426](https://github.com/GoogleCloudPlatform/evalbench/commit/daa0426b621f78d8d35527f4f5e213faa243c2d0))
+* **dea:** add autopush option to model_env and update documentation ([2bd5538](https://github.com/GoogleCloudPlatform/evalbench/commit/2bd5538b0d7377cedf0537e28eb4895f2d837709))
+* **dea:** add autopush option to model_env and update documentation ([143bd7a](https://github.com/GoogleCloudPlatform/evalbench/commit/143bd7aa0a4849228d1146e55303a7163ad853a7))
+* make BigQuery dataset name configurable via reporting.table_name ([ee85f96](https://github.com/GoogleCloudPlatform/evalbench/commit/ee85f968627dc312a720a3547d9236c2d1033b7b))
+
+## [1.13.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.12.1...v1.13.0) (2026-07-24)
+
+
+### Features
+
+* **mcp_readability:** move style judge to gemini-3.1-pro with truncation handling ([b4665f3](https://github.com/GoogleCloudPlatform/evalbench/commit/b4665f3d702e31198e8f511358415b92c04260cb))
+
+## [1.12.1](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.12.0...v1.12.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* add type checking to stream event parsing to safely handle non-dict payloads ([1003e08](https://github.com/GoogleCloudPlatform/evalbench/commit/1003e085fddc8a577108e96b5a1012c68048b283))
+* skip non-object lines in agy stream and report model errors based on result status ([e3ac999](https://github.com/GoogleCloudPlatform/evalbench/commit/e3ac99998a769c65b8248133dce0812df60d1ca3))
+
 ## [1.12.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.11.0...v1.12.0) (2026-07-22)
 
 

@@ -21,6 +21,23 @@ from generators.models import get_generator
 from scorers.mcp_readability_scoring import EndpointContext, ScoreContribution
 
 
+# Output-token ceiling for the JSON-mode judge call. Gemini 3.x is a *thinking*
+# model whose reasoning tokens count against the output budget before any JSON is
+# emitted, so a generous ceiling is required or verbose findings get truncated
+# mid-JSON (surfacing as a cryptic parse error). Overridable via the scorer's
+# ``max_output_tokens`` config.
+_MAX_OUTPUT_TOKENS = 65535
+
+
+class TruncatedResponseError(Exception):
+    """Raised when the model stops at the output-token limit (incomplete JSON).
+
+    Distinct from a generation/API failure: it must NOT fall back to the plain
+    ``generate()`` path (that would only re-truncate and corrupt escapes). The
+    fix is a larger ``max_output_tokens``, so we surface that explicitly.
+    """
+
+
 # Shared JSON output contract appended to both prompts (escaped for str.format).
 _OUTPUT_SCHEMA = """### OUTPUT
 Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
@@ -137,6 +154,9 @@ class McpStyleReadabilityScorer:
                 "style_guide is required for the mcp_style_readability scorer"
             )
         self.style_guide = _read_text(style_guide_path)
+        self.max_output_tokens = int(
+            config.get("max_output_tokens", _MAX_OUTPUT_TOKENS)
+        )
         self.model = get_generator(global_models, self.model_config)
 
     def run(self, context: EndpointContext) -> ScoreContribution:
@@ -205,17 +225,31 @@ class McpStyleReadabilityScorer:
                 config = types.GenerateContentConfig(
                     response_mime_type="application/json",
                     temperature=0,
+                    max_output_tokens=self.max_output_tokens,
                 )
                 resp = caller(contents=prompt, config=config)
-                text = getattr(resp, "text", None)
-                if text:
-                    return text
             except Exception as e:
                 logging.warning(
                     "mcp_style_readability: JSON-mode generation failed (%s); "
                     "falling back to plain generate().",
                     e,
                 )
+            else:
+                # A truncated response is incomplete JSON. Surface it clearly
+                # instead of letting resp.text yield a partial object that dies
+                # later with a cryptic parse error -- and do NOT fall back to
+                # plain generate() (that would only truncate again).
+                if _finish_reason_name(resp) == "MAX_TOKENS":
+                    raise TruncatedResponseError(
+                        "mcp_style_readability: model response was truncated at "
+                        f"the output-token limit (max_output_tokens="
+                        f"{self.max_output_tokens}); raise max_output_tokens for "
+                        "this scorer. Note Gemini 3.x reasoning tokens count "
+                        "against this budget."
+                    )
+                text = getattr(resp, "text", None)
+                if text:
+                    return text
         return self.model.generate(prompt)
 
     # ------------------------------------------------------------------
@@ -381,6 +415,21 @@ def _safe_int(value) -> int:
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+def _finish_reason_name(resp) -> str:
+    """The first candidate's ``finish_reason`` as an uppercase name string.
+
+    Robust to both the ``google.genai`` ``FinishReason`` enum (use ``.name``)
+    and a plain string/None; returns ``""`` when no candidate is present.
+    """
+    candidates = getattr(resp, "candidates", None) or []
+    if not candidates:
+        return ""
+    reason = getattr(candidates[0], "finish_reason", None)
+    if reason is None:
+        return ""
+    return str(getattr(reason, "name", reason)).upper()
 
 
 def _read_text(path: str) -> str:

@@ -1,6 +1,8 @@
-# NL2SQL Run Configuration
+# Run Configuration
 
-This YAML configuration file allows for specifying your NL2SQL evaluation run on Evalbench. It outlines all the necessary components for running experiments—from specifying the dataset and database connection details to defining prompt generation, setup/teardown processes, scoring strategies, and reporting mechanisms. Below is a detailed breakdown of each section in the configuration file.
+This YAML configuration file specifies an evaluation run on EvalBench. It outlines all the necessary components for running experiments—from specifying the dataset and database connection details to defining prompt generation, setup/teardown processes, scoring strategies, and reporting mechanisms. Below is a detailed breakdown of each section in the configuration file.
+
+The sections below are written around NL2SQL runs, which is the default. Agentic runs use the same file with a scenario-based dataset and an agent orchestrator — see [agentic evaluations](/docs/agentic-evals.md) and the [agentic dataset format](/docs/configs/agentic-dataset-config.md).
 
 ## 1. Dataset / Evaluation Items
 
@@ -8,12 +10,12 @@ This section defines the primary resources used during evaluation, including the
 
 | **Key**           | **Required** | **Description**                                                                                                                                       |
 | ----------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dataset_config`  | Yes          | Path to the JSON file that contains the list of prompts, golden SQL queries, and evaluation attributes for the run. Please see [dataset-config documentation](/docs/configs/dataset-config.md) for more info.                                      |
+| `dataset_config`  | Yes          | Path to the JSON file that contains the list of prompts, golden SQL queries, and evaluation attributes for the run. Please see [dataset-config documentation](/docs/configs/dataset-config.md) for more info, or the [agentic dataset format](/docs/configs/agentic-dataset-config.md) for scenario-based agent runs.                                      |
 | `database_configs` | Yes          | A list of paths to the YAML files that provide the database connection details. Please see [db-config documentation](/docs/configs/db-config.md) for more info. You can include multiple database_configs (i.e. one for sqlite, one for mysql) to run evals in parallel.                                                                                                                                                     |
 | `dialects`         | Optional          | Specifies the SQL dialects (e.g., `mysql`, `postgres`, `sqlite`). This filters the dataset to the provided list. If not provided, all dialects found in the dataset_config json file will be used. Please see [db-config documentation](/docs/configs/db-config.md) for the list of currently supported dialects and please feel free to contribute additional dialects. |
 | `databases`         | Optional          | Specifies the databases (e.g., `db_blog`, `california_schools`, etc.). This filters the dataset to the provided list of databases and ignores all other evals. If not provided, all databases found in the dataset_config json file will be tried. |
 | `query_types`         | Optional          | Specifies the query_types (`dql`, `dml`, `dd`). This filters the dataset to the list of evals that are of the query_types provided. If not provided, all eval types (dql, dml and ddl) found in the dataset_config json file will be tried. |
-| `dataset_format`      | Conditional (if needed) | Defines the dataset format, with `evalbench-standard-format` as the default. For BIRD datasets, it must be set to `bird-standard-format`.|
+| `dataset_format`      | Conditional (if needed) | Defines the dataset format, with `evalbench-standard-format` as the default. For BIRD datasets, it must be set to `bird-standard-format`. For scenario-based agent runs use `agent-format` (orchestrator `agent`) or `gemini-cli-format` (orchestrator `geminicli`); other supported values are `bird-interact-format`, `cortado-format`, and `dea-format`.|
 | `num_trials`      | Optional     | Number of trials to run for each prompt. |
 | `scenarios`      | Optional     | A list of specific scenario IDs to run (only applies to scenario-based agentic datasets like `gemini-cli-format` or `cortado-format`). Defaults to empty (runs all scenarios). |
 | `scenario_pattern` | Optional     | A glob pattern of scenario IDs to run (only applies to scenario-based agentic datasets). Defaults to None (runs all scenarios). |
@@ -70,19 +72,31 @@ setup_directory/
 
 ## 4. Scorer Related Configurations
 
-The `scorers` section defines various scoring strategies to evaluate the quality of the generated SQL queries. Each scorer applies a different metric or comparison strategy.
+The `scorers` section defines which scoring strategies run against each evaluation. The YAML key selects the scorer and the value is that scorer's configuration; scorers needing no options take `null` or `{}`. Scorers are additive — each one reports as its own row in CSV and BigQuery output.
 
-| **Scorer Key** | **Required** | **Description** |
-| :--- | :--- | :--- |
-| `exact_match` | Optional | Evaluates whether the generated SQL query result exactly matches the expected (golden) query result. |
-| `returned_sql` | Optional | Checks that the generated output contains valid SQL code rather than just comments. |
-| `regexp_matcher` | Optional | Uses regular expressions to determine if the generated query satisfies specific patterns. <br><br>**Run Configuration Options:**<br>- `regexp_string_list` (required): A list of regex patterns to match against the generated query.<br>- `invert_results` (Optional, default: `False`): When set to true, non-matching queries score 100 and matching queries score 0.<br>- `match_all_patterns` (Optional, default: `False`): If true, a score of 100 is given only if all regex patterns are matched; otherwise, a match with at least one pattern suffices.<br>- `match_whole_query` (Optional, default: `False`): When true, forces the pattern to match the entire query rather than a substring. |
-| `llmrater` | Optional | Compares the execution results of the golden SQL query with those produced by the model. It scores 100 for concrete positive cases, such as mismatches in column names or extra columns in the generated SQL. This scorer requires its own `model_config` for proper operation.<br><br>**Run Configuration Options:**<br>- `hybrid_ground_truth` (Optional, default: `False`): When set to true, if the reference (golden) query execution fails on the target BigQuery engine, it dynamically falls back to resolve the correct reference rows from the local SQLite database file. |
-| `python_scorer` | Optional | A generic scorer that executes an external Python script in an isolated sandbox (`uv run --isolated`) to perform custom evaluation logic.<br><br>**Run Configuration Options:**<br>- `script_path` (Required): Path to the Python evaluation script (e.g. `evalbench/scorers/judges/hybrid_xa_judge.py`).<br>- `scorer_name` (Optional): A custom name for the scorer instance (e.g. `hybrid_cross_db`).<br><br>**Included Hybrid Evaluator (`hybrid_xa_judge.py`):**<br>When set to `evalbench/scorers/judges/hybrid_xa_judge.py`, this operates as a cross-database Execution Accuracy (XA) judge. It compares BigQuery execution results against SQLite references by applying strict cell normalization rules: (1) rounding float values to 4 decimal places, (2) sorting rows lexicographically, (3) stripping trailing `.0` string suffixes, and (4) ignoring column headers. |
-| `recall_match` | Optional | Computes the precision and recall by comparing the generated and expected results, ignoring `None` and duplicate values. The default scoring mode is based on recall, where matching results are compared against the expected outputs regardless of their order. |
-| `set_match` | Optional | Measures the execution accuracy by comparing the results of the golden query execution with those of the generated query, as defined by the BIRD methodology. |
-| `exact_match_consistency` | Optional | Evaluates consistency across multiple trials using exact match on execution results. Multiple trials are aggregated at the prompt level using a strict "All-or-Nothing" rule—the prompt is deemed consistent only if ALL trial pairs are consistent. |
-| `llm_consistency` | Optional | Evaluates consistency across multiple trials using an LLM to compare results and errors. Requires `model_config`. Multiple trials are aggregated at the prompt level using a strict "All-or-Nothing" rule—the prompt is deemed consistent only if ALL trial pairs are consistent. |
+```yaml
+scorers:
+  exact_match: null
+  regexp_matcher:
+    regexp_string_list: ["^SELECT"]
+  llmrater:
+    model_config: datasets/bat/model_configs/gemini_1.5-pro-002_model.yaml
+```
+
+**See the [scorer reference](/docs/scorers.md) for the full catalog and every configuration option.** The scorers most relevant to NL2SQL runs are:
+
+| **Scorer Key** | **Description** |
+| :--- | :--- |
+| `exact_match` | Whether the generated query's execution result exactly matches the golden result. |
+| `recall_match` | Precision and recall between generated and expected results, ignoring `None` and duplicates. |
+| `set_match` | Execution accuracy as defined by the BIRD methodology. |
+| `executable_sql` | Whether the generated query executes without error at all. |
+| `returned_sql` | Whether the output contains actual SQL rather than only comments. |
+| `regexp_matcher` | Whether the generated query matches supplied regex patterns. |
+| `llmrater` | LLM comparison of golden and generated execution results. Requires `model_config`. |
+| `python_scorer` | Delegates to an external Python script — [custom scorers](/docs/scorers.md#custom-scorers). |
+
+Multi-trial consistency scorers (`exact_match_consistency`, `llm_consistency`) require `num_trials` greater than 1 — see [multi-trial consistency scorers](/docs/scorers.md#multi-trial-consistency-scorers). For agent runs, see [agentic scorers](/docs/scorers.md#agentic-scorers).
 
 ## 5. Reporting Configurations
 
@@ -92,7 +106,7 @@ The `reporting` section specifies how and where the evaluation results will be r
 | ---------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `truncate_execution_outputs`| Optional (defaults to 250 rows)          | This allows overriding the truncation of outputs in reporting (CSVs, BQ) to the number of rows specified. This affects the following reporting fields: `generated_result`, `golden_result`, `golden_eval_results` `eval_results`. This prevents logging incredibly large results with potentially thousands or millions of rows. *NOTE: This does not affect any logic other than reporting.* |
 | `csv`      | Optional     | Configuration for CSV reporting. <br>**Subkey:** `output_directory` specifies the directory where CSV results will be saved (e.g., `'results'`).          |
-| `bigquery` | Optional     | Configuration for reporting to Google BigQuery. <br>**Subkey:** `gcp_project_id` specifies the Google Cloud Project ID for BigQuery integration (e.g., `my_cool_gcp_project`). |
+| `bigquery` | Optional     | Configuration for reporting to Google BigQuery. <br>**Subkeys:** `gcp_project_id` specifies the Google Cloud Project ID for BigQuery integration (e.g., `my_cool_gcp_project`). `dataset_id` overrides the BigQuery dataset that results are written to (`<project>.<dataset_id>`), defaulting to `evalbench`. |
 
 ---
 > bigquery project_id: You can globally set your GCP project_id using the environment variables `EVAL_GCP_PROJECT_ID` or identify it separately.
@@ -141,4 +155,5 @@ reporting:
     output_directory: 'results'
   bigquery:
     gcp_project_id: my_cool_gcp_project
+    dataset_id: evalbench # Optional, defaults to 'evalbench'
 ```

@@ -1,6 +1,5 @@
 from .agent_cli import AgentCliGenerator
 from .tool_naming import canonicalize_agy_tool_name, parse_agy_mcp_tool_call
-import collections
 import subprocess
 import os
 import json
@@ -8,18 +7,31 @@ import logging
 import re
 import shutil
 import sys
-import dateutil.parser
+import tempfile
+import weakref
 from util.context import rpc_id_var
 
-# Bare command name. agy's installer exposes no version pinning and the binary
-# self-updates in the background, so there is nothing to configure. This is the
-# reported agent_version label only -- the binary actually launched is the
-# per-session install at self.agy_bin (see _ensure_agy_installed).
+# Default CLI label reported in metadata. The executed binary is installed
+# per-session at self.agy_bin (see _ensure_agy_installed).
 AGY_CLI = "agy"
 
-# Upstream one-line installer. Honors --dir (and $HOME) for the install
-# location and skips the download when the binary already exists at the target.
 AGY_INSTALL_URL = "https://antigravity.google/cli/install.sh"
+
+# Makes agy authenticate from Application Default Credentials
+# instead of its interactive OAuth login. See _setup_auth.
+ADC_AUTH_ENV_VAR = "AGY_ADC_AUTH"
+
+# Read-only secret mount in the GKE pod; the only ADC a pod carries on disk.
+GKE_SA_KEY_PATH = "/etc/evalbench-sa-key/key.json"
+
+
+def _shred_credential(path: str) -> None:
+    """Deletes a temporary credential copy. Module-level and instance-free so
+    weakref.finalize can hold it without keeping the generator alive."""
+    try:
+        os.unlink(path)
+    except OSError as e:
+        logging.warning("Failed to remove temporary agy ADC %s: %s", path, e)
 
 
 class CLICommand:
@@ -34,14 +46,15 @@ class CLICommand:
 class AgyCliGenerator(AgentCliGenerator):
     """Generator that queries via the Antigravity CLI (``agy``).
 
-    Surface targeted here is what the v1.0.5 binary actually exposes:
-    ``agy -p <prompt> --dangerously-skip-permissions [--model <label>]
-    [--continue]``. The on-disk layout lives under
-    ``~/.gemini/antigravity-cli/`` (the binary calls this ``appDataDir``).
-    Skills are delivered via plugins (see _setup_skills). There is no
-    ``--output-format`` flag and no stdout stream protocol; structured
-    tool-call data is read out of the per-conversation JSONL transcript at
-    ``<appDataDir>/brain/<uuid>/.system_generated/logs/transcript.jsonl``.
+    The eval turn runs ``agy -p <prompt> --dangerously-skip-permissions
+    --output-format stream-json [--model <label>] [--print-timeout <timeout>]
+    [--continue]``. The on-disk
+    layout lives under ``~/.gemini/antigravity-cli/`` (the binary calls this
+    ``appDataDir``). Skills are delivered via plugins (see _setup_skills).
+    ``--output-format stream-json`` emits newline-delimited events (an
+    ``init``, one ``step_update`` per step, then a final ``result``); tool
+    calls, the response, token usage, and latency are all read from that
+    stream (see _parse_stream_json).
     """
 
     APP_DATA_SUBPATH = os.path.join(".gemini", "antigravity-cli")
@@ -61,6 +74,9 @@ class AgyCliGenerator(AgentCliGenerator):
         # flag (None -> flag omitted). See _base_agy_command for the value
         # format and resolution semantics.
         self.model = querygenerator_config.get("model")
+        self.timeout = querygenerator_config.get("timeout")
+
+        self._validate_timeout(self.timeout)
 
         # Order is load-bearing: paths/dirs must exist before the binary
         # installs and settings/auth write into them, and self.env must carry
@@ -75,6 +91,27 @@ class AgyCliGenerator(AgentCliGenerator):
         self.setup_config = querygenerator_config.get("setup", {})
         if self.setup_config:
             self._setup_tools()
+
+        # Fail fast: an unusable model or a dead MCP server otherwise degrades
+        # silently to shell-outs and scores as poor model behaviour.
+        configured_servers = self._configured_mcp_servers()
+        if configured_servers or self.model:
+            self._verify_runtime(configured_servers)
+
+    @staticmethod
+    def _validate_timeout(timeout):
+        if timeout is not None:
+            if not isinstance(timeout, str):
+                raise TypeError(
+                    "timeout must be a string (e.g., '20m', '1h30m', '300s')"
+                )
+            # Strict regex for common units (s, m, h).
+            # Allows things like "20m", "1h30m", "300s".
+            if not re.match(r'^(\d+(s|m|h))+$', timeout):
+                raise ValueError(
+                    f"Invalid timeout format: '{timeout}'. "
+                    "Must be a valid duration string (e.g., '20m', '1h30m', '300s')."
+                )
 
     def _init_paths(self, querygenerator_config):
         """Resolves the sandbox ``HOME`` and all derived agy paths, and
@@ -102,6 +139,10 @@ class AgyCliGenerator(AgentCliGenerator):
         self.agy_bin = os.path.join(self.bin_dir, "agy")
 
         self.app_data_dir = os.path.join(self.fake_home, self.APP_DATA_SUBPATH)
+        # Deterministic CLI log path passed to agy via --log-file, so model
+        # detection reads exactly this run's log rather than guessing the
+        # newest file (which races under concurrency).
+        self.cli_log_path = os.path.join(self.app_data_dir, "log", "eval-cli.log")
         self.settings_path = os.path.join(self.app_data_dir, "settings.json")
         self.config_dir = os.path.join(self.fake_home, ".gemini", "config")
         self.mcp_config_path = os.path.join(self.config_dir, "mcp_config.json")
@@ -113,6 +154,7 @@ class AgyCliGenerator(AgentCliGenerator):
         os.makedirs(self.fake_home, exist_ok=True)
         os.makedirs(self.bin_dir, exist_ok=True)
         os.makedirs(self.app_data_dir, exist_ok=True)
+        os.makedirs(os.path.dirname(self.cli_log_path), exist_ok=True)
         os.makedirs(os.path.dirname(self.settings_path), exist_ok=True)
         os.makedirs(self.config_dir, exist_ok=True)
 
@@ -176,76 +218,97 @@ class AgyCliGenerator(AgentCliGenerator):
         logging.info("Installed agy into session sandbox at %s.", self.agy_bin)
 
     def _setup_auth(self):
-        """Seeds agy's OAuth state into the sandbox and wires up gcloud ADC
-        so the sandboxed CLI authenticates without an interactive login."""
-        self._mirror_agy_auth_state()
+        """Stages gcloud ADC into the sandbox so the sandboxed CLI
+        authenticates without an interactive login.
 
-        adc_path = self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
-        if not adc_path:
-            adc_path = os.path.join(
-                self.real_home,
-                ".config",
-                "gcloud",
-                "application_default_credentials.json",
-            )
-            if os.path.exists(adc_path):
-                self.env["GOOGLE_APPLICATION_CREDENTIALS"] = adc_path
-
-        if adc_path and os.path.exists(adc_path):
-            fake_gcloud_dir = os.path.join(self.fake_home, ".config", "gcloud")
-            os.makedirs(fake_gcloud_dir, exist_ok=True)
-            fake_adc_path = os.path.join(
-                fake_gcloud_dir, "application_default_credentials.json"
-            )
-            if os.path.abspath(adc_path) != os.path.abspath(fake_adc_path):
-                shutil.copy2(adc_path, fake_adc_path)
-
-        if "CLOUDSDK_CONFIG" not in self.env:
-            self.env["CLOUDSDK_CONFIG"] = os.path.join(
-                self.real_home, ".config", "gcloud"
-            )
-
-    def _mirror_agy_auth_state(self):
-        """Mirrors agy's OAuth token + installation id from the host's real
-        appDataDir into the sandboxed appDataDir so the sandboxed CLI does not
-        re-prompt for an interactive login.
-
-        agy is OAuth-only (no env-var API key, no ADC), and the harness
-        overrides ``HOME``, so without this the sandbox looks like a
-        brand-new install and ``agy -p`` blocks on the device-code URL.
-
-        Auth comes from the host's real appDataDir at
-        ``~/.gemini/antigravity-cli/`` -- run ``agy`` once interactively to
-        seed it; this then refreshes the copy on every run. The token is
-        load-bearing (required=True); a missing installation_id is non-fatal
-        for agy (required=False).
+        ``AGY_ADC_AUTH`` is what makes agy read ADC instead of its own OAuth
+        token, and is set unconditionally: the harness overrides ``HOME``, so
+        the sandbox has no token and agy would otherwise block on the
+        device-code URL.
         """
-        real_app_data = os.path.join(self.real_home, self.APP_DATA_SUBPATH)
+        self.env[ADC_AUTH_ENV_VAR] = "true"
+        self._setup_gcloud_credentials(self.env, self.real_home, self.fake_home)
 
-        auth_files = (
-            ("antigravity-oauth-token", True),
-            ("installation_id", False),
+        # agy reads the merged env, where a shell-exported path counts just as
+        # much as a config-supplied one.
+        adc_path = (self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
+                    or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"))
+
+        # Read in place: the session sandbox is on a PVC shared across
+        # sessions, which is no place for a private key.
+        if not (adc_path and os.path.exists(adc_path)) and os.path.exists(
+            GKE_SA_KEY_PATH
+        ):
+            adc_path = GKE_SA_KEY_PATH
+            self.env["GOOGLE_APPLICATION_CREDENTIALS"] = adc_path
+
+        self.adc_path = adc_path if adc_path and os.path.exists(adc_path) else None
+        if not self.adc_path:
+            raise RuntimeError(
+                "agy requires an application default credentials file: it "
+                "reads its entitlement project from the credential's "
+                "quota_project_id, which a metadata-server token does not "
+                "carry. Run 'gcloud auth application-default login', set "
+                "GOOGLE_APPLICATION_CREDENTIALS, or mount a service-account "
+                f"key at {GKE_SA_KEY_PATH}."
+            )
+        logging.info("agy ADC resolved from %s", self.adc_path)
+        self._ensure_quota_project()
+
+    def _ensure_quota_project(self) -> None:
+        """Adds ``quota_project_id`` to the resolved ADC when it is missing.
+
+        agy reads its entitlement project from that field alone -- not
+        GOOGLE_CLOUD_PROJECT, not GOOGLE_CLOUD_QUOTA_PROJECT (verified against
+        ``agy models``: only the file field populates the registry), not
+        settings.json. A stock service-account key has none, and without it
+        agy's model registry comes back empty and every ``--model`` value,
+        including its own default, is rejected as unknown.
+
+        Raises on every path that cannot deliver the field: a run without it
+        fails every turn.
+        """
+        try:
+            with open(self.adc_path) as f:
+                credentials = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            raise RuntimeError(
+                f"agy ADC at {self.adc_path} is unreadable, so its "
+                f"quota_project_id cannot be confirmed: {e}"
+            ) from e
+
+        if credentials.get("quota_project_id"):
+            return
+
+        project = self.gcp_project or credentials.get("project_id")
+        if not project:
+            raise RuntimeError(
+                f"agy ADC {self.adc_path} has no quota_project_id and no "
+                "project is configured, so agy would list no models. Set "
+                "GOOGLE_CLOUD_PROJECT in the model config's 'env' block, or "
+                "add quota_project_id to the credential."
+            )
+
+        credentials["quota_project_id"] = project
+        # Node-local scratch: the GKE key is read in place from a read-only
+        # mount, and its copy must not land on the shared-PVC sandbox.
+        try:
+            fd, augmented = tempfile.mkstemp(prefix="agy-adc-", suffix=".json")
+            with os.fdopen(fd, "w") as f:
+                json.dump(credentials, f)
+        except OSError as e:
+            logging.warning("Failed to write augmented agy ADC: %s", e)
+            return
+
+        self.adc_path = augmented
+        self.env["GOOGLE_APPLICATION_CREDENTIALS"] = augmented
+        # Plaintext key on shared scratch: bound its lifetime to the generator
+        # rather than leaving one behind per session for the life of the node.
+        self._adc_cleanup = weakref.finalize(self, _shred_credential, augmented)
+        logging.info(
+            "agy ADC had no quota_project_id; using augmented copy at %s "
+            "with project %s.", augmented, project,
         )
-
-        for fname, required in auth_files:
-            dst = os.path.join(self.app_data_dir, fname)
-            src = os.path.join(real_app_data, fname)
-            if not os.path.exists(src):
-                if required:
-                    logging.warning(
-                        "agy OAuth token not found at %s -- run `agy` "
-                        "interactively once to authenticate.",
-                        src,
-                    )
-                continue
-            try:
-                shutil.copy2(src, dst)
-                os.chmod(dst, 0o600)
-            except OSError as e:
-                logging.warning(
-                    "Failed to mirror agy auth file %s -> %s: %s",
-                    src, dst, e,
-                )
 
     def _initialize_settings_file(self):
         """Writes the ``gcp.project``/``gcp.location`` block into agy's
@@ -308,6 +371,8 @@ class AgyCliGenerator(AgentCliGenerator):
         if project:
             gcp_config["project"] = project
         gcp_config["location"] = location
+        # Reused by _setup_auth; agy's ADC path ignores this settings block.
+        self.gcp_project = project
 
         logging.info(
             "agy settings resolved: project=%s location=%s",
@@ -364,39 +429,28 @@ class AgyCliGenerator(AgentCliGenerator):
         skills_config = self.setup_config.get("skills", [])
         self._setup_skills(skills_config)
 
-        # Probe agy once now -- before any scenarios run -- to detect
-        # account-eligibility / MCP-load failures and fail fast with a
-        # clear error instead of silently degrading to gcloud shell-outs.
-        configured_servers = list(mcp_servers_config or {}) + list(
-            self.setup_config.get("fake_mcp_servers", {}) or {}
+    def _configured_mcp_servers(self) -> list:
+        return list(self.setup_config.get("mcp_servers") or {}) + list(
+            self.setup_config.get("fake_mcp_servers") or {}
         )
-        if configured_servers:
-            self._verify_mcp_runtime(configured_servers)
 
-    # Transcript step type agy's runtime writes for an executed MCP call.
-    # A genuine ``call_mcp_tool`` wrapper invocation is always recorded as a
-    # dedicated ``MCP_TOOL`` result step (native tools get VIEW_FILE,
-    # RUN_COMMAND, etc.), so this is the signal that the wrapper actually ran.
-    _AGY_MCP_RESULT_TYPE = "MCP_TOOL"
-
-    # Transcript step types / fields used while parsing a turn.
-    _STEP_USER_INPUT = "USER_INPUT"
-    _STEP_PLANNER_RESPONSE = "PLANNER_RESPONSE"
-    _STEP_STATUS_DONE = "DONE"
-    # ``source`` value agy stamps on every model-emitted step (tool results
-    # and planner responses alike).
-    _SOURCE_MODEL = "MODEL"
-    # MODEL steps that are not themselves results (they carry no tool output).
-    _NON_RESULT_MODEL_TYPES = (
-        None, "PLANNER_RESPONSE", "CONVERSATION_HISTORY", "GENERIC",
-    )
+    # stream-json event/step markers (agy --output-format stream-json).
+    # Each line is one JSON object: an ``init`` event, many ``step_update``
+    # events, then a final ``result`` event.
+    _EVENT_RESULT = "result"
+    # The ``status`` on the final ``result`` event; anything else (e.g.
+    # "ERROR" from a timed-out/failed run) counts as a model error.
+    _STATUS_SUCCESS = "SUCCESS"
+    _STEP_TYPE_TOOL = "tool"
+    # A tool step is emitted twice: ACTIVE when dispatched, then DONE
+    # (success) or ERROR (failure) -- both carry the same ``step_index``.
+    _STATE_DONE = "DONE"
 
     # cli.log line agy emits once it has resolved the model for a run, e.g.
     #   model_config_manager.go:157] Propagating selected model override to
     #   backend: label="Gemini 3.5 Flash (High)"
     # This is the only on-disk record of the *resolved* model: it appears
-    # whether the model came from --model, settings.json, or agy's own default
-    # (the transcript only records a model when the user explicitly changes it).
+    # whether the model came from --model, settings.json, or agy's own default.
     # Used to label the stats bucket when no model is configured -- see
     # _detect_model_from_log.
     _MODEL_LABEL_RE = re.compile(
@@ -406,7 +460,7 @@ class AgyCliGenerator(AgentCliGenerator):
     # Bucket label when the resolved model can't be determined from any source.
     _DEFAULT_MODEL_LABEL = "agy"
 
-    # Transcripts carry no token counts, so every token bucket is zero.
+    # Fallback token bucket when the stream-json result carries no usage.
     _ZERO_TOKENS = {
         "input": 0, "prompt": 0, "candidates": 0,
         "total": 0, "cached": 0, "thoughts": 0, "tool": 0,
@@ -421,9 +475,15 @@ class AgyCliGenerator(AgentCliGenerator):
         "failed to parse mcp_config_json",
     )
 
-    def _verify_mcp_runtime(self, configured_servers: list):
-        """Spawns a short-lived ``agy -p`` probe and confirms each
-        configured MCP server actually attached and discovered tools.
+    # agy resolves --model only after it has populated the MCP schema cache, so
+    # an unrecognized model leaves tool discovery looking healthy while every
+    # turn exits 1 with an empty response and scores as poor model behaviour.
+    _MODEL_FATAL_MARKER = "invalid model selection"
+
+    def _verify_runtime(self, configured_servers: list):
+        """Spawns a short-lived ``agy -p`` probe and confirms the configured
+        model is accepted and each configured MCP server actually attached and
+        discovered tools.
 
         Validates attachment by checking the disk cache
         (``<appDataDir>/mcp/<server>/<tool>.json``), which agy populates
@@ -445,7 +505,9 @@ class AgyCliGenerator(AgentCliGenerator):
         before = set(os.listdir(log_dir)) if os.path.isdir(log_dir) else set()
 
         env = self._merged_env()
-        cmd = self._base_agy_command(self.agy_bin, "ping", model=self.model)
+        cmd = self._base_agy_command(
+            self.agy_bin, "ping", model=self.model
+        )
         try:
             subprocess.run(
                 cmd, env=env, cwd=self.fake_home,
@@ -454,16 +516,17 @@ class AgyCliGenerator(AgentCliGenerator):
             )
         except (FileNotFoundError, subprocess.TimeoutExpired) as e:
             raise RuntimeError(
-                f"agy MCP verification probe failed to run: {e}. "
+                f"agy startup probe failed to run: {e}. "
                 f"Configured MCP servers: {configured_servers}.\n"
-                f"STDOUT:\n{getattr(e, 'stdout', '')}\n"
-                f"STDERR:\n{getattr(e, 'stderr', '')}"
+                f"STDOUT: \n{getattr(e, 'stdout', '')}\n"
+                f"STDERR: \n{getattr(e, 'stderr', '')}"
             ) from e
 
         # Collect fatal log markers (diagnostic context for any failure).
         after = set(os.listdir(log_dir)) if os.path.isdir(log_dir) else set()
         new_logs = sorted(after - before)
         marker_hits = []
+        model_hits = []
         if new_logs:
             probe_log = os.path.join(log_dir, new_logs[-1])
             try:
@@ -471,10 +534,20 @@ class AgyCliGenerator(AgentCliGenerator):
                     for line in f:
                         if any(m in line for m in self._MCP_FATAL_MARKERS):
                             marker_hits.append(line.rstrip())
+                        if self._MODEL_FATAL_MARKER in line:
+                            model_hits.append(line.rstrip())
             except OSError as e:
                 logging.warning(
-                    "agy MCP probe log %s unreadable: %s", probe_log, e,
+                    "agy startup probe log %s unreadable: %s", probe_log, e,
                 )
+
+        if model_hits:
+            raise RuntimeError(
+                f"agy rejected the configured model {self.model!r}. Check "
+                "docs/agy_cli_agent_testing.md for ADC-supported models and "
+                "accepted labels, or omit 'model' to use agy's default.\n"
+                + "\n".join(f"  {h}" for h in model_hits)
+            )
 
         # Authoritative check: each server must have discovered >=1 tool.
         failed = []
@@ -505,11 +578,11 @@ class AgyCliGenerator(AgentCliGenerator):
                 f"agy MCP server(s) {failed} attached no tools "
                 f"(no schemas under {mcp_schema_root}/<server>/). The "
                 "server likely failed to load -- check the URL field "
-                "(use 'serverUrl' or 'url'; a gemini-style 'httpUrl' is "
-                "auto-translated), auth, and "
+                "(use 'httpUrl'; 'serverUrl' and 'url' also work), auth, and "
                 "reachability. agy degrades silently to shell-outs when "
                 "MCP tools are missing."
             )
+            msg += f"\nADC in use: {self.adc_path}"
             if marker_hits:
                 msg += "\nProbe log fatal markers:\n" + "\n".join(
                     f"  {h}" for h in marker_hits
@@ -703,7 +776,7 @@ class AgyCliGenerator(AgentCliGenerator):
         ``struct { McpServers map[string]interface {} }``) reveals the
         key. agy has no offline verification subcommand, so this step
         only writes config -- it does not confirm the server actually
-        loads. Failures will surface at eval time via the transcript.
+        loads. Failures will surface at eval time via the stream-json output.
         """
         if not mcp_servers_config:
             return
@@ -737,7 +810,7 @@ class AgyCliGenerator(AgentCliGenerator):
         """Normalizes a cross-harness MCP server config into agy's schema.
 
         Maps the common gemini-style ``httpUrl`` alias to ``serverUrl``, agy's
-        native field. ``serverUrl`` and ``url`` (v1.0.5+) are accepted by agy
+        native field. ``serverUrl`` and ``url`` are accepted by agy
         directly and need no translation. Other fields like
         ``authProviderType``, ``oauth.scopes``, and stdio fields pass through
         natively.
@@ -750,27 +823,45 @@ class AgyCliGenerator(AgentCliGenerator):
         """Returns the process environment overlaid with the generator's
         configured env (and an optional per-call ``extra``)."""
         env = os.environ.copy()
-        env.update(self.env)
+        # YAML gives ints/bools for unquoted scalars; subprocess needs strings.
+        env.update({str(k): str(v) for k, v in self.env.items()})
         if extra:
-            env.update(extra)
+            env.update({str(k): str(v) for k, v in extra.items()})
         return env
 
     @staticmethod
     def _base_agy_command(
         cli: str, prompt: str, resume: bool = False, model: str = None,
+        output_format: str = None, log_file: str = None,
+        timeout: str = None,
     ) -> list:
         """Builds the non-interactive ``agy -p`` argv shared by the eval
         turn path and the setup-time MCP probe.
 
-        The model is selected with agy's ``--model`` flag (agy >=1.0.5). The
-        value is an agy UI label like "Gemini 3.1 Pro (High)" (the exact
-        strings ``agy models`` lists), not an API id; an unrecognized value is
-        silently ignored and agy falls back to its default model. When no
-        model is configured the flag is omitted and agy uses its default.
+        The model is selected with agy's ``--model`` flag (e.g.
+        ``Gemini 3.1 Pro (Low)`` or ``gemini-3.1-pro-low``); an unrecognized
+        value fails the run. When no model is configured the flag is omitted
+        and agy uses its default. See docs/agy_cli_agent_testing.md.
+
+        ``output_format`` maps to agy's ``--output-format`` (values ``json``
+        and ``stream-json``); the eval turn passes ``stream-json`` to get the
+        machine-readable event stream. Omitted for the setup probe.
+
+        ``log_file`` maps to ``--log-file``, pinning the CLI log to a known
+        path for deterministic model detection.
+
+        ``timeout`` maps to ``--print-timeout`` (e.g. "20m"). If omitted,
+        defaults to agy's internal default (5 minutes).
         """
         command = [cli, "-p", prompt, "--dangerously-skip-permissions"]
         if model:
             command += ["--model", model]
+        if output_format:
+            command += ["--output-format", output_format]
+        if log_file:
+            command += ["--log-file", log_file]
+        if timeout:
+            command += ["--print-timeout", timeout]
         if resume:
             command.append("--continue")
         return command
@@ -808,20 +899,22 @@ class AgyCliGenerator(AgentCliGenerator):
         # the label carried on cli_cmd.cli (the evaluator passes agent_version,
         # "agy", which is not a path).
         command = self._base_agy_command(
-            self.agy_bin, cli_cmd.prompt, cli_cmd.resume, self.model
+            self.agy_bin, cli_cmd.prompt, cli_cmd.resume, self.model,
+            output_format="stream-json", log_file=self.cli_log_path,
+            timeout=self.timeout,
         )
         cwd = cli_cmd.cwd if cli_cmd.cwd else self.fake_home
         result = self._execute_cli_command(command, env=env, cwd=cwd)
 
-        if result.returncode == 0:
+        # Parse whenever agy emitted a stream, even on a non-zero exit: a
+        # timed-out/errored run still ends in a ``result`` event carrying real
+        # usage tokens and the tool calls made, which we want to keep. Empty
+        # stdout (e.g. binary not found) is left for safe_generate to flag.
+        if result.stdout:
             try:
-                result.stdout = self._parse_transcript_jsonl(
-                    cwd, fallback_response=result.stdout or "",
-                )
+                result.stdout = self._parse_stream_json(result.stdout)
             except Exception:
-                logging.exception(
-                    "Failed to parse agy transcript for cwd=%s", cwd,
-                )
+                logging.exception("Failed to parse agy stream-json output")
 
         return result
 
@@ -848,55 +941,18 @@ class AgyCliGenerator(AgentCliGenerator):
                 return {"_raw": inner}
         return {}
 
-    def _conversation_id_for_cwd(self, cwd: str):
-        cache_path = os.path.join(
-            self.app_data_dir, "cache", "last_conversations.json"
-        )
-        try:
-            with open(cache_path, "r") as f:
-                cache = json.load(f)
-        except (json.JSONDecodeError, OSError):
-            return None
-        if not isinstance(cache, dict):
-            return None
-        return cache.get(os.path.abspath(cwd))
-
-    def _latest_log_path(self):
-        """Return the path of the most recent agy cli log, or None.
-
-        agy writes a fresh ``log/cli-<timestamp>.log`` per process and points
-        the ``cli.log`` symlink at it. Since each query runs as its own agy
-        subprocess, the newest log reflects the run we just made.
-        """
-        cli_log = os.path.join(self.app_data_dir, "cli.log")
-        if os.path.exists(cli_log):
-            return cli_log
-        log_dir = os.path.join(self.app_data_dir, "log")
-        try:
-            logs = [
-                os.path.join(log_dir, f) for f in os.listdir(log_dir)
-                if f.endswith(".log")
-            ]
-        except OSError:
-            return None
-        if not logs:
-            return None
-        return max(logs, key=os.path.getmtime)
-
     def _detect_model_from_log(self):
         """Best-effort: read the resolved model label from the cli log.
 
-        Returns the last ``label="..."`` agy logged for this run (see
-        ``_MODEL_LABEL_RE``), or None if the log is missing/unreadable or
-        carries no such line. Used only as a fallback when no model is
-        configured, so any failure degrades gracefully to the default label.
+        Reads ``self.cli_log_path`` (pinned via ``--log-file``) and returns the
+        last ``label="..."`` agy logged (see ``_MODEL_LABEL_RE``), or None if
+        the log is missing/unreadable or carries no such line. Used only as a
+        fallback when no model is configured, so any failure degrades
+        gracefully to the default label.
         """
-        log_path = self._latest_log_path()
-        if not log_path:
-            return None
         label = None
         try:
-            with open(log_path, "r") as f:
+            with open(self.cli_log_path, "r") as f:
                 for line in f:
                     match = self._MODEL_LABEL_RE.search(line)
                     if match:
@@ -905,152 +961,96 @@ class AgyCliGenerator(AgentCliGenerator):
             return None
         return label
 
-    def _read_transcript(self, conversation_id: str):
-        transcript_path = os.path.join(
-            self.app_data_dir, "brain", conversation_id,
-            ".system_generated", "logs", "transcript.jsonl",
-        )
-        steps = []
-        try:
-            with open(transcript_path, "r") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        steps.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue
-        except OSError:
-            return []
-        return steps
-
-    def _parse_transcript_jsonl(
-        self, cwd: str, fallback_response: str = "",
-    ) -> str:
-        """Builds the same envelope as the old ``_parse_stream_json``
-        output, sourcing tool calls and the assistant response from the
-        per-conversation JSONL transcript that agy writes under
-        ``<appDataDir>/brain/<uuid>/.system_generated/logs/``.
-
-        Only the most-recent turn is reported (see _slice_current_turn).
+    def _parse_stream_json(self, stdout: str, fallback_response: str = "") -> str:
+        """Builds the stats envelope from agy's ``--output-format stream-json``
+        output: newline-delimited JSON events (``init``, ``step_update`` x N,
+        ``result``). The stream is per-invocation, so no cross-turn slicing is
+        needed.
         """
-        # Transcripts don't carry token counts; downstream
-        # token_consumption scorers will see zeros.
         final_obj = {"session_id": "", "response": "", "stats": {}}
 
-        conversation_id = self._conversation_id_for_cwd(cwd)
-        if not conversation_id:
+        events = []
+        for line in stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            # agy emits one JSON object per line, but a stray scalar/array
+            # (e.g. a serialized warning) parses cleanly; skip non-objects so
+            # downstream ``.get`` calls can't raise on them.
+            if isinstance(event, dict):
+                events.append(event)
+        if not events:
             final_obj["response"] = fallback_response
             return json.dumps(final_obj, indent=2)
-        final_obj["session_id"] = conversation_id
 
-        steps = self._read_transcript(conversation_id)
-        if not steps:
-            final_obj["response"] = fallback_response
-            return json.dumps(final_obj, indent=2)
+        result = next(
+            (e["result"] for e in events
+             if e.get("event") == self._EVENT_RESULT
+             and isinstance(e.get("result"), dict)),
+            {},
+        )
+        final_obj["session_id"] = (
+            result.get("conversation_id")
+            or next((e.get("conversation_id", "") for e in events), "")
+        )
+        final_obj["response"] = result.get("response") or fallback_response
 
-        turn_steps = self._slice_current_turn(steps)
-        (calls, result_for, response_text_parts,
-         turn_start_ts, turn_end_ts) = self._pair_calls_and_results(turn_steps)
-
-        final_obj["response"] = "\n".join(response_text_parts).strip() \
-            or fallback_response
-
-        # Approximate end-to-end latency from transcript timestamps.
-        total_duration_ms = self._ms_between(turn_start_ts, turn_end_ts)
-
+        duration_ms = int(result.get("duration_seconds", 0) * 1000)
         final_obj["stats"]["models"] = self._build_models_stats(
-            total_duration_ms
+            duration_ms, result.get("usage") or {}, result.get("status")
         )
         final_obj["stats"]["tools"] = self._build_tools_stats(
-            calls, result_for
+            self._collect_tool_calls(events)
         )
         return json.dumps(final_obj, indent=2)
 
-    def _slice_current_turn(self, steps: list) -> list:
-        """Returns the steps from the last ``USER_INPUT`` onward (this turn).
+    def _collect_tool_calls(self, events: list) -> list:
+        """Collapses ``tool`` step_update events into one record per call.
 
-        The transcript accumulates across turns when ``--continue`` is used,
-        so the slice from the last ``USER_INPUT`` step is the new material
-        from this invocation.
+        Each tool step is emitted as ACTIVE (dispatch) then DONE/ERROR
+        (outcome), sharing a ``step_index``. We key on ``step_index`` so the
+        terminal event's state and duration land on the same record, and
+        preserve first-seen order.
         """
-        last_user_idx = max(
-            (i for i, s in enumerate(steps)
-             if s.get("type") == self._STEP_USER_INPUT),
-            default=-1,
-        )
-        return steps[last_user_idx:] if last_user_idx >= 0 else steps
+        by_index = {}
+        order = []
+        for event in events:
+            step = event.get("step_update")
+            if not isinstance(step, dict):
+                continue
+            if step.get("step_type") != self._STEP_TYPE_TOOL:
+                continue
+            idx = step.get("step_index")
+            info = step.get("tool_info") or {}
+            record = by_index.get(idx)
+            if record is None:
+                record = {"name": None, "args": {}, "state": None,
+                          "duration_ms": 0}
+                by_index[idx] = record
+                order.append(idx)
+            record["name"] = step.get("tool_name") or record["name"]
+            if info.get("parameters") is not None:
+                record["args"] = info["parameters"]
+            state = step.get("state")
+            if state in (self._STATE_DONE, "ERROR"):
+                record["state"] = state
+                record["duration_ms"] = int(
+                    step.get("duration_seconds", 0) * 1000
+                )
+        return [by_index[i] for i in order]
 
-    def _pair_calls_and_results(self, turn_steps: list):
-        """Pairs each tool call in one turn with the result step that
-        immediately follows it.
-
-        Returns ``(calls, result_for, response_text_parts, turn_start_ts,
-        turn_end_ts)`` where ``calls`` is an ordered list of ``(call, ts)``
-        and ``result_for`` maps a call's index to its ``(result_step, ts)``.
-
-        agy records a tool call on a ``PLANNER_RESPONSE`` step and the
-        tool's result on the *immediately following* MODEL step (MCP_TOOL
-        for genuine MCP calls; VIEW_FILE / RUN_COMMAND / ... for native
-        tools). We pair by strict adjacency: a call is bound only to the
-        result step that directly follows the planner step that emitted it.
-        The pending window is reset at every new planner step and at any
-        other intervening step, so a call that never produced a runtime
-        result -- e.g. a ``call_mcp_tool`` line the agent forged via
-        ``run_command`` -- stays unpaired instead of stealing a later
-        call's result. (An earlier FIFO scheme paired across steps and
-        mis-attributed a forged MCP call to a subsequent shell-out's result.)
-        """
-        calls = []          # ordered (call_dict, ts)
-        result_for = {}     # call index -> (result_step, ts)
-        # call indices awaiting an adjacent result
-        pending = collections.deque()
-        response_text_parts = []
-        turn_start_ts = None
-        turn_end_ts = None
-
-        for step in turn_steps:
-            ts = step.get("created_at")
-            if ts and turn_start_ts is None:
-                turn_start_ts = ts
-            if ts:
-                turn_end_ts = ts
-
-            stype = step.get("type")
-            if stype == self._STEP_PLANNER_RESPONSE:
-                # A new planner step ends the previous adjacency window.
-                pending.clear()
-                tool_calls = step.get("tool_calls") or []
-                if tool_calls:
-                    for call in tool_calls:
-                        pending.append(len(calls))
-                        calls.append((call, ts))
-                else:
-                    content = step.get("content")
-                    if content:
-                        response_text_parts.append(content)
-            elif (step.get("source") == self._SOURCE_MODEL
-                  and stype not in self._NON_RESULT_MODEL_TYPES):
-                # A result step consumes the next call awaiting in the current
-                # adjacency window. Consecutive results pair with consecutive
-                # calls from the same planner step (rare multi-call case).
-                if pending:
-                    result_for[pending.popleft()] = (step, ts)
-            else:
-                # Any other intervening step breaks adjacency.
-                pending.clear()
-
-        return (calls, result_for, response_text_parts,
-                turn_start_ts, turn_end_ts)
-
-    def _build_tools_stats(self, calls: list, result_for: dict) -> dict:
-        """Aggregates per-tool call/success/fail/duration counts from the
-        paired calls into the ``tools`` stats envelope."""
+    def _build_tools_stats(self, tool_calls: list) -> dict:
+        """Aggregates per-tool call/success/fail/duration counts into the
+        ``tools`` stats envelope. A call counts as a success iff its terminal
+        state is ``DONE`` (``ERROR`` or no terminal event is a failure)."""
         tools_by_name = {}
-        for idx, (call, call_ts) in enumerate(calls):
-            raw_name = call.get("name", "unknown")
-            raw_args = call.get("args", {}) or {}
+        for call in tool_calls:
+            raw_name = call["name"] or "unknown"
+            raw_args = call["args"] or {}
             # agy wraps every MCP invocation in the native ``call_mcp_tool``
             # tool; the real server/tool identity and arguments live in the
             # wrapper's args. Canonicalize to ``<server>__<tool>`` and surface
@@ -1070,97 +1070,90 @@ class AgyCliGenerator(AgentCliGenerator):
             slot["parameters"].append(call_args)
             slot["decisions"]["accept"] += 1
             slot["decisions"]["auto_accept"] += 1
-
-            duration = 0
-            paired = result_for.get(idx)
-            if paired:
-                result_step, result_ts = paired
-                done = result_step.get("status") == self._STEP_STATUS_DONE
-                # A genuine MCP invocation is executed by agy's runtime and
-                # recorded as a dedicated ``MCP_TOOL`` result step. If a
-                # ``call_mcp_tool`` wrapper is paired with any other result
-                # type, it did not actually run as an MCP call, so we do not
-                # credit it as a success. This bounds (it cannot fully
-                # prevent) crediting transcript lines an agent may have forged
-                # via shell-outs; the authoritative attach guarantee is the
-                # setup-time schema-cache check in ``_verify_mcp_runtime``.
-                if (is_mcp and result_step.get("type")
-                        != self._AGY_MCP_RESULT_TYPE):
-                    done = False
-                if done:
-                    slot["success"] += 1
-                else:
-                    slot["fail"] += 1
-                duration = self._ms_between(call_ts, result_ts)
-            elif is_mcp:
-                # An MCP wrapper call with no runtime result step never
-                # executed -- count it as a failure rather than silently
-                # leaving it neutral.
+            if call["state"] == self._STATE_DONE:
+                slot["success"] += 1
+            else:
                 slot["fail"] += 1
-            slot["durationMs"] += duration
+            slot["durationMs"] += call["duration_ms"]
 
         return {
-            "totalCalls": len(calls),
+            "totalCalls": len(tool_calls),
             "totalSuccess": sum(s["success"] for s in tools_by_name.values()),
             "totalFail": sum(s["fail"] for s in tools_by_name.values()),
             "totalDurationMs": sum(
                 s["durationMs"] for s in tools_by_name.values()
             ),
             "decisions": {
-                "accept": len(calls),
+                "accept": len(tool_calls),
                 "reject": 0,
                 "modify": 0,
-                "auto_accept": len(calls),
+                "auto_accept": len(tool_calls),
             },
             "byName": tools_by_name,
         }
 
-    def _build_models_stats(self, total_duration_ms: int) -> dict:
+    def _build_models_stats(
+        self, total_duration_ms: int, usage: dict = None, status: str = None
+    ) -> dict:
         """Builds the ``models`` stats bucket for the turn.
 
-        The transcript echoes neither a model name nor token counts, so the
-        bucket is keyed by the configured model label (matching
-        claude_code/codex_cli). When no model is configured, recover the
-        model agy actually resolved (its default) from the cli log; fall back
-        to a generic label only if even that is unavailable. Token counts are
-        always zero.
+        stream-json carries token ``usage`` but no model name, so the bucket
+        is keyed by the configured model label (matching claude_code/
+        codex_cli). When no model is configured, recover the model agy
+        actually resolved (its default) from the cli log; fall back to a
+        generic label only if even that is unavailable.
+
+        ``status`` is the final ``result`` event's status; a present,
+        non-``SUCCESS`` value (e.g. a timed-out/failed run whose stream we
+        still parse) counts as one model error. A missing status is treated
+        as no error, so a partial stream is not misreported as a failure.
         """
         model_name = (
             self.model
             or self._detect_model_from_log()
             or self._DEFAULT_MODEL_LABEL
         )
+        tokens = self._map_usage_tokens(usage)
+        errors = 1 if status and status != self._STATUS_SUCCESS else 0
         return {
             model_name: {
                 "api": {
                     "totalRequests": 1,
-                    "totalErrors": 0,
+                    "totalErrors": errors,
                     "totalLatencyMs": total_duration_ms,
                 },
-                "tokens": dict(self._ZERO_TOKENS),
+                "tokens": tokens,
                 "roles": {
                     "main": {
                         "totalRequests": 1,
-                        "totalErrors": 0,
+                        "totalErrors": errors,
                         "totalLatencyMs": total_duration_ms,
-                        "tokens": dict(self._ZERO_TOKENS),
+                        "tokens": dict(tokens),
                     },
                 },
             }
         }
 
-    @staticmethod
-    def _ms_between(ts0: str, ts1: str) -> int:
-        """Millisecond delta between two ISO-8601 timestamps, or 0 when
-        either is missing or unparseable."""
-        if not (ts0 and ts1):
-            return 0
-        try:
-            t0 = dateutil.parser.isoparse(ts0)
-            t1 = dateutil.parser.isoparse(ts1)
-        except (ValueError, TypeError):
-            return 0
-        return int((t1 - t0).total_seconds() * 1000)
+    def _map_usage_tokens(self, usage: dict) -> dict:
+        """Maps agy's stream-json ``usage`` block onto the stats token bucket.
+
+        agy reports input/output/thinking/total; ``cached`` and ``tool`` are
+        not exposed and stay zero. ``prompt`` mirrors ``input`` and
+        ``candidates`` mirrors ``output`` to match the other CLI adapters.
+        """
+        if not usage:
+            return dict(self._ZERO_TOKENS)
+        input_tokens = usage.get("input_tokens", 0)
+        output_tokens = usage.get("output_tokens", 0)
+        return {
+            "input": input_tokens,
+            "prompt": input_tokens,
+            "candidates": output_tokens,
+            "total": usage.get("total_tokens", 0),
+            "cached": 0,
+            "thoughts": usage.get("thinking_tokens", 0),
+            "tool": 0,
+        }
 
     @property
     def version(self) -> str:

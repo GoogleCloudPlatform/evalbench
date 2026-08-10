@@ -53,7 +53,10 @@ def analyze_one_metric(
                 .drop_duplicates()
             )
     else:
-        df_metric = df[df["comparator"] == metric_name]
+        if metric_name == "binary_rubric_scorer":
+            df_metric = df[df["comparator"].astype(str).str.startswith("binary_rubric_scorer")]
+        else:
+            df_metric = df[df["comparator"] == metric_name]
 
         if (
             "prompt_id" in df_metric.columns
@@ -82,6 +85,15 @@ def analyze_one_metric(
                 "token_consumption",
                 "tokens_processed",
                 "effective_billed_tokens",
+                # dataset_quality and its five category rollups are 0-100
+                # grades, so a binary match against the pass threshold would
+                # report every grade below 100 as a flat 0%.
+                "dataset_quality",
+                "tool_activation_faithfulness",
+                "discoverability_coverage",
+                "error_recovery_coverage",
+                "composition_coverage",
+                "cuj_diversity",
             ]
             if metric_name in non_binary_metrics:
                 avg_val = df_metric["score"].mean(

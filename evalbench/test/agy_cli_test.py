@@ -1,3 +1,4 @@
+import gc
 import json
 import logging
 import os
@@ -14,17 +15,26 @@ from generators.models.agy_cli import AgyCliGenerator, CLICommand
 
 APP_DATA_SUBPATH = os.path.join(".gemini", "antigravity-cli")
 
+# Sample agy UI model label used throughout the tests.
+_MODEL_LABEL = "Gemini 3.1 Pro (High)"
+
 
 @pytest.fixture
 def sandbox(tmp_path, monkeypatch):
     """Isolates HOME under a throwaway dir so the generator builds its sandbox
     there instead of touching the real machine. Returns the host (real) home
     path for tests that need to pre-seed host-side files (settings.json, an
-    on-disk oauth token, ...)."""
+    on-disk oauth token, ...).
+
+    Seeds a host ADC because the generator refuses to construct without one.
+    Tests that exercise credential resolution drop it with _remove_adc.
+    """
     real_home = tmp_path / "real_home"
     real_home.mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("HOME", str(real_home))
+    monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
+    _seed_adc(real_home)
     return real_home
 
 
@@ -62,23 +72,18 @@ def _install_calls(mock_run):
     ]
 
 
-def test_setup_single_skill_string_runs_plugin_install(mock_run, sandbox):
-    """A string entry is passed straight to ``agy plugin install``."""
-    target = "/path/to/local-plugin"
-    generator = AgyCliGenerator({"setup": {"skills": [target]}})
+def test_setup_skills_string_runs_plugin_install(mock_run, sandbox):
+    """String entries are passed straight to ``agy plugin install``."""
+    generator = AgyCliGenerator({"setup": {"skills": ["plugin-A", "plugin-B"]}})
 
     calls = _install_calls(mock_run)
-    assert len(calls) == 1
+    assert len(calls) == 2
     assert list(calls[0].args[0]) == [
-        generator.agy_bin, "plugin", "install", target,
+        generator.agy_bin, "plugin", "install", "plugin-A",
     ]
-
-
-def test_setup_multiple_skills_string_each_installed(mock_run, sandbox):
-    AgyCliGenerator({"setup": {"skills": ["plugin-A", "plugin-B"]}})
-
-    installed = [list(c.args[0])[-1] for c in _install_calls(mock_run)]
-    assert installed == ["plugin-A", "plugin-B"]
+    assert list(calls[1].args[0]) == [
+        generator.agy_bin, "plugin", "install", "plugin-B",
+    ]
 
 
 def test_install_from_repo_local_path_installs_directly(
@@ -129,36 +134,43 @@ def test_install_from_repo_git_url_clones_then_installs(mock_run, sandbox):
     ]
 
 
-def test_clone_skill_repo_timeout_returns_none_and_clears_stale_dir(
-    mock_run, sandbox, caplog,
-):
-    """A clone that exceeds the timeout returns None (so the skill is simply
-    skipped) rather than propagating TimeoutExpired, and logs an error.
-
-    There is no cleanup of *this* attempt's partial dir on timeout -- the
-    only cleanup is the pre-clone rmtree, which clears a stale dir left by a
-    prior partial clone even when the current attempt then times out.
-    """
+def test_clone_skill_repo_clears_stale_dir_before_clone(mock_run, sandbox):
+    """An existing directory at the clone target is removed prior to cloning."""
     generator = AgyCliGenerator({})
     workdir = os.path.join(generator.app_data_dir, ".skill_clones")
     os.makedirs(workdir, exist_ok=True)
 
     url = "https://github.com/example/agy-skill-pack.git"
-    # Leftover from a prior partial clone; pre-clone cleanup must remove it.
     stale = os.path.join(workdir, "agy-skill-pack")
     os.makedirs(stale)
 
-    mock_run.side_effect = subprocess.TimeoutExpired(
-        cmd="git clone", timeout=120
-    )
+    result = generator._clone_skill_repo(url, workdir, generator._merged_env())
+
+    # git is mocked, so nothing recreates the dir -- its absence is proof the
+    # pre-clone rmtree ran.
+    assert not os.path.exists(stale)
+    assert result == stale
+    git_calls = [
+        c for c in mock_run.call_args_list
+        if c.args and list(c.args[0][:2]) == ["git", "clone"]
+    ]
+    assert len(git_calls) == 1
+
+
+def test_clone_skill_repo_timeout_returns_none(mock_run, sandbox, caplog):
+    """A clone that exceeds the timeout returns None (skipping the skill)
+    rather than propagating TimeoutExpired, and logs an error."""
+    generator = AgyCliGenerator({})
+    workdir = os.path.join(generator.app_data_dir, ".skill_clones")
+    os.makedirs(workdir, exist_ok=True)
+
+    url = "https://github.com/example/agy-skill-pack.git"
+    mock_run.side_effect = subprocess.TimeoutExpired(cmd="git clone", timeout=120)
 
     with caplog.at_level(logging.ERROR):
-        result = generator._clone_skill_repo(
-            url, workdir, generator._merged_env()
-        )
+        result = generator._clone_skill_repo(url, workdir, generator._merged_env())
 
     assert result is None
-    assert not os.path.exists(stale)
     assert any("timed out" in r.getMessage() for r in caplog.records)
 
 
@@ -253,7 +265,7 @@ def test_ensure_agy_installed_raises_when_binary_absent_after_install(
 
 def test_run_command_argv_shape(mock_run, sandbox):
     """``_run_agy_cli`` must build ``agy -p <prompt>
-    --dangerously-skip-permissions`` -- no legacy flags."""
+    --dangerously-skip-permissions --output-format stream-json``."""
     generator = AgyCliGenerator({})
     cmd = CLICommand(cli="agy", prompt="hello world")
     generator._run_agy_cli(cmd)
@@ -261,7 +273,8 @@ def test_run_command_argv_shape(mock_run, sandbox):
     sent_argv = mock_run.call_args[0][0]
     assert sent_argv == [
         generator.agy_bin, "-p", "hello world",
-        "--dangerously-skip-permissions",
+        "--dangerously-skip-permissions", "--output-format", "stream-json",
+        "--log-file", generator.cli_log_path,
     ]
 
 
@@ -273,206 +286,291 @@ def test_run_command_argv_shape_with_continue(mock_run, sandbox):
     sent_argv = mock_run.call_args[0][0]
     assert sent_argv == [
         generator.agy_bin, "-p", "next turn",
-        "--dangerously-skip-permissions", "--continue",
+        "--dangerously-skip-permissions", "--output-format", "stream-json",
+        "--log-file", generator.cli_log_path, "--continue",
     ]
 
 
-def _write_transcript_fixture(app_data_dir, cwd, conversation_id, steps):
-    """Drops a transcript.jsonl + last_conversations.json mapping into the
-    fake appDataDir so ``_parse_transcript_jsonl`` can pick it up."""
-    cache_dir = os.path.join(app_data_dir, "cache")
-    os.makedirs(cache_dir, exist_ok=True)
-    with open(os.path.join(cache_dir, "last_conversations.json"), "w") as f:
-        json.dump({os.path.abspath(cwd): conversation_id}, f)
+def test_init_raises_on_non_string_timeout(sandbox):
+    """The generator should raise TypeError if timeout is not a string."""
+    with pytest.raises(TypeError, match="timeout must be a string"):
+        AgyCliGenerator({"timeout": 20})
 
-    transcript_dir = os.path.join(
-        app_data_dir, "brain", conversation_id,
-        ".system_generated", "logs",
+
+def test_init_raises_on_invalid_timeout_format(sandbox):
+    """The generator should raise ValueError if timeout format is invalid."""
+    invalid_timeouts = ["20", "20 minutes", "20d", "abc", "m", "20m10"]
+    for timeout in invalid_timeouts:
+        with pytest.raises(ValueError, match="Invalid timeout format"):
+            AgyCliGenerator({"timeout": timeout})
+
+
+def test_init_accepts_valid_timeout_formats(sandbox):
+    """The generator should accept valid timeout formats without raising."""
+    valid_timeouts = ["20m", "300s", "1h30m", "1h", "10s"]
+    for timeout in valid_timeouts:
+        gen = AgyCliGenerator({"timeout": timeout})
+        assert gen.timeout == timeout
+
+
+def test_run_command_argv_shape_with_timeout(mock_run, sandbox):
+    generator = AgyCliGenerator({"timeout": "20m"})
+    cmd = CLICommand(cli="agy", prompt="hello world")
+    generator._run_agy_cli(cmd)
+
+    sent_argv = mock_run.call_args[0][0]
+    assert sent_argv == [
+        generator.agy_bin, "-p", "hello world",
+        "--dangerously-skip-permissions", "--output-format", "stream-json",
+        "--log-file", generator.cli_log_path, "--print-timeout", "20m",
+    ]
+
+
+def test_run_agy_cli_parses_stream_on_nonzero_exit(mock_run, sandbox):
+    """A timed-out/errored run exits non-zero but still emits a full stream
+    ending in an ERROR result -- its usage tokens and tool calls must be kept,
+    not dropped as raw JSONL that parse_response chokes on."""
+    generator = AgyCliGenerator({"model": _MODEL_LABEL})
+    stream = _stream(
+        _init_event("conv-timeout"),
+        *_tool_events(1, "call_mcp_tool", _MCP_PARAMS),
+        _result_event(
+            conversation_id="conv-timeout", status="ERROR", response="",
+            usage={"input_tokens": 100, "output_tokens": 20,
+                   "thinking_tokens": 5, "total_tokens": 125},
+        ),
     )
-    os.makedirs(transcript_dir, exist_ok=True)
-    with open(os.path.join(transcript_dir, "transcript.jsonl"), "w") as f:
-        for step in steps:
-            f.write(json.dumps(step) + "\n")
+    mock_run.return_value = MagicMock(
+        returncode=1, stdout=stream, stderr="",
+    )
+
+    result = generator._run_agy_cli(CLICommand(cli="agy", prompt="hi"))
+
+    envelope = generator.parse_response(result.stdout)
+    assert envelope["session_id"] == "conv-timeout"
+    tokens = envelope["stats"]["models"][_MODEL_LABEL]["tokens"]
+    assert tokens["total"] == 125
+    assert generator.extract_tools(result.stdout) == ["cloud-sql__list_instances"]
 
 
-def test_parse_transcript_extracts_tools_and_response(sandbox):
+def _stream(*events) -> str:
+    """Serializes stream-json events to the newline-delimited stdout agy emits
+    under ``--output-format stream-json``."""
+    return "\n".join(json.dumps(e) for e in events)
+
+
+def _init_event(conversation_id="conv-1"):
+    return {"event": "init", "conversation_id": conversation_id, "init": {}}
+
+
+def _tool_events(step_index, name, parameters, state="DONE",
+                 duration_seconds=0.1):
+    """An ACTIVE dispatch event followed by its DONE/ERROR terminal event,
+    sharing ``step_index`` -- the shape agy emits for one tool call."""
+    active = {
+        "event": "step_update",
+        "step_update": {
+            "step_index": step_index, "state": "ACTIVE", "step_type": "tool",
+            "tool_name": name,
+            "tool_info": {"name": name, "parameters": parameters},
+        },
+    }
+    terminal_info = {"name": name, "parameters": parameters}
+    if state == "DONE":
+        terminal_info["output"] = "ok"
+    else:
+        terminal_info["error"] = {"type": "TOOL_ERROR", "message": "boom"}
+    terminal = {
+        "event": "step_update",
+        "step_update": {
+            "step_index": step_index, "state": state, "step_type": "tool",
+            "tool_name": name, "duration_seconds": duration_seconds,
+            "tool_info": terminal_info,
+        },
+    }
+    return [active, terminal]
+
+
+def _result_event(conversation_id="conv-1", status="SUCCESS", response="done",
+                  duration_seconds=1.0, usage=None):
+    return {
+        "event": "result",
+        "result": {
+            "conversation_id": conversation_id, "status": status,
+            "response": response, "duration_seconds": duration_seconds,
+            "num_turns": 1, "usage": usage or {},
+        },
+    }
+
+
+# The MCP wrapper shape agy emits in stream-json. Unlike the transcript, the
+# args arrive already parsed (ServerName/ToolName are plain strings, Arguments
+# is a dict), not JSON-quoted.
+_MCP_PARAMS = {
+    "Arguments": {"project": "example-project"},
+    "ServerName": "cloud-sql",
+    "ToolName": "list_instances",
+}
+
+
+def test_parse_stream_json_extracts_tools_and_response(sandbox):
     generator = AgyCliGenerator({})
-    cwd = generator.fake_home
-    conversation_id = "abc-123"
 
-    steps = [
-        {
-            "step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT",
-            "status": "DONE", "created_at": "2026-05-27T07:00:00Z",
-            "content": "<USER_REQUEST>list /tmp</USER_REQUEST>",
-        },
-        {
-            "step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-27T07:00:01Z",
-            "tool_calls": [{"name": "list_dir",
-                            "args": {"DirectoryPath": "/tmp"}}],
-        },
-        {
-            "step_index": 2, "source": "MODEL", "type": "LIST_DIRECTORY",
-            "status": "DONE", "created_at": "2026-05-27T07:00:02Z",
-            "content": "file1\nfile2",
-        },
-        {
-            "step_index": 3, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-27T07:00:03Z",
-            "content": "I listed two files for you.",
-        },
-    ]
-
-    _write_transcript_fixture(
-        generator.app_data_dir, cwd, conversation_id, steps,
+    stdout = _stream(
+        _init_event(),
+        *_tool_events(1, "list_dir", {"DirectoryPath": "/tmp"}),
+        _result_event(response="I listed two files for you."),
     )
 
-    envelope_json = generator._parse_transcript_jsonl(cwd)
+    envelope_json = generator._parse_stream_json(stdout)
     envelope = json.loads(envelope_json)
 
-    assert envelope["session_id"] == conversation_id
+    assert envelope["session_id"] == "conv-1"
     assert envelope["response"] == "I listed two files for you."
-    assert "list_dir" in envelope["stats"]["tools"]["byName"]
     list_dir = envelope["stats"]["tools"]["byName"]["list_dir"]
     assert list_dir["count"] == 1
     assert list_dir["success"] == 1
     assert envelope["stats"]["tools"]["totalCalls"] == 1
     assert envelope["stats"]["tools"]["totalSuccess"] == 1
 
-    tools = generator.extract_tools(envelope_json)
-    assert tools == ["list_dir"]
+    assert generator.extract_tools(envelope_json) == ["list_dir"]
 
 
-def test_parse_transcript_uses_only_last_turn(sandbox):
-    """When ``--continue`` is used the transcript spans multiple turns;
-    only the slice from the most-recent ``USER_INPUT`` onward should be
-    reported."""
+def test_parse_stream_json_skips_non_object_lines(sandbox):
+    """A stray scalar/array line parses as valid JSON but is not an event;
+    it must be skipped so it can't break parsing of the real events around it."""
     generator = AgyCliGenerator({})
-    cwd = generator.fake_home
-    conversation_id = "multi-turn-xyz"
+    stdout = "\n".join([
+        json.dumps(_init_event()),
+        '"a warning string"',
+        "[]",
+        "42",
+        *[json.dumps(e)
+          for e in _tool_events(1, "list_dir", {"DirectoryPath": "/tmp"})],
+        json.dumps(_result_event(response="done")),
+    ])
 
-    steps = [
-        # ----- Turn 1 -----
-        {
-            "step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT",
-            "status": "DONE", "created_at": "2026-05-27T07:00:00Z",
-            "content": "<USER_REQUEST>turn one</USER_REQUEST>",
-        },
-        {
-            "step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-27T07:00:01Z",
-            "tool_calls": [{"name": "read_file", "args": {}}],
-        },
-        {
-            "step_index": 2, "source": "MODEL", "type": "READ_FILE",
-            "status": "DONE", "created_at": "2026-05-27T07:00:02Z",
-            "content": "...",
-        },
-        {
-            "step_index": 3, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-27T07:00:03Z",
-            "content": "turn one reply",
-        },
-        # ----- Turn 2 -----
-        {
-            "step_index": 4, "source": "USER_EXPLICIT", "type": "USER_INPUT",
-            "status": "DONE", "created_at": "2026-05-27T07:01:00Z",
-            "content": "<USER_REQUEST>turn two</USER_REQUEST>",
-        },
-        {
-            "step_index": 5, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-27T07:01:01Z",
-            "tool_calls": [{"name": "write_file", "args": {}}],
-        },
-        {
-            "step_index": 6, "source": "MODEL", "type": "WRITE_FILE",
-            "status": "DONE", "created_at": "2026-05-27T07:01:02Z",
-            "content": "ok",
-        },
-        {
-            "step_index": 7, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-27T07:01:03Z",
-            "content": "turn two reply",
-        },
-    ]
+    envelope = json.loads(generator._parse_stream_json(stdout))
 
-    _write_transcript_fixture(
-        generator.app_data_dir, cwd, conversation_id, steps,
+    assert envelope["session_id"] == "conv-1"
+    assert envelope["response"] == "done"
+    assert envelope["stats"]["tools"]["byName"]["list_dir"]["success"] == 1
+
+
+def test_parse_stream_json_skips_non_dict_nested_payloads(sandbox):
+    """An event can be a dict while its ``result``/``step_update`` payload is a
+    non-dict (e.g. ``{"event":"result","result":[]}``). Those payloads reach a
+    ``.get()`` call, so they must be type-checked -- otherwise parsing the whole
+    stream aborts and drops the valid usage/tool events around them."""
+    generator = AgyCliGenerator({})
+    stdout = _stream(
+        _init_event(),
+        {"event": "step_update", "step_update": "a warning"},
+        *_tool_events(1, "list_dir", {"DirectoryPath": "/tmp"}),
+        {"event": "result", "result": []},
+        _result_event(response="done"),
     )
 
-    envelope = json.loads(generator._parse_transcript_jsonl(cwd))
+    envelope = json.loads(generator._parse_stream_json(stdout))
 
-    assert envelope["response"] == "turn two reply"
-    by_name = envelope["stats"]["tools"]["byName"]
-    assert "write_file" in by_name
-    assert "read_file" not in by_name
-    assert envelope["stats"]["tools"]["totalCalls"] == 1
+    assert envelope["session_id"] == "conv-1"
+    assert envelope["response"] == "done"
+    assert envelope["stats"]["tools"]["byName"]["list_dir"]["success"] == 1
 
 
-def test_parse_transcript_no_conversation_returns_fallback(sandbox):
+def test_parse_stream_json_no_events_returns_fallback(sandbox):
     generator = AgyCliGenerator({})
-    envelope_json = generator._parse_transcript_jsonl(
-        generator.fake_home, fallback_response="raw stdout text",
+    envelope = json.loads(
+        generator._parse_stream_json("", fallback_response="raw stdout text")
     )
-    envelope = json.loads(envelope_json)
     assert envelope["response"] == "raw stdout text"
     assert envelope["session_id"] == ""
 
 
-# The exact JSON-quoted arg shape agy writes for a real MCP wrapper call.
-# The ``args`` payload mirrors ``REAL_ARGS`` in tool_naming_test.py -- keep the
-# two in lockstep if the observed agy transcript shape changes.
-_REAL_MCP_CALL = {
-    "name": "call_mcp_tool",
-    "args": {
-        "Arguments": '{"project":"example-project"}',
-        "ServerName": '"cloud-sql"',
-        "ToolName": '"list_instances"',
-        "toolAction": '"Listing Cloud SQL instances"',
-        "toolSummary": '"List Cloud SQL instances"',
-    },
-}
+def test_parse_stream_json_missing_result_uses_fallback_response(sandbox):
+    """A truncated stream with tool events but no ``result`` event still
+    surfaces tool stats and falls back to the raw response."""
+    generator = AgyCliGenerator({})
+    stdout = _stream(
+        _init_event("conv-x"),
+        *_tool_events(1, "view_file", {"AbsolutePath": "/x"}),
+    )
+    envelope = json.loads(
+        generator._parse_stream_json(stdout, fallback_response="partial")
+    )
+    assert envelope["session_id"] == "conv-x"
+    assert envelope["response"] == "partial"
+    assert envelope["stats"]["tools"]["byName"]["view_file"]["success"] == 1
 
 
-def test_parse_transcript_genuine_mcp_call_is_canonicalized_and_succeeds(
-    sandbox,
-):
-    """A real ``call_mcp_tool`` paired with an ``MCP_TOOL`` result step is
+def test_parse_stream_json_tokens_from_usage(mock_run, sandbox):
+    """Real token counts flow from the result event's ``usage`` block into the
+    models bucket (input mirrors prompt, output mirrors candidates)."""
+    generator = AgyCliGenerator({"model": _MODEL_LABEL})
+    stdout = _stream(
+        _init_event(),
+        _result_event(usage={
+            "input_tokens": 100, "output_tokens": 20,
+            "thinking_tokens": 5, "total_tokens": 125,
+        }),
+    )
+    envelope = json.loads(generator._parse_stream_json(stdout))
+    tokens = envelope["stats"]["models"][_MODEL_LABEL]["tokens"]
+    assert tokens == {
+        "input": 100, "prompt": 100, "candidates": 20,
+        "total": 125, "cached": 0, "thoughts": 5, "tool": 0,
+    }
+
+
+def test_parse_stream_json_success_status_reports_no_error(mock_run, sandbox):
+    """A SUCCESS result keeps totalErrors at 0 in both api and roles.main."""
+    generator = AgyCliGenerator({"model": _MODEL_LABEL})
+    stdout = _stream(_init_event(), _result_event(status="SUCCESS"))
+    model = json.loads(
+        generator._parse_stream_json(stdout)
+    )["stats"]["models"][_MODEL_LABEL]
+    assert model["api"]["totalErrors"] == 0
+    assert model["roles"]["main"]["totalErrors"] == 0
+
+
+def test_parse_stream_json_error_status_reports_error(mock_run, sandbox):
+    """A non-SUCCESS result (e.g. a timed-out/failed run) counts as one model
+    error in both api and roles.main, while stats are still retained."""
+    generator = AgyCliGenerator({"model": _MODEL_LABEL})
+    stdout = _stream(_init_event(), _result_event(status="ERROR"))
+    model = json.loads(
+        generator._parse_stream_json(stdout)
+    )["stats"]["models"][_MODEL_LABEL]
+    assert model["api"]["totalErrors"] == 1
+    assert model["roles"]["main"]["totalErrors"] == 1
+
+
+def test_parse_stream_json_missing_status_reports_no_error(mock_run, sandbox):
+    """A partial stream with no result status is not misreported as a failure."""
+    generator = AgyCliGenerator({"model": _MODEL_LABEL})
+    stdout = _stream(
+        _init_event(),
+        *_tool_events(1, "view_file", {"AbsolutePath": "/x"}),
+    )
+    model = json.loads(
+        generator._parse_stream_json(stdout)
+    )["stats"]["models"][_MODEL_LABEL]
+    assert model["api"]["totalErrors"] == 0
+    assert model["roles"]["main"]["totalErrors"] == 0
+
+
+def test_parse_stream_json_mcp_call_is_canonicalized_and_succeeds(sandbox):
+    """A ``call_mcp_tool`` wrapper whose terminal state is DONE is
     canonicalized to ``<server>__<tool>``, its args are unwrapped, and it
     counts as a success."""
     generator = AgyCliGenerator({})
-    cwd = generator.fake_home
-    conversation_id = "mcp-genuine"
-
-    steps = [
-        {
-            "step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT",
-            "status": "DONE", "created_at": "2026-05-29T09:00:00Z",
-            "content": "<USER_REQUEST>list instances</USER_REQUEST>",
-        },
-        {
-            "step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-29T09:00:01Z",
-            "tool_calls": [_REAL_MCP_CALL],
-        },
-        {
-            "step_index": 2, "source": "MODEL", "type": "MCP_TOOL",
-            "status": "DONE", "created_at": "2026-05-29T09:00:02Z",
-            "content": "instances: ...",
-        },
-        {
-            "step_index": 3, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-29T09:00:03Z",
-            "content": "Here are your instances.",
-        },
-    ]
-
-    _write_transcript_fixture(
-        generator.app_data_dir, cwd, conversation_id, steps,
+    stdout = _stream(
+        _init_event(),
+        *_tool_events(1, "call_mcp_tool", _MCP_PARAMS, state="DONE"),
+        _result_event(),
     )
 
-    envelope = json.loads(generator._parse_transcript_jsonl(cwd))
+    envelope = json.loads(generator._parse_stream_json(stdout))
     by_name = envelope["stats"]["tools"]["byName"]
 
     assert "cloud-sql__list_instances" in by_name
@@ -481,193 +579,69 @@ def test_parse_transcript_genuine_mcp_call_is_canonicalized_and_succeeds(
     assert slot["count"] == 1
     assert slot["success"] == 1
     assert slot["fail"] == 0
-    # The wrapper envelope is unwrapped to the real MCP arguments.
     assert slot["parameters"] == [{"project": "example-project"}]
 
 
-def test_parse_transcript_forged_mcp_call_without_result_is_failed(sandbox):
-    """A ``call_mcp_tool`` line with no agy-runtime ``MCP_TOOL`` result
-    step -- the cheapest transcript line an agent could forge via a
-    shell-out -- is not credited as a successful MCP execution."""
+def test_parse_stream_json_mcp_call_error_is_failed(sandbox):
+    """A ``call_mcp_tool`` whose terminal state is ERROR is not credited as a
+    success -- the state is authoritative, no result-type heuristic needed."""
     generator = AgyCliGenerator({})
-    cwd = generator.fake_home
-    conversation_id = "mcp-forged"
-
-    steps = [
-        {
-            "step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT",
-            "status": "DONE", "created_at": "2026-05-29T09:00:00Z",
-            "content": "<USER_REQUEST>list instances</USER_REQUEST>",
-        },
-        # Forged: a planner line claiming an MCP call, with no MCP_TOOL
-        # result step following it.
-        {
-            "step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-29T09:00:01Z",
-            "tool_calls": [_REAL_MCP_CALL],
-        },
-        {
-            "step_index": 2, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-29T09:00:02Z",
-            "content": "done",
-        },
-    ]
-
-    _write_transcript_fixture(
-        generator.app_data_dir, cwd, conversation_id, steps,
+    stdout = _stream(
+        _init_event(),
+        *_tool_events(1, "call_mcp_tool", _MCP_PARAMS, state="ERROR"),
+        _result_event(status="ERROR", response=""),
     )
 
-    envelope = json.loads(generator._parse_transcript_jsonl(cwd))
-    by_name = envelope["stats"]["tools"]["byName"]
-
-    slot = by_name["cloud-sql__list_instances"]
+    envelope = json.loads(generator._parse_stream_json(stdout))
+    slot = envelope["stats"]["tools"]["byName"]["cloud-sql__list_instances"]
     assert slot["count"] == 1
     assert slot["success"] == 0
     assert slot["fail"] == 1
     assert envelope["stats"]["tools"]["totalSuccess"] == 0
 
 
-def test_parse_transcript_mcp_call_with_non_mcp_result_is_failed(sandbox):
-    """A ``call_mcp_tool`` paired with a non-``MCP_TOOL`` result step (e.g.
-    a real ``RUN_COMMAND`` step the agent produced) is not credited as an
-    MCP success -- only agy's dedicated MCP_TOOL result proves execution."""
+def test_parse_stream_json_tool_without_terminal_is_failed(sandbox):
+    """A tool that only ever reaches ACTIVE (no DONE/ERROR) counts as a
+    failure, not a neutral entry."""
     generator = AgyCliGenerator({})
-    cwd = generator.fake_home
-    conversation_id = "mcp-wrong-result"
-
-    steps = [
-        {
-            "step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT",
-            "status": "DONE", "created_at": "2026-05-29T09:00:00Z",
-            "content": "<USER_REQUEST>list instances</USER_REQUEST>",
+    active_only = {
+        "event": "step_update",
+        "step_update": {
+            "step_index": 1, "state": "ACTIVE", "step_type": "tool",
+            "tool_name": "run_command",
+            "tool_info": {"name": "run_command",
+                          "parameters": {"CommandLine": "ls"}},
         },
-        {
-            "step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-29T09:00:01Z",
-            "tool_calls": [_REAL_MCP_CALL],
-        },
-        {
-            "step_index": 2, "source": "MODEL", "type": "RUN_COMMAND",
-            "status": "DONE", "created_at": "2026-05-29T09:00:02Z",
-            "content": "gcloud output",
-        },
-    ]
+    }
+    stdout = _stream(_init_event(), active_only, _result_event())
 
-    _write_transcript_fixture(
-        generator.app_data_dir, cwd, conversation_id, steps,
-    )
-
-    envelope = json.loads(generator._parse_transcript_jsonl(cwd))
-    slot = envelope["stats"]["tools"]["byName"]["cloud-sql__list_instances"]
+    envelope = json.loads(generator._parse_stream_json(stdout))
+    slot = envelope["stats"]["tools"]["byName"]["run_command"]
     assert slot["count"] == 1
     assert slot["success"] == 0
     assert slot["fail"] == 1
 
 
-def test_parse_transcript_adjacency_pairing_does_not_misattribute_results(
-    sandbox,
-):
-    """A call that produced no result of its own must not steal a *later*
-    call's result. Strict next-step adjacency keeps each result with the
-    call it directly followed.
-
-    This is the exact case an earlier document-order FIFO scheme got wrong:
-    a forged ``call_mcp_tool`` (no MCP_TOOL result) preceding a genuine
-    native ``run_command`` would consume the later RUN_COMMAND result, both
-    masking the forgery's failure and stripping the real call of its result.
-    """
+def test_parse_stream_json_multiple_tools_aggregate(sandbox):
+    """Native and MCP calls each pair to their own terminal state by
+    step_index, and durations/totals aggregate."""
     generator = AgyCliGenerator({})
-    cwd = generator.fake_home
-    conversation_id = "adjacency-pairing"
-
-    steps = [
-        {
-            "step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT",
-            "status": "DONE", "created_at": "2026-05-29T09:00:00Z",
-            "content": "<USER_REQUEST>go</USER_REQUEST>",
-        },
-        # Forged MCP call: no MCP_TOOL result follows it.
-        {
-            "step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-29T09:00:01Z",
-            "tool_calls": [_REAL_MCP_CALL],
-        },
-        # A separate, genuine native call followed by its own result. Under
-        # FIFO the forged MCP call above would have grabbed this result.
-        {
-            "step_index": 2, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-29T09:00:02Z",
-            "tool_calls": [{"name": "run_command", "args": {"Command": "ls"}}],
-        },
-        {
-            "step_index": 3, "source": "MODEL", "type": "RUN_COMMAND",
-            "status": "DONE", "created_at": "2026-05-29T09:00:03Z",
-            "content": "ok",
-        },
-    ]
-
-    _write_transcript_fixture(
-        generator.app_data_dir, cwd, conversation_id, steps,
+    stdout = _stream(
+        _init_event(),
+        *_tool_events(1, "view_file", {"AbsolutePath": "/x"},
+                      state="DONE", duration_seconds=0.2),
+        *_tool_events(2, "call_mcp_tool", _MCP_PARAMS,
+                      state="DONE", duration_seconds=0.5),
+        _result_event(),
     )
 
-    envelope = json.loads(generator._parse_transcript_jsonl(cwd))
-    by_name = envelope["stats"]["tools"]["byName"]
-    # The forged MCP call gets no result and is failed.
-    assert by_name["cloud-sql__list_instances"]["success"] == 0
-    assert by_name["cloud-sql__list_instances"]["fail"] == 1
-    # The genuine native call keeps its own result.
-    assert by_name["run_command"]["success"] == 1
-    assert by_name["run_command"]["fail"] == 0
-    assert envelope["stats"]["tools"]["totalSuccess"] == 1
-    assert envelope["stats"]["tools"]["totalFail"] == 1
-
-
-def test_parse_transcript_interleaved_native_and_mcp_calls_pair_correctly(
-    sandbox,
-):
-    """Native call + result, then a genuine MCP call + MCP_TOOL result, all
-    pair to the right call under adjacency."""
-    generator = AgyCliGenerator({})
-    cwd = generator.fake_home
-    conversation_id = "interleaved"
-
-    steps = [
-        {
-            "step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT",
-            "status": "DONE", "created_at": "2026-05-29T09:00:00Z",
-            "content": "<USER_REQUEST>go</USER_REQUEST>",
-        },
-        {
-            "step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-29T09:00:01Z",
-            "tool_calls": [{"name": "view_file", "args": {}}],
-        },
-        {
-            "step_index": 2, "source": "MODEL", "type": "VIEW_FILE",
-            "status": "DONE", "created_at": "2026-05-29T09:00:02Z",
-            "content": "ok",
-        },
-        {
-            "step_index": 3, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-29T09:00:03Z",
-            "tool_calls": [_REAL_MCP_CALL],
-        },
-        {
-            "step_index": 4, "source": "MODEL", "type": "MCP_TOOL",
-            "status": "DONE", "created_at": "2026-05-29T09:00:04Z",
-            "content": "instances",
-        },
-    ]
-
-    _write_transcript_fixture(
-        generator.app_data_dir, cwd, conversation_id, steps,
-    )
-
-    envelope = json.loads(generator._parse_transcript_jsonl(cwd))
-    by_name = envelope["stats"]["tools"]["byName"]
-    assert by_name["view_file"]["success"] == 1
-    assert by_name["cloud-sql__list_instances"]["success"] == 1
-    assert envelope["stats"]["tools"]["totalSuccess"] == 2
+    envelope = json.loads(generator._parse_stream_json(stdout))
+    tools = envelope["stats"]["tools"]
+    assert tools["byName"]["view_file"]["success"] == 1
+    assert tools["byName"]["cloud-sql__list_instances"]["success"] == 1
+    assert tools["totalCalls"] == 2
+    assert tools["totalSuccess"] == 2
+    assert tools["totalDurationMs"] == 700
 
 
 def _write_probe_log(app_data_dir, log_name, content):
@@ -716,7 +690,7 @@ def _local_app_data_dir():
     )
 
 
-def test_verify_mcp_runtime_raises_when_no_tools_attach(mock_run, sandbox):
+def test_verify_runtime_raises_when_no_tools_attach(mock_run, sandbox):
     """A server that attaches zero tools (the silent failure mode caused
     by a wrong URL field) must raise RuntimeError so the eval doesn't
     degrade to gcloud shell-outs. The probe writes no schema files."""
@@ -738,7 +712,7 @@ def test_verify_mcp_runtime_raises_when_no_tools_attach(mock_run, sandbox):
         AgyCliGenerator(config)
 
 
-def test_verify_mcp_runtime_includes_fatal_markers_in_error(mock_run, sandbox):
+def test_verify_runtime_includes_fatal_markers_in_error(mock_run, sandbox):
     """When attach fails AND the probe log has a fatal marker, the marker
     is surfaced in the error for diagnosis."""
     config = {
@@ -762,7 +736,39 @@ def test_verify_mcp_runtime_includes_fatal_markers_in_error(mock_run, sandbox):
         AgyCliGenerator(config)
 
 
-def test_verify_mcp_runtime_passes_when_tools_attach(mock_run, sandbox):
+def test_verify_runtime_raises_on_invalid_model(mock_run, sandbox):
+    """agy populates the tool-schema cache before it resolves ``--model``, so
+    an unrecognized model attaches tools normally and only then fails every
+    turn with an empty response. Verification must reject it rather than let
+    the run score a configuration error as poor model behaviour."""
+    config = {
+        "model": "gemini-9.9-nonexistent",
+        "setup": {
+            "mcp_servers": {
+                "cloud-sql": {"serverUrl": "https://example.com/mcp"},
+            }
+        }
+    }
+
+    def fake_run(cmd, *args, **kwargs):
+        _write_mcp_schemas(
+            _local_app_data_dir(), "cloud-sql", ["list_instances"],
+        )
+        _write_probe_log(
+            _local_app_data_dir(), "cli-probe.log",
+            'E0805 15:58:17 printmode.go:224] Print mode: invalid model '
+            'selection (--model "gemini-9.9-nonexistent" --effort ""): model '
+            'gemini-9.9-nonexistent is not recognized as a known model or '
+            'custom model in settings\n',
+        )
+        return MagicMock(returncode=1, stdout="", stderr="")
+
+    mock_run.side_effect = fake_run
+    with pytest.raises(RuntimeError, match="gemini-9.9-nonexistent"):
+        AgyCliGenerator(config)
+
+
+def test_verify_runtime_passes_when_tools_attach(mock_run, sandbox):
     """When the probe populates the tool-schema cache, setup completes."""
     config = {
         "setup": {
@@ -785,7 +791,7 @@ def test_verify_mcp_runtime_passes_when_tools_attach(mock_run, sandbox):
     assert gen.name == "agy_cli"
 
 
-def test_verify_mcp_runtime_ignores_non_schema_json(mock_run, sandbox):
+def test_verify_runtime_ignores_non_schema_json(mock_run, sandbox):
     """A ``*.json`` that isn't a tool schema (sidecar file, junk, or a
     non-object) must not be counted as a discovered tool -- otherwise a
     silent attach failure that happens to leave stray JSON behind would
@@ -812,7 +818,7 @@ def test_verify_mcp_runtime_ignores_non_schema_json(mock_run, sandbox):
         AgyCliGenerator(config)
 
 
-def test_verify_mcp_runtime_counts_only_valid_schemas(mock_run, sandbox):
+def test_verify_runtime_counts_only_valid_schemas(mock_run, sandbox):
     """A real tool schema sitting next to junk still passes, and only the
     valid schema is counted as a discovered tool."""
     config = {
@@ -835,7 +841,7 @@ def test_verify_mcp_runtime_counts_only_valid_schemas(mock_run, sandbox):
     assert gen.name == "agy_cli"
 
 
-def test_verify_mcp_runtime_clears_stale_schema_cache(mock_run, sandbox):
+def test_verify_runtime_clears_stale_schema_cache(mock_run, sandbox):
     """A stale schema dir from a previous run must not cause a false pass:
     if this run's probe writes nothing, verification must still fail."""
     # Pre-seed a stale cache before the generator runs.
@@ -858,14 +864,44 @@ def test_verify_mcp_runtime_clears_stale_schema_cache(mock_run, sandbox):
         AgyCliGenerator(config)
 
 
-def test_verify_mcp_runtime_skipped_without_mcp_servers(mock_run, sandbox):
-    """No MCP servers configured -> no probe, no subprocess call."""
+def test_verify_runtime_skipped_with_nothing_to_verify(mock_run, sandbox):
+    """No MCP servers and no configured model -> no probe, no subprocess call."""
     AgyCliGenerator({"setup": {"skills": []}})
 
     assert mock_run.call_count == 0
 
 
-def test_verify_mcp_runtime_unreadable_probe_log_does_not_mask_failure(
+def _invalid_model_probe(cmd, *args, **kwargs):
+    _write_probe_log(
+        _local_app_data_dir(), "cli-probe.log",
+        'E0805 15:58:17 printmode.go:224] Print mode: invalid model '
+        'selection (--model "gemini-9.9-nonexistent" --effort ""): model '
+        'gemini-9.9-nonexistent is not recognized as a known model or '
+        'custom model in settings\n',
+    )
+    return MagicMock(returncode=1, stdout="", stderr="")
+
+
+def test_invalid_model_rejected_on_skills_only_config(mock_run, sandbox):
+    """The model check must not ride on MCP configuration: a skills-only run
+    hits the same empty-response failure and has no server to trigger it."""
+    mock_run.side_effect = _invalid_model_probe
+    with pytest.raises(RuntimeError, match="gemini-9.9-nonexistent"):
+        AgyCliGenerator({
+            "model": "gemini-9.9-nonexistent",
+            "setup": {"skills": []},
+        })
+
+
+def test_invalid_model_rejected_without_setup_block(mock_run, sandbox):
+    """A config with no ``setup:`` at all skips _setup_tools entirely, so the
+    probe has to be driven from the model alone."""
+    mock_run.side_effect = _invalid_model_probe
+    with pytest.raises(RuntimeError, match="gemini-9.9-nonexistent"):
+        AgyCliGenerator({"model": "gemini-9.9-nonexistent"})
+
+
+def test_verify_runtime_unreadable_probe_log_does_not_mask_failure(
     mock_run, sandbox,
 ):
     """If the probe log can't be read during fatal-marker enrichment, the
@@ -931,72 +967,35 @@ def _written_settings(generator):
         return json.load(f)
 
 
-def test_config_model_passed_as_flag():
-    """A configured `model` (an agy UI label) is appended to the command as
-    ``--model <label>`` verbatim."""
-    cmd = AgyCliGenerator._base_agy_command(
-        "agy", "hi", model="Gemini 3.1 Pro (High)"
-    )
-
-    assert "--model" in cmd
-    assert cmd[cmd.index("--model") + 1] == "Gemini 3.1 Pro (High)"
-
-
-def test_no_model_flag_when_unset():
-    """No configured model -> no ``--model`` flag is added."""
-    cmd = AgyCliGenerator._base_agy_command("agy", "hi")
-
-    assert "--model" not in cmd
-
-
 def test_run_passes_configured_model_flag(mock_run, sandbox):
     """The turn command carries the configured model via ``--model``."""
-    generator = AgyCliGenerator({"model": "Gemini 3.1 Pro (High)"})
+    generator = AgyCliGenerator({"model": _MODEL_LABEL})
     generator._run_agy_cli(CLICommand(generator.agy_bin, "hi"))
 
     argv = list(mock_run.call_args_list[-1].args[0])
-    assert argv[argv.index("--model") + 1] == "Gemini 3.1 Pro (High)"
+    assert argv[argv.index("--model") + 1] == _MODEL_LABEL
 
 
-def test_model_never_written_to_settings(sandbox):
+def test_model_never_written_to_settings(mock_run, sandbox):
     """The model is selected via the flag, not the settings.json `model`
     key -- so no `model` key is ever written there."""
-    generator = AgyCliGenerator({"model": "Gemini 3.1 Pro (High)"})
+    generator = AgyCliGenerator({"model": _MODEL_LABEL})
 
     assert "model" not in _written_settings(generator)
 
 
-def _stats_models(generator, cwd):
-    steps = [
-        {
-            "step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT",
-            "status": "DONE", "created_at": "2026-05-27T07:00:00Z",
-            "content": "<USER_REQUEST>hi</USER_REQUEST>",
-        },
-        {
-            "step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE",
-            "status": "DONE", "created_at": "2026-05-27T07:00:01Z",
-            "content": "done.",
-        },
-    ]
-    _write_transcript_fixture(generator.app_data_dir, cwd, "conv-1", steps)
-    envelope = json.loads(generator._parse_transcript_jsonl(cwd))
-    return envelope["stats"]["models"]
-
-
-def test_models_bucket_keyed_by_configured_model(sandbox):
-    """The stats models bucket is keyed by the configured model label."""
-    generator = AgyCliGenerator({"model": "Gemini 3.1 Pro (High)"})
-    assert "Gemini 3.1 Pro (High)" in _stats_models(
-        generator, generator.fake_home
+def _stats_models(generator):
+    envelope = json.loads(
+        generator._parse_stream_json(_stream(_init_event(), _result_event()))
     )
+    return envelope["stats"]["models"]
 
 
 def test_models_bucket_falls_back_to_agy(sandbox):
     """Without a configured model and no cli log, the bucket falls back to
     the generic 'agy' label."""
     generator = AgyCliGenerator({})
-    assert "agy" in _stats_models(generator, generator.fake_home)
+    assert "agy" in _stats_models(generator)
 
 
 _MODEL_LOG_LINE = (
@@ -1007,23 +1006,9 @@ _MODEL_LOG_LINE = (
 
 
 def _write_cli_log(generator, *lines):
-    log_dir = os.path.join(generator.app_data_dir, "log")
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, "cli-20260604_092731.log")
-    with open(log_file, "w") as f:
+    os.makedirs(os.path.dirname(generator.cli_log_path), exist_ok=True)
+    with open(generator.cli_log_path, "w") as f:
         f.writelines(lines)
-    cli_log = os.path.join(generator.app_data_dir, "cli.log")
-    if os.path.lexists(cli_log):
-        os.remove(cli_log)
-    os.symlink(log_file, cli_log)
-
-
-def test_detect_model_from_log(sandbox):
-    """The resolved model label is recovered from the cli log."""
-    generator = AgyCliGenerator({})
-    _write_cli_log(generator, "noise\n", _MODEL_LOG_LINE)
-
-    assert generator._detect_model_from_log() == "Gemini 3.5 Flash (Medium)"
 
 
 def test_detect_model_from_log_takes_last_match(sandbox):
@@ -1032,10 +1017,10 @@ def test_detect_model_from_log_takes_last_match(sandbox):
     _write_cli_log(
         generator,
         _MODEL_LOG_LINE,
-        _MODEL_LOG_LINE.replace("Gemini 3.5 Flash (Medium)", "Gemini 3.1 Pro (High)"),
+        _MODEL_LOG_LINE.replace("Gemini 3.5 Flash (Medium)", _MODEL_LABEL),
     )
 
-    assert generator._detect_model_from_log() == "Gemini 3.1 Pro (High)"
+    assert generator._detect_model_from_log() == _MODEL_LABEL
 
 
 def test_detect_model_from_log_returns_none_without_log(sandbox):
@@ -1050,39 +1035,272 @@ def test_models_bucket_uses_detected_default_model(sandbox):
     generator = AgyCliGenerator({})
     _write_cli_log(generator, _MODEL_LOG_LINE)
 
-    models = _stats_models(generator, generator.fake_home)
+    models = _stats_models(generator)
     assert "Gemini 3.5 Flash (Medium)" in models
     assert "agy" not in models
 
 
-def test_configured_model_overrides_detected_log_model(sandbox):
+def test_configured_model_overrides_detected_log_model(mock_run, sandbox):
     """A configured model takes precedence over whatever the log resolved."""
-    generator = AgyCliGenerator({"model": "Gemini 3.1 Pro (High)"})
+    generator = AgyCliGenerator({"model": _MODEL_LABEL})
     _write_cli_log(generator, _MODEL_LOG_LINE)
 
-    assert "Gemini 3.1 Pro (High)" in _stats_models(
-        generator, generator.fake_home
+    assert _MODEL_LABEL in _stats_models(generator)
+
+
+def _adc_file(real_home):
+    return (
+        real_home / ".config" / "gcloud"
+        / "application_default_credentials.json"
     )
 
 
-def test_oauth_token_mirrored_from_host_disk(sandbox):
-    """The host's on-disk token is mirrored into the sandbox appDataDir."""
-    real_app_data = sandbox / APP_DATA_SUBPATH
-    real_app_data.mkdir(parents=True)
-    with open(real_app_data / "antigravity-oauth-token", "w") as f:
-        f.write("DISK_TOKEN")
+def _seed_adc(real_home, content=None):
+    """Writes a host ADC. The default carries quota_project_id, matching what
+    `gcloud auth application-default login` produces, so the generator has no
+    reason to augment it."""
+    adc = _adc_file(real_home)
+    adc.parent.mkdir(parents=True, exist_ok=True)
+    adc.write_text(content or json.dumps(
+        {"type": "authorized_user", "quota_project_id": "test-quota-project"}
+    ))
+    return adc
+
+
+def _remove_adc(real_home):
+    """Drops the ADC the sandbox fixture seeds, for tests that need the
+    generator to resolve a credential from somewhere else -- or from nowhere."""
+    _adc_file(real_home).unlink()
+
+
+def test_adc_auth_env_var_always_set(sandbox):
+    """ADC is the harness's only auth mode, so the flag is not config-driven
+    and cannot be turned off from the model config."""
+    generator = AgyCliGenerator({"env": {"AGY_ADC_AUTH": "false"}})
+
+    assert generator.env["AGY_ADC_AUTH"] == "true"
+
+
+def test_adc_staged_into_sandbox(sandbox):
+    """The host's ADC file is copied into the sandbox home."""
+    generator = AgyCliGenerator({})
+
+    staged = os.path.join(
+        generator.fake_home, ".config", "gcloud",
+        "application_default_credentials.json",
+    )
+    assert os.path.exists(staged)
+    assert os.path.exists(generator.env["GOOGLE_APPLICATION_CREDENTIALS"])
+    assert generator.adc_path is not None
+
+
+def test_missing_adc_is_fatal(sandbox):
+    """agy takes its entitlement project from the credential file's
+    quota_project_id, and a metadata-server token has none -- so continuing
+    without a file guarantees an empty model registry. Fail at setup rather
+    than log a reassuring fallback and let every turn fail."""
+    _remove_adc(sandbox)
+
+    with pytest.raises(RuntimeError, match="requires an application default"):
+        AgyCliGenerator({})
+
+
+def test_shell_exported_adc_is_used(sandbox, monkeypatch, tmp_path):
+    """A shell-exported GOOGLE_APPLICATION_CREDENTIALS (the service-account/CI
+    pattern) satisfies the credential requirement: CI never runs
+    `gcloud auth application-default login`, so there is no well-known file."""
+    _remove_adc(sandbox)
+    key = tmp_path / "sa_key.json"
+    key.write_text(json.dumps(
+        {"type": "service_account", "quota_project_id": "exported-proj"}
+    ))
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(key))
 
     generator = AgyCliGenerator({})
 
-    token_file = os.path.join(generator.app_data_dir, "antigravity-oauth-token")
-    with open(token_file) as f:
-        assert f.read() == "DISK_TOKEN"
+    assert generator.adc_path == str(key)
 
 
-def test_missing_host_token_is_non_fatal(sandbox):
-    """A missing host token does not raise at init; the warning path is
-    exercised and no token file is written into the sandbox."""
+def test_gke_secret_mount_supplies_adc(sandbox, monkeypatch, tmp_path):
+    """On GKE nothing runs `gcloud auth application-default login`, so the
+    well-known-file lookup finds nothing and the mounted service-account key
+    is the pod's only ADC."""
+    _remove_adc(sandbox)
+    key = tmp_path / "key.json"
+    key.write_text(json.dumps(
+        {"type": "service_account", "quota_project_id": "cloud-db-nl2sql"}
+    ))
+    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+
     generator = AgyCliGenerator({})
 
-    token_file = os.path.join(generator.app_data_dir, "antigravity-oauth-token")
-    assert not os.path.exists(token_file)
+    assert generator.env["GOOGLE_APPLICATION_CREDENTIALS"] == str(key)
+    assert generator.adc_path == str(key)
+
+
+def test_gke_secret_mount_is_not_copied_into_sandbox(sandbox, monkeypatch, tmp_path):
+    """The key is read in place. Copying it would spread a private key onto
+    the shared session PVC for no gain -- agy reads the absolute path."""
+    _remove_adc(sandbox)
+    key = tmp_path / "key.json"
+    key.write_text(json.dumps(
+        {"type": "service_account", "quota_project_id": "cloud-db-nl2sql"}
+    ))
+    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+
+    generator = AgyCliGenerator({})
+
+    staged = os.path.join(
+        generator.fake_home, ".config", "gcloud",
+        "application_default_credentials.json",
+    )
+    assert not os.path.exists(staged)
+
+
+def test_host_adc_wins_over_gke_secret_mount(sandbox, monkeypatch, tmp_path):
+    """Local dev keeps using the developer's own ADC even if the GKE path
+    happens to exist on the machine."""
+    key = tmp_path / "key.json"
+    key.write_text('{"type": "service_account"}')
+    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+
+    generator = AgyCliGenerator({})
+
+    assert generator.adc_path != str(key)
+    assert generator.adc_path.startswith(str(sandbox))
+
+
+def test_mcp_attach_failure_names_the_adc_in_use(mock_run, sandbox):
+    """Attachment failures are usually auth-shaped, so the error names the
+    credential the servers were attaching with."""
+    config = {
+        "setup": {
+            "mcp_servers": {
+                "cloud-sql": {
+                    "httpUrl": "https://sqladmin.googleapis.com/mcp",
+                    "authProviderType": "google_credentials",
+                },
+            }
+        }
+    }
+
+    def fake_run(cmd, *args, **kwargs):
+        _write_probe_log(_local_app_data_dir(), "cli-probe.log", "I startup\n")
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    mock_run.side_effect = fake_run
+    with pytest.raises(RuntimeError, match="ADC in use:"):
+        AgyCliGenerator(config)
+
+
+def test_quota_project_injected_when_credential_lacks_it(sandbox, monkeypatch, tmp_path):
+    """agy reads its entitlement project only from the credential's
+    quota_project_id. A stock service-account key has no such field, and
+    without it agy's model registry is empty and every --model value --
+    including agy's own default -- is rejected as unknown."""
+    _remove_adc(sandbox)
+    key = tmp_path / "key.json"
+    key.write_text('{"type": "service_account", "project_id": "other-proj"}')
+    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+
+    generator = AgyCliGenerator({"env": {"GOOGLE_CLOUD_PROJECT": "cloud-db-nl2sql"}})
+
+    assert generator.adc_path != str(key)
+    with open(generator.adc_path) as f:
+        assert json.load(f)["quota_project_id"] == "cloud-db-nl2sql"
+    assert generator.env["GOOGLE_APPLICATION_CREDENTIALS"] == generator.adc_path
+    assert json.loads(key.read_text()) == {
+        "type": "service_account", "project_id": "other-proj",
+    }
+
+
+def test_quota_project_falls_back_to_credential_project_id(sandbox, monkeypatch, tmp_path):
+    """With no configured project the key's own project is the only sane
+    entitlement target."""
+    _remove_adc(sandbox)
+    key = tmp_path / "key.json"
+    key.write_text('{"type": "service_account", "project_id": "cloud-db-nl2sql"}')
+    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+
+    generator = AgyCliGenerator({})
+
+    with open(generator.adc_path) as f:
+        assert json.load(f)["quota_project_id"] == "cloud-db-nl2sql"
+
+
+def test_unresolvable_quota_project_is_fatal(sandbox, monkeypatch, tmp_path):
+    """A credential with neither quota_project_id nor project_id, and no
+    configured project, leaves agy's model registry empty -- the same doomed
+    run as no credential at all, so it fails the same way."""
+    _remove_adc(sandbox)
+    key = tmp_path / "key.json"
+    key.write_text('{"type": "service_account"}')
+    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+
+    with pytest.raises(RuntimeError, match="no quota_project_id"):
+        AgyCliGenerator({})
+
+
+def test_unreadable_credential_is_fatal(sandbox):
+    """An unparseable credential means quota_project_id cannot be confirmed,
+    so the run cannot be assumed viable."""
+    _seed_adc(sandbox, content="{ not json")
+
+    with pytest.raises(RuntimeError, match="unreadable"):
+        AgyCliGenerator({})
+
+
+def test_existing_quota_project_is_left_alone(sandbox):
+    """An ADC that already carries quota_project_id is left untouched."""
+    adc_dir = sandbox / ".config" / "gcloud"
+    adc_dir.mkdir(parents=True, exist_ok=True)
+    adc = adc_dir / "application_default_credentials.json"
+    adc.write_text('{"type": "authorized_user", "quota_project_id": "mine"}')
+
+    generator = AgyCliGenerator({"env": {"GOOGLE_CLOUD_PROJECT": "cloud-db-nl2sql"}})
+
+    with open(generator.adc_path) as f:
+        assert json.load(f)["quota_project_id"] == "mine"
+
+
+def test_augmented_credential_stays_off_the_session_sandbox(sandbox, monkeypatch, tmp_path):
+    """The sandbox lives on a PVC shared across sessions, so the copy carrying
+    the private key must land on pod-local scratch instead."""
+    _remove_adc(sandbox)
+    key = tmp_path / "key.json"
+    key.write_text('{"type": "service_account", "project_id": "cloud-db-nl2sql"}')
+    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+
+    generator = AgyCliGenerator({})
+
+    assert not generator.adc_path.startswith(generator.fake_home)
+    assert oct(os.stat(generator.adc_path).st_mode)[-3:] == "600"
+
+
+def test_augmented_credential_is_removed_with_the_generator(
+    sandbox, monkeypatch, tmp_path
+):
+    """That copy is a plaintext key on shared scratch. Without cleanup every
+    session leaves one behind for the life of the node."""
+    _remove_adc(sandbox)
+    key = tmp_path / "key.json"
+    key.write_text('{"type": "service_account", "project_id": "cloud-db-nl2sql"}')
+    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+
+    generator = AgyCliGenerator({})
+    augmented = generator.adc_path
+    assert os.path.exists(augmented)
+
+    del generator
+    gc.collect()
+
+    assert not os.path.exists(augmented)
+
+
+def test_merged_env_stringifies_non_string_values(sandbox):
+    """Unquoted YAML scalars arrive as bool/int; subprocess rejects those."""
+    generator = AgyCliGenerator({"env": {"FLAG": True, "COUNT": 3}})
+
+    env = generator._merged_env()
+    assert env["FLAG"] == "True"
+    assert env["COUNT"] == "3"
