@@ -1,0 +1,22 @@
+{
+  "_comment": "Single-CUJ re-run of csql-med-set-database-flag after relaxing the verification rubric to accept reading the live flag value (execute_sql_readonly SHOW max_connections) as valid confirmation, not only a second get_instance. Filtered from cloud_sql_medium.json.",
+  "_fixtures": "Project astana-evaluation. Persistent: 'nl2code-bbf9a3' (RUNNABLE reference/clone source, read-only here), 'my-pg-app-bbf9a3' (mutation target; reset to db-f1-micro with cleared flags by setup/teardown before & after each run). Mutating scenarios touch ONLY resources teardown_evalset.sh cleans up: databases 'analytics'/'user_data', user 'app_ro', and tier/flag patches on my-pg-app-bbf9a3.",
+  "_verified_tools": "Databases are created via execute_sql ('CREATE DATABASE ...') and listed via execute_sql_readonly -- there is NO create_database/list_databases control-plane tool. Users via create_user/list_users. Instance settings via update_instance + get_instance. There is NO delete_* or list_backups tool in the MCP (a deliberate MCP-vs-gcloud capability-gap signal).",
+  "_hermeticity": "Each mutating scenario creates a DISTINCT object (analytics db, user_data db, app_ro user, one flag patch, one tier patch) on the single shared instance my-pg-app-bbf9a3. Cloud SQL serializes operations per instance, so this file's run config sets runners.agent_runners=1 (sequential). setup/teardown reset state before and after the run.",
+  "scenarios": [
+    {
+      "id": "csql-med-set-database-flag",
+      "category": "instance-admin/mutation",
+      "starting_prompt": "Set the 'max_connections' database flag to 100 on 'my-pg-app-bbf9a3' in astana-evaluation and then show me that it took effect.",
+      "conversation_plan": "Ask the agent to set the max_connections flag to 100 on my-pg-app-bbf9a3 and verify. Success = the agent updates the instance's database flags (update_instance) AND confirms the new value by ANY valid means -- either reading the instance config back (get_instance) OR querying the live running value (e.g. execute_sql_readonly with 'SHOW max_connections' / a pg_settings query). Do not require a specific verification tool; reading the live value is an equally (or more) valid confirmation than get_instance.",
+      "expected_trajectory": [
+        "cloud-sql__update_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 4
+    }
+  ]
+}

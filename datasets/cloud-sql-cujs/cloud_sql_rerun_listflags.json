@@ -1,0 +1,21 @@
+{
+  "_comment": "EASY tier of the Cloud SQL CUJ set (Google-managed MCP vs gcloud-only). EASY = single-turn, single-tool, READ-ONLY discovery. No mutations => hermetic and safe for parallel runners. expected_trajectory uses VERIFIED MCP tool names (Claude Code namespaces them as cloud-sql__<tool>); in gcloud-only mode rely on goal_completion (trajectory_matcher.filter_native_tools=false credits gcloud-via-Bash).",
+  "_fixtures": "Project astana-evaluation (108+ real instances). Persistent fixtures: 'nl2code-bbf9a3' (RUNNABLE postgres, read-only reference + clone source) and 'my-pg-app-bbf9a3' (RUNNABLE, mutation target in medium/hard; read-only here). Because the project has many instances, list-instances CUJs assert PRESENCE of the two fixtures rather than an exact inventory.",
+  "_verified_tools": "Confirmed live via the sqladmin MCP tools/list: list_instances, get_instance, create_instance, update_instance, clone_instance, execute_sql, execute_sql_readonly, get_operation, create_user, update_user, list_users, create_backup, restore_backup, import_data, postgres_upgrade_precheck. NOTE there is NO list_databases / create_database / delete_* / list_backups / list_operations -- 'list databases' is done via execute_sql_readonly against pg_database; backup/maintenance/flag/IP details are read from get_instance.",
+  "scenarios": [
+    {
+      "id": "csql-easy-list-database-flags",
+      "category": "instance-admin/read-only",
+      "starting_prompt": "What database flags are currently set on 'my-pg-app-bbf9a3' in astana-evaluation?",
+      "conversation_plan": "Ask which database flags are configured on my-pg-app-bbf9a3. Success = the agent fetches the instance settings and reports databaseFlags (expected none/empty after reset).",
+      "expected_trajectory": [
+        "cloud-sql__get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 2
+    }
+  ]
+}
