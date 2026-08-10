@@ -1,14 +1,7 @@
 # Antigravity (agy) CLI Evaluation Guide
 
 This guide covers how to use EvalBench for evaluating [Antigravity CLI](https://antigravity.google/product/antigravity-cli) (`agy`)
-agent workflows using **MCP Servers** and **Skills**. It mirrors the structure
-of [`gemini_cli_agent_testing.md`](gemini_cli_agent_testing.md) and only calls
-out where the two harnesses differ.
-
-> [!IMPORTANT]
-> **First-run auth:** agy has no headless login. Run `agy` once interactively
-> on the host to mint a refreshable token; the harness mirrors it into every
-> eval sandbox after that. See [Authentication](#authentication).
+agent workflows using **MCP Servers** and **Skills**.
 
 ---
 
@@ -22,14 +15,13 @@ out where the two harnesses differ.
   - [Run Configuration](#1-run-configuration)
   - [Model Configuration](#2-model-configuration)
   - [Evaluation Dataset (Evalset)](#3-evaluation-dataset-evalset)
-- [Authentication](#authentication)
+- [Authentication & Supported Models](#authentication--supported-models)
 - [Tool Paradigms](#tool-paradigms)
   - [MCP Servers](#mcp-servers)
   - [Skills](#skills)
   - [Fake MCP Servers (Testing)](#fake-mcp-servers-testing)
-- [Differences vs. Gemini CLI](#differences-vs-gemini-cli)
-- [Scorers](#scorers)
-- [Reporting](#reporting)
+- [Scorers & Reporting](#scorers--reporting)
+- [Comparison Reference (vs. Gemini CLI)](#comparison-reference-vs-gemini-cli)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -37,24 +29,28 @@ out where the two harnesses differ.
 ## Overview
 
 EvalBench's agy CLI integration enables automated, multi-turn evaluation of
-agentic workflows that run on the Antigravity CLI binary. Same evaluator,
-same scorers, same evalset format as the Gemini CLI guide -- the generator
-just shells out to the `agy` binary instead of `npm exec @google/gemini-cli`.
+agentic AI workflows running on the Antigravity CLI binary. EvalBench drives
+the agent with simulated users, captures tool invocations and token usage via
+agy's structured event stream, and evaluates correctness with configurable
+scorers.
 
 ### Key Capabilities
 
-- **Multi-turn evaluation** with LLM-powered simulated users
-- **Two tool paradigms** today: MCP servers and skills (agy does not expose a
-  Gemini-CLI-style extension manager)
-- **Fake MCP server support** for deterministic, offline testing
-- **Same 8 built-in scorers** as Gemini CLI
-- **CSV and BigQuery reporting**
+- **Multi-turn evaluation** driven by LLM-powered simulated users following
+  natural language conversation plans.
+- **Two tool paradigms**: Model Context Protocol (MCP) servers (HTTP and
+  stdio) and Skills (packaged as plugins).
+- **Fake MCP server support** for deterministic, offline testing without cloud
+  resources.
+- **Automated scoring and reporting** across trajectory matching, goal
+  completion, CSV export, and Google BigQuery.
 
 ---
 
 ## Architecture
 
-Identical to the Gemini CLI flow; only the generator class changes:
+The evaluation pipeline coordinates test scenarios, user simulation, and the
+sandboxed Antigravity CLI process:
 
 ```
 Run Config -> AgentOrchestrator -> AgentEvaluator -> AgyCliGenerator -> agy
@@ -63,7 +59,14 @@ Run Config -> AgentOrchestrator -> AgentEvaluator -> AgyCliGenerator -> agy
                                               MCP servers / skills
 ```
 
-The `orchestrator: agent` keyword in your run config selects the `AgentOrchestrator`, while the concrete CLI generator (`agy_cli`) is chosen via the `generator` field in your `model_config`.
+1. **AgentOrchestrator** (`orchestrator: agent`) loads the dataset and
+   dispatches evaluation scenarios.
+2. **AgentEvaluator** manages the multi-turn interaction loop between the
+   generator and the **SimulatedUser** LLM.
+3. **AgyCliGenerator** (`generator: agy_cli`) manages the sandboxed agy CLI
+   process, stages credentials and tool configurations, executes non-interactively
+   via `--output-format stream-json`, and extracts tool calls, responses, and
+   token stats.
 
 ---
 
@@ -75,44 +78,21 @@ The `orchestrator: agent` keyword in your run config selects the `AgentOrchestra
    uv sync
    ```
 
-2. **Antigravity CLI installed (for the one-time interactive auth)**:
-   ```bash
-   curl -fsSL https://antigravity.google/cli/install.sh | sh -s -- --dir ~/.local/bin
-   export PATH="$HOME/.local/bin:$PATH"
-   agy --version  # sanity check
-   ```
-
-   The installer writes a native binary; it self-updates in the background
-   and does not expose a pinning flag.
-
-> [!NOTE]
-> **The harness does not run this host binary.** The testing harness
-> installs its own isolated copy of `agy` per session into
-> `<fake_home>/.local/bin` and always
-> launches that one, never the host `PATH` binary. Installing on the host
-> is only needed for the one-time interactive login (next step) that
-> seeds the OAuth token the harness mirrors into the sandbox.
-> Per-session install keeps concurrent evals isolated and stops agy's
-> background self-update from swapping the binary mid-run.
-
-3. **agy login** (one-time, interactive -- seeds the token the harness
-   mirrors into each sandbox; see [Authentication](#authentication)):
-   ```bash
-   agy   # pick a login method -- see Authentication for which one
-   ```
-
-4. **GCP Authentication** (ADC -- for Google-auth MCP servers' outbound
-   credentials; agy's own model backend uses the first-run OAuth token, not
-   ADC):
+2. **GCP Authentication** (Application Default Credentials):
    ```bash
    gcloud auth application-default login
    ```
 
-5. **Environment Variables**:
+3. **Environment Variables**:
    ```bash
    export EVAL_GCP_PROJECT_ID=your_project_id
-   export EVAL_GCP_PROJECT_REGION=us-central1
+   export EVAL_GCP_PROJECT_REGION=global
    ```
+
+> [!NOTE]
+> **You do not need `agy` installed globally on the host.** EvalBench installs its
+> own isolated copy into `<fake_home>/.local/bin/` per session and always runs
+> that sandboxed binary.
 
 ---
 
@@ -143,24 +123,20 @@ export EVAL_CONFIG=datasets/agy-cli-tools/example_run_fake_config.yaml
 
 ### 1. Run Configuration
 
-For agy CLI, set `orchestrator: agent` (the modern agent-CLI keyword,
-shared with `claude_code` and `codex_cli`) and
-`dataset_format: agent-format`. The legacy `geminicli` /
-`gemini-cli-format` values still work -- both route to
-`AgentOrchestrator` -- but the `agent*` names are the right ones for
-non-gemini CLIs.
+Set `orchestrator: agent` and `dataset_format: agent-format` in your top-level
+YAML configuration:
 
 | Key | Required | Description |
 |-----|----------|-------------|
 | `dataset_config` | Yes | Path to the evalset JSON file |
-| `dataset_format` | Yes | `agent-format` (recommended) or the legacy `gemini-cli-format` |
-| `orchestrator` | Yes | `agent` (recommended) or the legacy `geminicli` |
+| `dataset_format` | Yes | Must be `agent-format` (or legacy `gemini-cli-format`) |
+| `orchestrator` | Yes | Must be `agent` (or legacy `geminicli`) |
 | `model_config` | Yes | Path to the agy CLI model config YAML |
 | `simulated_user_model_config` | Yes | Path to the model config for the simulated user LLM |
 | `scorers` | Yes | Dictionary of scorer configurations |
 | `reporting` | Yes | CSV and/or BigQuery output options |
 
-**Example** ([example_run_config.yaml](/datasets/agy-cli-tools/example_run_config.yaml)):
+**Example** ([example_run_config.yaml](../datasets/agy-cli-tools/example_run_config.yaml)):
 
 ```yaml
 dataset_config: datasets/agy-cli-tools/agy-cli.evalset.json
@@ -184,51 +160,64 @@ reporting:
 
 ### 2. Model Configuration
 
+Specifies the generator, model label, execution timeouts, and environment:
+
 | Key | Required | Description |
 |-----|----------|-------------|
 | `generator` | Yes | Must be `agy_cli` |
-| `model` | Optional | Model for the run -- either the UI label (`"Gemini 3.1 Pro (High)"`) or the full slug (`gemini-3.1-pro-high`), both listed by `agy models`. An unrecognized value fails the run. Omit to use agy's default. |
-| `timeout` | Optional | Timeout duration string, e.g. `"20m"`. Passed via the `--print-timeout` flag. If omitted, defaults to agy's internal default (5 minutes). |
-| `env` | Optional | Environment variables passed to the CLI process |
-| `setup` | Optional | Tool setup block containing `mcp_servers`, `skills`, or `fake_mcp_servers` |
+| `model` | Optional | Model label (e.g. `"Gemini 3.1 Pro (Low)"` or `"Gemini 3.5 Flash (Medium)"`). Omit to use agy's default. |
+| `timeout` | Optional | CLI turn timeout string (e.g. `"20m"`, passed to `--print-timeout`). Defaults to 5m. |
+| `env` | Optional | Environment block. Set `GOOGLE_CLOUD_PROJECT` (see below); `GOOGLE_CLOUD_LOCATION` defaults to `global`. |
+| `setup` | Optional | Tool setup block for `mcp_servers`, `skills`, or `fake_mcp_servers`. |
 
 > [!IMPORTANT]
-> **Explicit Project Configuration Required:** agy does not read GCP project details from the host environment. You **must** explicitly set `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION` in the `env` block of your model config. If omitted, agy will return empty responses and fail to make tool calls, even if those variables are exported in your shell.
+> **Project Configuration Required:** agy resolves its GCP backend project from
+> `settings.json`, which EvalBench populates from `env.GOOGLE_CLOUD_PROJECT`.
+> Always include `GOOGLE_CLOUD_PROJECT` in your model config `env` block.
 
 ---
 
 ### 3. Evaluation Dataset (Evalset)
 
-Uses the shared scenario schema. See the [agentic dataset format](/docs/configs/agentic-dataset-config.md)
-for the full field reference; the same `expected_trajectory` canonical form
-(`<server>__<tool>`) applies. The `agy-cli-tools/` directory ships copies of
-the Gemini Cloud SQL evalsets so the two harnesses score against an
-identical baseline.
+Evalsets define the test scenarios. See the [agentic dataset format](configs/agentic-dataset-config.md)
+for field definitions. Expected tool trajectories use the canonical
+`<server>__<tool>` format.
+
+Example scenario:
+```json
+{
+  "scenarios": [
+    {
+      "id": "list-instances-01",
+      "starting_prompt": "List all Cloud SQL instances in project cloud-db-nl2sql",
+      "conversation_plan": "Ensure the agent accurately calls list_instances. Verify the output is returned correctly.",
+      "expected_trajectory": ["cloud-sql__list_instances"],
+      "max_turns": 4
+    }
+  ]
+}
+```
 
 ---
 
-## Authentication
+## Authentication & Supported Models
 
-Two independent credentials, neither a substitute for the other: agy's own
-**OAuth token** (its model backend, every turn) and **gcloud ADC** (outbound
-calls from `authProviderType: google_credentials` MCP servers).
+agy authenticates non-interactively using **Google Application Default
+Credentials (ADC)** (`AGY_ADC_AUTH=true`), which also supplies outbound
+credentials for `authProviderType: google_credentials` MCP servers.
 
-The OAuth token comes from a one-time interactive login. Run `agy` on the host
-and pick a login method:
+agy reads its model entitlement from the credential's `quota_project_id` field
+alone -- not `GOOGLE_CLOUD_PROJECT`, and not `GOOGLE_CLOUD_QUOTA_PROJECT`.
+EvalBench injects it when the resolved ADC lacks it, which is the normal case
+for the service-account keys used on GKE. A credential *file* is therefore
+required, and setup fails fast without one rather than falling through to the
+metadata server, whose tokens carry no quota project.
 
-- **Google OAuth** -- personal Google accounts.
-- **Use a Google Cloud project** -- required for managed Workspace or corporate
-  domain accounts, which the plain OAuth path rejects with an auth error.
-
-There is no `agy login` subcommand, service-account flag, or API-key env var for
-agy's own backend. Once you have logged in on the host, the harness picks the
-token up automatically and the sandboxed CLI never re-prompts. The login does
-not expire on its own, so logging in once is enough.
-
-> [!NOTE]
-> agy prefers the system keyring and only falls back to the file. The harness
-> mirrors the **file**, so if the keyring holds your token there is nothing to
-> copy and the run hangs on the login prompt.
+### Supported Model Tiers
+* **Supported under ADC**: Flash models (e.g. `"Gemini 3.5 Flash (Medium)"`,
+  `"Gemini 3.6 Flash (Medium)"`) and **`"Gemini 3.1 Pro (Low)"`**.
+* **Not supported under ADC**: `"Gemini 3.1 Pro (High)"` requires interactive
+  OAuth user login and will fail if configured for automated ADC runs.
 
 ---
 
@@ -236,179 +225,102 @@ not expire on its own, so logging in once is enough.
 
 ### MCP Servers
 
-Configured under `setup.mcp_servers` in the model config. EvalBench writes
-the block under the `mcpServers` key of a sandboxed
-`<fake_home>/.gemini/config/mcp_config.json` (a separate file from
-`settings.json`) and lets agy pick it up at startup.
+Configured under `setup.mcp_servers`. EvalBench translates `httpUrl` to agy's
+native `serverUrl` and writes `<fake_home>/.gemini/config/mcp_config.json`:
 
-> [!NOTE]
-> **Use `httpUrl` for the HTTP endpoint**, same as the other harnesses -- EvalBench
-> translates it to agy's native `serverUrl`. `authProviderType`, `oauth.scopes`,
-> and `headers` are native agy fields, so Google auth works without
-> Bearer-header injection (unlike `claude_code`).
+```yaml
+setup:
+  mcp_servers:
+    cloud-sql:
+      httpUrl: "https://sqladmin.googleapis.com/mcp"
+      authProviderType: google_credentials
+```
 
-The harness pre-verifies attach: at setup it runs
-a short probe, then confirms each configured server discovered
-tools by checking that agy wrote the expected per-tool schema files to
-the local app data cache. A server that attaches no tools fails the evaluation
-with the offending server name rather than silently degrading.
+EvalBench pre-verifies MCP attachment during generator initialization by probing
+the CLI and confirming that tool schemas were materialized under
+`<fake_home>/.gemini/antigravity-cli/mcp/<server>/`. A server that attaches zero
+tools halts the run, because agy otherwise degrades silently to shell commands
+and the eval scores that as poor model behaviour.
 
 ### Skills
 
-> [!NOTE]
-> The field is named `setup.skills` for parity with the `claude_code` and
-> `codex_cli` harnesses, which use the same key. For agy each entry is
-> installed as a **plugin** (`agy plugin install`), and a plugin bundle may
-> carry skills *and* its own MCP servers. The separate top-level
-> `setup.mcp_servers` block is for attaching a **standalone** MCP server (by
-> URL/stdio) that is not packaged in a plugin -- the two are distinct attach
-> paths and are configured independently.
-
-Configured under `setup.skills`. Skills are delivered via **plugins**:
-`agy plugin install <target>` reads a plugin
-manifest (Claude/Gemini/Codex formats), processes any bundled skills,
-materializes them under `<HOME>/.gemini/config/plugins/<name>/`, and
-records the install in `<HOME>/.gemini/config/import_manifest.json`. There
-is no `agy skills` subcommand, and dropping `SKILL.md` folders on disk
-registers nothing (`agy plugin list` stays empty). The harness therefore
-shells out to `agy plugin install` for every entry. Two input shapes are
-supported:
+Skills are delivered as plugin bundles under `setup.skills`. EvalBench invokes
+`agy plugin install <target>` to install local plugin directories or remote git
+repositories:
 
 ```yaml
 setup:
   skills:
-    # String form: an install target passed straight to
-    # `agy plugin install`. May be a local plugin directory or a git URL
-    # (cloned first). `agy plugin install` requires the target to resolve
-    # to a directory, so a bare git URL is cloned before install.
-    - "/path/to/a/local/plugin"
+    # Local directory
+    - "/path/to/local-plugin"
 
-    # Dict form: same, via an explicit target. Git URLs (scheme:// or
-    # trailing .git) are cloned first, then the clone dir is installed;
-    # local paths are installed in place. `url:` is conventional; `path:`
-    # is accepted as a synonym. Append `#<branch-or-tag>` to a git URL to
-    # pin a version -- the clone uses `git clone --branch`, which resolves
-    # branch and tag names only, not raw commit SHAs.
+    # Git repository with branch/tag pinning
     - action: install_from_repo
       url: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git#v1.2.3"
 ```
 
-> [!NOTE]
-> A `plugin@marketplace` spec is not a reliable target (unlike `claude_code`/
-> `gemini_cli`); use a git URL or local directory. Legacy dict actions
-> (`link`, `install`, `enable`, `disable`, `uninstall`) that the gemini-cli
-> generator supports are **not** supported here either -- use a string target
-> or `install_from_repo`. Unsupported entries are logged and skipped.
-
 ### Fake MCP Servers (Testing)
 
-Identical setup to Gemini CLI -- a stdio MCP server defined in
-`setup.fake_mcp_servers` with tool definitions in the top-level
-`fake_mcp_tools` block. See
-[`datasets/model_configs/agy_cli_fake_model.yaml`](../datasets/model_configs/agy_cli_fake_model.yaml)
-for a working example.
+For offline testing without live network or cloud endpoints, define a local
+stdio MCP server in `setup.fake_mcp_servers` with mock tools in
+`fake_mcp_tools`. See
+[`datasets/model_configs/agy_cli_fake_model.yaml`](../datasets/model_configs/agy_cli_fake_model.yaml).
 
 ---
 
-## Differences vs. Gemini CLI
+## Scorers & Reporting
 
-| Area | Gemini CLI | Antigravity (agy) |
-|------|-----------|--------------------|
-| Install | `npm install -g @google/gemini-cli@<ver>` | `curl install.sh \| sh -- --dir <bin>` |
-| Version pinning | NPM specifier in `gemini_cli_version` | No pinning mechanism; the latest binary is installed dynamically at runtime. |
-| Invocation | `npm exec --yes @google/gemini-cli@<ver> -- ...` | `agy ...` (bare binary) |
-| Non-interactive flag | `--yolo` / `--prompt` | `--dangerously-skip-permissions` and `-p` (alias `--print`) |
-| Output format | `--output-format stream-json` (NDJSON on stdout) | `--output-format stream-json` (NDJSON on stdout); the harness parses this event stream (see below) |
-| Session resume | `--resume <id>` | `--continue` (most recent in cwd) or `--conversation <uuid>` |
-| Settings dir (`appDataDir`) | `~/.gemini/` | `~/.gemini/antigravity-cli/` |
-| Settings file | `~/.gemini/settings.json` | `~/.gemini/antigravity-cli/settings.json` |
-| Skills dir | `~/.gemini/skills/<name>/SKILL.md` | `~/.gemini/config/plugins/<name>/` (materialized by `agy plugin install`) |
-| Skill management | `gemini skills <link\|install\|enable\|...>` subcommands | `agy plugin install <target>` (plugin manifests carry skills); no `agy skills` subcommand |
-| Extensions | Supported via `setup.extensions` | Not modeled; drop the block |
-| MCP config location | `mcpServers` in `settings.json` | `mcpServers` in a separate `~/.gemini/config/mcp_config.json` |
-| MCP HTTP transport field | `httpUrl` | `httpUrl`, translated by the harness to agy's native `serverUrl` (`url` also works natively) |
-| MCP tool name format | `mcp_<server>_<tool>` (single underscore) | No per-tool functions -- every MCP call goes through a single native `call_mcp_tool` wrapper whose args carry `ServerName`/`ToolName`/`Arguments`; the harness unwraps it to the canonical `<server>__<tool>` |
-| Model selection | `GEMINI_API_MODEL` / `GEMINI_MODEL` env var | `--model` flag; UI label or slug, both listed by `agy models` |
-| Auth | NPM auth token via `gcloud auth print-access-token` plus ADC | One-time interactive OAuth login, mirrored from the host; ADC only for MCP servers |
-| Token-usage stats | Reported per request | Exposed via the stream-json `result` event's `usage` block (input/output/thinking/total tokens) |
-
-### Tool-call extraction
-
-The harness runs agy with `--output-format stream-json` and parses the event
-stream (`init`, `step_update` x N, `result`) from stdout. Each tool call is a
-`step_update` whose `ACTIVE` -> `DONE`/`ERROR` states give success/failure
-directly; `call_mcp_tool` invocations are unwrapped into the canonical
-`<server>__<tool>` format. The stream is per-invocation, so no turn-slicing is
-needed under `--continue`. A run that times out or errors exits non-zero but
-still emits a full stream ending in an `ERROR` `result`, so its tool calls are
-captured too.
+* **Scorers**: See the [scorer reference](scorers.md#agentic-scorers) for full
+  configuration options on trajectory matching, goal completion, and turn metrics.
+* **Reporting**: Exports to local CSV files (`reporting.csv.output_directory`)
+  and Google BigQuery (`reporting.bigquery.gcp_project_id`).
 
 ---
 
-## Scorers
+## Comparison Reference (vs. Gemini CLI)
 
-See the [scorer reference](/docs/scorers.md#agentic-scorers) for the full
-catalog and configuration options. The `trajectory_matcher` default of
-dropping native/harness-internal tools also applies.
+For teams familiar with the Gemini CLI harness, this table summarizes key
+operational differences:
 
----
-
-## Reporting
-
-Identical to Gemini CLI. CSV under `reporting.csv.output_directory`,
-BigQuery under `reporting.bigquery.gcp_project_id`.
+| Area | Gemini CLI | Antigravity (agy) CLI |
+|------|------------|-----------------------|
+| Installation | `npm install -g @google/gemini-cli@<ver>` | Auto-staged into `<fake_home>/.local/bin/` |
+| Invocation | `npm exec @google/gemini-cli -- ...` | `agy -p <prompt> --dangerously-skip-permissions` |
+| Output Format | `--output-format stream-json` | `--output-format stream-json` |
+| Session Resume | `--resume <id>` | `--continue` |
+| Settings Path | `~/.gemini/settings.json` | `~/.gemini/antigravity-cli/settings.json` |
+| MCP Config | `mcpServers` in `settings.json` | `mcpServers` in `~/.gemini/config/mcp_config.json` |
+| MCP Tool Naming | `mcp_<server>_<tool>` | `call_mcp_tool` wrapper (canonicalized to `<server>__<tool>`) |
+| Skill Registration | `gemini skills <cmd>` | `agy plugin install <target>` |
+| Model Parameter | `GEMINI_API_MODEL` env var | `--model` flag (UI label or slug) |
+| Authentication | Token + ADC | Non-interactive ADC (`AGY_ADC_AUTH=true`) |
 
 ---
 
 ## Troubleshooting
 
-### `agy: command not found`
+### Authentication Errors / Interactive Login Prompt
+* Ensure fresh ADC credentials exist by running `gcloud auth application-default login`.
 
-This affects the **host** `agy` command -- used for the first-run auth and
-for `agy models` / `agy --version` -- not the eval run, which launches the
-harness's own per-session binary. Re-run the installer with `--dir` pointing
-at a directory on your `PATH`, or symlink the binary into one.
+### Model Authorization / `invalid model selection`
+* Ensure the configured `model` in `model_config.yaml` is supported under ADC
+  (use `Gemini 3.1 Pro (Low)` or Flash models, not `Gemini 3.1 Pro (High)`).
+* If *every* model is rejected, including agy's own default, the credential is
+  missing `quota_project_id` and the model registry came back empty. Ensure a
+  project is resolvable from `env.GOOGLE_CLOUD_PROJECT` or from the key itself.
 
-### MCP Server Doesn't Attach
+### MCP Server Fails to Attach
+* Confirm `httpUrl` is valid and points to an active MCP endpoint.
+* For Google APIs, ensure `authProviderType: google_credentials` is set and ADC is active.
 
-The harness pre-verifies attach at setup: it runs a
-short probe and fails fast if a configured
-server discovered no tools. If you hit that error:
+### Skill / Plugin Not Loaded
+* Inspect setup logs for `agy plugin install '<target>' failed` for the exit code
+  and stderr. Ensure the target directory contains a valid manifest (`plugin.json`
+  or `gemini-extension.json`).
+* Confirm the plugin registered in
+  `<fake_home>/.gemini/config/import_manifest.json`.
 
-- **Check the URL field** (see the MCP Servers callout above): a typo'd or
-  unrecognized URL key is accepted silently and exposes zero tools, so it
-  looks like a load failure.
-- Confirm the block lives under `mcpServers` in
-  `<fake_home>/.gemini/config/mcp_config.json` (not `settings.json`) after
-  setup runs.
-- Confirm agy wrote per-tool schemas to
-  `<fake_home>/.gemini/antigravity-cli/mcp/<server>/*.json` -- an empty
-  directory means the server failed to attach.
-- For Google-auth servers, run `gcloud auth application-default login`
-  (used for outbound credentials to the MCP server -- agy's own auth is
-  separate OAuth).
-- Verify OAuth scopes and project ID in the headers.
+### Empty Responses
+* Ensure `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION` are configured in the
+  `env` block of your model config.
 
-### Skill Not Picked Up
-
-- Confirm the plugin registered: check that the name appears in
-  `<fake_home>/.gemini/config/import_manifest.json` and that
-  `<fake_home>/.gemini/config/plugins/<name>/` was materialized after
-  setup runs. The setup log line `agy registered plugins: [...]` reports
-  what `agy plugin install` recorded.
-- If `agy plugin install` failed, the harness logs an `agy plugin install
-  '<target>' failed` line with the install command's exit code and stderr --
-  read that line for the reason. A bad target is the usual cause: a wrong
-  path, an unreachable git URL, or a directory with no valid plugin manifest
-  (agy accepts Claude/Gemini/Codex manifest formats, e.g. `plugin.json` or
-  `gemini-extension.json`).
-- If you have an `action: link` / `enable` / `install` entry in your
-  config, drop it -- those gemini-cli-style actions are not supported
-  here and are logged-and-skipped. Use a string target or
-  `install_from_repo`.
-
-### Empty or Missing Results
-
-- Confirm `dataset_format` is `agent-format` (or the legacy `gemini-cli-format`).
-- Verify the `model_config` path is correct relative to the repo root.
-- Check that `agy --version` works from the same shell.
