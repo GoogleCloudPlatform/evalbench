@@ -19,14 +19,6 @@ global_models = {"lock": threading.Lock(), "registered_models": {}}
 
 # Bounds on how much of scores.csv is rendered into the prompt.
 #
-# DataFrame.to_string() pads every column out to its widest value, so one large
-# cell is paid for by every row. An eight-row production scores.csv carrying a
-# single 1.27 MB comparison_logs blob rendered to 11.5 MB -- 8.9x the file on
-# disk, nearly all of it whitespace. Gemini rejects anything over 1,048,576
-# tokens and was doing so continuously: prompts between 1.5M and 4.36M tokens,
-# each one wasting the run's summary and returning an error string in its place.
-# Fifty of these were built concurrently during a precompute pass.
-#
 # Three bounds because each covers a different shape of run: cell width for a
 # run with one huge blob, row count for a run with many results, and total
 # characters as a backstop for anything that slips past both. The analyzer
