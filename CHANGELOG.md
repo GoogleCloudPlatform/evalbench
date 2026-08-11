@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.15.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.14.0...v1.15.0) (2026-08-11)
+
+
+### Features
+
+* add Dataset Quality tab with automated precompute caching & UI support ([#531](https://github.com/GoogleCloudPlatform/evalbench/issues/531)) ([0e1d2d4](https://github.com/GoogleCloudPlatform/evalbench/commit/0e1d2d47b6c6897b8b31a507e48a0d2993a6d54e))
+* add dataset-quality scoring framework for CUJ datasets ([#508](https://github.com/GoogleCloudPlatform/evalbench/issues/508)) ([6a81e49](https://github.com/GoogleCloudPlatform/evalbench/commit/6a81e491d2cf3361ef55ece81768f811a9dad76b))
+* **scorers:** add NamedScorer wrapper to support custom scorer names ([2ef0201](https://github.com/GoogleCloudPlatform/evalbench/commit/2ef02019cb823a07df42d3ad46fcecb5baec2232))
+* **scorers:** add NamedScorer wrapper to support custom scorer names ([dfeff2d](https://github.com/GoogleCloudPlatform/evalbench/commit/dfeff2d39042ab872e351ba285c944f45f345f2a))
+
+
+### Bug Fixes
+
+* **analyzer:** aggregate binary_rubric_scorer results by matching comparator prefix ([3ba7800](https://github.com/GoogleCloudPlatform/evalbench/commit/3ba7800de023998bc2722bac121f4f01a9144665))
+* **analyzer:** aggregate binary_rubric_scorer results by matching comparator prefix ([10c3e45](https://github.com/GoogleCloudPlatform/evalbench/commit/10c3e45edc8fcd35474a1954d06eacf6150c81be))
+* **codex_cli:** resolve rpc_id_var for per-session fake_home isolation in eval_server ([605255a](https://github.com/GoogleCloudPlatform/evalbench/commit/605255adc10a8e788f4e0870d663b5a6bb9e3028))
+* **codex_cli:** resolve rpc_id_var for session isolation in eval_server ([42ebc73](https://github.com/GoogleCloudPlatform/evalbench/commit/42ebc73e6e7e1379032cbc9de965b2b7d4944236))
+* **deps:** pin mcp&gt;=1.8,&lt;2 ([b1ecd5b](https://github.com/GoogleCloudPlatform/evalbench/commit/b1ecd5b68a7c851641cc31f6681e12c813a0df8a))
+* **deps:** pin mcp&gt;=1.8,&lt;2 ([4d93311](https://github.com/GoogleCloudPlatform/evalbench/commit/4d93311d0d3990007834ebc428074d6274f07f4b))
+* **evaluator:** return 5-tuple in CortadoOrchestrator.process() to match Orchestrator contract ([438597e](https://github.com/GoogleCloudPlatform/evalbench/commit/438597e27f852424f5b71f2e6d1a0d4250f6fbdd))
+* **evaluator:** return 5-tuple in CortadoOrchestrator.process() to match Orchestrator contract ([9f6971f](https://github.com/GoogleCloudPlatform/evalbench/commit/9f6971ff7e34b15d5295bfb999e23c6d43160b57))
+* **mcp:** correct skip warning to name both httpUrl and url ([c36dfb4](https://github.com/GoogleCloudPlatform/evalbench/commit/c36dfb4da3f5e6c5388926a342e7540311b6bd05))
+* reorder precompute tasks to ensure dataset quality runs before trends to prevent execution starvation ([#548](https://github.com/GoogleCloudPlatform/evalbench/issues/548)) ([ee86597](https://github.com/GoogleCloudPlatform/evalbench/commit/ee86597f586822d519b05ff6ba0423ba3550838c))
+* **viewer:** bound the scores.csv render in the summarizer prompt ([7beeaed](https://github.com/GoogleCloudPlatform/evalbench/commit/7beeaed00dde498c121e2b2b8d1970b5f8a729d8))
+* **viewer:** checkpoint trends precompute so a killed pass keeps its work ([6b1f4cb](https://github.com/GoogleCloudPlatform/evalbench/commit/6b1f4cbd1d772801794a4b746e4f758fdbccfde2))
+
 ## [1.14.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.13.0...v1.14.0) (2026-07-25)
 
 
