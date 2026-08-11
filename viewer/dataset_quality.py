@@ -174,62 +174,6 @@ def load_report(results_dir, job_id):
     return report
 
 
-def _stat_card(label, value, color="#0f172a", detail=""):
-    with me.box(style=_card_style()):
-        me.text(
-            label,
-            style=me.Style(
-                font_size="12px",
-                font_weight="600",
-                color="#64748b",
-                text_transform="uppercase",
-                letter_spacing="0.05em",
-                margin=me.Margin(bottom="4px"),
-            ),
-        )
-        me.text(value, style=me.Style(font_size="24px", font_weight="700", color=color))
-        if detail:
-            me.text(
-                detail,
-                style=me.Style(font_size="12px", color="#64748b", margin=me.Margin(top="4px")),
-            )
-
-
-def _fleet_summary(entries):
-    graded = [e for e in entries if e.get("score") is not None]
-
-    distribution = {}
-    for entry in graded:
-        letter = entry.get("letter_grade")
-        distribution[letter] = distribution.get(letter, 0) + 1
-    grades = " ".join(
-        f"{letter}:{distribution[letter]}"
-        for letter in ("A", "B", "C", "D", "F")
-        if letter in distribution
-    )
-
-    total_cujs = sum(e.get("total_cujs") or 0 for e in entries)
-
-    with me.box(
-        style=me.Style(
-            display="grid",
-            grid_template_columns="repeat(2, 1fr)",
-            gap="16px",
-            margin=me.Margin(bottom="20px"),
-        )
-    ):
-        _stat_card(
-            "Products graded",
-            str(len(graded)),
-            detail=grades or "no grades yet",
-        )
-        _stat_card(
-            "Total CUJs",
-            str(total_cujs),
-            detail=f"across {len(entries)} datasets",
-        )
-
-
 def _header_cell(label, width):
     with me.box(
         style=me.Style(
@@ -278,7 +222,6 @@ def dataset_quality_component():
         return
 
     categories = ordered_categories(entries)
-    _fleet_summary(entries)
 
     with me.box(style=me.Style(overflow_x="auto", width="100%")):
         with me.box(
