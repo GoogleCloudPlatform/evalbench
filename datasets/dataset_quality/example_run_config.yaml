@@ -1,10 +1,9 @@
 ############################################################
 ### Dataset Quality — example run config
 ############################################################
-# Grades the intrinsic quality of a CUJ dataset (no eval / agent run). Runs on the
-# standard agent pipeline: a no-op generator does nothing, and the `dataset_quality`
-# scorer grades the whole dataset holistically (each sub-scorer computes a 0-100
-# sub-score; grading rolls them into a weighted global score + letter grade).
+# The dataset itself is what's under test here, not a model: no agent runs and
+# nothing is executed. The product is only read, for the capabilities to grade
+# the dataset's coverage against.
 
 # Forced by dataset_format below; listed here only to document what runs.
 orchestrator: agent
@@ -26,12 +25,9 @@ simulated_user_model_config: datasets/model_configs/noop_agent_model.yaml
 ############################################################
 ### Scorers
 ############################################################
-# The `dataset_quality` scorer fetches the product's tool catalog live from its own
-# model_config (each setup.mcp_servers entry with an httpUrl/url is queried via MCP
-# tools/list; names are namespaced <server>__<tool> to match expected_trajectory).
-# google_credentials servers use ADC, so this needs credentials + network (e.g.
-# `gcloud auth application-default login`). Run the LLM judges with
-# EVAL_GCP_PROJECT_REGION=global.
+# Reads the product's capability surface from the model_config below:
+# setup.mcp_servers for tools (named <server>__<tool>, matching
+# expected_trajectory) and setup.skills for skills.
 scorers:
   dataset_quality:
     model_config: datasets/model_configs/gemini_cli_model.yaml
@@ -41,8 +37,10 @@ scorers:
     # required only by the judge sub-scorers; trajectory_coverage and
     # naming_distribution are static.
     sub_scorers:
+      # Scores the finest catalog the product exposes: MCP tools, else the
+      # scripts its skills ship, else the skills themselves.
       trajectory_coverage:
-        # weight: 20  (default)
+        # weight: 30  (default)
       naming_distribution:
         # weight: 5   (default)
       parameter_coverage:
@@ -71,8 +69,6 @@ scorers:
 ############################################################
 ### Reporting
 ############################################################
-# The grade lands as one summary scoring row plus one row per category; uncomment
-# bigquery to also append to the table.
 reporting:
   csv:
     output_directory: 'results'

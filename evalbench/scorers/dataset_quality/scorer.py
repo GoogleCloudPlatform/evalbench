@@ -18,6 +18,7 @@ from typing import Any, Tuple
 from generators.models import get_generator
 from generators.models.agent_cli import AgentCliGenerator
 from generators.models.mcp_client import McpToolsError
+from generators.models.skills_catalog import SkillCatalogError, resolve_skills
 from scorers.comparator import Comparator
 from scorers.dataset_quality.composition import CompositionScorer
 from scorers.dataset_quality.context import (
@@ -125,43 +126,26 @@ class DatasetQualityScorer(Comparator):
     ) -> list[Tuple[str, float | None, str]]:
         scenarios = self._extract_cujs(generated_eval_result)
         if not scenarios:
-            # Null score, not 0, so an empty/malformed all_cujs stays
-            # distinguishable from a genuine F on the trends page.
-            return [(
-                self.name,
-                None,
-                json.dumps(
-                    {
-                        "product_name": self.product_name,
-                        "graded": False,
-                        "error": "no CUJs to grade (missing or empty all_cujs)",
-                    },
-                    default=str,
-                ),
-            )]
+            return self._ungraded("no CUJs to grade (missing or empty all_cujs)")
+        setup = load_yaml_config(self.model_config_path).get("setup") or {}
         try:
-            tools = self._fetch_tools()
-        except McpToolsError as e:
-            # Tool discovery is infrastructure (network / ADC), not a property of
-            # the dataset, so an ungraded null row keeps a transient blip
-            # distinguishable from a genuine F.
-            logging.error("dataset_quality: tool discovery failed: %s", e)
-            return [(
-                self.name,
-                None,
-                json.dumps(
-                    {
-                        "product_name": self.product_name,
-                        "graded": False,
-                        "error": f"tool discovery failed: {e}",
-                    },
-                    default=str,
-                ),
-            )]
+            tools = self._fetch_tools(setup)
+            skills = self._fetch_skills(setup)
+        except (McpToolsError, SkillCatalogError) as e:
+            # Discovery is infrastructure (network / ADC / a git clone), not a
+            # property of the dataset, so an ungraded null row keeps a transient
+            # blip distinguishable from a genuine F.
+            logging.error("dataset_quality: capability discovery failed: %s", e)
+            return self._ungraded(f"capability discovery failed: {e}")
+        if not tools and not skills:
+            return self._ungraded(
+                f"{self.model_config_path} has no tools or skills configured"
+            )
         context = DatasetQualityContext(
             product_name=self.product_name,
             scenarios=scenarios,
             tools=tools,
+            skills=skills,
         )
 
         contributions = self._run_scorers(context)
@@ -241,6 +225,21 @@ class DatasetQualityScorer(Comparator):
             ))
         return rows
 
+    def _ungraded(self, error: str) -> list[Tuple[str, float | None, str]]:
+        """One null-score row. Null, not 0, which would read as a genuine F."""
+        return [(
+            self.name,
+            None,
+            json.dumps(
+                {
+                    "product_name": self.product_name,
+                    "graded": False,
+                    "error": error,
+                },
+                default=str,
+            ),
+        )]
+
     def _run_scorers(self, context: DatasetQualityContext) -> dict:
         """Run every sub-scorer, returning ``{scorer: SubScoreContribution}``.
 
@@ -301,10 +300,14 @@ class DatasetQualityScorer(Comparator):
             logging.warning("dataset_quality: no CUJs found in wrapper scenario")
         return scenarios
 
-    def _fetch_tools(self) -> list:
+    def _fetch_skills(self, setup: dict) -> list:
+        """Read the skill catalog declared by the product model config."""
+        skills = resolve_skills(setup)
+        logging.info("skills: %d skills declared", len(skills))
+        return skills
+
+    def _fetch_tools(self, setup: dict) -> list:
         """Query the product model config's MCP servers for the tool catalog."""
-        model_config = load_yaml_config(self.model_config_path)
-        setup = model_config.get("setup") or {}
         if setup.get("extensions"):
             logging.warning(
                 "dataset_quality: setup.extensions is not yet supported for "
@@ -312,9 +315,9 @@ class DatasetQualityScorer(Comparator):
             )
         mcp_servers = setup.get("mcp_servers") or {}
         if not mcp_servers:
-            raise McpToolsError(
-                f"{self.model_config_path} declares no setup.mcp_servers to query"
-            )
+            # A skills-only product has no servers to query; the caller decides
+            # whether that leaves any capability surface to grade against.
+            return []
         for attempt in range(1, _TOOL_FETCH_ATTEMPTS + 1):
             try:
                 tools = AgentCliGenerator.fetch_mcp_tools(
