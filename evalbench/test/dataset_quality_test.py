@@ -831,7 +831,7 @@ class DatasetQualityScorerConfigTest(unittest.TestCase):
             if cls.category == CATEGORY_TOOL_ACTIVATION
         )
 
-        self.assertEqual(total, 110)
+        self.assertEqual(total, 100)
         self.assertEqual(activation, _TRAJECTORY_WEIGHT)
 
 

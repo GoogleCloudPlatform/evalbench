@@ -37,10 +37,10 @@ scorers:
     # required only by the judge sub-scorers; trajectory_coverage and
     # naming_distribution are static.
     sub_scorers:
-      # Scores the finest catalog the product exposes: MCP tools, else the
-      # scripts its skills ship, else the skills themselves.
+      # Scores every channel the product exposes at once: MCP tools and the
+      # scripts its skills ship, plus the skills themselves.
       trajectory_coverage:
-        # weight: 30  (default)
+        # weight: 20  (default)
       naming_distribution:
         # weight: 5   (default)
       parameter_coverage:

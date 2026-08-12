@@ -31,7 +31,7 @@ class TrajectoryCoverageScorer(SubScorer):
 
     name = "trajectory_coverage"
     category = CATEGORY_TOOL_ACTIVATION
-    default_weight = 30
+    default_weight = 20
 
     def run(self, context: DatasetQualityContext) -> SubScoreContribution:
         operations = set(context.tool_names) | set(context.script_names)
