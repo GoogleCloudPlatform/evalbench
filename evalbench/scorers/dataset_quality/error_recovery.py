@@ -76,8 +76,8 @@ class ErrorRecoveryScorer(JudgeSubScorer):
         return SubScoreContribution(
             score=score,
             metrics={
-                "dq_error_modes_covered": len(covered),
-                "dq_error_modes_total": len(ERROR_RECOVERY_MODES),
+                "error_modes_covered": len(covered),
+                "error_modes_total": len(ERROR_RECOVERY_MODES),
             },
             suggestions=suggestions,
             example_prompts=(

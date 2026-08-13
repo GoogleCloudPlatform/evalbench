@@ -70,7 +70,7 @@ class VagueExamplesScorer(JudgeSubScorer):
         logging.info("vague_examples: \t%d/%d vague -> %d", n_vague, n, score)
         return SubScoreContribution(
             score=score,
-            metrics={"dq_vague_count": n_vague},
+            metrics={"vague_cuj_count": n_vague},
             suggestions=suggestions,
             evidence={KEY_VAGUE: vague_ids, "direct_ids": direct_ids},
         )

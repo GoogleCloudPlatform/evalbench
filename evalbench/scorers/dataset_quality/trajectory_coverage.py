@@ -54,7 +54,7 @@ class TrajectoryCoverageScorer(SubScorer):
         suggestions = []
         if operations - covered_operations:
             suggestions.append(
-                "No CUJ exercises these operations: "
+                "No CUJ exercises these tools or scripts: "
                 + ", ".join(sorted(operations - covered_operations))
             )
         if skills - covered_skills:
@@ -76,8 +76,8 @@ class TrajectoryCoverageScorer(SubScorer):
         return SubScoreContribution(
             score=score,
             metrics={
-                "dq_covered_tools": covered,
-                "dq_total_tools": total,
+                "capabilities_covered": covered,
+                "capabilities_total": total,
             },
             suggestions=suggestions,
         )

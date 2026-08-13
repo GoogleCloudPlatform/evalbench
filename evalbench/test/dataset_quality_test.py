@@ -326,10 +326,10 @@ class TrajectoryCoverageScorerTest(unittest.TestCase):
 
         # list_instances.js ships in both skills but is one operation, so the
         # catalog is 3 operations plus the 2 skills.
-        self.assertEqual(contribution.metrics["dq_total_tools"], 5)
-        self.assertEqual(contribution.metrics["dq_covered_tools"], 1)
+        self.assertEqual(contribution.metrics["capabilities_total"], 5)
+        self.assertEqual(contribution.metrics["capabilities_covered"], 1)
         self.assertEqual(contribution.score, 20)
-        self.assertIn("operations", contribution.suggestions[0])
+        self.assertIn("create_instance.js", contribution.suggestions[0])
 
     def test_a_products_tools_and_skills_are_one_catalog(self):
         # Both channels are installed together, so grading only the tools scores
@@ -342,7 +342,7 @@ class TrajectoryCoverageScorerTest(unittest.TestCase):
 
         contribution = TrajectoryCoverageScorer({}, {}).run(context)
 
-        self.assertEqual(contribution.metrics["dq_total_tools"], 3)
+        self.assertEqual(contribution.metrics["capabilities_total"], 3)
         self.assertEqual(contribution.score, 33)
 
     def test_a_skill_and_its_scripts_are_both_covered(self):
@@ -370,8 +370,8 @@ class TrajectoryCoverageScorerTest(unittest.TestCase):
         contribution = TrajectoryCoverageScorer({}, {}).run(context)
 
         self.assertEqual(contribution.score, 25)
-        self.assertEqual(contribution.metrics["dq_covered_tools"], 1)
-        self.assertEqual(contribution.metrics["dq_total_tools"], 4)
+        self.assertEqual(contribution.metrics["capabilities_covered"], 1)
+        self.assertEqual(contribution.metrics["capabilities_total"], 4)
         self.assertIn("beta, delta, gamma", contribution.suggestions[0])
 
     def test_a_string_trajectory_is_ignored_rather_than_split(self):
@@ -594,8 +594,8 @@ class ProseSkillCoverageTest(unittest.TestCase):
         )
 
         self.assertEqual(contribution.score, 25)
-        self.assertEqual(contribution.metrics["dq_covered_tools"], 1)
-        self.assertEqual(contribution.metrics["dq_total_tools"], 4)
+        self.assertEqual(contribution.metrics["capabilities_covered"], 1)
+        self.assertEqual(contribution.metrics["capabilities_total"], 4)
 
     def test_a_gap_carries_the_catalog_description(self):
         # Synthesis may only reason from the report, and for a prose-only skill
@@ -702,7 +702,7 @@ class NamingDistributionScorerTest(unittest.TestCase):
         ))
 
         self.assertEqual(contribution.score, 67)
-        self.assertEqual(contribution.metrics["dq_tool_named_count"], 1)
+        self.assertEqual(contribution.metrics["tool_named_cuj_count"], 1)
 
     def test_only_the_starting_prompt_is_inspected(self):
         contribution = self._run([{
@@ -719,7 +719,7 @@ class NamingDistributionScorerTest(unittest.TestCase):
             self._prompts("Use ls here", *["Find every config"] * 9)
         )
 
-        self.assertEqual(at_target.metrics["dq_tool_named_count"], 1)
+        self.assertEqual(at_target.metrics["tool_named_cuj_count"], 1)
         self.assertEqual(at_target.suggestions, [])
 
     def test_suggestion_above_the_target_share(self):

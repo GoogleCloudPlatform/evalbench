@@ -80,7 +80,7 @@ class NamingDistributionScorer(SubScorer):
         )
         return SubScoreContribution(
             score=score,
-            metrics={"dq_tool_named_count": n_named},
+            metrics={"tool_named_cuj_count": n_named},
             suggestions=suggestions,
             evidence={"names_tool_ids": named_ids, "intent_based_ids": intent_ids},
         )
