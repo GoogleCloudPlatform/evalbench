@@ -1,9 +1,9 @@
 ############################################################
 ### Dataset Quality — example run config
 ############################################################
-# The dataset itself is what's under test here, not a model: no agent runs and
-# nothing is executed. The product is only read, for the capabilities to grade
-# the dataset's coverage against.
+# Grades a product's CUJ configs, not a model: no agent runs and nothing is
+# executed. The product itself is only read, to supply the capability surface
+# those CUJs are scored against.
 
 # Forced by dataset_format below; listed here only to document what runs.
 orchestrator: agent
@@ -37,8 +37,8 @@ scorers:
     # required only by the judge sub-scorers; trajectory_coverage and
     # naming_distribution are static.
     sub_scorers:
-      # Scores every channel the product exposes at once: MCP tools and the
-      # scripts its skills ship, plus the skills themselves.
+      # Counts MCP tools and skill scripts (matched against a CUJ's
+      # expected_trajectory) plus each skill's own name (expected_skills).
       trajectory_coverage:
         # weight: 20  (default)
       naming_distribution:

@@ -501,6 +501,19 @@ class ResolveSkillsTest(unittest.TestCase):
         with self.assertRaises(SkillCatalogError):
             resolve_skills({"skills": [{"path": self.root, "skill": "stale"}]})
 
+    def test_one_unmatched_name_is_fatal_even_when_the_others_match(self):
+        # Returning the two that matched would drop the third from the
+        # denominator and inflate coverage.
+        for name in ("alpha", "beta", "gamma"):
+            self._skill(self.root, name)
+
+        with self.assertRaises(SkillCatalogError) as raised:
+            resolve_skills(
+                {"skills": [{"path": self.root, "skills": ["alpha", "typo", "gamma"]}]}
+            )
+
+        self.assertIn("typo", str(raised.exception))
+
     def test_a_source_holding_no_skill_md_is_fatal(self):
         os.makedirs(os.path.join(self.root, "docs"))
 
@@ -558,6 +571,16 @@ class ResolveSkillsTest(unittest.TestCase):
 
         with self.assertRaises(SkillCatalogError):
             resolve_skills({"skills": ["https://github.com/example/repo.git"]})
+
+    @patch("generators.models.skills_catalog.subprocess.run")
+    def test_an_unresolvable_ref_is_not_retried_unpinned(self, mock_run):
+        # The retry would clone the default branch, silently grading against a
+        # revision nobody asked for.
+        mock_run.side_effect = subprocess.CalledProcessError(1, "git")
+
+        with self.assertRaises(SkillCatalogError):
+            resolve_skills({"skills": ["https://github.com/example/repo.git#v2"]})
+        self.assertEqual(mock_run.call_count, 1)
 
 
 class ProseSkillCoverageTest(unittest.TestCase):

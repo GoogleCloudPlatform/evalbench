@@ -38,8 +38,9 @@ class SkillCatalogError(Exception):
 class Skill:
     """One skill in a product's catalog.
 
-    A skill groups operations rather than being one: `scripts` holds the files in
-    its adjacent scripts/ directory, which is what a CUJ trajectory names.
+    `scripts` holds a skill's adjacent scripts/ directory — the layout MCP-toolbox
+    generated skills use, and what a CUJ trajectory names. A skill without one is
+    graded on its name alone.
     """
 
     name: str
@@ -109,49 +110,54 @@ def _resolve_target(target: str, wanted: set[str] | None) -> list[Skill]:
 
 
 def _clone(url: str) -> str:
-    """Clones a skills repository into a temporary directory (supports '<url>#<ref>')."""
+    """Clones a skills repository into a temporary directory.
+
+    A '<url>#<ref>' ref is passed to --branch, so it must be a branch or tag; a
+    commit SHA fails rather than resolving. Retrying such a ref unpinned would
+    clone the default branch, grading the dataset against the wrong catalog.
+    """
     clone_url, _, ref = url.partition("#")
     dest = tempfile.mkdtemp(prefix="skills_catalog_")
-    base = ["git", "clone", "--depth", "1"]
-    attempts = [base + ["--branch", ref, clone_url, dest]] if ref else []
-    attempts.append(base + [clone_url, dest])
-    last_error = None
-    for cmd in attempts:
-        try:
-            subprocess.run(
-                cmd, check=True, capture_output=True, text=True,
-                timeout=_CLONE_TIMEOUT_S,
-            )
-            return dest
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired,
-                OSError) as e:
-            last_error = e
-    shutil.rmtree(dest, ignore_errors=True)
-    raise SkillCatalogError(f"clone failed for {url}: {last_error}")
+    cmd = ["git", "clone", "--depth", "1"]
+    if ref:
+        cmd += ["--branch", ref]
+    try:
+        subprocess.run(
+            cmd + [clone_url, dest], check=True, capture_output=True, text=True,
+            timeout=_CLONE_TIMEOUT_S,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired,
+            OSError) as e:
+        shutil.rmtree(dest, ignore_errors=True)
+        raise SkillCatalogError(f"clone failed for {url}: {e}") from e
+    return dest
 
 
 def _scan_dir(root: str, wanted: set[str] | None = None) -> list[Skill]:
     """Reads every skill under a root, optionally narrowed to the wanted names."""
     if not os.path.isdir(root):
         raise SkillCatalogError(f"skills path not found: {root}")
-    lowered = {name.lower() for name in wanted} if wanted else None
     skills = []
+    by_identity = {}
     for path in _find_skill_dirs(root):
         skill = _read_skill(path)
-        # An entry may narrow by either identity, so match on both.
-        if lowered is not None and not (
-            skill.name.lower() in lowered
-            or os.path.basename(path).lower() in lowered
-        ):
-            continue
         skills.append(skill)
+        # An entry may name a skill by its frontmatter name or by its directory.
+        by_identity[skill.name.lower()] = skill
+        by_identity.setdefault(os.path.basename(path).lower(), skill)
+
     if not skills:
-        if lowered:
-            raise SkillCatalogError(
-                f"{root} holds none of the named skills: {', '.join(sorted(wanted))}"
-            )
         raise SkillCatalogError(f"no SKILL.md found under {root}")
-    return skills
+    if not wanted:
+        return skills
+
+    # Every wanted name must match. One that doesn't would go missing from the
+    # denominator and inflate coverage.
+    missing = sorted(name for name in wanted if name.lower() not in by_identity)
+    if missing:
+        raise SkillCatalogError(f"{root} holds no skill named: {', '.join(missing)}")
+    wanted_skills = {by_identity[name.lower()] for name in wanted}
+    return [skill for skill in skills if skill in wanted_skills]
 
 
 def _find_skill_dirs(root: str) -> list[str]:
