@@ -7,17 +7,31 @@ import logging
 import re
 import shutil
 import sys
+import tempfile
+import weakref
 from util.context import rpc_id_var
 
-# Bare command name. agy's installer exposes no version pinning and the binary
-# self-updates in the background, so there is nothing to configure. This is the
-# reported agent_version label only -- the binary actually launched is the
-# per-session install at self.agy_bin (see _ensure_agy_installed).
+# Default CLI label reported in metadata. The executed binary is installed
+# per-session at self.agy_bin (see _ensure_agy_installed).
 AGY_CLI = "agy"
 
-# Upstream one-line installer. Honors --dir (and $HOME) for the install
-# location and skips the download when the binary already exists at the target.
 AGY_INSTALL_URL = "https://antigravity.google/cli/install.sh"
+
+# Makes agy authenticate from Application Default Credentials
+# instead of its interactive OAuth login. See _setup_auth.
+ADC_AUTH_ENV_VAR = "AGY_ADC_AUTH"
+
+# Read-only secret mount in the GKE pod; the only ADC a pod carries on disk.
+GKE_SA_KEY_PATH = "/etc/evalbench-sa-key/key.json"
+
+
+def _shred_credential(path: str) -> None:
+    """Deletes a temporary credential copy. Module-level and instance-free so
+    weakref.finalize can hold it without keeping the generator alive."""
+    try:
+        os.unlink(path)
+    except OSError as e:
+        logging.warning("Failed to remove temporary agy ADC %s: %s", path, e)
 
 
 class CLICommand:
@@ -77,6 +91,12 @@ class AgyCliGenerator(AgentCliGenerator):
         self.setup_config = querygenerator_config.get("setup", {})
         if self.setup_config:
             self._setup_tools()
+
+        # Fail fast: an unusable model or a dead MCP server otherwise degrades
+        # silently to shell-outs and scores as poor model behaviour.
+        configured_servers = self._configured_mcp_servers()
+        if configured_servers or self.model:
+            self._verify_runtime(configured_servers)
 
     @staticmethod
     def _validate_timeout(timeout):
@@ -198,53 +218,97 @@ class AgyCliGenerator(AgentCliGenerator):
         logging.info("Installed agy into session sandbox at %s.", self.agy_bin)
 
     def _setup_auth(self):
-        """Seeds agy's OAuth state into the sandbox and wires up gcloud ADC
-        so the sandboxed CLI authenticates without an interactive login."""
-        self._mirror_agy_auth_state()
+        """Stages gcloud ADC into the sandbox so the sandboxed CLI
+        authenticates without an interactive login.
 
+        ``AGY_ADC_AUTH`` is what makes agy read ADC instead of its own OAuth
+        token, and is set unconditionally: the harness overrides ``HOME``, so
+        the sandbox has no token and agy would otherwise block on the
+        device-code URL.
+        """
+        self.env[ADC_AUTH_ENV_VAR] = "true"
         self._setup_gcloud_credentials(self.env, self.real_home, self.fake_home)
 
-    def _mirror_agy_auth_state(self):
-        """Mirrors agy's OAuth token + installation id from the host's real
-        appDataDir into the sandboxed appDataDir so the sandboxed CLI does not
-        re-prompt for an interactive login.
+        # agy reads the merged env, where a shell-exported path counts just as
+        # much as a config-supplied one.
+        adc_path = (self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
+                    or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"))
 
-        agy is OAuth-only (no env-var API key, no ADC), and the harness
-        overrides ``HOME``, so without this the sandbox looks like a
-        brand-new install and ``agy -p`` blocks on the device-code URL.
+        # Read in place: the session sandbox is on a PVC shared across
+        # sessions, which is no place for a private key.
+        if not (adc_path and os.path.exists(adc_path)) and os.path.exists(
+            GKE_SA_KEY_PATH
+        ):
+            adc_path = GKE_SA_KEY_PATH
+            self.env["GOOGLE_APPLICATION_CREDENTIALS"] = adc_path
 
-        Auth comes from the host's real appDataDir at
-        ``~/.gemini/antigravity-cli/`` -- run ``agy`` once interactively to
-        seed it; this then refreshes the copy on every run. The token is
-        load-bearing (required=True); a missing installation_id is non-fatal
-        for agy (required=False).
+        self.adc_path = adc_path if adc_path and os.path.exists(adc_path) else None
+        if not self.adc_path:
+            raise RuntimeError(
+                "agy requires an application default credentials file: it "
+                "reads its entitlement project from the credential's "
+                "quota_project_id, which a metadata-server token does not "
+                "carry. Run 'gcloud auth application-default login', set "
+                "GOOGLE_APPLICATION_CREDENTIALS, or mount a service-account "
+                f"key at {GKE_SA_KEY_PATH}."
+            )
+        logging.info("agy ADC resolved from %s", self.adc_path)
+        self._ensure_quota_project()
+
+    def _ensure_quota_project(self) -> None:
+        """Adds ``quota_project_id`` to the resolved ADC when it is missing.
+
+        agy reads its entitlement project from that field alone -- not
+        GOOGLE_CLOUD_PROJECT, not GOOGLE_CLOUD_QUOTA_PROJECT (verified against
+        ``agy models``: only the file field populates the registry), not
+        settings.json. A stock service-account key has none, and without it
+        agy's model registry comes back empty and every ``--model`` value,
+        including its own default, is rejected as unknown.
+
+        Raises on every path that cannot deliver the field: a run without it
+        fails every turn.
         """
-        real_app_data = os.path.join(self.real_home, self.APP_DATA_SUBPATH)
+        try:
+            with open(self.adc_path) as f:
+                credentials = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            raise RuntimeError(
+                f"agy ADC at {self.adc_path} is unreadable, so its "
+                f"quota_project_id cannot be confirmed: {e}"
+            ) from e
 
-        auth_files = (
-            ("antigravity-oauth-token", True),
-            ("installation_id", False),
+        if credentials.get("quota_project_id"):
+            return
+
+        project = self.gcp_project or credentials.get("project_id")
+        if not project:
+            raise RuntimeError(
+                f"agy ADC {self.adc_path} has no quota_project_id and no "
+                "project is configured, so agy would list no models. Set "
+                "GOOGLE_CLOUD_PROJECT in the model config's 'env' block, or "
+                "add quota_project_id to the credential."
+            )
+
+        credentials["quota_project_id"] = project
+        # Node-local scratch: the GKE key is read in place from a read-only
+        # mount, and its copy must not land on the shared-PVC sandbox.
+        try:
+            fd, augmented = tempfile.mkstemp(prefix="agy-adc-", suffix=".json")
+            with os.fdopen(fd, "w") as f:
+                json.dump(credentials, f)
+        except OSError as e:
+            logging.warning("Failed to write augmented agy ADC: %s", e)
+            return
+
+        self.adc_path = augmented
+        self.env["GOOGLE_APPLICATION_CREDENTIALS"] = augmented
+        # Plaintext key on shared scratch: bound its lifetime to the generator
+        # rather than leaving one behind per session for the life of the node.
+        self._adc_cleanup = weakref.finalize(self, _shred_credential, augmented)
+        logging.info(
+            "agy ADC had no quota_project_id; using augmented copy at %s "
+            "with project %s.", augmented, project,
         )
-
-        for fname, required in auth_files:
-            dst = os.path.join(self.app_data_dir, fname)
-            src = os.path.join(real_app_data, fname)
-            if not os.path.exists(src):
-                if required:
-                    logging.warning(
-                        "agy OAuth token not found at %s -- run `agy` "
-                        "interactively once to authenticate.",
-                        src,
-                    )
-                continue
-            try:
-                shutil.copy2(src, dst)
-                os.chmod(dst, 0o600)
-            except OSError as e:
-                logging.warning(
-                    "Failed to mirror agy auth file %s -> %s: %s",
-                    src, dst, e,
-                )
 
     def _initialize_settings_file(self):
         """Writes the ``gcp.project``/``gcp.location`` block into agy's
@@ -307,6 +371,8 @@ class AgyCliGenerator(AgentCliGenerator):
         if project:
             gcp_config["project"] = project
         gcp_config["location"] = location
+        # Reused by _setup_auth; agy's ADC path ignores this settings block.
+        self.gcp_project = project
 
         logging.info(
             "agy settings resolved: project=%s location=%s",
@@ -363,14 +429,10 @@ class AgyCliGenerator(AgentCliGenerator):
         skills_config = self.setup_config.get("skills", [])
         self._setup_skills(skills_config)
 
-        # Probe agy once now -- before any scenarios run -- to detect
-        # account-eligibility / MCP-load failures and fail fast with a
-        # clear error instead of silently degrading to gcloud shell-outs.
-        configured_servers = list(mcp_servers_config or {}) + list(
-            self.setup_config.get("fake_mcp_servers", {}) or {}
+    def _configured_mcp_servers(self) -> list:
+        return list(self.setup_config.get("mcp_servers") or {}) + list(
+            self.setup_config.get("fake_mcp_servers") or {}
         )
-        if configured_servers:
-            self._verify_mcp_runtime(configured_servers)
 
     # stream-json event/step markers (agy --output-format stream-json).
     # Each line is one JSON object: an ``init`` event, many ``step_update``
@@ -413,9 +475,15 @@ class AgyCliGenerator(AgentCliGenerator):
         "failed to parse mcp_config_json",
     )
 
-    def _verify_mcp_runtime(self, configured_servers: list):
-        """Spawns a short-lived ``agy -p`` probe and confirms each
-        configured MCP server actually attached and discovered tools.
+    # agy resolves --model only after it has populated the MCP schema cache, so
+    # an unrecognized model leaves tool discovery looking healthy while every
+    # turn exits 1 with an empty response and scores as poor model behaviour.
+    _MODEL_FATAL_MARKER = "invalid model selection"
+
+    def _verify_runtime(self, configured_servers: list):
+        """Spawns a short-lived ``agy -p`` probe and confirms the configured
+        model is accepted and each configured MCP server actually attached and
+        discovered tools.
 
         Validates attachment by checking the disk cache
         (``<appDataDir>/mcp/<server>/<tool>.json``), which agy populates
@@ -448,7 +516,7 @@ class AgyCliGenerator(AgentCliGenerator):
             )
         except (FileNotFoundError, subprocess.TimeoutExpired) as e:
             raise RuntimeError(
-                f"agy MCP verification probe failed to run: {e}. "
+                f"agy startup probe failed to run: {e}. "
                 f"Configured MCP servers: {configured_servers}.\n"
                 f"STDOUT: \n{getattr(e, 'stdout', '')}\n"
                 f"STDERR: \n{getattr(e, 'stderr', '')}"
@@ -458,6 +526,7 @@ class AgyCliGenerator(AgentCliGenerator):
         after = set(os.listdir(log_dir)) if os.path.isdir(log_dir) else set()
         new_logs = sorted(after - before)
         marker_hits = []
+        model_hits = []
         if new_logs:
             probe_log = os.path.join(log_dir, new_logs[-1])
             try:
@@ -465,10 +534,20 @@ class AgyCliGenerator(AgentCliGenerator):
                     for line in f:
                         if any(m in line for m in self._MCP_FATAL_MARKERS):
                             marker_hits.append(line.rstrip())
+                        if self._MODEL_FATAL_MARKER in line:
+                            model_hits.append(line.rstrip())
             except OSError as e:
                 logging.warning(
-                    "agy MCP probe log %s unreadable: %s", probe_log, e,
+                    "agy startup probe log %s unreadable: %s", probe_log, e,
                 )
+
+        if model_hits:
+            raise RuntimeError(
+                f"agy rejected the configured model {self.model!r}. Check "
+                "docs/agy_cli_agent_testing.md for ADC-supported models and "
+                "accepted labels, or omit 'model' to use agy's default.\n"
+                + "\n".join(f"  {h}" for h in model_hits)
+            )
 
         # Authoritative check: each server must have discovered >=1 tool.
         failed = []
@@ -499,11 +578,11 @@ class AgyCliGenerator(AgentCliGenerator):
                 f"agy MCP server(s) {failed} attached no tools "
                 f"(no schemas under {mcp_schema_root}/<server>/). The "
                 "server likely failed to load -- check the URL field "
-                "(use 'serverUrl' or 'url'; a gemini-style 'httpUrl' is "
-                "auto-translated), auth, and "
+                "(use 'httpUrl'; 'serverUrl' and 'url' also work), auth, and "
                 "reachability. agy degrades silently to shell-outs when "
                 "MCP tools are missing."
             )
+            msg += f"\nADC in use: {self.adc_path}"
             if marker_hits:
                 msg += "\nProbe log fatal markers:\n" + "\n".join(
                     f"  {h}" for h in marker_hits
@@ -731,7 +810,7 @@ class AgyCliGenerator(AgentCliGenerator):
         """Normalizes a cross-harness MCP server config into agy's schema.
 
         Maps the common gemini-style ``httpUrl`` alias to ``serverUrl``, agy's
-        native field. ``serverUrl`` and ``url`` (v1.0.5+) are accepted by agy
+        native field. ``serverUrl`` and ``url`` are accepted by agy
         directly and need no translation. Other fields like
         ``authProviderType``, ``oauth.scopes``, and stdio fields pass through
         natively.
@@ -744,9 +823,10 @@ class AgyCliGenerator(AgentCliGenerator):
         """Returns the process environment overlaid with the generator's
         configured env (and an optional per-call ``extra``)."""
         env = os.environ.copy()
-        env.update(self.env)
+        # YAML gives ints/bools for unquoted scalars; subprocess needs strings.
+        env.update({str(k): str(v) for k, v in self.env.items()})
         if extra:
-            env.update(extra)
+            env.update({str(k): str(v) for k, v in extra.items()})
         return env
 
     @staticmethod
@@ -758,11 +838,10 @@ class AgyCliGenerator(AgentCliGenerator):
         """Builds the non-interactive ``agy -p`` argv shared by the eval
         turn path and the setup-time MCP probe.
 
-        The model is selected with agy's ``--model`` flag (agy >=1.0.5). The
-        value is an agy UI label like "Gemini 3.1 Pro (High)" (the exact
-        strings ``agy models`` lists), not an API id; an unrecognized value is
-        silently ignored and agy falls back to its default model. When no
-        model is configured the flag is omitted and agy uses its default.
+        The model is selected with agy's ``--model`` flag (e.g.
+        ``Gemini 3.1 Pro (Low)`` or ``gemini-3.1-pro-low``); an unrecognized
+        value fails the run. When no model is configured the flag is omitted
+        and agy uses its default. See docs/agy_cli_agent_testing.md.
 
         ``output_format`` maps to agy's ``--output-format`` (values ``json``
         and ``stream-json``); the eval turn passes ``stream-json`` to get the

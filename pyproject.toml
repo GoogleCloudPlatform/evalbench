@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "google-evalbench"
-version = "1.14.0"
+version = "1.15.0"
 requires-python = ">=3.10"
 description = "Evalbench - evaluation benchmarking framework"
 readme = "README.md"
@@ -60,7 +60,11 @@ dependencies = [
     "dbt-bigquery",
     "dbt-postgres",
     "a2a-sdk>=1.0.3",
-    "mcp",
+    # 2.0.0 renamed mcp.client.streamable_http.streamablehttp_client to
+    # streamable_http_client, breaking generators/models/mcp_tools.py. The
+    # 1.8 floor is where streamablehttp_client was introduced. Lift once the
+    # call site is migrated to the 2.x name.
+    "mcp>=1.8,<2",
     # 26.2.0 turned a long-standing deprecation into a hard error
     # (mutating SSL.Context after use), breaking google-auth's mTLS path
     # (urllib3.contrib.pyopenssl.inject_into_urllib3). Lift when google-auth

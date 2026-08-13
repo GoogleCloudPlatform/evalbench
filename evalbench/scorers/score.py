@@ -1,35 +1,185 @@
 import inspect
-
-from scorers import comparator
-from scorers import exactmatcher
-from scorers import generatedqueryregexpmatcher
-from scorers import recallmatcher
-from scorers import setmatcher
-from scorers import llmrater
-from scorers import returnedsql
-from scorers import executablesql
-from scorers import trajectorymatcher
-from scorers import skillstrajectorymatcher
-from scorers import goalcompletionrate
-from scorers import behavioralmetrics
-from scorers import parameteranalysis
-from scorers import skillsbestpractices
-from scorers import turncount
-from scorers import agentsteps
-from scorers import endtoendlatency
-from scorers import toolcalllatency
-from scorers import tokenconsumption
-from scorers import tokensprocessed
-from scorers import effectivebilledtokens
-from scorers import binaryrubricscorer
-from scorers import pythonscorer
-from scorers import dataformscorer
-from scorers import dataformcloudscorer
-from scorers import dbtscorer
-from scorers.dataset_quality.scorer import DatasetQualityScorer
-from dataset.evaloutput import EvalOutput
 import logging
 import os
+from typing import Any
+
+from dataset.evaloutput import EvalOutput
+from scorers import agentsteps
+from scorers import behavioralmetrics
+from scorers import binaryrubricscorer
+from scorers import comparator
+from scorers import dataformcloudscorer
+from scorers import dataformscorer
+from scorers import dbtscorer
+from scorers import effectivebilledtokens
+from scorers import endtoendlatency
+from scorers import executablesql
+from scorers import exactmatcher
+from scorers import generatedqueryregexpmatcher
+from scorers import goalcompletionrate
+from scorers import llmrater
+from scorers import namedscorer
+from scorers import parameteranalysis
+from scorers import pythonscorer
+from scorers import recallmatcher
+from scorers import returnedsql
+from scorers import setmatcher
+from scorers import skillsbestpractices
+from scorers import skillstrajectorymatcher
+from scorers import tokenconsumption
+from scorers import tokensprocessed
+from scorers import toolcalllatency
+from scorers import trajectorymatcher
+from scorers import turncount
+from scorers.dataset_quality.scorer import DatasetQualityScorer
+
+
+DEFAULT_SCORERS: dict[str, type[comparator.Comparator]] = {
+    "exact_match": exactmatcher.ExactMatcher,
+    "recall_match": recallmatcher.RecallMatcher,
+    "set_match": setmatcher.SetMatcher,
+    "llmrater": llmrater.LLMRater,
+    "regexp_matcher": generatedqueryregexpmatcher.GeneratedQueryRegexpMatcher,
+    "returned_sql": returnedsql.ReturnedSQL,
+    "executable_sql": executablesql.ExecutableGenerationScore,
+    "trajectory_matcher": trajectorymatcher.TrajectoryMatcher,
+    "skills_trajectory": skillstrajectorymatcher.SkillsTrajectoryMatcher,
+    "skills_best_practices": skillsbestpractices.SkillsBestPractices,
+    "goal_completion": goalcompletionrate.GoalCompletionRate,
+    "behavioral_metrics": behavioralmetrics.BehavioralMetrics,
+    "parameter_analysis": parameteranalysis.ParameterAnalysis,
+    "turn_count": turncount.TurnCount,
+    "agent_steps": agentsteps.AgentSteps,
+    "end_to_end_latency": endtoendlatency.EndToEndLatency,
+    "tool_call_latency": toolcalllatency.ToolCallLatency,
+    "token_consumption": tokenconsumption.TokenConsumption,
+    "tokens_processed": tokensprocessed.TokensProcessed,
+    "effective_billed_tokens": effectivebilledtokens.EffectiveBilledTokens,
+    "binary_rubric_scorer": binaryrubricscorer.BinaryRubricScorer,
+    "python_scorer": pythonscorer.PythonScorer,
+    "dataform_compile": dataformscorer.DataformCompileScorer,
+    "dataform_run": dataformscorer.DataformRunScorer,
+    "dataform_cloud_compile": dataformcloudscorer.DataformCloudCompileScorer,
+    "dataform_cloud_run": dataformcloudscorer.DataformCloudRunScorer,
+    "dbt_compile": dbtscorer.DbtCompileScorer,
+    "dbt_run": dbtscorer.DbtRunScorer,
+    "dataset_quality": DatasetQualityScorer,
+}
+
+
+def _build_instances(
+    scorer_cls: type[comparator.Comparator],
+    config: dict,
+    experiment_config: dict,
+    eval_output_item: EvalOutput,
+    global_models: Any,
+) -> list[comparator.Comparator]:
+    """Generically instantiate a comparator class using inspect.signature."""
+    config = dict(config) if isinstance(config, dict) else {}
+    sig_params = inspect.signature(scorer_cls.__init__).parameters
+
+    if (
+        "database_configs" in sig_params
+        or scorer_cls in (llmrater.LLMRater, pythonscorer.PythonScorer)
+    ):
+        config["database_configs"] = experiment_config.get(
+            "database_configs", []
+        )
+
+    if scorer_cls == DatasetQualityScorer and not config.get("product_name"):
+        config["product_name"] = experiment_config.get("product_name")
+
+    if scorer_cls == binaryrubricscorer.BinaryRubricScorer:
+        import json
+        context_str = (
+            eval_output_item.get("eval_results", "")
+            if eval_output_item else ""
+        )
+        try:
+            if isinstance(context_str, dict):
+                context = context_str
+            else:
+                context = json.loads(context_str) if context_str else {}
+            rubric = context.get("scenario", {}).get("binary_rubric", [])
+            if rubric:
+                return [
+                    binaryrubricscorer.BinaryRubricScorer(
+                        config, global_models, criterion=c, index=i
+                    )
+                    for i, c in enumerate(rubric)
+                ]
+        except Exception:
+            pass
+        return [binaryrubricscorer.BinaryRubricScorer(config, global_models)]
+
+    kwargs = {}
+    if "global_models" in sig_params:
+        kwargs["global_models"] = global_models
+
+    if scorer_cls == pythonscorer.PythonScorer:
+        custom_name = config.get("scorer_name")
+        script_path = config.get("script_path")
+        if not custom_name and script_path and isinstance(script_path, str):
+            custom_name = os.path.splitext(
+                os.path.basename(script_path)
+            )[0].strip()
+        if custom_name:
+            kwargs["name"] = custom_name
+
+    return [scorer_cls(config, **kwargs)]
+
+
+def get_scorer_instance(
+    scorer_name: str,
+    scorer_config: dict,
+    experiment_config: dict,
+    eval_output_item: EvalOutput,
+    global_models: Any,
+) -> list[comparator.Comparator]:
+    """Resolve comparator instances for a given scorer config entry."""
+    if not isinstance(scorer_config, dict):
+        return []
+
+    # Direct match in global DEFAULT_SCORERS map
+    if scorer_name in DEFAULT_SCORERS:
+        return _build_instances(
+            DEFAULT_SCORERS[scorer_name],
+            scorer_config,
+            experiment_config,
+            eval_output_item,
+            global_models,
+        )
+
+    # Named Scorer: check `type` attribute or nested type dictionary
+    target_type = scorer_config.get("type")
+    cfg = scorer_config
+    if not target_type:
+        for default_type in DEFAULT_SCORERS:
+            if (
+                default_type in scorer_config
+                and isinstance(scorer_config[default_type], dict)
+            ):
+                target_type = default_type
+                cfg = scorer_config[default_type]
+                break
+
+    if target_type and target_type in DEFAULT_SCORERS:
+        base_instances = _build_instances(
+            DEFAULT_SCORERS[target_type],
+            cfg,
+            experiment_config,
+            eval_output_item,
+            global_models,
+        )
+        custom_name = scorer_config.get("scorer_name") or scorer_name
+        return [
+            namedscorer.NamedScorer(
+                name=custom_name, base_scorer=base, target_type=target_type
+            )
+            for base in base_instances
+        ]
+
+    return []
 
 
 def compare(
@@ -38,178 +188,19 @@ def compare(
     scoring_results: list[dict],
     global_models,
 ):
-    """Run comparators against eval output.
-
-    Args:
-      eval_output_item: EvalItemOutput object to compare.
-      experiment_config: Config for the scorers to run.
-    """
+    """Run comparators against eval output."""
     scorers = experiment_config["scorers"]
     comparators: list[comparator.Comparator] = []
-    if "exact_match" in scorers:
-        comparators.append(exactmatcher.ExactMatcher(scorers["exact_match"]))
-    if "recall_match" in scorers:
-        comparators.append(
-            recallmatcher.RecallMatcher(scorers["recall_match"]))
-    if "set_match" in scorers:
-        comparators.append(setmatcher.SetMatcher(scorers["set_match"]))
-    if "llmrater" in scorers:
-        llmrater_config = scorers["llmrater"]
-        llmrater_config["database_configs"] = experiment_config.get(
-            "database_configs", []
-        )
-        comparators.append(llmrater.LLMRater(llmrater_config, global_models))
-    if "regexp_matcher" in scorers:
-        comparators.append(
-            generatedqueryregexpmatcher.GeneratedQueryRegexpMatcher(
-                scorers["regexp_matcher"]
-            )
-        )
-    if "returned_sql" in scorers:
-        comparators.append(returnedsql.ReturnedSQL(scorers["returned_sql"]))
-    if "executable_sql" in scorers:
-        comparators.append(
-            executablesql.ExecutableGenerationScore(scorers["executable_sql"])
-        )
-    if "trajectory_matcher" in scorers:
-        comparators.append(
-            trajectorymatcher.TrajectoryMatcher(scorers["trajectory_matcher"])
-        )
-    if "skills_trajectory" in scorers:
-        comparators.append(
-            skillstrajectorymatcher.SkillsTrajectoryMatcher(scorers["skills_trajectory"])
-        )
-    if "skills_best_practices" in scorers:
-        comparators.append(
-            skillsbestpractices.SkillsBestPractices(
-                scorers["skills_best_practices"], global_models
-            )
-        )
-    if "goal_completion" in scorers:
-        comparators.append(
-            goalcompletionrate.GoalCompletionRate(
-                scorers["goal_completion"], global_models
-            )
-        )
-    if "behavioral_metrics" in scorers:
-        comparators.append(
-            behavioralmetrics.BehavioralMetrics(
-                scorers["behavioral_metrics"], global_models
-            )
-        )
-    if "parameter_analysis" in scorers:
-        comparators.append(
-            parameteranalysis.ParameterAnalysis(
-                scorers["parameter_analysis"], global_models
-            )
-        )
-    if "turn_count" in scorers:
-        comparators.append(
-            turncount.TurnCount(scorers["turn_count"])
-        )
-    if "agent_steps" in scorers:
-        comparators.append(
-            agentsteps.AgentSteps(scorers["agent_steps"])
-        )
-    if "end_to_end_latency" in scorers:
-        comparators.append(
-            endtoendlatency.EndToEndLatency(scorers["end_to_end_latency"])
-        )
-    if "tool_call_latency" in scorers:
-        comparators.append(
-            toolcalllatency.ToolCallLatency(scorers["tool_call_latency"])
-        )
-    if "token_consumption" in scorers:
-        comparators.append(
-            tokenconsumption.TokenConsumption(scorers["token_consumption"])
-        )
-    if "tokens_processed" in scorers:
-        comparators.append(
-            tokensprocessed.TokensProcessed(scorers["tokens_processed"])
-        )
-    if "effective_billed_tokens" in scorers:
-        comparators.append(
-            effectivebilledtokens.EffectiveBilledTokens(
-                scorers["effective_billed_tokens"]
-            )
-        )
-    if "binary_rubric_scorer" in scorers:
-        import json
 
-        context_str = eval_output_item.get("eval_results", "")
-        try:
-            if isinstance(context_str, dict):
-                context = context_str
-            else:
-                context = json.loads(context_str) if context_str else {}
-            rubric = context.get("scenario", {}).get("binary_rubric", [])
-            if rubric:
-                for index, criterion in enumerate(rubric):
-                    comparators.append(
-                        binaryrubricscorer.BinaryRubricScorer(
-                            scorers["binary_rubric_scorer"], global_models,
-                            criterion=criterion, index=index
-                        )
-                    )
-            else:
-                comparators.append(
-                    binaryrubricscorer.BinaryRubricScorer(
-                        scorers["binary_rubric_scorer"], global_models
-                    )
-                )
-        except Exception:
-
-            comparators.append(
-                binaryrubricscorer.BinaryRubricScorer(
-                    scorers["binary_rubric_scorer"], global_models
-                )
+    for name, config in scorers.items():
+        comparators.extend(
+            get_scorer_instance(
+                name,
+                config,
+                experiment_config,
+                eval_output_item,
+                global_models,
             )
-    for key, scorer_config in scorers.items():
-        if key == "python_scorer":
-            custom_name = scorer_config.get("scorer_name")
-            if custom_name and isinstance(custom_name, str):
-                custom_name = custom_name.strip()
-            if not custom_name:
-                script_path = scorer_config.get("script_path")
-                if script_path and isinstance(script_path, str) and script_path.strip():
-                    custom_name = os.path.splitext(os.path.basename(script_path))[0].strip()
-                if not custom_name:
-                    custom_name = key
-            scorer_config["database_configs"] = experiment_config.get(
-                "database_configs", []
-            )
-            comparators.append(pythonscorer.PythonScorer(scorer_config, name=custom_name))
-    if "dataform_compile" in scorers:
-        comparators.append(
-            dataformscorer.DataformCompileScorer(scorers["dataform_compile"])
-        )
-    if "dataform_run" in scorers:
-        comparators.append(
-            dataformscorer.DataformRunScorer(scorers["dataform_run"])
-        )
-    if "dataform_cloud_compile" in scorers:
-        comparators.append(
-            dataformcloudscorer.DataformCloudCompileScorer(
-                scorers["dataform_cloud_compile"]
-            )
-        )
-    if "dataform_cloud_run" in scorers:
-        comparators.append(
-            dataformcloudscorer.DataformCloudRunScorer(
-                scorers["dataform_cloud_run"]
-            )
-        )
-    if "dbt_compile" in scorers:
-        comparators.append(
-            dbtscorer.DbtCompileScorer(scorers["dbt_compile"])
-        )
-    if "dbt_run" in scorers:
-        comparators.append(
-            dbtscorer.DbtRunScorer(scorers["dbt_run"])
-        )
-    if "dataset_quality" in scorers:
-        comparators.append(
-            DatasetQualityScorer(scorers["dataset_quality"], global_models)
         )
 
     for comp in comparators:
@@ -219,14 +210,11 @@ def compare(
         rows: list = []
         try:
             if eval_output_item["generated_sql"] is not None:
-                # Dynamically inspect signature to only pass the 'database'
-                # parameter to comparators that explicitly support it,
-                # preventing TypeError crashes in other framework scorers.
-                compare_signature = inspect.signature(comp.compare)
+                sig = inspect.signature(comp.compare)
                 compare_kwargs = {}
-                if "database" in compare_signature.parameters:
-                    compare_kwargs["database"] = (
-                        eval_output_item.get("database", "")
+                if "database" in sig.parameters:
+                    compare_kwargs["database"] = eval_output_item.get(
+                        "database", ""
                     )
                 result = comp.compare(
                     eval_output_item["nl_prompt"],
@@ -250,16 +238,20 @@ def compare(
             rows = [(comp.name, 0, None, e)]
         if not rows:
             rows = [(comp.name, 0, None, None)]
-        for name, score, logs, error in rows:
+        for name, score_val, logs, error in rows:
             score_dict = comparator.ComparisonResult(
-                comp, score, comparison_logs=logs, comparison_error=error
+                comp, score_val, comparison_logs=logs, comparison_error=error
             ).to_dict()
             score_dict["comparator"] = name
-            score_dict["id"] = eval_output_item["id"]
-            score_dict["generated_sql"] = eval_output_item["generated_sql"]
-            score_dict["generated_error"] = eval_output_item["generated_error"]
-            score_dict["dialects"] = eval_output_item["dialects"]
-            score_dict["database"] = eval_output_item["database"]
-            score_dict["job_id"] = eval_output_item["job_id"]
-            logging.debug("scoring: %s %s %s", score_dict["id"], name, score)
+            score_dict.update({
+                "id": eval_output_item["id"],
+                "generated_sql": eval_output_item["generated_sql"],
+                "generated_error": eval_output_item["generated_error"],
+                "dialects": eval_output_item["dialects"],
+                "database": eval_output_item["database"],
+                "job_id": eval_output_item["job_id"],
+            })
+            logging.debug(
+                "scoring: %s %s %s", score_dict["id"], name, score_val
+            )
             scoring_results.append(score_dict)

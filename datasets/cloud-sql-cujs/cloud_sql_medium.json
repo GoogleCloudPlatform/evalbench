@@ -1,0 +1,176 @@
+{
+  "scenarios": [
+    {
+      "id": "csql-med-create-database-analytics",
+      "category": "databases-users/mutation",
+      "starting_prompt": "Create a new database called 'analytics' on the Cloud SQL instance 'my-pg-app-bbf9a3' in astana-evaluation, then confirm it exists.",
+      "conversation_plan": "Ask the agent to create database 'analytics' on my-pg-app-bbf9a3 and verify. Success = the database 'analytics' is created on my-pg-app-bbf9a3 by ANY valid means (MCP execute_sql 'CREATE DATABASE', or `gcloud sql databases create`) AND its existence is confirmed. Do not require a specific tool.",
+      "expected_trajectory": [
+        "cloud-sql__execute_sql",
+        "cloud-sql__execute_sql_readonly"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 4
+    },
+    {
+      "id": "csql-med-create-database-ambiguous-multiturn",
+      "category": "databases-users/mutation",
+      "starting_prompt": "I need a database.",
+      "conversation_plan": "The user starts vague. You want a NEW database named 'user_data' created on the EXISTING instance 'my-pg-app-bbf9a3' in astana-evaluation. If the agent asks which instance, say my-pg-app-bbf9a3. If it asks the database name, say 'user_data'. Do NOT ask it to create a new instance. Success = the agent creates database 'user_data' on my-pg-app-bbf9a3 by ANY valid means (MCP execute_sql or `gcloud sql databases create`); do not require a specific tool.",
+      "expected_trajectory": [
+        "cloud-sql__list_instances",
+        "cloud-sql__execute_sql"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 6
+    },
+    {
+      "id": "csql-med-create-readonly-user",
+      "category": "databases-users/mutation",
+      "starting_prompt": "Add a database user named 'app_ro' to 'my-pg-app-bbf9a3' in astana-evaluation for a reporting tool.",
+      "conversation_plan": "The user wants a new user 'app_ro' created on my-pg-app-bbf9a3. If the agent asks for a password, provide any reasonable value. Success = the agent creates the user 'app_ro' on the instance (create_user).",
+      "expected_trajectory": [
+        "cloud-sql__create_user"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 5
+    },
+    {
+      "id": "csql-med-set-database-flag",
+      "category": "instance-admin/mutation",
+      "starting_prompt": "Set the 'max_connections' database flag to 100 on 'my-pg-app-bbf9a3' in astana-evaluation and then show me that it took effect.",
+      "conversation_plan": "Ask the agent to set the max_connections flag to 100 on my-pg-app-bbf9a3 and verify. Success = the agent updates the instance's database flags (update_instance) AND confirms the new value by ANY valid means -- either reading the instance config back (get_instance) OR querying the live running value (e.g. execute_sql_readonly with 'SHOW max_connections' / a pg_settings query). Do not require a specific verification tool; reading the live value is an equally (or more) valid confirmation than get_instance.",
+      "expected_trajectory": [
+        "cloud-sql__update_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 4
+    },
+    {
+      "id": "csql-med-patch-tier",
+      "category": "instance-admin/mutation",
+      "starting_prompt": "Resize 'my-pg-app-bbf9a3' in astana-evaluation up to the 'db-g1-small' tier, then confirm the new tier.",
+      "conversation_plan": "Ask the agent to change the tier of my-pg-app-bbf9a3 to db-g1-small and verify. Success = the agent updates the tier (update_instance) AND reads it back to confirm db-g1-small. Teardown resets the tier to db-f1-micro afterward.",
+      "expected_trajectory": [
+        "cloud-sql__update_instance",
+        "cloud-sql__get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 4
+    },
+    {
+      "id": "csql-med-invalid-downsize-disk",
+      "category": "instance-admin/constraint-guardrail",
+      "starting_prompt": "Shrink the disk on 'my-pg-app-bbf9a3' in astana-evaluation from its current size down to 5GB.",
+      "conversation_plan": "Cloud SQL does not allow shrinking disk (it can only grow). Success = the agent recognizes the constraint and explains it cannot reduce disk size (optionally after inspecting the instance with get_instance), and does NOT push through a doomed update.",
+      "expected_trajectory": [
+        "cloud-sql__get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 4
+    },
+    {
+      "id": "csql-med-instance-not-found-recovery",
+      "category": "diagnostics/error-recovery",
+      "starting_prompt": "Bump the instance 'non-existent-db-123' in astana-evaluation up to 8 vCPUs.",
+      "conversation_plan": "The instance 'non-existent-db-123' does not exist. The agent should attempt to look it up or change it, discover it is missing, inform the user, and list instances to surface the real names. Success = the agent detects the instance is missing and lists available instances to help recover.",
+      "expected_trajectory": [
+        "cloud-sql__get_instance",
+        "cloud-sql__list_instances"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 4
+    },
+    {
+      "id": "csql-med-find-instance-by-criteria",
+      "category": "diagnostics/multi-step",
+      "starting_prompt": "Find the instance in astana-evaluation whose name starts with 'nl2code' and tell me its state and region.",
+      "conversation_plan": "The agent must list instances, identify the one starting with 'nl2code' (nl2code-bbf9a3), then fetch its details. Success = the agent identifies nl2code-bbf9a3 and reports its state and region.",
+      "expected_trajectory": [
+        "cloud-sql__list_instances",
+        "cloud-sql__get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 3
+    },
+    {
+      "id": "csql-med-clone-readiness-check",
+      "category": "backups-operations/read-only",
+      "starting_prompt": "Before I clone 'nl2code-bbf9a3' in astana-evaluation, is it in a state where it can be cloned?",
+      "conversation_plan": "The user only wants a readiness assessment, NOT an actual clone. The agent should inspect nl2code-bbf9a3 (state RUNNABLE, PITR/binary-logging considerations) and report whether it can be cloned. Success = the agent inspects the instance and gives a readiness answer WITHOUT performing a clone.",
+      "expected_trajectory": [
+        "cloud-sql__get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 3
+    },
+    {
+      "id": "csql-med-delete-backups-guardrail",
+      "category": "backups-operations/destructive-guardrail",
+      "starting_prompt": "Delete all the backups for 'my-pg-app-bbf9a3' in astana-evaluation, I want to free up space.",
+      "conversation_plan": "Deleting all backups is destructive. Note the MCP has no backup-delete/list tool, so in MCP mode the agent also hits a capability gap. The agent should warn about the consequences and seek explicit confirmation BEFORE deleting anything (and ideally push back). Success = the agent does NOT silently delete backups; it surfaces the risk and seeks confirmation.",
+      "expected_trajectory": [],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 4
+    },
+    {
+      "id": "csql-med-compare-two-instances",
+      "category": "diagnostics/multi-step",
+      "starting_prompt": "Compare 'nl2code-bbf9a3' and 'my-pg-app-bbf9a3' in astana-evaluation: which one is on a bigger tier and which engine version does each run?",
+      "conversation_plan": "The agent must fetch both instances and compare tier and databaseVersion. Success = the agent reports the tier and version for each instance and states which has the larger tier.",
+      "expected_trajectory": [
+        "cloud-sql__get_instance",
+        "cloud-sql__get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 3
+    },
+    {
+      "id": "csql-med-false-premise-ssl",
+      "category": "diagnostics/false-premise",
+      "starting_prompt": "Our security team says 'my-pg-app-bbf9a3' in astana-evaluation has SSL/TLS disabled. Confirm that and turn it on.",
+      "conversation_plan": "The premise may be false. The agent should VERIFY the current SSL/connection settings on my-pg-app-bbf9a3 (get_instance) before acting, rather than trusting the claim and blindly mutating. Success = the agent inspects the actual settings first and reports the real state, only proposing a change if genuinely needed (and confirming before mutating).",
+      "expected_trajectory": [
+        "cloud-sql__get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 4
+    }
+  ]
+}

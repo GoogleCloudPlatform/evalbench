@@ -59,6 +59,11 @@ SCORER_REGISTRY = {
 }
 
 
+def _as_float(score: int | float | None) -> float | None:
+    """Grades are rounded ints; the shared scores column is FLOAT64."""
+    return None if score is None else float(score)
+
+
 class DatasetQualityScorer(Comparator):
     """Grades one CUJ dataset holistically; emits one weighted global score."""
 
@@ -201,7 +206,10 @@ class DatasetQualityScorer(Comparator):
             if name in categories:
                 categories[name]["score"] = score
 
+        # Splatted first so a distribution key colliding with a report key loses;
+        # otherwise a sub-scorer could silently overwrite the grade itself.
         report = {
+            **distributions,
             "product_name": self.product_name,
             "total_cujs": context.n,
             "dataset_quality_score": grade["dataset_quality_score"],
@@ -210,7 +218,6 @@ class DatasetQualityScorer(Comparator):
             "total_weight": grade["total_weight"],
             "excluded_scorers": grade["excluded_scorers"],
             "categories": list(categories.values()),
-            **distributions,
         }
         if self.synthesis_model is not None:
             synthesize(self.synthesis_model, report)
@@ -223,13 +230,13 @@ class DatasetQualityScorer(Comparator):
         summary = {k: v for k, v in report.items() if k != "categories"}
         rows = [(
             self.name,
-            grade["dataset_quality_score"],
+            _as_float(grade["dataset_quality_score"]),
             json.dumps(summary, default=str),
         )]
         for category in report["categories"]:
             rows.append((
                 category["name"],
-                category.get("score"),
+                _as_float(category.get("score")),
                 json.dumps(category, default=str),
             ))
         return rows
@@ -272,14 +279,24 @@ class DatasetQualityScorer(Comparator):
         return contributions
 
     def _extract_cujs(self, eval_results: Any) -> list[dict]:
-        """Pull the bundled CUJs out of the single wrapper scenario."""
+        """Pull the bundled CUJs out of the single wrapper scenario.
+
+        Every level is shape-checked because a raise here would escape ``compare``
+        and be converted by the caller into a score of 0, which is exactly the
+        genuine-F confusion the null-score path exists to avoid.
+        """
         if isinstance(eval_results, str):
             try:
                 eval_results = json.loads(eval_results) if eval_results else {}
             except json.JSONDecodeError:
                 eval_results = {}
-        scenario = (eval_results or {}).get("scenario", {}) or {}
-        scenarios = scenario.get("all_cujs") or []
+        scenario = (
+            eval_results.get("scenario") if isinstance(eval_results, dict) else None
+        )
+        all_cujs = scenario.get("all_cujs") if isinstance(scenario, dict) else None
+        scenarios = [
+            cuj for cuj in all_cujs if isinstance(cuj, dict)
+        ] if isinstance(all_cujs, list) else []
         if not scenarios:
             logging.warning("dataset_quality: no CUJs found in wrapper scenario")
         return scenarios

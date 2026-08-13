@@ -17,6 +17,30 @@ logger = logging.getLogger(__name__)
 # Global models dict for get_generator
 global_models = {"lock": threading.Lock(), "registered_models": {}}
 
+# Bounds on how much of scores.csv is rendered into the prompt.
+#
+# Three bounds because each covers a different shape of run: cell width for a
+# run with one huge blob, row count for a run with many results, and total
+# characters as a backstop for anything that slips past both. The analyzer
+# prompt asks for per-comparator scores and representative failures, so
+# truncated cells cost it nothing.
+SCORES_MAX_COLWIDTH = 500
+SCORES_MAX_ROWS = 500
+SCORES_MAX_CHARS = 200_000
+
+
+def render_scores_for_prompt(scores_df):
+    """Render scores.csv for the analyzer prompt within a bounded size."""
+    body = scores_df.head(SCORES_MAX_ROWS).to_string(
+        max_colwidth=SCORES_MAX_COLWIDTH
+    )
+    omitted = len(scores_df) - SCORES_MAX_ROWS
+    if omitted > 0:
+        body += f"\n... {omitted} further rows omitted ..."
+    if len(body) > SCORES_MAX_CHARS:
+        body = body[:SCORES_MAX_CHARS] + "\n... truncated ..."
+    return body
+
 def get_summarizer(results_dir: str = None, dataset_name: str = None, model_config_path: str = None):
     """Loads the generator based on explicit parameter, run_config.yaml, dataset_models mapping, or viewer/config/summarizer_config.yaml fallback."""
     selected_config_path = model_config_path
@@ -92,7 +116,7 @@ def summarize_eval_scoring(results_dir, dataset_name=None, model_config_path=Non
 
         if scores_df is not None:
             prompt += "### Scores Data:\n"
-            prompt += scores_df.to_string() + "\n\n"
+            prompt += render_scores_for_prompt(scores_df) + "\n\n"
 
         # Get generator or use API key directly
         from google import genai

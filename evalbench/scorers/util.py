@@ -17,17 +17,19 @@ def extract_json(text: str) -> dict:
     fence = re.match(r"^```(?:json)?\s*(.*?)\s*```\s*$", text, re.DOTALL)
     if fence:
         text = fence.group(1).strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
+    candidates = [text]
     # Fall back to the outermost {...} span for prose-wrapped responses.
     start, end = text.find("{"), text.rfind("}")
     if start != -1 and end > start:
+        candidates.append(text[start:end + 1])
+    for candidate in candidates:
         try:
-            return json.loads(text[start:end + 1])
+            parsed = json.loads(candidate)
         except json.JSONDecodeError:
-            pass
+            continue
+        # A bare array or scalar parses fine but breaks every caller's .get().
+        if isinstance(parsed, dict):
+            return parsed
     raise ValueError("no JSON object found in model response")
 
 

@@ -168,61 +168,19 @@ def trends_component():
             
         df = pd.DataFrame(data)
         
-    # Filter by requester
-    df = df[df['requester'] == 'cloud-db-nl2sql-testing-jobs']
-    
-    # Create product_dataset column for combined line
-    df['product_dataset'] = df['product'] + " (" + df['dataset'] + ")"
-    
-    # Filter by product (remove unknown or empty)
-    df = df[df['product'].notna() & (df['product'] != 'unknown') & (df['product'].str.strip() != '')]
+    # Extract unique requesters and products BEFORE filtering so the dropdowns always have full options
+    all_requesters = sorted(df['requester'].dropna().unique().tolist())
+    all_products_initial = sorted(df['product'].dropna().unique().tolist())
+    all_products = [p for p in all_products_initial if p != 'unknown' and str(p).strip() != '']
     
     state = me.state(State)
     
-    # Apply agent tab filter
-    if state.trends_agent_tab == "Gemini":
-        df = df[df['model_config.generator'].str.contains('gemini', case=False) | (df['model_config.generator'] == 'unknown') | (df['model_config.generator'] == 'N/A') | df['product'].isin(['spanner', 'bigtable', 'alloydb', 'memorystore', 'dms', 'datastream'])]
-    elif state.trends_agent_tab == "Claude":
-        df = df[df['model_config.generator'].str.contains('claude', case=False) | ((df['model_config.generator'] == 'unknown') & df['product'].str.contains('claude', case=False))]
-    elif state.trends_agent_tab == "Codex":
-        df = df[df['model_config.generator'].str.contains('codex', case=False)]
-    elif state.trends_agent_tab == "Antigravity":
-        df = df[df['model_config.generator'].str.contains('agy', case=False)]
+    # Set default requester filter if empty and we have requesters
+    if not state.trends_requester_filter and all_requesters:
+        state.trends_requester_filter = all_requesters[0]
 
-    # Extract unique products for dropdown
-    all_products = sorted(df['product'].unique().tolist())
-    logging.info(f"All products found in trends: {all_products}")
-    
-    # Apply filter if selected
-    if state.trends_product_filter:
-        df = df[df['product'] == state.trends_product_filter]
-    
-    if df.empty:
-        with me.box(
-            style=me.Style(
-                padding=me.Padding.all("24px"),
-                background="#f8fafc",
-                border=me.Border.all(me.BorderSide(width="1px", color="#e2e8f0")),
-                border_radius="8px",
-                text_align="center",
-                color="#64748b",
-                width="100%",
-            )
-        ):
-            me.text("No data found for the selected filters.", style=me.Style(font_size="16px", font_weight="500", color="#475569"))
-            me.text("Try adjusting your agent or product selection.", style=me.Style(font_size="14px", color="#64748b", margin=me.Margin(top="8px")))
-        return
-        
-    # Generate charts
-    latency_chart = generate_d3_chart(df, 'run_time', 'latency', 'product_dataset', 'Latency Trend', 'Latency (ms)')
-    token_chart = generate_d3_chart(df, 'run_time', 'tokens', 'product_dataset', 'Token Consumption Trend', 'Tokens')
-    trajectory_chart = generate_d3_chart(df, 'run_time', 'trajectory', 'product_dataset', 'Trajectory Score Trend', 'Score (%)')
-    ai_score_chart = generate_d3_chart(df, 'run_time', 'ai_score', 'product_dataset', 'AI Score Trend', 'Score')
-
-    
-    # Render charts
     with me.box(style=me.Style(display="flex", flex_direction="column", gap="24px", padding=me.Padding.all("24px"), width="100%")):
-        me.text("Trends for cloud-db-nl2sql-testing-jobs", style=me.Style(font_size="20px", font_weight="700"))
+        me.text(f"Trends for {state.trends_requester_filter}", style=me.Style(font_size="20px", font_weight="700"))
         
         # Add agent tabs for Charts view
         def on_trends_agent_tab_change(e):
@@ -241,75 +199,178 @@ def trends_component():
         )
         me.box(style=me.Style(height="16px"))
         
-        # Render custom dropdown
-        def toggle_trends_product_dropdown(e: me.ClickEvent):
-            st = me.state(State)
-            if st.open_dropdown == "trends_product":
-                st.open_dropdown = ""
-            else:
-                st.open_dropdown = "trends_product"
-                
-        def make_product_handler(val):
-            def handler(e: me.ClickEvent):
+        # Flex container for dropdowns
+        with me.box(style=me.Style(display="flex", gap="16px", flex_wrap="wrap")):
+            # --- Requester Dropdown ---
+            def toggle_trends_requester_dropdown(e: me.ClickEvent):
                 st = me.state(State)
-                logging.info(f"Product handler triggered for: {val}")
-                st.trends_product_filter = val
-                st.open_dropdown = ""
-            
-            safe_val = str(val).replace(" ", "_").replace(".", "_").replace("-", "_")
-            handler_name = f"click_trends_prod_{safe_val}"
-            handler.__name__ = handler_name
-            globals()[handler_name] = handler
-            return handler
-            
-        with me.box(style=me.Style(position="relative", width="300px")):
-            with me.box(
-                style=me.Style(
-                    padding=me.Padding.all("12px"),
-                    background="#f8fafc",
-                    border=me.Border.all(me.BorderSide(width="1px", color="#e2e8f0")),
-                    border_radius="6px",
-                    cursor="pointer",
-                    display="flex",
-                    justify_content="space-between",
-                    align_items="center",
-                ),
-                on_click=toggle_trends_product_dropdown,
-            ):
-                me.text(state.trends_product_filter if state.trends_product_filter else "All Products", style=me.Style(font_weight="500"))
-                me.text("▼", style=me.Style(font_size="10px", color="#64748b"))
+                if st.open_dropdown == "trends_requester":
+                    st.open_dropdown = ""
+                else:
+                    st.open_dropdown = "trends_requester"
+                    
+            def make_requester_handler(val):
+                def handler(e: me.ClickEvent):
+                    st = me.state(State)
+                    st.trends_requester_filter = val
+                    st.open_dropdown = ""
                 
-            if state.open_dropdown == "trends_product":
+                safe_val = str(val).replace(" ", "_").replace(".", "_").replace("-", "_")
+                handler_name = f"click_trends_req_{safe_val}"
+                handler.__name__ = handler_name
+                globals()[handler_name] = handler
+                return handler
+
+            with me.box(style=me.Style(position="relative", width="300px")):
+                me.text("Filter by Requester", style=me.Style(font_size="14px", font_weight="600", margin=me.Margin(bottom="8px")))
                 with me.box(
                     style=me.Style(
-                        position="absolute",
-                        top="100%",
-                        left="0",
-                        z_index=10,
-                        background="#ffffff",
+                        padding=me.Padding.all("12px"),
+                        background="#f8fafc",
                         border=me.Border.all(me.BorderSide(width="1px", color="#e2e8f0")),
-                        border_radius="4px",
-                        width="100%",
-                        max_height="200px",
-                        overflow_y="auto",
-                    )
+                        border_radius="6px",
+                        cursor="pointer",
+                        display="flex",
+                        justify_content="space-between",
+                        align_items="center",
+                    ),
+                    on_click=toggle_trends_requester_dropdown,
                 ):
-                    # All option
+                    me.text(state.trends_requester_filter if state.trends_requester_filter else "Select Requester", style=me.Style(font_weight="500"))
+                    me.text("▼", style=me.Style(font_size="10px", color="#64748b"))
+                    
+                if state.open_dropdown == "trends_requester":
                     with me.box(
-                        style=me.Style(padding=me.Padding.all("8px"), cursor="pointer"),
-                        on_click=make_product_handler(""),
+                        style=me.Style(
+                            position="absolute",
+                            top="100%",
+                            left="0",
+                            z_index=10,
+                            background="#ffffff",
+                            border=me.Border.all(me.BorderSide(width="1px", color="#e2e8f0")),
+                            border_radius="4px",
+                            width="100%",
+                            max_height="200px",
+                            overflow_y="auto",
+                        )
                     ):
-                        me.text("All Products", style=me.Style(color="#1f2937"))
-                        
-                    # Product options
-                    for p in all_products:
+                        for r in all_requesters:
+                            with me.box(
+                                style=me.Style(padding=me.Padding.all("8px"), cursor="pointer"),
+                                on_click=make_requester_handler(r),
+                            ):
+                                me.text(r, style=me.Style(color="#1f2937"))
+
+            # --- Product Dropdown ---
+            def toggle_trends_product_dropdown(e: me.ClickEvent):
+                st = me.state(State)
+                if st.open_dropdown == "trends_product":
+                    st.open_dropdown = ""
+                else:
+                    st.open_dropdown = "trends_product"
+                    
+            def make_product_handler(val):
+                def handler(e: me.ClickEvent):
+                    st = me.state(State)
+                    logging.info(f"Product handler triggered for: {val}")
+                    st.trends_product_filter = val
+                    st.open_dropdown = ""
+                
+                safe_val = str(val).replace(" ", "_").replace(".", "_").replace("-", "_")
+                handler_name = f"click_trends_prod_{safe_val}"
+                handler.__name__ = handler_name
+                globals()[handler_name] = handler
+                return handler
+                
+            with me.box(style=me.Style(position="relative", width="300px")):
+                me.text("Filter by Product", style=me.Style(font_size="14px", font_weight="600", margin=me.Margin(bottom="8px")))
+                with me.box(
+                    style=me.Style(
+                        padding=me.Padding.all("12px"),
+                        background="#f8fafc",
+                        border=me.Border.all(me.BorderSide(width="1px", color="#e2e8f0")),
+                        border_radius="6px",
+                        cursor="pointer",
+                        display="flex",
+                        justify_content="space-between",
+                        align_items="center",
+                    ),
+                    on_click=toggle_trends_product_dropdown,
+                ):
+                    me.text(state.trends_product_filter if state.trends_product_filter else "All Products", style=me.Style(font_weight="500"))
+                    me.text("▼", style=me.Style(font_size="10px", color="#64748b"))
+                    
+                if state.open_dropdown == "trends_product":
+                    with me.box(
+                        style=me.Style(
+                            position="absolute",
+                            top="100%",
+                            left="0",
+                            z_index=10,
+                            background="#ffffff",
+                            border=me.Border.all(me.BorderSide(width="1px", color="#e2e8f0")),
+                            border_radius="4px",
+                            width="100%",
+                            max_height="200px",
+                            overflow_y="auto",
+                        )
+                    ):
                         with me.box(
                             style=me.Style(padding=me.Padding.all("8px"), cursor="pointer"),
-                            on_click=make_product_handler(p),
+                            on_click=make_product_handler(""),
                         ):
-                            me.text(p, style=me.Style(color="#1f2937"))
+                            me.text("All Products", style=me.Style(color="#1f2937"))
+                            
+                        for p in all_products:
+                            with me.box(
+                                style=me.Style(padding=me.Padding.all("8px"), cursor="pointer"),
+                                on_click=make_product_handler(p),
+                            ):
+                                me.text(p, style=me.Style(color="#1f2937"))
+                                
+        # Apply filters to data
+        if state.trends_requester_filter:
+            df = df[df['requester'] == state.trends_requester_filter]
+            
+        df['product_dataset'] = df['product'] + " (" + df['dataset'] + ")"
+        df = df[df['product'].notna() & (df['product'] != 'unknown') & (df['product'].str.strip() != '')]
         
-        with me.box(style=me.Style(display="flex", flex_direction="column", gap="16px", width="100%")):
+        if state.trends_agent_tab == "Gemini":
+            df = df[df['model_config.generator'].str.contains('gemini', case=False) | (df['model_config.generator'] == 'unknown') | (df['model_config.generator'] == 'N/A') | df['product'].isin(['spanner', 'bigtable', 'alloydb', 'memorystore', 'dms', 'datastream'])]
+        elif state.trends_agent_tab == "Claude":
+            df = df[df['model_config.generator'].str.contains('claude', case=False) | ((df['model_config.generator'] == 'unknown') & df['product'].str.contains('claude', case=False))]
+        elif state.trends_agent_tab == "Codex":
+            df = df[df['model_config.generator'].str.contains('codex', case=False)]
+        elif state.trends_agent_tab == "Antigravity":
+            df = df[df['model_config.generator'].str.contains('agy', case=False)]
+            
+        if state.trends_product_filter:
+            df = df[df['product'] == state.trends_product_filter]
+
+        if df.empty:
+            with me.box(
+                style=me.Style(
+                    padding=me.Padding.all("24px"),
+                    background="#f8fafc",
+                    border=me.Border.all(me.BorderSide(width="1px", color="#e2e8f0")),
+                    border_radius="8px",
+                    text_align="center",
+                    color="#64748b",
+                    width="100%",
+                    margin=me.Margin(top="24px"),
+                )
+            ):
+                me.text("No data found for the selected filters.", style=me.Style(font_size="16px", font_weight="500", color="#475569"))
+                me.text("Try adjusting your agent, requester, or product selection.", style=me.Style(font_size="14px", color="#64748b", margin=me.Margin(top="8px")))
+            return
+            
+        # Generate charts
+        latency_chart = generate_d3_chart(df, 'run_time', 'latency', 'product_dataset', 'Latency Trend', 'Latency (ms)')
+        token_chart = generate_d3_chart(df, 'run_time', 'tokens', 'product_dataset', 'Token Consumption Trend', 'Tokens')
+        trajectory_chart = generate_d3_chart(df, 'run_time', 'trajectory', 'product_dataset', 'Trajectory Score Trend', 'Score (%)')
+        ai_score_chart = generate_d3_chart(df, 'run_time', 'ai_score', 'product_dataset', 'AI Score Trend', 'Score')
+        
+        with me.box(style=me.Style(display="flex", flex_direction="column", gap="16px", width="100%", margin=me.Margin(top="24px"))):
             me.text("AI Score", style=me.Style(font_size="16px", font_weight="600"))
             me.html(ai_score_chart, mode="sandboxed", style=me.Style(width="100%", height="550px"))
             
