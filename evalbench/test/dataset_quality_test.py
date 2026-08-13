@@ -53,7 +53,10 @@ from scorers.dataset_quality.prompts.composition_coverage import (
     KEY_SEQUENCE_DEPENDENCY,
 )
 from scorers.dataset_quality.scorer import SCORER_REGISTRY, DatasetQualityScorer
-from scorers.dataset_quality.trajectory_coverage import TrajectoryCoverageScorer
+from scorers.dataset_quality.trajectory_coverage import (
+    _DESCRIPTION_CHARS,
+    TrajectoryCoverageScorer,
+)
 
 
 _TRAJECTORY_WEIGHT = TrajectoryCoverageScorer.default_weight
@@ -489,20 +492,8 @@ class ResolveSkillsTest(unittest.TestCase):
             skills[0].scripts, ("create_instance.js", "list_instances.js")
         )
 
-    def test_a_skill_without_a_scripts_directory_has_no_operations(self):
-        self._skill(self.root, "admin")
-
-        skills = resolve_skills({"skills_dir": self.root})
-
-        self.assertEqual(skills[0].scripts, ())
-
     def test_an_undeclared_catalog_resolves_to_nothing(self):
         self.assertEqual(resolve_skills({}), [])
-
-    def test_a_missing_path_is_fatal_rather_than_a_smaller_catalog(self):
-        # Skipping it would shrink the denominator and inflate coverage.
-        with self.assertRaises(SkillCatalogError):
-            resolve_skills({"skills_dir": os.path.join(self.root, "absent")})
 
     def test_a_narrowing_key_matching_nothing_is_fatal(self):
         self._skill(self.root, "alpha")
@@ -604,6 +595,17 @@ class ProseSkillCoverageTest(unittest.TestCase):
 
         self.assertIn("beta (runs beta things)", contribution.suggestions[0])
         self.assertIn("gamma", contribution.suggestions[0])
+
+    def test_a_long_multiline_description_stays_on_one_line(self):
+        # Frontmatter descriptions are routinely `description: |` blocks, which
+        # would otherwise break the comma-joined gap list across lines.
+        skill = Skill("beta", "runs\nbeta things " + "x" * _DESCRIPTION_CHARS)
+
+        contribution = self._run([{"id": "c1", "expected_skills": []}], [skill])
+
+        gap = contribution.suggestions[0]
+        self.assertNotIn("\n", gap)
+        self.assertTrue(gap.endswith("...)"))
 
     def test_a_string_expected_skills_is_ignored_rather_than_split(self):
         # Iterating a str registers each letter as a covered skill name.

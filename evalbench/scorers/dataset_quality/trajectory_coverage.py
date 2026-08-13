@@ -26,6 +26,22 @@ from scorers.dataset_quality.context import (
 _DESCRIPTION_CHARS = 120
 
 
+def _describe(name: str, description: str) -> str:
+    """A gap entry, carrying the skill's description when the catalog has one.
+
+    The synthesis pass may only reason from what the report states, so a bare
+    name would limit a recommendation to restating the name.
+    """
+    # Frontmatter descriptions are routinely multi-line YAML blocks, but the gap
+    # list is one comma-joined line.
+    description = " ".join(description.split())
+    if not description:
+        return name
+    if len(description) > _DESCRIPTION_CHARS:
+        description = description[:_DESCRIPTION_CHARS].rstrip() + "..."
+    return f"{name} ({description})"
+
+
 class TrajectoryCoverageScorer(SubScorer):
     """Fraction of the product's capability catalog that some CUJ exercises."""
 
@@ -58,10 +74,13 @@ class TrajectoryCoverageScorer(SubScorer):
                 + ", ".join(sorted(operations - covered_operations))
             )
         if skills - covered_skills:
+            descriptions = {
+                skill.name: skill.description for skill in context.skills
+            }
             suggestions.append(
                 "No CUJ exercises these skills: "
                 + ", ".join(
-                    self._describe(context, name)
+                    _describe(name, descriptions.get(name, ""))
                     for name in sorted(skills - covered_skills)
                 )
             )
@@ -81,16 +100,3 @@ class TrajectoryCoverageScorer(SubScorer):
             },
             suggestions=suggestions,
         )
-
-    @staticmethod
-    def _describe(context: DatasetQualityContext, name: str) -> str:
-        """A gap entry, carrying the skill's description when the catalog has one.
-
-        The synthesis pass may only reason from what the report states, so a bare
-        name would limit a recommendation to restating the name.
-        """
-        for skill in context.skills:
-            if skill.name == name and skill.description:
-                description = skill.description[:_DESCRIPTION_CHARS].rstrip()
-                return f"{name} ({description})"
-        return name

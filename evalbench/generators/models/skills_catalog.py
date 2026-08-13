@@ -23,6 +23,12 @@ _CLONE_TIMEOUT_S = 120
 # Leading `---` delimited YAML block at the top of a SKILL.md.
 _FRONTMATTER_PATTERN = re.compile(r"\A---\s*\n(.*?)\n---\s*(?:\n|\Z)", re.DOTALL)
 
+# What a scripts/ directory carries besides the scripts themselves: docs, config,
+# and the scripts' own tests.
+_NON_SCRIPT_SUFFIXES = frozenset(
+    {".md", ".rst", ".txt", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg"}
+)
+
 
 class SkillCatalogError(Exception):
     """A declared skills entry could not be resolved."""
@@ -191,7 +197,7 @@ def _read_skill(skill_dir: str) -> Skill:
 
 
 def _read_scripts(skill_dir: str) -> tuple[str, ...]:
-    """Filenames in a skill's scripts/ directory, or empty when it has none.
+    """The invocable scripts in a skill's scripts/ directory.
 
     Kept as filenames rather than stems because that is how a trajectory names
     them ("list_instances.js").
@@ -203,8 +209,22 @@ def _read_scripts(skill_dir: str) -> tuple[str, ...]:
         return ()
     return tuple(
         entry for entry in entries
-        if os.path.isfile(os.path.join(scripts_dir, entry))
+        if _is_script(entry) and os.path.isfile(os.path.join(scripts_dir, entry))
     )
+
+
+def _is_script(filename: str) -> bool:
+    """Whether a scripts/ entry is something a CUJ could name.
+
+    A file no trajectory can ever name still lands in the coverage denominator,
+    so it caps the achievable score and is reported as a permanent gap.
+    """
+    stem, suffix = os.path.splitext(filename)
+    if filename.startswith(".") or filename == "__init__.py":
+        return False
+    if suffix.lower() in _NON_SCRIPT_SUFFIXES:
+        return False
+    return not (stem.startswith("test_") or stem.endswith("_test"))
 
 
 def _read_frontmatter(skill_md: str) -> dict:
