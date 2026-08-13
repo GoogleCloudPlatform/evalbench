@@ -130,13 +130,16 @@ class DatasetQualityScorer(Comparator):
         setup = load_yaml_config(self.model_config_path).get("setup") or {}
         try:
             tools = self._fetch_tools(setup)
-            skills = self._fetch_skills(setup)
+            skills = resolve_skills(setup)
         except (McpToolsError, SkillCatalogError) as e:
             # Discovery is infrastructure (network / ADC / a git clone), not a
             # property of the dataset, so an ungraded null row keeps a transient
             # blip distinguishable from a genuine F.
             logging.error("dataset_quality: capability discovery failed: %s", e)
             return self._ungraded(f"capability discovery failed: {e}")
+        logging.info(
+            "dataset_quality: %d tools, %d skills declared", len(tools), len(skills)
+        )
         if not tools and not skills:
             return self._ungraded(
                 f"{self.model_config_path} has no tools or skills configured"
@@ -299,12 +302,6 @@ class DatasetQualityScorer(Comparator):
         if not scenarios:
             logging.warning("dataset_quality: no CUJs found in wrapper scenario")
         return scenarios
-
-    def _fetch_skills(self, setup: dict) -> list:
-        """Read the skill catalog declared by the product model config."""
-        skills = resolve_skills(setup)
-        logging.info("skills: %d skills declared", len(skills))
-        return skills
 
     def _fetch_tools(self, setup: dict) -> list:
         """Query the product model config's MCP servers for the tool catalog."""

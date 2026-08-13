@@ -910,9 +910,6 @@ class FetchToolsTest(unittest.TestCase):
             self.scorer._fetch_tools(_setup())
         self.assertEqual(mock_fetch.call_count, 1)
 
-    def test_a_setup_without_skills_has_nothing_to_resolve(self):
-        self.assertEqual(self.scorer._fetch_skills({}), [])
-
 
 class ActivationCatalogTest(unittest.TestCase):
     """End-to-end: a declared skills catalog reaches the scorer and is graded.
