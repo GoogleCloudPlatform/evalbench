@@ -3,6 +3,10 @@ project_id: "<YOUR_GCP_PROJECT_ID>"
 location: "<YOUR_GDA_LOCATION>"
 generator: "query_data_api"
 
+# Use the REST path. Required to capture pipeline_debug_info in reports, as
+# generate_debug_info is an unreleased field the typed gRPC client rejects.
+use_rest_api: true
+
 # Optional. Override the default production endpoint (leave unset for prod).
 # Example — sandbox: "autopush-geminidataanalytics.sandbox.googleapis.com"
 # api_endpoint: "<HOSTNAME>"
