@@ -1,14 +1,14 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from evalbench.util.setup_databases import setup_databases
+from util.setup_databases import setup_databases
 import os
 
 
 class TestSetupDatabases(unittest.TestCase):
-    @patch('evalbench.util.setup_databases.get_database')
-    @patch('evalbench.util.setup_databases.load_yaml_config')
-    @patch('evalbench.util.setup_databases.load_dataset_from_json')
-    @patch('evalbench.util.setup_databases._get_setup_values')
+    @patch('util.setup_databases.get_database')
+    @patch('util.setup_databases.load_yaml_config')
+    @patch('util.setup_databases.load_dataset_from_json')
+    @patch('util.setup_databases._get_setup_values')
     def test_setup_databases_standard(self, mock_get_setup_values, mock_load_dataset, mock_load_yaml, mock_get_db):
         mock_load_yaml.side_effect = [
             {"dataset_config": "fake_ds.json", "database_configs": [

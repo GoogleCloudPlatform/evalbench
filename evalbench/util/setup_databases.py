@@ -10,10 +10,10 @@ Example usage:
 """
 
 
-from evalbench.evaluator.db_manager import _get_setup_values
-from evalbench.databases import get_database
-from evalbench.dataset.dataset import load_dataset_from_json, flatten_dataset
-from evalbench.util.config import load_yaml_config
+from evaluator.db_manager import _get_setup_values
+from databases import get_database
+from dataset.dataset import load_dataset_from_json, flatten_dataset
+from util.config import load_yaml_config
 import sys
 import os
 from absl import app
