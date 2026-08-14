@@ -91,10 +91,10 @@ class CompositionScorer(JudgeSubScorer):
         return SubScoreContribution(
             score=score,
             metrics={
-                "dq_multitool_count": n_multi,
-                "dq_sequence_count": n_seq,
-                "dq_multitool_score": multitool_score,
-                "dq_sequencing_score": sequencing_score,
+                "multitool_cuj_count": n_multi,
+                "sequence_cuj_count": n_seq,
+                "multitool_score": multitool_score,
+                "sequencing_score": sequencing_score,
             },
             suggestions=suggestions,
             evidence={KEY_MULTI_TOOL: multi_ids, KEY_SEQUENCE_DEPENDENCY: seq_ids},

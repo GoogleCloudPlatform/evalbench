@@ -97,8 +97,8 @@ class ParameterCoverageScorer(JudgeSubScorer):
         return SubScoreContribution(
             score=score,
             metrics={
-                "dq_param_covered": len(covered),
-                "dq_param_in_scope": len(params),
+                "params_covered": len(covered),
+                "params_in_scope": len(params),
             },
             suggestions=suggestions,
             example_prompts=(

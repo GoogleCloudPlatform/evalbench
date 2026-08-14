@@ -1,8 +1,9 @@
 """Unit tests for the dataset-quality scoring flow.
 
 Covers the pieces whose contracts the rest of the flow depends on: the grading
-rollup (``grading.py``), the judge-response parsing helpers (``llm.py``), the two
-static sub-scorers, and the orchestrator's assembly of score rows
+rollup (``grading.py``), the judge-response parsing helpers (``llm.py``), the
+static sub-scorers and the skill catalog they grade against
+(``skills_catalog.py``), and the orchestrator's assembly of score rows
 (``scorer.py``).
 
 Not yet covered: the five LLM judge sub-scorers, ``synthesis.py``, ``render.py``,
@@ -13,7 +14,10 @@ call here takes the ``model.generate`` fallback.
 
 import json
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -23,10 +27,16 @@ from mcp import types as mcp_types
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from generators.models.mcp_client import McpToolsError
+from generators.models.skills_catalog import (
+    Skill,
+    SkillCatalogError,
+    resolve_skills,
+)
 from scorers.dataset_quality import llm
 from scorers.dataset_quality.composition import CompositionScorer
 from scorers.dataset_quality.context import (
     CATEGORY_DISCOVERABILITY,
+    CATEGORY_TOOL_ACTIVATION,
     DatasetQualityContext,
     SubScoreContribution,
     SubScorer,
@@ -43,7 +53,13 @@ from scorers.dataset_quality.prompts.composition_coverage import (
     KEY_SEQUENCE_DEPENDENCY,
 )
 from scorers.dataset_quality.scorer import SCORER_REGISTRY, DatasetQualityScorer
-from scorers.dataset_quality.trajectory_coverage import TrajectoryCoverageScorer
+from scorers.dataset_quality.trajectory_coverage import (
+    _DESCRIPTION_CHARS,
+    TrajectoryCoverageScorer,
+)
+
+
+_TRAJECTORY_WEIGHT = TrajectoryCoverageScorer.default_weight
 
 
 class _StubModel:
@@ -69,9 +85,12 @@ def _tool(name, properties=None):
     )
 
 
-def _context(scenarios, tools):
+def _context(scenarios, tools, skills=()):
     return DatasetQualityContext(
-        product_name="widget", scenarios=scenarios, tools=tools
+        product_name="widget",
+        scenarios=scenarios,
+        tools=tools,
+        skills=list(skills),
     )
 
 
@@ -287,12 +306,63 @@ class JudgeParsingTest(unittest.TestCase):
 
 class TrajectoryCoverageScorerTest(unittest.TestCase):
 
-    def test_no_schema_tools_is_inapplicable(self):
+    def test_no_tools_and_no_scripts_is_inapplicable(self):
         contribution = TrajectoryCoverageScorer({}, {}).run(
             _context([{"id": "c1", "expected_trajectory": ["alpha"]}], [])
         )
 
         self.assertFalse(contribution.applicable)
+
+    def test_a_skills_only_product_is_scored_against_its_scripts(self):
+        # A skill groups operations rather than being one, so a trajectory names
+        # the scripts; without this the whole field goes ungraded.
+        context = _context(
+            [{"id": "c1", "expected_trajectory": ["list_instances.js"]}],
+            [],
+            [
+                Skill("admin", scripts=("create_instance.js", "list_instances.js")),
+                Skill("data", scripts=("execute_sql.js", "list_instances.js")),
+            ],
+        )
+
+        contribution = TrajectoryCoverageScorer({}, {}).run(context)
+
+        # list_instances.js ships in both skills but is one operation, so the
+        # catalog is 3 operations plus the 2 skills.
+        self.assertEqual(contribution.metrics["capabilities_total"], 5)
+        self.assertEqual(contribution.metrics["capabilities_covered"], 1)
+        self.assertEqual(contribution.score, 20)
+        self.assertIn("create_instance.js", contribution.suggestions[0])
+
+    def test_a_products_tools_and_skills_are_one_catalog(self):
+        # Both channels are installed together, so grading only the tools scores
+        # a skills-authored dataset against a surface it never names.
+        context = _context(
+            [{"id": "c1", "expected_trajectory": ["alpha"]}],
+            [_tool("alpha")],
+            [Skill("admin", scripts=("unrelated.js",))],
+        )
+
+        contribution = TrajectoryCoverageScorer({}, {}).run(context)
+
+        self.assertEqual(contribution.metrics["capabilities_total"], 3)
+        self.assertEqual(contribution.score, 33)
+
+    def test_a_skill_and_its_scripts_are_both_covered(self):
+        context = _context(
+            [{
+                "id": "c1",
+                "expected_trajectory": ["list_instances.js"],
+                "expected_skills": ["admin"],
+            }],
+            [],
+            [Skill("admin", scripts=("list_instances.js",))],
+        )
+
+        contribution = TrajectoryCoverageScorer({}, {}).run(context)
+
+        self.assertEqual(contribution.score, 100)
+        self.assertEqual(contribution.suggestions, [])
 
     def test_tools_outside_the_schema_do_not_count_as_coverage(self):
         context = _context(
@@ -303,8 +373,8 @@ class TrajectoryCoverageScorerTest(unittest.TestCase):
         contribution = TrajectoryCoverageScorer({}, {}).run(context)
 
         self.assertEqual(contribution.score, 25)
-        self.assertEqual(contribution.metrics["dq_covered_tools"], 1)
-        self.assertEqual(contribution.metrics["dq_total_tools"], 4)
+        self.assertEqual(contribution.metrics["capabilities_covered"], 1)
+        self.assertEqual(contribution.metrics["capabilities_total"], 4)
         self.assertIn("beta, delta, gamma", contribution.suggestions[0])
 
     def test_a_string_trajectory_is_ignored_rather_than_split(self):
@@ -333,6 +403,246 @@ class TrajectoryCoverageScorerTest(unittest.TestCase):
 
         self.assertEqual(contribution.score, 100)
         self.assertEqual(contribution.suggestions, [])
+
+
+class ResolveSkillsTest(unittest.TestCase):
+    """The skill catalog trajectory_coverage scores against, read from setup."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root, True)
+
+    def _skill(self, parent, dir_name, frontmatter="", body="body", scripts=()):
+        path = os.path.join(parent, dir_name)
+        os.makedirs(path, exist_ok=True)
+        with open(os.path.join(path, "SKILL.md"), "w", encoding="utf-8") as f:
+            f.write(f"{frontmatter}{body}\n")
+        if scripts:
+            os.makedirs(os.path.join(path, "scripts"), exist_ok=True)
+            for script in scripts:
+                open(os.path.join(path, "scripts", script), "w").close()
+        return path
+
+    @staticmethod
+    def _frontmatter(name, description):
+        return f"---\nname: {name}\ndescription: {description}\n---\n"
+
+    def test_a_directory_holding_a_skill_md_is_one_skill(self):
+        self._skill(self.root, "solo", self._frontmatter("solo", "does solo"))
+
+        skills = resolve_skills(
+            {"skills": [{"action": "link", "path": os.path.join(self.root, "solo")}]}
+        )
+
+        self.assertEqual(skills, [Skill("solo", "does solo")])
+
+    def test_a_skills_subdirectory_wins_over_the_root_children(self):
+        nested = os.path.join(self.root, "skills")
+        self._skill(nested, "alpha")
+        self._skill(self.root, "docs")
+
+        skills = resolve_skills({"skills": [self.root]})
+
+        self.assertEqual([s.name for s in skills], ["alpha"])
+
+    def test_direct_children_are_scanned_without_a_skills_subdirectory(self):
+        self._skill(self.root, "alpha")
+        self._skill(self.root, "beta")
+        os.makedirs(os.path.join(self.root, "not-a-skill"))
+
+        skills = resolve_skills({"skills_dir": self.root})
+
+        self.assertEqual([s.name for s in skills], ["alpha", "beta"])
+
+    def test_frontmatter_name_wins_over_the_directory_name(self):
+        self._skill(
+            self.root, "dir-name", self._frontmatter("declared-name", "d")
+        )
+
+        skills = resolve_skills({"skills_dir": self.root})
+
+        self.assertEqual(skills, [Skill("declared-name", "d")])
+
+    def test_absent_or_malformed_frontmatter_falls_back_to_the_directory(self):
+        self._skill(self.root, "bare")
+        self._skill(self.root, "broken", "---\nname: [unclosed\n---\n")
+
+        skills = resolve_skills({"skills_dir": self.root})
+
+        self.assertEqual(skills, [Skill("bare", ""), Skill("broken", "")])
+
+    def test_an_entry_installing_a_subset_is_not_scored_against_the_rest(self):
+        for name in ("alpha", "beta", "gamma"):
+            self._skill(self.root, name)
+
+        skills = resolve_skills(
+            {"skills": [{"path": self.root, "skills": ["alpha", "gamma"]}]}
+        )
+
+        self.assertEqual([s.name for s in skills], ["alpha", "gamma"])
+
+    def test_a_skills_scripts_are_read_as_its_operations(self):
+        self._skill(
+            self.root, "admin", scripts=("create_instance.js", "list_instances.js")
+        )
+
+        skills = resolve_skills({"skills_dir": self.root})
+
+        self.assertEqual(
+            skills[0].scripts, ("create_instance.js", "list_instances.js")
+        )
+
+    def test_an_undeclared_catalog_resolves_to_nothing(self):
+        self.assertEqual(resolve_skills({}), [])
+
+    def test_a_narrowing_key_matching_nothing_is_fatal(self):
+        self._skill(self.root, "alpha")
+
+        with self.assertRaises(SkillCatalogError):
+            resolve_skills({"skills": [{"path": self.root, "skill": "stale"}]})
+
+    def test_one_unmatched_name_is_fatal_even_when_the_others_match(self):
+        # Returning the two that matched would drop the third from the
+        # denominator and inflate coverage.
+        for name in ("alpha", "beta", "gamma"):
+            self._skill(self.root, name)
+
+        with self.assertRaises(SkillCatalogError) as raised:
+            resolve_skills(
+                {"skills": [{"path": self.root, "skills": ["alpha", "typo", "gamma"]}]}
+            )
+
+        self.assertIn("typo", str(raised.exception))
+
+    def test_a_source_holding_no_skill_md_is_fatal(self):
+        os.makedirs(os.path.join(self.root, "docs"))
+
+        with self.assertRaises(SkillCatalogError):
+            resolve_skills({"skills_dir": self.root})
+
+    def test_one_broken_entry_is_fatal_even_when_another_resolves(self):
+        # Checking only the combined total would pass here, leaving the catalog
+        # short of the product's real surface and inflating coverage.
+        working = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, working, True)
+        self._skill(working, "alpha")
+
+        with self.assertRaises(SkillCatalogError):
+            resolve_skills({"skills": [working, os.path.join(self.root, "absent")]})
+
+    def test_an_entry_naming_no_source_is_fatal(self):
+        # Only a path or url resolves to a catalog; a bare name would have to be
+        # trusted rather than read, and no config declares skills that way.
+        for entry in ({"action": "install"}, {"action": "enable", "name": "a"}):
+            with self.subTest(entry=entry):
+                with self.assertRaises(SkillCatalogError):
+                    resolve_skills({"skills": [entry]})
+
+    def test_the_same_skill_from_two_sources_is_listed_once(self):
+        self._skill(self.root, "alpha", self._frontmatter("Alpha", "first"))
+        other = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, other, True)
+        self._skill(other, "alpha", self._frontmatter("alpha", "second"))
+
+        skills = resolve_skills({"skills": [self.root, other]})
+
+        self.assertEqual(skills, [Skill("Alpha", "first")])
+
+    @patch("generators.models.skills_catalog.subprocess.run")
+    def test_a_git_url_is_cloned_and_scanned(self, mock_run):
+        def clone(cmd, **kwargs):
+            self._skill(cmd[-1], "alpha", self._frontmatter("alpha", "cloned"))
+
+        mock_run.side_effect = clone
+
+        skills = resolve_skills({
+            "skills": [{
+                "action": "install_from_repo",
+                "url": "https://github.com/example/repo.git#main",
+            }]
+        })
+
+        self.assertEqual(skills, [Skill("alpha", "cloned")])
+        self.assertIn("--branch", mock_run.call_args.args[0])
+
+    @patch("generators.models.skills_catalog.subprocess.run")
+    def test_a_failed_clone_is_fatal(self, mock_run):
+        mock_run.side_effect = subprocess.CalledProcessError(1, "git")
+
+        with self.assertRaises(SkillCatalogError):
+            resolve_skills({"skills": ["https://github.com/example/repo.git"]})
+
+    @patch("generators.models.skills_catalog.subprocess.run")
+    def test_an_unresolvable_ref_is_not_retried_unpinned(self, mock_run):
+        # The retry would clone the default branch, silently grading against a
+        # revision nobody asked for.
+        mock_run.side_effect = subprocess.CalledProcessError(1, "git")
+
+        with self.assertRaises(SkillCatalogError):
+            resolve_skills({"skills": ["https://github.com/example/repo.git#v2"]})
+        self.assertEqual(mock_run.call_count, 1)
+
+
+class ProseSkillCoverageTest(unittest.TestCase):
+    """Coverage for a skill catalog shipping no scripts, scored on expected_skills.
+
+    Most skills in the wild are prose-only, so this is the common shape rather
+    than an edge case.
+    """
+
+    _CATALOG = [
+        Skill("alpha", "runs alpha things"),
+        Skill("beta", "runs beta things"),
+        Skill("gamma"),
+        Skill("delta"),
+    ]
+
+    def _run(self, scenarios, skills=None):
+        return TrajectoryCoverageScorer({}, {}).run(
+            _context(scenarios, [], self._CATALOG if skills is None else skills)
+        )
+
+    def test_skills_outside_the_catalog_do_not_count_as_coverage(self):
+        contribution = self._run(
+            [{"id": "c1", "expected_skills": ["alpha", "retired-skill"]}]
+        )
+
+        self.assertEqual(contribution.score, 25)
+        self.assertEqual(contribution.metrics["capabilities_covered"], 1)
+        self.assertEqual(contribution.metrics["capabilities_total"], 4)
+
+    def test_a_gap_carries_the_catalog_description(self):
+        # Synthesis may only reason from the report, and for a prose-only skill
+        # the description is the sole record of what it does.
+        contribution = self._run([{"id": "c1", "expected_skills": ["alpha"]}])
+
+        self.assertIn("beta (runs beta things)", contribution.suggestions[0])
+        self.assertIn("gamma", contribution.suggestions[0])
+
+    def test_a_long_multiline_description_stays_on_one_line(self):
+        # Frontmatter descriptions are routinely `description: |` blocks, which
+        # would otherwise break the comma-joined gap list across lines.
+        skill = Skill("beta", "runs\nbeta things " + "x" * _DESCRIPTION_CHARS)
+
+        contribution = self._run([{"id": "c1", "expected_skills": []}], [skill])
+
+        gap = contribution.suggestions[0]
+        self.assertNotIn("\n", gap)
+        self.assertTrue(gap.endswith("...)"))
+
+    def test_a_string_expected_skills_is_ignored_rather_than_split(self):
+        # Iterating a str registers each letter as a covered skill name.
+        contribution = self._run(
+            [{"id": "c1", "expected_skills": "alpha"}], [Skill("a")]
+        )
+
+        self.assertEqual(contribution.score, 0)
+
+    def test_a_trajectory_does_not_cover_a_prose_skill(self):
+        # expected_trajectory names operations, which a prose skill has none of.
+        contribution = self._run([{"id": "c1", "expected_trajectory": ["alpha"]}])
+
+        self.assertEqual(contribution.score, 0)
 
 
 class CompositionScorerTest(unittest.TestCase):
@@ -417,7 +727,7 @@ class NamingDistributionScorerTest(unittest.TestCase):
         ))
 
         self.assertEqual(contribution.score, 67)
-        self.assertEqual(contribution.metrics["dq_tool_named_count"], 1)
+        self.assertEqual(contribution.metrics["tool_named_cuj_count"], 1)
 
     def test_only_the_starting_prompt_is_inspected(self):
         contribution = self._run([{
@@ -434,7 +744,7 @@ class NamingDistributionScorerTest(unittest.TestCase):
             self._prompts("Use ls here", *["Find every config"] * 9)
         )
 
-        self.assertEqual(at_target.metrics["dq_tool_named_count"], 1)
+        self.assertEqual(at_target.metrics["tool_named_cuj_count"], 1)
         self.assertEqual(at_target.suggestions, [])
 
     def test_suggestion_above_the_target_share(self):
@@ -466,8 +776,14 @@ def _compare(scorer, generated_eval_result):
     )
 
 
-def _model_config():
-    return {"setup": {"mcp_servers": {"widget": {"httpUrl": "https://x"}}}}
+def _setup(**overrides):
+    setup = {"mcp_servers": {"widget": {"httpUrl": "https://x"}}}
+    setup.update(overrides)
+    return setup
+
+
+def _model_config(**overrides):
+    return {"setup": _setup(**overrides)}
 
 
 def _config(**overrides):
@@ -531,12 +847,17 @@ class DatasetQualityScorerConfigTest(unittest.TestCase):
 
         self.assertEqual(scorer.scorers[0].weight, 42)
 
-    def test_registry_default_weights_are_a_budget_of_100(self):
-        # graded_weight/total_weight are only readable as a percentage of the
-        # rubric because the defaults sum to 100.
+    def test_registry_default_weights_are_a_fixed_budget(self):
+        # graded_weight/total_weight are only readable as a share of the rubric
+        # because the defaults sum to a fixed budget.
         total = sum(cls.default_weight for cls in SCORER_REGISTRY.values())
+        activation = sum(
+            cls.default_weight for cls in SCORER_REGISTRY.values()
+            if cls.category == CATEGORY_TOOL_ACTIVATION
+        )
 
         self.assertEqual(total, 100)
+        self.assertEqual(activation, _TRAJECTORY_WEIGHT)
 
 
 class ExtractCujsTest(unittest.TestCase):
@@ -583,45 +904,84 @@ class FetchToolsTest(unittest.TestCase):
     def setUp(self):
         self.scorer = DatasetQualityScorer(_config(), {})
 
-    @patch("scorers.dataset_quality.scorer.load_yaml_config")
-    def test_model_config_without_mcp_servers_raises(self, mock_load):
-        mock_load.return_value = {"setup": {}}
-
-        with self.assertRaises(McpToolsError):
-            self.scorer._fetch_tools()
+    def test_a_setup_without_mcp_servers_has_nothing_to_query(self):
+        # Not an error: a skills-only product still has a surface to grade.
+        self.assertEqual(self.scorer._fetch_tools({}), [])
 
     @patch("scorers.dataset_quality.scorer.time.sleep")
     @patch("scorers.dataset_quality.scorer.AgentCliGenerator.fetch_mcp_tools")
-    @patch("scorers.dataset_quality.scorer.load_yaml_config")
-    def test_a_transient_failure_is_retried(self, mock_load, mock_fetch, _sleep):
-        mock_load.return_value = _model_config()
+    def test_a_transient_failure_is_retried(self, mock_fetch, _sleep):
         mock_fetch.side_effect = [McpToolsError("blip"), [_tool("alpha")]]
 
-        self.assertEqual(self.scorer._fetch_tools(), [_tool("alpha")])
+        self.assertEqual(self.scorer._fetch_tools(_setup()), [_tool("alpha")])
         self.assertEqual(mock_fetch.call_count, 2)
 
     @patch("scorers.dataset_quality.scorer.time.sleep")
     @patch("scorers.dataset_quality.scorer.AgentCliGenerator.fetch_mcp_tools")
-    @patch("scorers.dataset_quality.scorer.load_yaml_config")
     def test_repeated_failures_surface_after_the_last_attempt(
-        self, mock_load, mock_fetch, _sleep
+        self, mock_fetch, _sleep
     ):
-        mock_load.return_value = _model_config()
         mock_fetch.side_effect = McpToolsError("down")
 
         with self.assertRaises(McpToolsError):
-            self.scorer._fetch_tools()
+            self.scorer._fetch_tools(_setup())
         self.assertEqual(mock_fetch.call_count, 3)
 
     @patch("scorers.dataset_quality.scorer.AgentCliGenerator.fetch_mcp_tools")
-    @patch("scorers.dataset_quality.scorer.load_yaml_config")
-    def test_an_empty_catalog_is_not_retried(self, mock_load, mock_fetch):
-        mock_load.return_value = _model_config()
+    def test_an_empty_catalog_is_not_retried(self, mock_fetch):
         mock_fetch.return_value = []
 
         with self.assertRaises(McpToolsError):
-            self.scorer._fetch_tools()
+            self.scorer._fetch_tools(_setup())
         self.assertEqual(mock_fetch.call_count, 1)
+
+
+class ActivationCatalogTest(unittest.TestCase):
+    """End-to-end: a declared skills catalog reaches the scorer and is graded.
+
+    The per-channel scoring itself is covered by the unit tests above; what runs
+    only here is the config -> resolve_skills -> context.skills wiring.
+    """
+
+    def setUp(self):
+        self.scorer = DatasetQualityScorer(
+            _config(sub_scorers={"trajectory_coverage": {}}), {}
+        )
+
+    @patch(
+        "scorers.dataset_quality.scorer.resolve_skills",
+        return_value=[Skill("s1"), Skill("s2")],
+    )
+    @patch("scorers.dataset_quality.scorer.load_yaml_config")
+    def test_a_prose_only_skill_catalog_is_graded_on_the_skills(
+        self, mock_load, _skills
+    ):
+        # Most skills ship no scripts, so a product declaring only skills would
+        # otherwise go entirely ungraded on activation.
+        mock_load.return_value = {"setup": {"skills": ["repo"]}}
+
+        rows = _compare(
+            self.scorer, _wrapper([{"id": "c1", "expected_skills": ["s1"]}])
+        )
+
+        summary = json.loads(rows[0][2])
+        self.assertEqual(summary["excluded_scorers"], [])
+        self.assertEqual(summary["dataset_quality_score"], 50)
+
+    @patch("scorers.dataset_quality.scorer.resolve_skills", return_value=[])
+    @patch("scorers.dataset_quality.scorer.load_yaml_config")
+    def test_a_product_declaring_neither_channel_scores_null(
+        self, mock_load, _skills
+    ):
+        mock_load.return_value = {"setup": {}}
+
+        rows = _compare(self.scorer, _wrapper([{"id": "c1"}]))
+
+        self.assertEqual(len(rows), 1)
+        self.assertIsNone(rows[0][1])
+        self.assertIn(
+            "no tools or skills configured", json.loads(rows[0][2])["error"]
+        )
 
 
 class DatasetQualityScorerCompareTest(unittest.TestCase):
@@ -653,7 +1013,33 @@ class DatasetQualityScorerCompareTest(unittest.TestCase):
         name, score, reason = rows[0]
         self.assertEqual(name, "dataset_quality")
         self.assertIsNone(score)
-        self.assertIn("tool discovery failed", json.loads(reason)["error"])
+        self.assertIn("capability discovery failed", json.loads(reason)["error"])
+
+    @patch("scorers.dataset_quality.scorer.resolve_skills")
+    @patch("scorers.dataset_quality.scorer.AgentCliGenerator.fetch_mcp_tools")
+    @patch("scorers.dataset_quality.scorer.load_yaml_config")
+    def test_unresolvable_skills_drop_only_the_scorer_that_reads_them(
+        self, mock_load, mock_fetch, mock_skills
+    ):
+        mock_load.return_value = _model_config(skills=["gone"])
+        mock_fetch.return_value = [_tool("alpha")]
+        mock_skills.side_effect = SkillCatalogError("skills path not found: gone")
+        scorer = DatasetQualityScorer(
+            _config(
+                sub_scorers={"trajectory_coverage": {}, "naming_distribution": {}}
+            ),
+            {},
+        )
+
+        rows = _compare(
+            scorer, _wrapper([{"id": "c1", "starting_prompt": "make me a widget"}])
+        )
+
+        summary = json.loads(rows[0][2])
+        self.assertEqual(summary["excluded_scorers"], ["trajectory_coverage"])
+        # naming_distribution never reads the catalog, so it still grades.
+        self.assertEqual(rows[0][1], 100.0)
+        self.assertEqual(summary["graded_weight"], 5)
 
     @patch.object(
         TrajectoryCoverageScorer,
