@@ -1015,6 +1015,32 @@ class DatasetQualityScorerCompareTest(unittest.TestCase):
         self.assertIsNone(score)
         self.assertIn("capability discovery failed", json.loads(reason)["error"])
 
+    @patch("scorers.dataset_quality.scorer.resolve_skills")
+    @patch("scorers.dataset_quality.scorer.AgentCliGenerator.fetch_mcp_tools")
+    @patch("scorers.dataset_quality.scorer.load_yaml_config")
+    def test_unresolvable_skills_drop_only_the_scorer_that_reads_them(
+        self, mock_load, mock_fetch, mock_skills
+    ):
+        mock_load.return_value = _model_config(skills=["gone"])
+        mock_fetch.return_value = [_tool("alpha")]
+        mock_skills.side_effect = SkillCatalogError("skills path not found: gone")
+        scorer = DatasetQualityScorer(
+            _config(
+                sub_scorers={"trajectory_coverage": {}, "naming_distribution": {}}
+            ),
+            {},
+        )
+
+        rows = _compare(
+            scorer, _wrapper([{"id": "c1", "starting_prompt": "make me a widget"}])
+        )
+
+        summary = json.loads(rows[0][2])
+        self.assertEqual(summary["excluded_scorers"], ["trajectory_coverage"])
+        # naming_distribution never reads the catalog, so it still grades.
+        self.assertEqual(rows[0][1], 100.0)
+        self.assertEqual(summary["graded_weight"], 5)
+
     @patch.object(
         TrajectoryCoverageScorer,
         "run",

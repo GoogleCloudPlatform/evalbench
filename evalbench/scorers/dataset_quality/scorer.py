@@ -130,13 +130,17 @@ class DatasetQualityScorer(Comparator):
         setup = load_yaml_config(self.model_config_path).get("setup") or {}
         try:
             tools = self._fetch_tools(setup)
-            skills = resolve_skills(setup)
-        except (McpToolsError, SkillCatalogError) as e:
-            # Discovery is infrastructure (network / ADC / a git clone), not a
-            # property of the dataset, so an ungraded null row keeps a transient
-            # blip distinguishable from a genuine F.
+        except McpToolsError as e:
+            # Every sub-scorer reads the tool catalog, so nothing is left to grade.
             logging.error("dataset_quality: capability discovery failed: %s", e)
             return self._ungraded(f"capability discovery failed: {e}")
+        try:
+            skills = resolve_skills(setup)
+            skills_error = None
+        except SkillCatalogError as e:
+            # Only trajectory_coverage reads the skills catalog, so only it drops.
+            logging.error("dataset_quality: skill resolution failed: %s", e)
+            skills, skills_error = [], str(e)
         logging.info(
             "dataset_quality: %d tools, %d skills declared", len(tools), len(skills)
         )
@@ -149,6 +153,7 @@ class DatasetQualityScorer(Comparator):
             scenarios=scenarios,
             tools=tools,
             skills=skills,
+            skills_error=skills_error,
         )
 
         contributions = self._run_scorers(context)

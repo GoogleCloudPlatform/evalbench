@@ -59,6 +59,8 @@ class DatasetQualityContext:
     scenarios: list[dict]
     tools: list  # list[mcp.types.Tool]
     skills: list = field(default_factory=list)  # list[skills_catalog.Skill]
+    # Why the declared skills could not be resolved, when they couldn't.
+    skills_error: str | None = None
 
     @property
     def n(self) -> int:

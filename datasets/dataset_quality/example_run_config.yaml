@@ -1,9 +1,8 @@
 ############################################################
 ### Dataset Quality — example run config
 ############################################################
-# Grades a product's CUJ configs, not a model: no agent runs and nothing is
-# executed. The product itself is only read, to supply the capability surface
-# those CUJs are scored against.
+# Grades the dataset's CUJs, not a model: no agent runs and nothing is executed.
+# The product only supplies the tools and skills those CUJs are scored against.
 
 # Forced by dataset_format below; listed here only to document what runs.
 orchestrator: agent

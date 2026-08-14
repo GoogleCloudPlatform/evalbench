@@ -50,6 +50,14 @@ class TrajectoryCoverageScorer(SubScorer):
     default_weight = 20
 
     def run(self, context: DatasetQualityContext) -> SubScoreContribution:
+        if context.skills_error:
+            # Tools alone are a smaller denominator, which reads higher than truth.
+            logging.warning(
+                "trajectory_coverage: skipped; skills unresolved (%s)",
+                context.skills_error,
+            )
+            return SubScoreContribution(applicable=False)
+
         operations = set(context.tool_names) | set(context.script_names)
         skills = set(context.skill_names)
         total = len(operations) + len(skills)

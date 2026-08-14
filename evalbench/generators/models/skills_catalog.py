@@ -23,11 +23,8 @@ _CLONE_TIMEOUT_S = 120
 # Leading `---` delimited YAML block at the top of a SKILL.md.
 _FRONTMATTER_PATTERN = re.compile(r"\A---\s*\n(.*?)\n---\s*(?:\n|\Z)", re.DOTALL)
 
-# What a scripts/ directory carries besides the scripts themselves: docs, config,
-# and the scripts' own tests.
-_NON_SCRIPT_SUFFIXES = frozenset(
-    {".md", ".rst", ".txt", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg"}
-)
+# Languages a skill's scripts are written in.
+_SCRIPT_SUFFIXES = frozenset({".js", ".cjs", ".mjs", ".ts", ".py", ".sh", ".bash"})
 
 
 class SkillCatalogError(Exception):
@@ -220,15 +217,9 @@ def _read_scripts(skill_dir: str) -> tuple[str, ...]:
 
 
 def _is_script(filename: str) -> bool:
-    """Whether a scripts/ entry is something a CUJ could name.
-
-    A file no trajectory can ever name still lands in the coverage denominator,
-    so it caps the achievable score and is reported as a permanent gap.
-    """
+    """Whether a scripts/ entry is an invocable script a CUJ could name."""
     stem, suffix = os.path.splitext(filename)
-    if filename.startswith(".") or filename == "__init__.py":
-        return False
-    if suffix.lower() in _NON_SCRIPT_SUFFIXES:
+    if suffix.lower() not in _SCRIPT_SUFFIXES or stem == "__init__":
         return False
     return not (stem.startswith("test_") or stem.endswith("_test"))
 
