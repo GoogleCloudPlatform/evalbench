@@ -16,8 +16,9 @@ class PythonScorer(comparator.Comparator):
 
     def __init__(self, config: dict, name: str = "python_scorer"):
         super().__init__(config)
+        self.config = config or {}
         self.name = name
-        self.script_path = config.get("script_path")
+        self.script_path = self.config.get("script_path")
         if not self.script_path:
             raise ValueError("script_path is required for PythonScorer")
 
@@ -59,7 +60,15 @@ class PythonScorer(comparator.Comparator):
             "generated_error": generated_error,
             "database": database,
             "sqlite_db_dir": self.sqlite_db_dir,
+            "config": self.config,
+            "kwargs": kwargs,
         }
+        for k, v in self.config.items():
+            if k not in input_data and k != "script_path":
+                input_data[k] = v
+        for k, v in kwargs.items():
+            if k not in input_data:
+                input_data[k] = v
 
         try:
             json_input = json.dumps(input_data)
