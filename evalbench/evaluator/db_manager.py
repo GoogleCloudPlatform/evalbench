@@ -1,5 +1,6 @@
 from queue import Queue
 from copy import deepcopy
+import os
 from databases import DB, get_database
 from util.config import load_db_data_from_csvs, load_setup_scripts
 from concurrent.futures import ThreadPoolExecutor
@@ -9,9 +10,13 @@ import logging
 
 
 def build_db_queue(
-    core_db: DB, db_name, db_config, setup_config, query_type: str, num_dbs: int
+    core_db: DB, db_name, db_config, setup_config, query_type: str,
+    num_dbs: int
 ):
-    logging.info(f"Building DB queue (query_type='{query_type}') with {num_dbs} pools for {db_name}...")
+    logging.info(
+        f"Building DB queue (query_type='{query_type}') with {num_dbs} "
+        f"pools for {db_name}..."
+    )
     if query_type == "dql":
         return _prepare_db_queue_for_dql(
             core_db, db_name, db_config, setup_config, num_dbs
@@ -25,17 +30,24 @@ def build_db_queue(
             core_db, db_name, db_config, setup_config, num_dbs
         )
 
-    logging.info(f"Finished building DB queue for query_type '{query_type}' on {db_name}")
+    logging.info(
+        f"Finished building DB queue for query_type '{query_type}' on "
+        f"{db_name}"
+    )
     return Queue[DB]()
 
 
-def _prepare_db_queue_for_dql(core_db: DB, db_name, db_config, setup_config, num_dbs):
+def _prepare_db_queue_for_dql(
+    core_db: DB, db_name, db_config, setup_config, num_dbs
+):
+
     """For DQL, use the same single DB with a user that has only DQL access."""
     db_queue = Queue[DB]()
     dql_db_config = deepcopy(db_config)
     if setup_config:
         setup_scripts, data = _get_setup_values(
-            setup_config, db_name, db_config.get("db_type")
+            setup_config, db_name, db_config.get("db_type"),
+            db_config.get("dialect")
         )
         core_db.set_setup_instructions(setup_scripts, data)
         core_db.resetup_database(False, True)
@@ -47,14 +59,20 @@ def _prepare_db_queue_for_dql(core_db: DB, db_name, db_config, setup_config, num
     return db_queue
 
 
-def _prepare_db_queue_for_dml(core_db: DB, db_name, db_config, setup_config, num_dbs):
-    """For DML, use the same single DB with a user that has only DQL / DML access."""
+def _prepare_db_queue_for_dml(
+    core_db: DB, db_name, db_config, setup_config, num_dbs
+):
+    """For DML, use the same single DB with a user that has only DQL/DML
+    access.
+    """
     db_queue = Queue[DB]()
     dml_db_config = deepcopy(db_config)
     if setup_config:
         setup_scripts, data = _get_setup_values(
-            setup_config, db_name, db_config.get("db_type")
+            setup_config, db_name, db_config.get("db_type"),
+            db_config.get("dialect")
         )
+
         core_db.set_setup_instructions(setup_scripts, data)
         core_db.resetup_database(False, True)
         dml_db_config["user_name"] = core_db.get_dml_user()
@@ -65,11 +83,14 @@ def _prepare_db_queue_for_dml(core_db: DB, db_name, db_config, setup_config, num
     return db_queue
 
 
-def _prepare_db_queue_for_ddl(core_db: DB, db_name, db_config, setup_config, num_dbs):
+def _prepare_db_queue_for_ddl(
+    core_db: DB, db_name, db_config, setup_config, num_dbs
+):
     """For DDL, use the same single DB with a user that has only DDL access."""
     if setup_config:
         setup_scripts, _ = _get_setup_values(
-            setup_config, db_name, db_config.get("db_type")
+            setup_config, db_name, db_config.get("db_type"),
+            db_config.get("dialect")
         )
     core_db.set_setup_instructions(setup_scripts, None)
     core_db.resetup_database(False, False)
@@ -77,13 +98,16 @@ def _prepare_db_queue_for_ddl(core_db: DB, db_name, db_config, setup_config, num
     if not setup_config:
         raise ValueError("No Setup Config was provided for DDL")
     setup_scripts, _ = _get_setup_values(
-        setup_config, db_name, db_config.get("db_type")
+        setup_config, db_name, db_config.get("db_type"),
+        db_config.get("dialect")
     )
     tmp_dbs = core_db.create_tmp_databases(num_dbs)
     with ThreadPoolExecutor() as executor:
         create_ddl_tmp_db_p = partial(
-            _create_ddl_tmp_db, db_config=db_config, setup_scripts=setup_scripts
+            _create_ddl_tmp_db, db_config=db_config,
+            setup_scripts=setup_scripts
         )
+
         results = executor.map(create_ddl_tmp_db_p, tmp_dbs)
         for tmp_db in results:
             db_queue.put(tmp_db)
@@ -98,9 +122,36 @@ def _create_ddl_tmp_db(tmp_db, db_config, setup_scripts):
     return tmp_db
 
 
-def _get_setup_values(setup_config, db_name: str, db_type: str):
+def _get_setup_values(
+    setup_config, db_name: str, db_type: str,
+    dialect: Optional[str] = None
+):
+    current_directory = os.getcwd()
+    setup_dir = os.path.join(
+        current_directory, setup_config["setup_directory"], db_name
+    )
+
+    # 1. Try dialect path if dialect is provided and exists
+    if dialect:
+        dialect_path = os.path.join(setup_dir, dialect)
+        if os.path.isdir(dialect_path):
+            setup_scripts_dir = os.path.relpath(
+                dialect_path, current_directory
+            )
+            try:
+                setup_scripts = load_setup_scripts(setup_scripts_dir)
+                data = load_db_data_from_csvs(
+                    setup_config["setup_directory"] + "/" + db_name + "/data"
+                )
+                return setup_scripts, data
+            except Exception:
+                pass
+
+    # 2. Try db_type path as fallback
     try:
-        scripts_path = setup_config["setup_directory"] + "/" + db_name + "/" + db_type
+        scripts_path = (
+            setup_config["setup_directory"] + "/" + db_name + "/" + db_type
+        )
         data_path = setup_config["setup_directory"] + "/" + db_name + "/data"
 
         logging.info(f"Loading DB setup files from location: {scripts_path}")
@@ -112,5 +163,6 @@ def _get_setup_values(setup_config, db_name: str, db_type: str):
         return setup_scripts, data
     except Exception as e:
         raise FileNotFoundError(
-            f"Could not find setup files for database {db_name} on {db_type} due to: {e}"
+            f"Could not find setup files for database {db_name} on "
+            f"{db_type}/{dialect} due to: {e}"
         )
