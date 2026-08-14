@@ -28,6 +28,16 @@ These settings are **required only** for generators that utilize Google Cloud Ve
 
 > Required*, you can globally set your GCP project_id and gcp_region using the environment variables `EVAL_GCP_PROJECT_ID` and `EVAL_GCP_PROJECT_REGION`. 
 
+## Agent Runtime (Gemini Enterprise Agent Platform) Configuration
+
+These settings are **required only** for the `agent_runtime` generator, which connects to a live deployed Agent Runtime (Gemini Enterprise Agent Platform) instance.
+
+| **Key**           | **Required** | **Default Value** | **Description**                                                                                                                                                                    |
+| ----------------- | ------------ | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resource_name`   | Yes          | N/A               | The fully-qualified resource ID of the deployed Agent Engine resource, e.g. `projects/<GCP_PROJECT>/locations/<REGION>/reasoningEngines/<RESOURCE_ID>`.                            |
+| `gcp_project_id`  | Optional     | `""`              | The Google Cloud Project ID that hosts your Vertex AI resources. Can also be set via `EVAL_GCP_PROJECT_ID` environment variable.                                                   |
+| `gcp_region`      | Optional     | `""`              | The Google Cloud region where the Vertex AI service is deployed. Can also be set via `EVAL_GCP_PROJECT_REGION` environment variable.                                               |
+
 ## Important Notes
 
 - **Customization:** This configuration is fully customizable to the needs of the selected generator. You can add or remove keys as necessary.
@@ -37,10 +47,11 @@ These settings are **required only** for generators that utilize Google Cloud Ve
 - **Rate Limiting & Retries:** The `execs_per_minute` and `max_attempts` keys help control the query generation process, ensuring that you can stay below project quota limits.
 
 
-## Example Configuration
+## Example Configurations
 
-Below is an example of the updated YAML configuration file:
+Below are examples of the YAML configuration files:
 
+### Gemini Model Example
 ```yaml
 # General Generator Configuration
 generator: gcp_vertex_gemini
@@ -53,4 +64,17 @@ max_attempts: 3
 gcp_project_id: my_cool_gcp_project
 gcp_region: us-east5
 vertex_model: gemini-2.0-pro-exp-02-05
+```
+
+### Agent Runtime Example
+```yaml
+# General Generator Configuration
+generator: agent_runtime
+execs_per_minute: 10
+max_attempts: 3
+
+# Agent Runtime Configuration (Required for agent_runtime)
+resource_name: "projects/my-gcp-project/locations/us-central1/reasoningEngines/1234567890"
+gcp_project_id: "my-gcp-project"
+gcp_region: "us-central1"
 ```
