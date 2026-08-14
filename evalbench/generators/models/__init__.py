@@ -14,6 +14,7 @@ from .gcp_data_engineering_agent import DataEngineeringAgentGenerator
 from .agy_cli import AgyCliGenerator
 from .mcp_tools import McpToolsGenerator
 from .noop_agent import NoopAgentGenerator
+from .agent_runtime import AgentRuntimeGenerator
 from util.config import load_yaml_config
 
 
@@ -40,6 +41,7 @@ def get_generator(global_models, model_config_path: str, db: DB = None):
             "agy_cli": lambda: AgyCliGenerator(config),
             "mcp_tools": lambda: McpToolsGenerator(config),
             "noop_agent": lambda: NoopAgentGenerator(config),
+            "agent_runtime": lambda: AgentRuntimeGenerator(config),
         }
         generator = config["generator"]
         if generator not in generators:

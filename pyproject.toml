@@ -22,6 +22,7 @@ dependencies = [
     "cloud-sql-python-connector[pytds]",
     "sqlalchemy-pytds",
     "google-genai",
+    "google-cloud-aiplatform",
     "google-cloud-secret-manager",
     "google-cloud-bigtable",
     "google-cloud-spanner",
