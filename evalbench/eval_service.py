@@ -411,7 +411,13 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                 logging.debug("Read task cancelled as expected.")
 
             # Process final scoring and reporting
-            job_id, run_time, results_tf, scores_tf = orchestrator.process()
+            (
+                job_id,
+                run_time,
+                results_tf,
+                scores_tf,
+                multi_trial_scores_tf,
+            ) = orchestrator.process()
             reporters = get_reporters(config.get(
                 "reporting") or {}, job_id, run_time)
 
