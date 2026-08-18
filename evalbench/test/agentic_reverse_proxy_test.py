@@ -3,8 +3,8 @@ import unittest
 
 from evalproto import eval_agent_pb2
 from generators.models.agentic_reverse_proxy import (
-    AgenticReverseProxyGenerator,
     AGENT_PROXY_QUEUES,
+    AgenticReverseProxyGenerator,
 )
 from reporting.remote_artifact_reporter import RemoteArtifactReporter
 from scorers.remote_scorer import RemoteScorerProxy

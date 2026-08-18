@@ -3,19 +3,30 @@ import logging
 import queue
 import subprocess
 import uuid
-from typing import Any, Dict
+from typing import Any
 
-from .agent_cli import AgentCliGenerator
 from evalproto import eval_agent_pb2
 from util.context import rpc_id_var
 
+from .agent_cli import AgentCliGenerator
+
+logger = logging.getLogger(__name__)
+
 # Global dictionary for active reverse proxy sessions:
 # session_id -> (inboxes_dict, out_queue)
-AGENT_PROXY_QUEUES: Dict[str, tuple[Dict[str, queue.Queue], queue.Queue]] = {}
+AGENT_PROXY_QUEUES: dict[str, tuple[dict[str, queue.Queue], queue.Queue]] = {}
 
 
 class CLICommand:
-    def __init__(self, cli: str, prompt: str, env: dict = None, resume: bool = False, session_id: str = None, cwd: str = None):
+    def __init__(
+        self,
+        cli: str,
+        prompt: str,
+        env: dict | None = None,
+        resume: bool = False,
+        session_id: str | None = None,
+        cwd: str | None = None,
+    ):
         self.cli = cli
         self.prompt = prompt
         self.env = env if env else {}
@@ -27,12 +38,12 @@ class CLICommand:
 class AgenticReverseProxyGenerator(AgentCliGenerator):
     """Generator proxying multi-turn agent execution across the reverse bidi stream."""
 
-    def __init__(self, querygenerator_config: Dict[str, Any]):
+    def __init__(self, querygenerator_config: dict[str, Any]):
         super().__init__(querygenerator_config)
         self.name = "agentic_reverse_proxy"
         self.timeout_seconds = float(querygenerator_config.get("timeout_seconds", 300.0))
-        self.turn_counter: Dict[str, int] = {}
-        logging.info("Initialized AgenticReverseProxyGenerator (timeout=%ss)", self.timeout_seconds)
+        self.turn_counter: dict[str, int] = {}
+        logger.info("Initialized AgenticReverseProxyGenerator (timeout=%ss)", self.timeout_seconds)
 
     @property
     def version(self) -> str:
@@ -46,10 +57,10 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
         self,
         cli: str,
         prompt: str,
-        env: dict = None,
+        env: dict | None = None,
         resume: bool = False,
-        session_id: str = None,
-        cwd: str = None,
+        session_id: str | None = None,
+        cwd: str | None = None,
     ) -> CLICommand:
         return CLICommand(
             cli=cli or self.name,
@@ -85,7 +96,7 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
             if ctx_id in AGENT_PROXY_QUEUES:
                 session_id = ctx_id
             else:
-                logging.error("AgenticReverseProxy: session_id %s not in AGENT_PROXY_QUEUES (keys: %s)", session_id, list(AGENT_PROXY_QUEUES.keys()))
+                logger.error("AgenticReverseProxy: session_id %s not in AGENT_PROXY_QUEUES (keys: %s)", session_id, list(AGENT_PROXY_QUEUES.keys()))
                 return subprocess.CompletedProcess(
                     args=["agentic_reverse_proxy"],
                     returncode=1,
@@ -117,13 +128,13 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
             turn_request=turn_req,
         )
 
-        logging.info("[REVERSE_PROXY] Dispatching TurnRequest turn=%d (correlation_id=%s) to out_queue", turn_idx, correlation_id)
+        logger.info("[REVERSE_PROXY] Dispatching TurnRequest turn=%d (correlation_id=%s) to out_queue", turn_idx, correlation_id)
         out_queue.put(msg)
 
         try:
             resp_msg = inbox.get(timeout=self.timeout_seconds)
         except queue.Empty:
-            logging.error("[REVERSE_PROXY] Timed out waiting for TurnResponse (correlation_id=%s)", correlation_id)
+            logger.error("[REVERSE_PROXY] Timed out waiting for TurnResponse (correlation_id=%s)", correlation_id)
             return subprocess.CompletedProcess(
                 args=["agentic_reverse_proxy"],
                 returncode=124,
@@ -135,7 +146,7 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
 
         if not resp_msg.HasField("turn_response"):
             err_details = resp_msg.WhichOneof("payload")
-            logging.error("[REVERSE_PROXY] Unexpected message received on inbox: %s", err_details)
+            logger.error("[REVERSE_PROXY] Unexpected message received on inbox: %s", err_details)
             return subprocess.CompletedProcess(
                 args=["agentic_reverse_proxy"],
                 returncode=1,

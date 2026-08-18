@@ -1,14 +1,13 @@
 import logging
 import queue
 import uuid
-from typing import Any, Dict
+from typing import Any
 
 import pandas as pd
-
 from evalproto import eval_agent_pb2
+from generators.models.agentic_reverse_proxy import AGENT_PROXY_QUEUES
 from reporting.report import Reporter
 from util.context import rpc_id_var
-from generators.models.agentic_reverse_proxy import AGENT_PROXY_QUEUES
 
 logger = logging.getLogger(__name__)
 
@@ -16,12 +15,13 @@ logger = logging.getLogger(__name__)
 class RemoteArtifactReporter(Reporter):
     """Reporter delegating workspace dump and GCS upload across the reverse bidi stream."""
 
-    def __init__(self, reporting_config: Dict[str, Any] | None, job_id: str, run_time: Any):
+    def __init__(self, reporting_config: dict[str, Any] | None, job_id: str, run_time: Any):
         super().__init__(reporting_config, job_id, run_time)
         self.bucket = reporting_config.get("bucket", "sobi_dc_share") if reporting_config else "sobi_dc_share"
         self.path_prefix = reporting_config.get("path_prefix", "runs") if reporting_config else "runs"
         self.export_path = reporting_config.get("export_path", "/workspace") if reporting_config else "/workspace"
-        self.exclude_patterns = reporting_config.get("exclude_patterns", [".venv", "node_modules", "skills"]) if reporting_config else [".venv", "node_modules", "skills"]
+        default_excludes = [".venv", "node_modules", "skills"]
+        self.exclude_patterns = reporting_config.get("exclude_patterns", default_excludes) if reporting_config else default_excludes
         logger.info("Initialized RemoteArtifactReporter: bucket=%s, prefix=%s", self.bucket, self.path_prefix)
 
     def store(self, results: pd.DataFrame, store_type: Any) -> None:

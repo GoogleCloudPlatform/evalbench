@@ -30,7 +30,6 @@ from evalproto import (
     eval_response_pb2,
     eval_service_pb2_grpc,
     eval_agent_pb2,
-    eval_agent_pb2_grpc,
 )
 from util.service import (
     load_session_configs,
