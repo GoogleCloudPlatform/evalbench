@@ -16,7 +16,9 @@ gcloud container clusters create evalbench-directpath-cluster \
   --tags=allow-health-checks \
   --release-channel=stable \
   --num-nodes=1 \
-  --machine-type=e2-standard-4 \
+  --enable-autoscaling --min-nodes=1 --total-max-nodes=3 \
+  --machine-type=n2-standard-64 \
+  --disk-size=500GB \
   --zone=us-central1-c \
   --enable-alts \
   --workload-pool cloud-db-nl2sql.svc.id.goog \
@@ -42,6 +44,10 @@ gcloud compute backend-services create evalbench-directpath-bs \
   --protocol=GRPC \
   --global \
   --health-checks=evalbench-directpath-health-check \
+  --session-affinity=HEADER_FIELD \
+  --custom-request-header='client-rpc-id' \
+  --locality-lb-policy=RING_HASH \
+  --connection-draining-timeout=60 \
   --project=cloud-db-nl2sql
 gcloud compute backend-services add-backend evalbench-directpath-bs \
   --network-endpoint-group evalbench-directpath-neg \

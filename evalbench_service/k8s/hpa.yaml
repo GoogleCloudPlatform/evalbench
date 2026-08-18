@@ -9,11 +9,27 @@ spec:
     kind: Deployment
     name: evalbench-eval-server-deploy
   minReplicas: 1
-  maxReplicas: 10
+  # A pod requests 20 CPU / 80Gi on n2-standard-64 nodes, and the node pool
+  # tops out at 3 nodes -> ~2 schedulable pods per node. Anything above 6 just
+  # sits Pending, so cap here instead of advertising headroom that isn't there.
+  maxReplicas: 6
   metrics:
   - type: Resource
     resource:
       name: cpu
       target:
         type: Utilization
-        averageUtilization: 50
+        # Evals are bursty; 50% tripped a scale-up on nearly every run and the
+        # matching scale-down killed backends that were still serving traffic.
+        averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 120
+    scaleDown:
+      # Long enough to outlast a typical eval run, so we stop tearing down
+      # pods mid-RPC and flapping between 1 and 2 replicas.
+      stabilizationWindowSeconds: 900
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 300

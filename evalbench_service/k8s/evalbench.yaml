@@ -20,13 +20,55 @@ spec:
       securityContext:
         fsGroup: 0
       serviceAccountName: evalbench-ksa
+      # preStop (15s) + gRPC drain needs to fit inside this window.
+      terminationGracePeriodSeconds: 60
+      initContainers:
+      # Create this pod's scratch dirs and reap scratch left behind by pods
+      # that were evicted or scaled away, so the PVC does not leak forever.
+      - name: scratch-init
+        image: us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:latest
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -eu
+          mkdir -p "/tmp_sessions/scratch/${POD_NAME}/uv-cache" \
+                   "/tmp_sessions/scratch/${POD_NAME}/tmp" \
+                   "/tmp_sessions/scratch/${POD_NAME}/spark" \
+                   "/tmp_sessions/scratch/${POD_NAME}/pip-cache"
+          find /tmp_sessions/scratch -mindepth 1 -maxdepth 1 -type d \
+               -mtime +2 ! -name "${POD_NAME}" -exec rm -rf {} + || true
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+        volumeMounts:
+        - mountPath: /tmp_sessions
+          name: evalbench-ssd-vol
       containers:
       - image: us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:latest
         env:
+        # Used to give each pod its own scratch dir on the shared PVC.
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         - name: EVAL_DB_PASSWORD
           value: pantheon
+        # Scratch dirs live on the 1000Gi PVC, not on node ephemeral storage.
+        # These previously filled /tmp (an emptyDir) and got pods evicted for
+        # exceeding the node's ephemeral-storage eviction threshold.
         - name: UV_CACHE_DIR
-          value: /tmp/uv-cache
+          value: /tmp_sessions/scratch/$(POD_NAME)/uv-cache
+        - name: TMPDIR
+          value: /tmp_sessions/scratch/$(POD_NAME)/tmp
+        - name: SPARK_LOCAL_DIRS
+          value: /tmp_sessions/scratch/$(POD_NAME)/spark
+        - name: PIP_CACHE_DIR
+          value: /tmp_sessions/scratch/$(POD_NAME)/pip-cache
         - name: EVAL_GCP_PROJECT_ID
           value: cloud-db-nl2sql
         - name: GOOGLE_CLOUD_PROJECT
@@ -39,9 +81,23 @@ spec:
           requests:
             cpu: "20"
             memory: "80Gi"
+            # Without an explicit request the kubelet treats usage as 0 and
+            # picks this pod first when the node runs low on disk.
+            ephemeral-storage: "8Gi"
           limits:
             cpu: "20"
             memory: "80Gi"
+            # Caps blast radius: an over-consuming pod is evicted on its own
+            # instead of dragging the whole node into DiskPressure.
+            ephemeral-storage: "20Gi"
+        lifecycle:
+          preStop:
+            exec:
+              # Give Traffic Director time to propagate this endpoint's removal
+              # from the NEG before the gRPC server stops accepting. Without
+              # this, in-flight RPCs land on a dead backend and clients see
+              # UNAVAILABLE / "exhausted retries".
+              command: ["/bin/sh", "-c", "sleep 15"]
         securityContext:
           allowPrivilegeEscalation: true
           readOnlyRootFilesystem: false
@@ -71,7 +127,10 @@ spec:
           readOnly: true
       volumes:
       - name: tmp-volume
-        emptyDir: {}
+        emptyDir:
+          # /tmp is backed by node ephemeral storage. Bound it so a runaway
+          # writer is evicted on its own rather than filling the node disk.
+          sizeLimit: "10Gi"
       - name: gcs-fuse-csi-vol
         csi:
           driver: gcsfuse.csi.storage.gke.io

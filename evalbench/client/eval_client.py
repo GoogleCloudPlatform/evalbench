@@ -6,8 +6,43 @@ from evalproto import eval_request_pb2, eval_connect_pb2, eval_config_pb2
 from evalproto import eval_service_pb2_grpc
 import random
 import argparse
+import json
 import google.oauth2.id_token
 import google.auth.transport.requests
+
+# Deadline for the short control-plane RPCs (Ping/Connect/EvalConfig). Eval
+# itself is long-running and is deliberately left without one.
+_CONTROL_RPC_TIMEOUT_S = 30.0
+
+# Backends are pulled from the mesh NEG whenever the HPA scales down or a pod
+# is rescheduled. Without retries a single RPC unlucky enough to land on a
+# draining endpoint fails the whole run, which is how CI ends up reporting
+# "exhausted retries for ping".
+_SERVICE_CONFIG = json.dumps(
+    {
+        "methodConfig": [
+            {
+                "name": [{"service": "cloud_databases_eval_proto.EvalService"}],
+                "retryPolicy": {
+                    "maxAttempts": 5,
+                    "initialBackoff": "1s",
+                    "maxBackoff": "10s",
+                    "backoffMultiplier": 2,
+                    "retryableStatusCodes": ["UNAVAILABLE", "DEADLINE_EXCEEDED"],
+                },
+            }
+        ]
+    }
+)
+
+_CHANNEL_OPTIONS = [
+    ("grpc.enable_retries", 1),
+    ("grpc.service_config", _SERVICE_CONFIG),
+    # Detect a silently dropped connection instead of hanging until deadline.
+    ("grpc.keepalive_time_ms", 30000),
+    ("grpc.keepalive_timeout_ms", 10000),
+    ("grpc.keepalive_permit_without_calls", 1),
+]
 
 
 def get_id_token(audience):
@@ -33,10 +68,12 @@ class EvalbenchClient:
             port = os.getenv("PORT", "50051")
             address = f"{host}:{port}"
             if os.getenv("EVALBENCH_INSECURE", "").lower() == "true":
-                self.channel = grpc.aio.insecure_channel(address)
+                self.channel = grpc.aio.insecure_channel(
+                    address, options=_CHANNEL_OPTIONS)
             else:
                 channel_creds = grpc.alts_channel_credentials()
-                self.channel = grpc.aio.secure_channel(address, channel_creds)
+                self.channel = grpc.aio.secure_channel(
+                    address, channel_creds, options=_CHANNEL_OPTIONS)
         else:
             address = f"{self.endpoint}:443"
             id_token = get_id_token(f"https://{self.endpoint}")
@@ -52,7 +89,8 @@ class EvalbenchClient:
             # Combine the SSL channel with the token-based call credentials
             composite_creds = grpc.composite_channel_credentials(
                 channel_creds, call_creds)
-            self.channel = grpc.aio.secure_channel(address, composite_creds)
+            self.channel = grpc.aio.secure_channel(
+                address, composite_creds, options=_CHANNEL_OPTIONS)
 
         self.stub = eval_service_pb2_grpc.EvalServiceStub(self.channel)
         rpc_id = "{:032x}".format(random.getrandbits(128))
@@ -62,13 +100,15 @@ class EvalbenchClient:
 
     async def ping(self):
         request = eval_request_pb2.PingRequest()
-        response = await self.stub.Ping(request, metadata=self.metadata)
+        response = await self.stub.Ping(
+            request, metadata=self.metadata, timeout=_CONTROL_RPC_TIMEOUT_S)
         return response
 
     async def connect(self):
         request = eval_connect_pb2.EvalConnectRequest()
         request.client_id = "me"
-        response = await self.stub.Connect(request, metadata=self.metadata)
+        response = await self.stub.Connect(
+            request, metadata=self.metadata, timeout=_CONTROL_RPC_TIMEOUT_S)
         return response
 
     async def set_evalconfig(self, experiment: str):
@@ -77,7 +117,8 @@ class EvalbenchClient:
             data = f.read()
         request = eval_config_pb2.EvalConfigRequest()
         request.yaml_config = data
-        response = await self.stub.EvalConfig(request, metadata=self.metadata)
+        response = await self.stub.EvalConfig(
+            request, metadata=self.metadata, timeout=_CONTROL_RPC_TIMEOUT_S)
         return response
 
     async def get_evalinputs(self):
