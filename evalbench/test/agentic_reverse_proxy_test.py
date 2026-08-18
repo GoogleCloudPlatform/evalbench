@@ -1,6 +1,5 @@
 import queue
 import unittest
-from unittest.mock import MagicMock
 
 from evalproto import eval_agent_pb2
 from generators.models.agentic_reverse_proxy import (

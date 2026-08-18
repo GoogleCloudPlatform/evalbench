@@ -6,7 +6,7 @@ from typing import Any, Dict
 import pandas as pd
 
 from evalproto import eval_agent_pb2
-from reporting.report import Reporter, STORETYPE
+from reporting.report import Reporter
 from util.context import rpc_id_var
 from generators.models.agentic_reverse_proxy import AGENT_PROXY_QUEUES
 

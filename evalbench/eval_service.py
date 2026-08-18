@@ -591,6 +591,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             try:
                 await read_task
             except asyncio.CancelledError:
+                # Expected when cleaning up inbound reader task upon eval completion
                 pass
 
             if job_id and summary:

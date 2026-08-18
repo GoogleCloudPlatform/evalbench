@@ -2,9 +2,8 @@ import json
 import logging
 import queue
 import subprocess
-import time
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from .agent_cli import AgentCliGenerator
 from evalproto import eval_agent_pb2
