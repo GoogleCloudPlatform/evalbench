@@ -1,0 +1,142 @@
+edition = "2023";
+
+package cloud_databases_eval_proto;
+
+message AgentStreamMessage {
+  string session_id = 1;
+  string scenario_id = 2;
+  string correlation_id = 3;  // Correlates async requests and responses across threads
+
+  oneof payload {
+    // 0. Pre-Flight Health & Readiness Probe
+    HealthCheckRequest health_check_request = 5;
+    HealthCheckResponse health_check_response = 6;
+
+    // 1. Scenario Lifecycle
+    LifecycleRequest lifecycle_request = 10;
+    LifecycleResponse lifecycle_response = 11;
+
+    // 2. Turn Execution
+    TurnRequest turn_request = 20;
+    TurnResponse turn_response = 21;
+
+    // 3. In-Flight Scoring Execution (Named Remote Scorers)
+    ScoringRequest scoring_request = 30;
+    ScoringResponse scoring_response = 31;
+
+    // 4. Remote Workspace Archival
+    ArtifactRequest artifact_request = 40;
+    ArtifactResponse artifact_response = 41;
+
+    // 5. Final Session Completion
+    SessionSummaryMessage session_summary = 50;
+  }
+}
+
+// --- 0. Health Check Messages ---
+message HealthCheckRequest {
+  string probe_command = 1;
+  float timeout_seconds = 2;
+}
+
+message HealthCheckResponse {
+  bool is_healthy = 1;
+  bool internet_egress_ok = 2;
+  int32 active_skills_count = 3;
+  repeated string available_tools = 4;
+  string diagnostic_output = 5;
+  string error_message = 6;
+}
+
+// --- 1. Lifecycle Messages ---
+message LifecycleRequest {
+  enum Stage { STAGE_UNSPECIFIED = 0; SETUP = 1; RESET = 2; TEARDOWN = 3; }
+  Stage stage = 1;
+  string command = 2;
+  map<string, string> env_vars = 3;
+}
+
+message LifecycleResponse {
+  int32 exit_code = 1;
+  string stdout = 2;
+  string stderr = 3;
+  string error_message = 4;
+}
+
+// --- 2. Turn Execution Messages ---
+message TurnRequest {
+  int32 turn_index = 1;
+  string prompt = 2;
+  string system_instruction = 3;
+  map<string, string> env = 4;
+  string working_dir = 5;
+  float timeout_seconds = 6;
+  bool resume = 7;
+}
+
+message ToolCallRecord {
+  string tool_id = 1;
+  string tool_name = 2;
+  string parameters_json = 3;
+  string output = 4;
+  string status = 5;            // "success", "error"
+  int64 duration_ms = 6;
+}
+
+message TurnResponse {
+  int32 turn_index = 1;
+  string response_text = 2;
+  string stdout = 3;
+  string stderr = 4;
+  int32 exit_code = 5;
+  repeated ToolCallRecord tool_calls = 6;
+  map<string, int64> token_stats = 7;
+  bool execution_completed = 8;
+  string error_message = 9;
+}
+
+// --- 3. In-Flight Scoring Messages ---
+message RemoteScorerSpec {
+  string name = 1;                  // Scorer identifier, e.g. "dataform_compile", "dbt_run", "notebook_eval"
+  string config_json = 2;           // Serialized configuration dictionary from YAML
+  float timeout_seconds = 3;        // Timeout per scorer
+}
+
+message ScoringRequest {
+  repeated RemoteScorerSpec scorers = 1;
+}
+
+message ScoreResult {
+  string name = 1;
+  float score = 2;                  // 100.0 (PASS), 0.0 (FAIL), or continuous score
+  int32 exit_code = 3;
+  string stdout = 4;
+  string stderr = 5;
+  string logs = 6;
+  string error_message = 7;
+}
+
+message ScoringResponse {
+  repeated ScoreResult results = 1;
+}
+
+// --- 4. Artifact Archival Messages ---
+message ArtifactRequest {
+  string target_gcs_bucket = 1;
+  string target_gcs_prefix = 2;
+  string export_path = 3;
+  repeated string exclude_patterns = 4;
+}
+
+message ArtifactResponse {
+  string gcs_uri = 1;
+  int64 archive_size_bytes = 2;
+  repeated string exported_files = 3;
+  string error_message = 4;
+}
+
+// --- 5. Session Summary ---
+message SessionSummaryMessage {
+  string job_id = 1;
+  string summary_json = 2;
+}

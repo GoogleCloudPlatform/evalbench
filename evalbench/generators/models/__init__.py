@@ -15,6 +15,7 @@ from .agy_cli import AgyCliGenerator
 from .mcp_tools import McpToolsGenerator
 from .noop_agent import NoopAgentGenerator
 from .agent_runtime import AgentRuntimeGenerator
+from .agentic_reverse_proxy import AgenticReverseProxyGenerator
 from util.config import load_yaml_config
 
 
@@ -34,6 +35,7 @@ def get_generator(global_models, model_config_path: str, db: DB = None):
             "querydata": lambda: QueryData(config),
             "query_data_api": lambda: QueryDataAPIGenerator(config),
             "grpc_proxy": lambda: GrpcProxyModel(config),
+            "agentic_reverse_proxy": lambda: AgenticReverseProxyGenerator(config),
             "gemini_cli": lambda: GeminiCliGenerator(config),
             "claude_code": lambda: ClaudeCodeGenerator(config),
             "codex_cli": lambda: CodexCliGenerator(config),
