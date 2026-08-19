@@ -9,7 +9,9 @@ import shutil
 import sys
 import tempfile
 import weakref
+from typing import Optional, Union, Dict, List
 from util.context import rpc_id_var
+from util.config import parse_timeout_seconds
 
 # Default CLI label reported in metadata. The executed binary is installed
 # per-session at self.agy_bin (see _ensure_agy_installed).
@@ -101,17 +103,7 @@ class AgyCliGenerator(AgentCliGenerator):
     @staticmethod
     def _validate_timeout(timeout):
         if timeout is not None:
-            if not isinstance(timeout, str):
-                raise TypeError(
-                    "timeout must be a string (e.g., '20m', '1h30m', '300s')"
-                )
-            # Strict regex for common units (s, m, h).
-            # Allows things like "20m", "1h30m", "300s".
-            if not re.match(r'^(\d+(s|m|h))+$', timeout):
-                raise ValueError(
-                    f"Invalid timeout format: '{timeout}'. "
-                    "Must be a valid duration string (e.g., '20m', '1h30m', '300s')."
-                )
+            parse_timeout_seconds(timeout)
 
     def _init_paths(self, querygenerator_config):
         """Resolves the sandbox ``HOME`` and all derived agy paths, and
@@ -866,13 +858,13 @@ class AgyCliGenerator(AgentCliGenerator):
             command.append("--continue")
         return command
 
-    def generate_internal(self, cli_cmd):
+    def generate_internal(self, cli_cmd, timeout_seconds=None):
         if not isinstance(cli_cmd, CLICommand):
             cli_cmd = CLICommand(self.agy_bin, str(cli_cmd))
-        return self._run_agy_cli(cli_cmd)
+        return self._run_agy_cli(cli_cmd, timeout_seconds=timeout_seconds)
 
     def _execute_cli_command(
-        self, command, env=None, cwd=None
+        self, command, env=None, cwd=None, timeout_seconds=None
     ) -> subprocess.CompletedProcess:
         try:
             return subprocess.run(
@@ -882,6 +874,16 @@ class AgyCliGenerator(AgentCliGenerator):
                 check=False,
                 env=env,
                 cwd=cwd if cwd else self.fake_home,
+                timeout=timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as e:
+            stdout_str = e.stdout if isinstance(e.stdout, str) else (e.stdout.decode() if e.stdout else "")
+            stderr_str = f"TimeoutError: Command timed out after {timeout_seconds} seconds"
+            if e.stderr:
+                err_text = e.stderr if isinstance(e.stderr, str) else e.stderr.decode()
+                stderr_str = f"{stderr_str}\n{err_text}"
+            return subprocess.CompletedProcess(
+                command, 124, stdout_str, stderr_str
             )
         except FileNotFoundError:
             return subprocess.CompletedProcess(
@@ -893,7 +895,7 @@ class AgyCliGenerator(AgentCliGenerator):
                 command, 1, "", f"An unexpected error occurred: {e}"
             )
 
-    def _run_agy_cli(self, cli_cmd: CLICommand):
+    def _run_agy_cli(self, cli_cmd: CLICommand, timeout_seconds=None):
         env = self._merged_env(cli_cmd.env)
         # The executable is always this session's sandbox binary, regardless of
         # the label carried on cli_cmd.cli (the evaluator passes agent_version,
@@ -904,7 +906,7 @@ class AgyCliGenerator(AgentCliGenerator):
             timeout=self.timeout,
         )
         cwd = cli_cmd.cwd if cli_cmd.cwd else self.fake_home
-        result = self._execute_cli_command(command, env=env, cwd=cwd)
+        result = self._execute_cli_command(command, env=env, cwd=cwd, timeout_seconds=timeout_seconds)
 
         # Parse whenever agy emitted a stream, even on a non-zero exit: a
         # timed-out/errored run still ends in a ``result`` event carrying real
@@ -1198,9 +1200,9 @@ class AgyCliGenerator(AgentCliGenerator):
             return []
 
     def safe_generate(
-        self, cli_cmd: CLICommand
+        self, cli_cmd: CLICommand, timeout_seconds: Optional[float] = None
     ) -> subprocess.CompletedProcess:
-        result = self.generate_internal(cli_cmd)
+        result = self.generate_internal(cli_cmd, timeout_seconds=timeout_seconds)
         if isinstance(result, str):
             return subprocess.CompletedProcess(
                 args=[], returncode=0, stdout=result
