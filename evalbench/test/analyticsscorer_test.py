@@ -30,7 +30,7 @@ class TestAnalyticsScorer(unittest.TestCase):
         long_data = [{"id": i, "description": "some long text field value"} for i in range(10)]
         rendered = scorer._render_data(long_data)
         self.assertIn("... [truncated ", rendered)
-        self.assertTrue(len(rendered) < 150)
+        self.assertLess(len(rendered), 150)
 
     @patch("scorers.analyticsscorer.get_generator")
     def test_parse_verdict_pass(self, mock_get_gen):

@@ -99,7 +99,6 @@ class AnalyticsScorer(comparator.Comparator):
     ) -> Tuple[float, str]:
         """Evaluates trial result against golden reference following the Brewmax rubric."""
         has_golden_data = bool(golden_execution_result)
-        has_generated_data = bool(generated_execution_result)
 
         # Handle execution error conditions per rubric
         if golden_error:
