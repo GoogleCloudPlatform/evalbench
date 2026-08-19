@@ -24,7 +24,8 @@ class TestScoreModule(unittest.TestCase):
             "tool_call_latency", "token_consumption", "tokens_processed",
             "effective_billed_tokens", "binary_rubric_scorer", "python_scorer",
             "dataform_compile", "dataform_run", "dataform_cloud_compile",
-            "dataform_cloud_run", "dbt_compile", "dbt_run", "dataset_quality"
+            "dataform_cloud_run", "dbt_compile", "dbt_run", "dataset_quality",
+            "analytics_scorer"
         ]
         self.assertGreater(len(score.DEFAULT_SCORERS), 0)
         for key in expected_keys:
@@ -54,6 +55,7 @@ class TestScoreModule(unittest.TestCase):
 
         configs = {
             "llmrater": {"model_config": "model.yaml"},
+            "analytics_scorer": {"model_config": "model.yaml"},
             "skills_best_practices": {"model_config": "model.yaml"},
             "goal_completion": {"model_config": "model.yaml"},
             "behavioral_metrics": {"model_config": "model.yaml"},

@@ -5,6 +5,7 @@ from typing import Any
 
 from dataset.evaloutput import EvalOutput
 from scorers import agentsteps
+from scorers import analyticsscorer
 from scorers import behavioralmetrics
 from scorers import binaryrubricscorer
 from scorers import comparator
@@ -64,6 +65,7 @@ DEFAULT_SCORERS: dict[str, type[comparator.Comparator]] = {
     "dbt_compile": dbtscorer.DbtCompileScorer,
     "dbt_run": dbtscorer.DbtRunScorer,
     "dataset_quality": DatasetQualityScorer,
+    "analytics_scorer": analyticsscorer.AnalyticsScorer,
 }
 
 
