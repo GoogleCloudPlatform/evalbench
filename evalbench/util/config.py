@@ -310,4 +310,3 @@ def get_eval_case_timeout(config: dict) -> Optional[float]:
 
     val = config.get("eval_case_timeout")
     return parse_timeout_seconds(val) if val is not None else None
-

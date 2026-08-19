@@ -432,7 +432,10 @@ class TestGeneratorsTimeout(unittest.TestCase):
         mock_proc = MagicMock()
         mock_proc.stdout = iter(["item 1\n", "item 2\n"])
         mock_proc.stderr = iter([])
-        mock_proc.wait.side_effect = subprocess.TimeoutExpired(cmd=["codex"], timeout=5.0)
+        mock_proc.wait.side_effect = [
+            subprocess.TimeoutExpired(cmd=["codex"], timeout=5.0),
+            0,
+        ]
         mock_popen.return_value = mock_proc
 
         gen = CodexCliGenerator.__new__(CodexCliGenerator)
