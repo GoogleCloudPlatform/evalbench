@@ -103,7 +103,17 @@ class AgyCliGenerator(AgentCliGenerator):
     @staticmethod
     def _validate_timeout(timeout):
         if timeout is not None:
-            parse_timeout_seconds(timeout)
+            if not isinstance(timeout, str):
+                raise TypeError(
+                    "timeout must be a string (e.g., '20m', '1h30m', '300s')"
+                )
+            # Strict regex for common units (s, m, h).
+            # Allows things like "20m", "1h30m", "300s".
+            if not re.match(r"^(\d+(s|m|h))+$", timeout):
+                raise ValueError(
+                    f"Invalid timeout format: '{timeout}'. "
+                    "Must be a valid duration string (e.g., '20m', '1h30m', '300s')."
+                )
 
     def _init_paths(self, querygenerator_config):
         """Resolves the sandbox ``HOME`` and all derived agy paths, and
