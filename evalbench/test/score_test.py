@@ -223,6 +223,30 @@ class TestScoreModule(unittest.TestCase):
         self.assertEqual(results_by_comp["exact_match"]["score"], 100)
         self.assertEqual(results_by_comp["rubric_pass_fail"]["score"], 100.0)
 
+    def test_get_scorer_instance_none_and_bool_config(self):
+        """Verify get_scorer_instance accepts None and bool configs without error."""
+        eval_output_item = {
+            "id": 1,
+            "nl_prompt": "prompt",
+            "golden_sql": "SELECT 1",
+            "query_type": "DQL",
+            "golden_result": None,
+            "golden_error": None,
+            "generated_sql": "SELECT 1",
+            "generated_result": None,
+            "generated_error": None,
+            "dialects": ["sqlite"],
+            "database": "db",
+            "job_id": "j1",
+        }
+        for cfg in (None, True, False):
+            instances = score.get_scorer_instance(
+                "exact_match", cfg, {}, eval_output_item, {}
+            )
+            self.assertEqual(len(instances), 1)
+            self.assertIsInstance(instances[0], ExactMatcher)
+
 
 if __name__ == "__main__":
     unittest.main()
+

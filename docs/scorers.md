@@ -41,7 +41,7 @@ Used for NL2SQL evaluations (DQL, DML, DDL). See the [NL2SQL dataset format](/do
 | `returned_sql` | Deterministic | Whether the generated output contains actual SQL rather than only comments or prose. |
 | `regexp_matcher` | Deterministic | Whether the generated query matches supplied regex patterns. |
 | `llmrater` | LLM | Uses an LLM to compare golden and generated execution results, scoring cases like mismatched column names or extra columns. Requires its own `model_config`. |
-| `analytics_scorer` | LLM | Conversational Analytics Data Results Rater Uses an LLM judge with the full 11-point Conversational Analytics rubric to grade generated data against golden data. Requires `model_config`. |
+| `analytics_scorer` | LLM | Conversational Analytics Data Results Rater. Uses an LLM judge with the full 11-point Conversational Analytics rubric to grade generated data against golden data. Requires `model_config`. |
 
 ### `regexp_matcher` options
 
@@ -64,7 +64,7 @@ Used for NL2SQL evaluations (DQL, DML, DDL). See the [NL2SQL dataset format](/do
 | Option | Default | Description |
 |---|---|---|
 | `model_config` | *required* | Path to the [model config](/docs/configs/model-config.md) for the rating LLM. |
-| `max_data_chars` | `8000` | Maximum length of rendered data string before truncation. |
+| `max_rows` | `50` | Maximum number of unique rows to render before truncation. |
 | `query_label` | `"SQL Query"` | Label used when formatting the query block for evaluation. |
 
 ---
