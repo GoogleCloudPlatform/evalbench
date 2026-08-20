@@ -372,22 +372,23 @@ class TestEvaluatorFuturesTimeout(unittest.TestCase):
     """Unit tests for OneShot Evaluator task timeout handling."""
 
     def test_evaluator_configures_timeout(self):
-        config_with_timeout = {
+        # eval_case_timeout does NOT override task_timeout_seconds (kept separate)
+        config_with_eval_case_timeout = {
             "eval_case_timeout": "2m",
         }
-        evaluator = Evaluator(config_with_timeout)
-        self.assertEqual(evaluator.task_timeout_seconds, 120.0)
+        evaluator = Evaluator(config_with_eval_case_timeout)
+        self.assertEqual(evaluator.task_timeout_seconds, 600)
         self.assertEqual(evaluator.scoring_runners, 10)
         self.assertEqual(evaluator.num_trials, 1)
 
-        config_default = {
+        config_with_runner_timeout = {
             "runners": {"task_timeout_seconds": 450, "scoring_runners": 5},
             "num_trials": 3,
         }
-        evaluator_default = Evaluator(config_default)
-        self.assertEqual(evaluator_default.task_timeout_seconds, 450.0)
-        self.assertEqual(evaluator_default.scoring_runners, 5)
-        self.assertEqual(evaluator_default.num_trials, 3)
+        evaluator_runner = Evaluator(config_with_runner_timeout)
+        self.assertEqual(evaluator_runner.task_timeout_seconds, 450)
+        self.assertEqual(evaluator_runner.scoring_runners, 5)
+        self.assertEqual(evaluator_runner.num_trials, 3)
 
     def test_process_futures_with_timeout_times_out(self):
         mock_future = concurrent.futures.Future()

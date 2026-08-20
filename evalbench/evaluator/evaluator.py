@@ -17,7 +17,6 @@ from evaluator.progress_reporter import (
 )
 from mp import mprunner
 from util import truncateExecutionOutputs
-from util.config import get_eval_case_timeout
 from work import multi_trial_scorework
 from work import promptgenwork
 from work import scorework
@@ -72,11 +71,8 @@ class Evaluator:
         self.sqlgen_runners = runner_config.get("sqlgen_runners", 10)
         self.sqlexec_runners = runner_config.get("sqlexec_runners", 10)
         self.scoring_runners = runner_config.get("scoring_runners", 10)
-        eval_timeout = get_eval_case_timeout(self.config)
-        self.task_timeout_seconds = (
-            eval_timeout
-            if eval_timeout is not None
-            else runner_config.get("task_timeout_seconds", 600)
+        self.task_timeout_seconds = runner_config.get(
+            "task_timeout_seconds", 600
         )
         self.num_trials = self.config.get("num_trials", 1)
 
