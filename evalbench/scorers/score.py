@@ -5,6 +5,7 @@ from typing import Any
 
 from dataset.evaloutput import EvalOutput
 from scorers import agentsteps
+from scorers import analyticsscorer
 from scorers import behavioralmetrics
 from scorers import binaryrubricscorer
 from scorers import comparator
@@ -64,6 +65,7 @@ DEFAULT_SCORERS: dict[str, type[comparator.Comparator]] = {
     "dbt_compile": dbtscorer.DbtCompileScorer,
     "dbt_run": dbtscorer.DbtRunScorer,
     "dataset_quality": DatasetQualityScorer,
+    "analytics_scorer": analyticsscorer.AnalyticsScorer,
 }
 
 
@@ -136,8 +138,9 @@ def get_scorer_instance(
     eval_output_item: EvalOutput,
     global_models: Any,
 ) -> list[comparator.Comparator]:
-    """Resolve comparator instances for a given scorer config entry."""
-    if not isinstance(scorer_config, dict):
+    if scorer_config is None or isinstance(scorer_config, bool):
+        scorer_config = {}
+    elif not isinstance(scorer_config, dict):
         return []
 
     # Direct match in global DEFAULT_SCORERS map
