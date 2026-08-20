@@ -24,7 +24,8 @@ class TestScoreModule(unittest.TestCase):
             "tool_call_latency", "token_consumption", "tokens_processed",
             "effective_billed_tokens", "binary_rubric_scorer", "python_scorer",
             "dataform_compile", "dataform_run", "dataform_cloud_compile",
-            "dataform_cloud_run", "dbt_compile", "dbt_run", "dataset_quality"
+            "dataform_cloud_run", "dbt_compile", "dbt_run", "dataset_quality",
+            "analytics_scorer"
         ]
         self.assertGreater(len(score.DEFAULT_SCORERS), 0)
         for key in expected_keys:
@@ -54,6 +55,7 @@ class TestScoreModule(unittest.TestCase):
 
         configs = {
             "llmrater": {"model_config": "model.yaml"},
+            "analytics_scorer": {"model_config": "model.yaml"},
             "skills_best_practices": {"model_config": "model.yaml"},
             "goal_completion": {"model_config": "model.yaml"},
             "behavioral_metrics": {"model_config": "model.yaml"},
@@ -220,6 +222,29 @@ class TestScoreModule(unittest.TestCase):
         self.assertIn("rubric_pass_fail", results_by_comp)
         self.assertEqual(results_by_comp["exact_match"]["score"], 100)
         self.assertEqual(results_by_comp["rubric_pass_fail"]["score"], 100.0)
+
+    def test_get_scorer_instance_none_and_bool_config(self):
+        """Verify get_scorer_instance accepts None and bool configs without error."""
+        eval_output_item = {
+            "id": 1,
+            "nl_prompt": "prompt",
+            "golden_sql": "SELECT 1",
+            "query_type": "DQL",
+            "golden_result": None,
+            "golden_error": None,
+            "generated_sql": "SELECT 1",
+            "generated_result": None,
+            "generated_error": None,
+            "dialects": ["sqlite"],
+            "database": "db",
+            "job_id": "j1",
+        }
+        for cfg in (None, True, False):
+            instances = score.get_scorer_instance(
+                "exact_match", cfg, {}, eval_output_item, {}
+            )
+            self.assertEqual(len(instances), 1)
+            self.assertIsInstance(instances[0], ExactMatcher)
 
 
 if __name__ == "__main__":

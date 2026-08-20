@@ -24,6 +24,7 @@ class SkillsTrajectoryMatcher(comparator.Comparator):
         self.config = config
         self.enforce_order = config.get("enforce_order", False)
         self.allow_extra_skills = config.get("allow_extra_skills", False)
+        self.ignore_prefix = config.get("ignore_prefix", "")
 
         if self.enforce_order and self.allow_extra_skills:
             raise ValueError(
@@ -91,6 +92,12 @@ class SkillsTrajectoryMatcher(comparator.Comparator):
 
         if not isinstance(expected, list) or not isinstance(actual, list):
             return 0.0, "Skills data must be lists."
+
+        if self.ignore_prefix:
+            prefix = self.ignore_prefix
+            actual = [
+                s[len(prefix):] if s.startswith(prefix) else s for s in actual
+            ]
 
         if not expected and not actual:
             return 100.0, "Both expected and actual skill lists are empty."
