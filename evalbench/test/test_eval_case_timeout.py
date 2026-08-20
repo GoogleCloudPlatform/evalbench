@@ -276,18 +276,19 @@ class TestAgentEvaluatorTimeout(unittest.TestCase):
                 metadata={},
             )
 
-            # Check that AgentScoreWork received eval_output with job_id, generated_error, and artifacts populated
+            # Check that AgentScoreWork received eval_output with job_id, timed_out, and artifacts populated
             mock_score_work.assert_called_once()
             eval_output = mock_score_work.call_args[1]["eval_output"]
             self.assertEqual(eval_output["job_id"], "job_123")
             self.assertIn("TimeoutError", eval_output["stderr"])
-            self.assertIn("TimeoutError", eval_output["generated_error"])
+            self.assertIsNone(eval_output["generated_error"])
+            self.assertTrue(eval_output["timed_out"])
             self.assertEqual(eval_output["returncode"], 124)
 
-    def test_agent_score_work_propagates_generated_error(self):
+    def test_agent_score_work_keeps_generated_error_none(self):
         eval_output = {
             "eval_id": "test_err_prop",
-            "generated_error": "TimeoutError: Command timed out after 10s",
+            "timed_out": True,
             "accumulated_tools": [],
             "scenario": {"starting_prompt": "prompt", "expected_trajectory": []},
             "metadata": {},
@@ -302,10 +303,7 @@ class TestAgentEvaluatorTimeout(unittest.TestCase):
             score_work.run()
             mock_compare.assert_called_once()
             eval_output_item = mock_compare.call_args[1]["eval_output_item"]
-            self.assertEqual(
-                eval_output_item["generated_error"],
-                "TimeoutError: Command timed out after 10s",
-            )
+            self.assertIsNone(eval_output_item["generated_error"])
 
     @patch("evaluator.agentevaluator.SimulatedUser")
     @patch("evaluator.agentevaluator.get_generator")
@@ -365,7 +363,8 @@ class TestAgentEvaluatorTimeout(unittest.TestCase):
             self.assertEqual(output["job_id"], "job_timeout_456")
             self.assertEqual(output["eval_id"], "scenario_timeout_upload")
             self.assertEqual(output["returncode"], 124)
-            self.assertIn("TimeoutError", output["generated_error"])
+            self.assertTrue(output["timed_out"])
+            self.assertIsNone(output["generated_error"])
             self.assertEqual(output["stdout"], "partial stdout output")
 
 

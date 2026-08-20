@@ -286,11 +286,10 @@ class AgentEvaluator:
         metadata: Dict[str, Any]
     ):
         """Finalizes the scenario by scoring and appending results."""
-        generated_error = None
-        if hasattr(last_result, "returncode") and last_result.returncode != 0:
-            generated_error = getattr(last_result, "stderr", None) or f"Command failed with exit code {last_result.returncode}"
-        elif hasattr(last_result, "stderr") and "TimeoutError" in (last_result.stderr or ""):
-            generated_error = last_result.stderr
+        timed_out = (
+            getattr(last_result, "returncode", 0) == 124
+            or "TimeoutError" in (getattr(last_result, "stderr", "") or "")
+        )
 
         # Prepare intermediate eval_output with all necessary data for scoring
         eval_output_data = {
@@ -298,8 +297,9 @@ class AgentEvaluator:
             "stdout": getattr(last_result, "stdout", "") or "",
             "stderr": getattr(last_result, "stderr", "") or "",
             "returncode": getattr(last_result, "returncode", 0),
+            "timed_out": timed_out,
             "prompt_generator_error": None,
-            "generated_error": generated_error,
+            "generated_error": None,
             "sql_generator_error": None,
             "golden_error": None,
             "generated_sql": "skipped",

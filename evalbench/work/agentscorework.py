@@ -51,7 +51,7 @@ class AgentScoreWork(Work):
             "generated_sql": "skipped",
             "generated_result": self.eval_output.get("accumulated_tools", []),
             "eval_results": self.eval_output,
-            "generated_error": self.eval_output.get("generated_error"),
+            "generated_error": None,
             "dialects": metadata.get("dialects", []),
             "database": metadata.get("database", "unknown"),
             "job_id": self.eval_output.get("job_id"),
