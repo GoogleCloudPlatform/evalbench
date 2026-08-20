@@ -1,10 +1,13 @@
 import os
+import re
+import hashlib
 import mesop as me
 import pandas as pd
 import yaml
 import logging
 import json
 import subprocess
+from functools import lru_cache
 import precompute_trends
 import dataset_quality
 from summarizer import summarize_eval_scoring
@@ -310,6 +313,39 @@ def on_load(e: me.LoadEvent):
         state.ai_comparison = compare_evals(eval1, eval2)
 
 
+def _handler_name(prefix, *parts):
+    # Mesop identifies a handler by __name__ plus source, and every handler built by
+    # one factory shares its source, so the name has to carry the values. The digest
+    # keeps values that sanitize alike ("a.b" and "a-b") from sharing an identity.
+    raw = "\x00".join(str(p) for p in parts)
+    slug = re.sub(r"\W+", "_", raw.replace("\x00", "_"))
+    return f"{prefix}_{slug}_{hashlib.sha1(raw.encode()).hexdigest()[:8]}"
+
+
+# Mesop memoizes on the handler object itself, so a fresh closure per render grows
+# its table forever. Returning the same object per value keeps that table bounded.
+@lru_cache(maxsize=4096)
+def _set_filter_handler(field, value):
+    def handler(e: me.ClickEvent):
+        st = me.state(State)
+        setattr(st, field, value)
+        st.open_dropdown = ""
+
+    handler.__name__ = _handler_name("set", field, value)
+    return handler
+
+
+@lru_cache(maxsize=4096)
+def _status_row_handler(product, dataset):
+    def handler(e: me.ClickEvent):
+        st = me.state(State)
+        st.selected_main_tab = "List"
+        st.product_filter = product
+        st.dataset_filter = dataset
+        st.list_agent_tab = st.status_agent_tab
+
+    handler.__name__ = _handler_name("click_status_row", product, dataset)
+    return handler
 
 
 
@@ -526,22 +562,7 @@ def status_component():
                             product_val = str(row['Product'])
                             dataset_val = str(row['Dataset'])
                             
-                            def make_click_handler(p_val, d_val, g_val):
-                                def handler(e: me.ClickEvent):
-                                    st = me.state(State)
-                                    st.selected_main_tab = "List"
-                                    st.product_filter = p_val
-                                    st.dataset_filter = d_val
-                                    st.list_agent_tab = st.status_agent_tab
-                                
-                                safe_p = str(p_val).replace(" ", "_").replace(".", "_").replace("-", "_")
-                                safe_d = str(d_val).replace(" ", "_").replace(".", "_").replace("-", "_")
-                                handler_name = f"click_status_row_{safe_p}_{safe_d}"
-                                handler.__name__ = handler_name
-                                globals()[handler_name] = handler
-                                return handler
-                                
-                            click_handler = make_click_handler(product_val, dataset_val, row.get('model_config.generator'))
+                            click_handler = _status_row_handler(product_val, dataset_val)
                             render_cell(product_val, color="#2563eb", on_click=click_handler)
                             render_cell("N/A" if is_na else dataset_val, color="#2563eb", on_click=None if is_na else click_handler)
                             
@@ -904,15 +925,7 @@ def list_view_component(directories, results_dir):
                         st.open_dropdown = "eval_id"
     
                 def make_eval_id_handler(val):
-                    def handler(e: me.ClickEvent):
-                        st = me.state(State)
-                        st.eval_id_filter = val
-                        st.open_dropdown = ""
-    
-                    handler_name = f"click_eval_id_{val}"
-                    handler.__name__ = handler_name
-                    globals()[handler_name] = handler
-                    return handler
+                    return _set_filter_handler("eval_id_filter", val)
     
                 with me.box(
                     style=me.Style(
@@ -1005,17 +1018,7 @@ def list_view_component(directories, results_dir):
                         st.open_dropdown = "product"
     
                 def make_prod_dropdown_handler(val):
-                    def handler(e: me.ClickEvent):
-                        st = me.state(State)
-                        st.product_filter = val
-                        st.open_dropdown = ""
-    
-                    # Sanitize name for Mesop event routing
-                    safe_val = str(val).replace(" ", "_").replace(".", "_").replace("-", "_")
-                    handler_name = f"click_prod_dd_{safe_val}"
-                    handler.__name__ = handler_name
-                    globals()[handler_name] = handler
-                    return handler
+                    return _set_filter_handler("product_filter", val)
     
                 mk_prod_dd = make_prod_dropdown_handler
     
@@ -1110,17 +1113,7 @@ def list_view_component(directories, results_dir):
                         st.open_dropdown = "requester"
     
                 def make_req_dropdown_handler(val):
-                    def handler(e: me.ClickEvent):
-                        st = me.state(State)
-                        st.requester_filter = val
-                        st.open_dropdown = ""
-    
-                    # Sanitize name for Mesop event routing
-                    safe_val = str(val).replace(" ", "_").replace(".", "_").replace("-", "_")
-                    handler_name = f"click_req_dd_{safe_val}"
-                    handler.__name__ = handler_name
-                    globals()[handler_name] = handler
-                    return handler
+                    return _set_filter_handler("requester_filter", val)
     
                 mk_req_dd = make_req_dropdown_handler
     
@@ -1215,17 +1208,7 @@ def list_view_component(directories, results_dir):
                         st.open_dropdown = "dataset"
     
                 def make_dataset_dropdown_handler(val):
-                    def handler(e: me.ClickEvent):
-                        st = me.state(State)
-                        st.dataset_filter = val
-                        st.open_dropdown = ""
-    
-                    # Sanitize name for Mesop event routing
-                    safe_val = str(val).replace(" ", "_").replace(".", "_").replace("-", "_")
-                    handler_name = f"click_dataset_dd_{safe_val}"
-                    handler.__name__ = handler_name
-                    globals()[handler_name] = handler
-                    return handler
+                    return _set_filter_handler("dataset_filter", val)
     
                 mk_dataset_dd = make_dataset_dropdown_handler
     
@@ -1320,15 +1303,7 @@ def list_view_component(directories, results_dir):
                         st.open_dropdown = "rows_to_show"
     
                 def make_rows_handler(val):
-                    def handler(e: me.ClickEvent):
-                        st = me.state(State)
-                        st.rows_to_show = val
-                        st.open_dropdown = ""
-    
-                    handler_name = f"click_rows_{val}"
-                    handler.__name__ = handler_name
-                    globals()[handler_name] = handler
-                    return handler
+                    return _set_filter_handler("rows_to_show", val)
     
                 with me.box(
                     style=me.Style(
