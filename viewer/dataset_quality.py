@@ -13,13 +13,13 @@ import os
 
 import mesop as me
 
+from paths import get_results_dir
 from precompute_dataset_quality import (
     CACHE_FILENAME,
     DATASET_FORMAT_CONFIG_KEY,
     DATASET_QUALITY_FORMAT,
     SUMMARY_COMPARATOR,
     artifact_paths,
-    get_results_dir,
 )
 
 csv.field_size_limit(10**9)

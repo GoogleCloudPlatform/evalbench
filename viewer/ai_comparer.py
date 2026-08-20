@@ -11,6 +11,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../eval
 from evalbench.generators.models import get_generator
 from evalbench.util.config import load_yaml_config
 from summarizer import get_summarizer
+from paths import get_results_dir
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -18,28 +19,6 @@ logger = logging.getLogger(__name__)
 
 # Global models dict for get_generator
 global_models = {"lock": threading.Lock(), "registered_models": {}}
-
-def get_results_dir():
-    # Try to read from environment variable
-    res_dir = os.environ.get("RESULTS_DIR")
-    if res_dir:
-        return res_dir
-        
-    # Check multiple locations for results directory
-    results_dir_candidates = [
-        "/tmp_session_files/results",
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), "results"),
-        os.path.join(os.getcwd(), "results"),
-        "/evalbench/results"
-    ]
-    
-    for candidate in results_dir_candidates:
-        if os.path.exists(candidate):
-            logger.info(f"Found results directory at: {candidate}")
-            return candidate
-            
-    logger.warning("Results directory not found in candidates, defaulting to current directory results")
-    return os.path.join(os.getcwd(), "results")
 
 def compare_evals(id1, id2):
     """Compares two evaluation runs using Gemini."""
