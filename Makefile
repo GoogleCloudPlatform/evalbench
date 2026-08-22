@@ -4,6 +4,7 @@ default: deploy
 
 .PHONY: default build build-test container shell push-test push push-corprun \
         deploy deploy-test deploy-corprun create-precompute-job run-precompute-job \
+        create-dq-recompute-job run-dq-recompute-job \
         undeploy undeploy-test redeploy redeploy-test pod-shell pod-shell-test \
         proto clean test style run binary
 
@@ -166,6 +167,26 @@ create-recompute-job:
 
 run-recompute-job:
 	gcloud run jobs execute recompute-job --project=evalbench-dev --region=us-central1
+
+create-dq-recompute-job:
+	gcloud run jobs create dq-recompute-job \
+		--project=evalbench-dev \
+		--region=us-central1 \
+		--image=us-central1-docker.pkg.dev/evalbench-dev/cr-images/eval_server:latest \
+		--cpu=4 \
+		--memory=8Gi \
+		--service-account=crsvc-evalbench@evalbench-dev.iam.gserviceaccount.com \
+		--set-env-vars CLOUD_RUN=True,GOOGLE_CLOUD_PROJECT=evalbench-dev \
+		--network=cr-infra-vpc-network \
+		--subnet=cr-infra-subnetwork \
+		--vpc-egress=all-traffic \
+		--add-volume=name=session-files,type=cloud-storage,bucket=evalbench-sessions-cloud-db-nl2sql \
+		--add-volume-mount=volume=session-files,mount-path=/tmp_session_files \
+		--command=python3 \
+		--args=viewer/precompute_dataset_quality.py,--clean
+
+run-dq-recompute-job:
+	gcloud run jobs execute dq-recompute-job --project=evalbench-dev --region=us-central1
 
 undeploy:
 	gcloud container clusters get-credentials evalbench-directpath-cluster --zone us-central1-c --project cloud-db-nl2sql
