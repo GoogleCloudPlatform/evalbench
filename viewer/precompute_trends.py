@@ -304,8 +304,8 @@ class _NothingToTrim(Exception):
 def _discard(path):
     try:
         os.remove(path)
-    except OSError:
-        pass
+    except OSError as e:
+        logging.debug("Best-effort discard failed for %s: %s", path, e)
 
 
 def _trim_stale_summaries(results_dir, cache_file):
