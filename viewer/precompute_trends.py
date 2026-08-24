@@ -16,10 +16,9 @@ BATCH_SIZE = int(os.environ.get("PRECOMPUTE_BATCH_SIZE", 50))
 # where the summarizer starts seeing 429s, so raising it further buys nothing.
 MAX_WORKERS = int(os.environ.get("PRECOMPUTE_WORKERS", 50))
 
-# ai_summary is ~96% of the bytes in trends_cache.csv, and that file is read in
-# full on every page render. Only the recent window is kept inline; every
-# summary is also written beside its own run, so the list view stays small
-# without the older summaries being lost.
+# ai_summary is ~96% of trends_cache.csv, which is read in full on every render.
+# Only the recent window stays inline; every summary is also written beside its
+# own run so nothing is lost.
 AI_SUMMARY_FILENAME = "ai_summary.txt"
 AI_SUMMARY_CACHE_DAYS = int(os.environ.get("AI_SUMMARY_CACHE_DAYS", 7))
 
@@ -52,8 +51,7 @@ def _is_recent(run_time, days=AI_SUMMARY_CACHE_DAYS):
     """Whether a run is inside the window that keeps its summary inline."""
     ts = pd.to_datetime(run_time, errors='coerce')
     if pd.isna(ts):
-        # An unparseable run_time cannot be aged out safely, so treat it as old
-        # and let the sidecar serve it.
+        # Cannot be aged out safely, so treat as old and let the sidecar serve it.
         return False
     return ts >= pd.Timestamp.now() - pd.Timedelta(days=days)
 
@@ -82,9 +80,8 @@ class UnparsableRun(Exception):
     """A run whose CSVs are present but structurally unusable.
 
     Distinct from "not ready yet" (no summary.csv), which returns None so a
-    later pass retries. A run that is missing a required column looks the same
-    on every future pass, so retrying it forever burns FUSE reads and floods
-    the log without ever making progress -- record it as processed instead.
+    later pass retries. A missing column looks the same on every pass, so such
+    a run is recorded as processed rather than retried forever.
     """
 
     def __init__(self, job_id, reason):
@@ -206,8 +203,6 @@ def process_directory(d, results_dir):
         except Exception as e:
             logging.error(f"Error generating AI summary for {d}: {e}")
 
-        # Written for every run regardless of age; the cache keeps only the
-        # recent window inline, and the detail view falls back to this file.
         write_ai_summary(run_dir, ai_summary)
 
         logging.info(f"Successfully processed directory: {d}")
@@ -230,19 +225,15 @@ def process_directory(d, results_dir):
             'ai_summary': ai_summary if _is_recent(run_time) else "",
         }
     except UnparsableRun:
-        # Must outrun the catch-all below: returning None here would leave the
-        # run unprocessed and queue it up to fail identically on every pass.
+        # Must precede the catch-all: returning None would requeue the run.
         raise
     except (pd.errors.ParserError, pd.errors.EmptyDataError, OSError) as e:
-        # A run caught mid-write and a transient FUSE read both land here, so
-        # the artifacts may well parse on a later pass. Leave it queued.
+        # Mid-write or a transient FUSE read; may well parse on a later pass.
         logging.warning(f"Deferring {d}, artifacts not readable yet: {e}")
         return None
     except Exception as e:
-        # Both artifacts exist and parsed, so anything left is a problem with
-        # their shape and will recur identically on every future pass. Returning
-        # None here is what jammed the queue: the run is retried forever and
-        # every pass re-reads it instead of draining the backlog.
+        # Both files parsed, so the fault is in their shape and will recur on
+        # every pass. Requeueing it is what jammed the backlog.
         logging.exception(f"Error reading data from {d}")
         raise UnparsableRun(d, f"{type(e).__name__}: {e}") from e
 
@@ -402,7 +393,6 @@ def precompute():
                 try:
                     res = future.result()
                 except UnparsableRun as e:
-                    # Will never parse, so record it and stop reconsidering it.
                     logging.warning(f"Skipping {directory}: {e.reason}")
                     batch_processed.append(e.job_id)
                     continue

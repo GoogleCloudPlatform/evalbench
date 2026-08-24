@@ -1,27 +1,15 @@
 """Single-writer lease so only one instance precomputes at a time.
 
-Cloud Run scales the serving container up to maxScale, and supervisord starts a
-precompute loop inside *every* instance. Each one then walks the same GCS-backed
-results directory and processes the same backlog: five instances were observed
-starting identical passes over the same 22k directories.
+Supervisord starts a precompute loop in every Cloud Run instance, but they share
+one results directory and the caches are rewritten whole, so a later write
+silently discards an earlier one's rows while processed_dirs.json still records
+those runs as done -- they are then never reconsidered.
 
-That is worse than wasted work. Both caches are rewritten whole, and a GCS
-object write replaces the object rather than merging, so when two instances
-finish a batch the later write silently discards the earlier one's rows. The
-runs stay recorded in processed_dirs.json either way, so anything lost that way
-is never reconsidered and never appears in trends again.
-
-The lease is a small file in the results directory holding a holder id and a
-wall-clock timestamp. Acquiring writes it, waits out the window in which a
-competing write could still land, then reads it back: because a whole-file
-rewrite has exactly one winner and GCS reads are strongly consistent after it,
-whoever reads its own id back is the sole holder. The holder renews while it
-works so a long pass keeps the lease, and the timestamp lets a survivor take
-over if the holder dies -- which matters here, since a large backlog can get the
-precompute process SIGKILLed mid-pass.
-
-Wall-clock time is deliberate: monotonic clocks are not comparable across
-instances, and the whole point is comparing timestamps written by other hosts.
+Acquiring writes a holder id and timestamp, waits out the window in which a
+competing write could still land, then reads back: a whole-file rewrite has one
+winner and GCS reads are strongly consistent after it, so whoever reads its own
+id back is the sole holder. Timestamps are wall-clock because they are compared
+across hosts, where monotonic clocks are meaningless.
 """
 
 import logging
@@ -34,7 +22,7 @@ import uuid
 LEASE_FILENAME = "precompute.lease"
 
 # Long enough to ride out a slow FUSE write, short enough that a killed holder
-# does not stall precompute for long. Renewal runs well inside it.
+# does not stall precompute for long.
 LEASE_TTL_SECONDS = float(os.environ.get("PRECOMPUTE_LEASE_TTL", "120"))
 RENEW_INTERVAL_SECONDS = LEASE_TTL_SECONDS / 4
 
@@ -55,8 +43,7 @@ def _read(results_dir):
             holder, _, timestamp = f.read().partition("\n")
         return holder.strip(), float(timestamp.strip())
     except (OSError, ValueError):
-        # A torn read of a file being rewritten lands here too; treating it as
-        # "no lease" is safe because the read-back check still has to pass.
+        # A torn read lands here too; safe, because read-back must still pass.
         return None, 0.0
 
 
@@ -92,9 +79,8 @@ class PrecomputeLease:
         try:
             _write(self.results_dir)
         except OSError:
-            # Never let a lease problem stop precompute outright: a dashboard
-            # that silently stops updating is a worse failure than duplicated
-            # work, which is only what happened before this lease existed.
+            # Fail open: a dashboard that silently stops updating is worse than
+            # the duplicated work this lease exists to prevent.
             logging.exception("Could not write precompute lease; running unguarded")
             self.acquired = True
             return True
@@ -118,9 +104,7 @@ class PrecomputeLease:
         while not self._stop.wait(RENEW_INTERVAL_SECONDS):
             holder, _ = _read(self.results_dir)
             if holder and holder != _HOLDER_ID:
-                # Someone judged us stale and took over. Two writers fighting
-                # over the file is the exact thing this exists to prevent, so
-                # stand down and re-acquire on the next pass.
+                # Stand down rather than fight the successor for the file.
                 logging.warning("Precompute lease taken over by %s; stopping renewal", holder)
                 return
             try:
@@ -136,8 +120,7 @@ class PrecomputeLease:
         if not self.acquired:
             return
         self.acquired = False
-        # Only clear the file if it is still ours; a successor's lease must not
-        # be deleted by the instance it replaced.
+        # Only clear the file if it is still ours, never a successor's.
         holder, _ = _read(self.results_dir)
         if holder == _HOLDER_ID:
             try:

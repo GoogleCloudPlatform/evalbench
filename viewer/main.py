@@ -2067,8 +2067,6 @@ def render_app_content():
                 
                 logging.info("Cleared precomputed files. Triggering precompute...")
 
-                # "Clear cache" should mean every cache, including the
-                # in-process directory listing.
                 run_index.invalidate()
 
                 import threading
@@ -2275,9 +2273,7 @@ def render_app_content():
                     me.text("AI Summary", type="headline-5")
                     
                     if not state.ai_summary and state.selected_directory:
-                        # One small file beside the run. The cache only carries
-                        # summaries for the recent window, and reading all of it
-                        # back to find a single run is what made this expensive.
+                        # The cache only carries summaries for the recent window.
                         state.ai_summary = precompute_trends.read_ai_summary(
                             results_dir, state.selected_directory
                         )

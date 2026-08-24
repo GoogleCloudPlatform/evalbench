@@ -13,8 +13,7 @@ def main():
     interval = int(os.environ.get("PRECOMPUTE_INTERVAL", 300))
     results_dir = precompute_trends.get_results_dir()
     while True:
-        # Every Cloud Run instance runs this loop, but they all share one results
-        # directory, so only the lease holder may write to the caches.
+        # Every instance runs this loop, but only the lease holder may write.
         with PrecomputeLease(results_dir) as lease:
             if lease:
                 # Dataset quality runs first because it is cheap and always finishes.

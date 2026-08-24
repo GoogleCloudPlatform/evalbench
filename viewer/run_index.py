@@ -1,19 +1,9 @@
 """Cached listing of run directories under the results mount.
 
-The results directory is a GCS FUSE mount holding tens of thousands of run
-directories. The obvious way to enumerate it --
-
-    [d for d in os.listdir(p) if os.path.isdir(os.path.join(p, d))]
-
--- costs one FUSE stat round trip *per entry* on top of the listing itself,
-because os.path.isdir cannot reuse anything os.listdir already learned. At
-~25k entries that is ~25k round trips, and the Mesop render path ran that walk
-three times per page, which pushed /__ui__ past the Cloud Run request timeout.
-
-os.scandir carries the directory-entry type through from the listing, so
-entry.is_dir() is answered without a second trip. The short TTL then collapses
-the repeated walks within a single render (and across renders in a session)
-down to one.
+The mount is GCS FUSE holding tens of thousands of run directories, so
+os.listdir + os.path.isdir costs a stat round trip per entry. os.scandir
+carries the entry type through from the listing and avoids them; the TTL
+collapses the repeated walks the render path makes.
 """
 
 import logging
@@ -30,10 +20,9 @@ _cache = {"path": None, "dirs": [], "at": 0.0}
 def list_run_directories(results_dir, force=False):
     """Return the names of run directories directly under results_dir.
 
-    Results are cached for CACHE_TTL_SECONDS. A missing results_dir yields an
-    empty list. If a refresh fails but a previous listing for the same path is
-    still held, the stale listing is returned rather than an empty one -- a
-    transient FUSE error should not blank out the dashboard.
+    Cached for CACHE_TTL_SECONDS. On a failed refresh a previous listing for the
+    same path is returned rather than an empty one, so a transient FUSE error
+    does not blank the dashboard.
     """
     now = time.monotonic()
 
@@ -53,8 +42,7 @@ def list_run_directories(results_dir, force=False):
                     if entry.is_dir(follow_symlinks=False):
                         dirs.append(entry.name)
                 except OSError:
-                    # Entry vanished mid-walk, or FUSE hiccuped on this one
-                    # name. Skipping it beats failing the whole listing.
+                    # Skipping one bad entry beats failing the whole listing.
                     continue
     except FileNotFoundError:
         dirs = []
