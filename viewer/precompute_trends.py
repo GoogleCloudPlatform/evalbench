@@ -4,6 +4,8 @@ import json
 import argparse
 import pandas as pd
 
+from run_index import list_run_directories
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 BATCH_SIZE = int(os.environ.get("PRECOMPUTE_BATCH_SIZE", 50))
@@ -13,6 +15,47 @@ BATCH_SIZE = int(os.environ.get("PRECOMPUTE_BATCH_SIZE", 50))
 # backlog in about two hours, 16 would take closer to six. 50 is also about
 # where the summarizer starts seeing 429s, so raising it further buys nothing.
 MAX_WORKERS = int(os.environ.get("PRECOMPUTE_WORKERS", 50))
+
+# ai_summary is ~96% of the bytes in trends_cache.csv, and that file is read in
+# full on every page render. Only the recent window is kept inline; every
+# summary is also written beside its own run, so the list view stays small
+# without the older summaries being lost.
+AI_SUMMARY_FILENAME = "ai_summary.txt"
+AI_SUMMARY_CACHE_DAYS = int(os.environ.get("AI_SUMMARY_CACHE_DAYS", 7))
+
+
+def ai_summary_path(results_dir, job_id):
+    return os.path.join(results_dir, job_id, AI_SUMMARY_FILENAME)
+
+
+def write_ai_summary(run_dir, summary):
+    """Persist a summary beside its run so trimming the cache is not lossy."""
+    if not summary or summary == "N/A":
+        return
+    try:
+        with open(os.path.join(run_dir, AI_SUMMARY_FILENAME), "w") as f:
+            f.write(summary)
+    except OSError:
+        logging.warning("Could not write %s for %s", AI_SUMMARY_FILENAME, run_dir)
+
+
+def read_ai_summary(results_dir, job_id):
+    """Return the stored summary for a run, or "" if it has none."""
+    try:
+        with open(ai_summary_path(results_dir, job_id)) as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def _is_recent(run_time, days=AI_SUMMARY_CACHE_DAYS):
+    """Whether a run is inside the window that keeps its summary inline."""
+    ts = pd.to_datetime(run_time, errors='coerce')
+    if pd.isna(ts):
+        # An unparseable run_time cannot be aged out safely, so treat it as old
+        # and let the sidecar serve it.
+        return False
+    return ts >= pd.Timestamp.now() - pd.Timedelta(days=days)
 
 
 def get_results_dir():
@@ -35,6 +78,21 @@ def get_results_dir():
     return results_dir_candidates[1]  # Fallback to default
 
 
+class UnparsableRun(Exception):
+    """A run whose CSVs are present but structurally unusable.
+
+    Distinct from "not ready yet" (no summary.csv), which returns None so a
+    later pass retries. A run that is missing a required column looks the same
+    on every future pass, so retrying it forever burns FUSE reads and floods
+    the log without ever making progress -- record it as processed instead.
+    """
+
+    def __init__(self, job_id, reason):
+        super().__init__(reason)
+        self.job_id = job_id
+        self.reason = reason
+
+
 def process_directory(d, results_dir):
     run_dir = os.path.join(results_dir, d)
     configs_file = os.path.join(run_dir, "configs.csv")
@@ -47,6 +105,8 @@ def process_directory(d, results_dir):
     try:
         # Read configs
         configs_df = pd.read_csv(configs_file)
+        if 'config' not in configs_df.columns:
+            raise UnparsableRun(d, "configs.csv has no 'config' column")
 
         # Extract requester, product, dataset and generator
         requester_row = configs_df[configs_df['config'].str.contains('guitar_requester', na=False)]
@@ -61,6 +121,8 @@ def process_directory(d, results_dir):
 
         # Read summary
         summary_df = pd.read_csv(summary_file)
+        if 'metric_name' not in summary_df.columns:
+            raise UnparsableRun(d, "summary.csv has no 'metric_name' column")
 
         # Extract metrics
         latency_row = summary_df[summary_df['metric_name'] == 'end_to_end_latency']
@@ -118,7 +180,11 @@ def process_directory(d, results_dir):
                 except Exception as e:
                     logging.warning(f"Error reading {os.path.basename(file_to_read)} for {d}: {e}")
 
-        run_time = summary_df['run_time'].values[0] if not summary_df.empty else "unknown"
+        run_time = (
+            summary_df['run_time'].values[0]
+            if 'run_time' in summary_df.columns and not summary_df.empty
+            else "unknown"
+        )
         if run_time != "unknown":
             try:
                 run_time = pd.to_datetime(run_time).strftime('%Y-%m-%d %H:%M:%S')
@@ -140,6 +206,10 @@ def process_directory(d, results_dir):
         except Exception as e:
             logging.error(f"Error generating AI summary for {d}: {e}")
 
+        # Written for every run regardless of age; the cache keeps only the
+        # recent window inline, and the detail view falls back to this file.
+        write_ai_summary(run_dir, ai_summary)
+
         logging.info(f"Successfully processed directory: {d}")
         return {
             'run_time': run_time,
@@ -157,11 +227,24 @@ def process_directory(d, results_dir):
             'goal_completion': goal_completion,
             'job_id': d,
             'ai_score': ai_score,
-            'ai_summary': ai_summary
+            'ai_summary': ai_summary if _is_recent(run_time) else "",
         }
-    except Exception as e:
-        logging.exception(f"Error reading data from {d}")
+    except UnparsableRun:
+        # Must outrun the catch-all below: returning None here would leave the
+        # run unprocessed and queue it up to fail identically on every pass.
+        raise
+    except (pd.errors.ParserError, pd.errors.EmptyDataError, OSError) as e:
+        # A run caught mid-write and a transient FUSE read both land here, so
+        # the artifacts may well parse on a later pass. Leave it queued.
+        logging.warning(f"Deferring {d}, artifacts not readable yet: {e}")
         return None
+    except Exception as e:
+        # Both artifacts exist and parsed, so anything left is a problem with
+        # their shape and will recur identically on every future pass. Returning
+        # None here is what jammed the queue: the run is retried forever and
+        # every pass re-reads it instead of draining the backlog.
+        logging.exception(f"Error reading data from {d}")
+        raise UnparsableRun(d, f"{type(e).__name__}: {e}") from e
 
 
 def _read_json(path, default):
@@ -220,6 +303,47 @@ def _append_rows(cache_file, rows):
     new_df[header].to_csv(cache_file, mode="a", header=False, index=False)
 
 
+def _trim_stale_summaries(results_dir, cache_file):
+    """Blank ai_summary on cache rows that have aged out of the inline window.
+
+    Rows written by an earlier pass were recent when appended and go stale on
+    their own, so this runs every pass rather than only at write time. Each
+    summary is written to its sidecar first where one is missing -- without
+    that backfill this would destroy every summary already in the cache.
+    """
+    if not os.path.exists(cache_file) or os.path.getsize(cache_file) == 0:
+        return
+
+    try:
+        df = pd.read_csv(cache_file)
+    except Exception:
+        logging.exception("Could not read %s to trim summaries", cache_file)
+        return
+
+    if not {'ai_summary', 'run_time', 'job_id'} <= set(df.columns):
+        return
+
+    stale = (
+        df['ai_summary'].fillna("").astype(str).str.len().gt(0)
+        & ~df['run_time'].map(_is_recent)
+    )
+    if not stale.any():
+        return
+
+    backfilled = 0
+    for row in df.loc[stale, ['job_id', 'ai_summary']].itertuples(index=False):
+        if not os.path.exists(ai_summary_path(results_dir, row.job_id)):
+            write_ai_summary(os.path.join(results_dir, row.job_id), row.ai_summary)
+            backfilled += 1
+
+    df.loc[stale, 'ai_summary'] = ""
+    df.to_csv(cache_file, index=False)
+    logging.info(
+        "Trimmed %d aged-out summaries from the trends cache (%d sidecars backfilled)",
+        int(stale.sum()), backfilled,
+    )
+
+
 def precompute():
     results_dir = get_results_dir()
     logging.info(f"Reading results from {results_dir}")
@@ -235,11 +359,7 @@ def precompute():
     processed_dirs = set(_read_json(processed_dirs_file, []))
     logging.info(f"Loaded {len(processed_dirs)} processed directories from state.")
 
-    all_directories = [
-        d
-        for d in os.listdir(results_dir)
-        if os.path.isdir(os.path.join(results_dir, d))
-    ]
+    all_directories = list_run_directories(results_dir, force=True)
 
     # Filter for new directories
     new_directories = [d for d in all_directories if d not in processed_dirs]
@@ -249,6 +369,8 @@ def precompute():
 
     if total_new == 0:
         logging.info("No new directories to process.")
+        # Rows still age out of the inline window with no new runs at all.
+        _trim_stale_summaries(results_dir, cache_file)
         return
 
     # Carried forward from the last pass rather than recomputed off the trends
@@ -279,6 +401,11 @@ def precompute():
             for future, directory in futures.items():
                 try:
                     res = future.result()
+                except UnparsableRun as e:
+                    # Will never parse, so record it and stop reconsidering it.
+                    logging.warning(f"Skipping {directory}: {e.reason}")
+                    batch_processed.append(e.job_id)
+                    continue
                 except Exception:
                     # One unreadable run must not cost the rest of the batch.
                     logging.exception(f"Error processing {directory}")
@@ -326,6 +453,8 @@ def precompute():
             f"Batch {start // BATCH_SIZE + 1}/{-(-total_new // BATCH_SIZE)}: "
             f"appended {len(rows)} rows, {len(processed_dirs)} directories processed."
         )
+
+    _trim_stale_summaries(results_dir, cache_file)
 
     logging.info(f"Precomputed trends data saved to {cache_file}")
     logging.info(f"Precomputed filter values saved to {filters_file}")

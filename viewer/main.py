@@ -7,6 +7,8 @@ import json
 import subprocess
 import precompute_trends
 import dataset_quality
+import run_index
+from run_index import list_run_directories
 from summarizer import summarize_eval_scoring
 from ai_comparer import compare_evals
 
@@ -229,14 +231,7 @@ def get_color_for_pct(val_str):
 def on_load(e: me.LoadEvent):
     state = me.state(State)
     results_dir = get_results_dir()
-    directories = []
-    if os.path.exists(results_dir):
-        # List directories only
-        directories = [
-            d
-            for d in os.listdir(results_dir)
-            if os.path.isdir(os.path.join(results_dir, d))
-        ]
+    directories = list_run_directories(results_dir)
 
     job_id = me.query_params.get("job_id") or me.query_params.get("jobid")
     if job_id and job_id in directories:
@@ -259,14 +254,8 @@ def on_load(e: me.LoadEvent):
 
 def status_component():
     results_dir = get_results_dir()
-    directories = []
-    if os.path.exists(results_dir):
-        directories = [
-            d
-            for d in os.listdir(results_dir)
-            if os.path.isdir(os.path.join(results_dir, d))
-        ]
-    
+    directories = list_run_directories(results_dir)
+
     with me.box(
         style=me.Style(
             background="#ffffff",
@@ -2055,15 +2044,8 @@ def render_app_content():
         results_dir = get_results_dir()
         logging.info(f"render_app_content: selected_directory='{state.selected_directory}', selected_evals='{state.selected_evals}', selected_main_tab='{state.selected_main_tab}'")
     
-        directories = []
-        if os.path.exists(results_dir):
-            # List directories only
-            directories = [
-                d
-                for d in os.listdir(results_dir)
-                if os.path.isdir(os.path.join(results_dir, d))
-            ]
-    
+        directories = list_run_directories(results_dir)
+
         def on_title_click(e: me.ClickEvent):
             state.selected_directory = ""
             state.conversation_index = 0
@@ -2084,7 +2066,11 @@ def render_app_content():
                     os.remove(filters_cache_file)
                 
                 logging.info("Cleared precomputed files. Triggering precompute...")
-                
+
+                # "Clear cache" should mean every cache, including the
+                # in-process directory listing.
+                run_index.invalidate()
+
                 import threading
                 threading.Thread(target=precompute_trends.precompute).start()
                 
@@ -2289,12 +2275,24 @@ def render_app_content():
                     me.text("AI Summary", type="headline-5")
                     
                     if not state.ai_summary and state.selected_directory:
+                        # One small file beside the run. The cache only carries
+                        # summaries for the recent window, and reading all of it
+                        # back to find a single run is what made this expensive.
+                        state.ai_summary = precompute_trends.read_ai_summary(
+                            results_dir, state.selected_directory
+                        )
+
                         trends_cache_file = os.path.join(results_dir, "trends_cache.csv")
                         if os.path.exists(trends_cache_file):
                             try:
-                                cache_df = pd.read_csv(trends_cache_file)
+                                wanted = ['job_id', 'ai_score']
+                                if not state.ai_summary:
+                                    wanted.append('ai_summary')
+                                cache_df = pd.read_csv(
+                                    trends_cache_file, usecols=lambda c: c in wanted
+                                )
                                 run_data = cache_df[cache_df['job_id'] == state.selected_directory]
-                                if not run_data.empty and 'ai_summary' in run_data.columns:
+                                if not state.ai_summary and not run_data.empty and 'ai_summary' in run_data.columns:
                                     summary = run_data['ai_summary'].values[0]
                                     if not pd.isna(summary) and summary != "N/A":
                                         state.ai_summary = summary
