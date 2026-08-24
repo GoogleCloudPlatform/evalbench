@@ -1,10 +1,13 @@
 import os
+import csv
 import logging
 import json
 import argparse
 import pandas as pd
 
 from run_index import list_run_directories
+
+csv.field_size_limit(10**9)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -29,12 +32,12 @@ def ai_summary_path(results_dir, job_id):
 
 def write_ai_summary(run_dir, summary):
     """Persist a summary beside its run so trimming the cache is not lossy."""
-    if not summary or summary == "N/A":
+    if not isinstance(summary, str) or not summary or summary == "N/A":
         return
     try:
         with open(os.path.join(run_dir, AI_SUMMARY_FILENAME), "w") as f:
             f.write(summary)
-    except OSError:
+    except Exception:
         logging.warning("Could not write %s for %s", AI_SUMMARY_FILENAME, run_dir)
 
 
@@ -294,6 +297,17 @@ def _append_rows(cache_file, rows):
     new_df[header].to_csv(cache_file, mode="a", header=False, index=False)
 
 
+class _NothingToTrim(Exception):
+    """The cache has no usable ai_summary column; leave it untouched."""
+
+
+def _discard(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
 def _trim_stale_summaries(results_dir, cache_file):
     """Blank ai_summary on cache rows that have aged out of the inline window.
 
@@ -301,37 +315,54 @@ def _trim_stale_summaries(results_dir, cache_file):
     their own, so this runs every pass rather than only at write time. Each
     summary is written to its sidecar first where one is missing -- without
     that backfill this would destroy every summary already in the cache.
+
+    Streamed a row at a time rather than loaded into a frame: the cache this
+    exists to shrink is exactly the one too large to hold in memory. The file
+    is only replaced if something was actually trimmed, so a cache already
+    inside the window costs one sequential read and no write.
     """
     if not os.path.exists(cache_file) or os.path.getsize(cache_file) == 0:
         return
 
-    try:
-        df = pd.read_csv(cache_file)
-    except Exception:
-        logging.exception("Could not read %s to trim summaries", cache_file)
-        return
-
-    if not {'ai_summary', 'run_time', 'job_id'} <= set(df.columns):
-        return
-
-    stale = (
-        df['ai_summary'].fillna("").astype(str).str.len().gt(0)
-        & ~df['run_time'].map(_is_recent)
-    )
-    if not stale.any():
-        return
-
+    required = {'ai_summary', 'run_time', 'job_id'}
+    temp_file = cache_file + ".trim"
+    trimmed = 0
     backfilled = 0
-    for row in df.loc[stale, ['job_id', 'ai_summary']].itertuples(index=False):
-        if not os.path.exists(ai_summary_path(results_dir, row.job_id)):
-            write_ai_summary(os.path.join(results_dir, row.job_id), row.ai_summary)
-            backfilled += 1
 
-    df.loc[stale, 'ai_summary'] = ""
-    df.to_csv(cache_file, index=False)
+    try:
+        with open(cache_file, newline="") as src, open(temp_file, "w", newline="") as dst:
+            reader = csv.DictReader(src)
+            if not reader.fieldnames or not required <= set(reader.fieldnames):
+                raise _NothingToTrim
+            writer = csv.DictWriter(dst, fieldnames=reader.fieldnames)
+            writer.writeheader()
+            for row in reader:
+                if row.get('ai_summary') and not _is_recent(row.get('run_time')):
+                    job_id = row.get('job_id') or ""
+                    if job_id and not os.path.exists(ai_summary_path(results_dir, job_id)):
+                        write_ai_summary(
+                            os.path.join(results_dir, job_id), row['ai_summary']
+                        )
+                        backfilled += 1
+                    row['ai_summary'] = ""
+                    trimmed += 1
+                writer.writerow(row)
+    except _NothingToTrim:
+        _discard(temp_file)
+        return
+    except Exception:
+        logging.exception("Could not trim summaries from %s", cache_file)
+        _discard(temp_file)
+        return
+
+    if not trimmed:
+        _discard(temp_file)
+        return
+
+    os.replace(temp_file, cache_file)
     logging.info(
         "Trimmed %d aged-out summaries from the trends cache (%d sidecars backfilled)",
-        int(stale.sum()), backfilled,
+        trimmed, backfilled,
     )
 
 
