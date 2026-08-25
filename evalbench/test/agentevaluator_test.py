@@ -88,6 +88,55 @@ class TestAgentEvaluatorEnvSetup(unittest.TestCase):
             content = f.read()
         self.assertEqual(content, "print('mock sleep')")
 
+    @patch("evaluator.agentevaluator.get_generator")
+    def test_process_scenario_passes_prompt_timeout(self, mock_get_generator):
+        mock_generator = MagicMock(spec=AgentCliGenerator)
+        mock_generator.fake_home = self.fake_home
+        mock_generator.name = "mock_agent_cli"
+        mock_generator.version = "1.0"
+        mock_get_generator.return_value = mock_generator
+
+        config = {
+            "model_config": "dummy_model_config.yaml",
+            "runners": {"agent_runners": 1, "prompt_timeout_seconds": 120}
+        }
+        evaluator = AgentEvaluator(config)
+
+        scenario = {
+            "id": "test_timeout_scenario",
+            "starting_prompt": "hello",
+            "max_turns": 1,
+            "prompt_timeout_seconds": 45,
+        }
+
+        mock_result = MagicMock()
+        mock_result.stdout = '{"session_id": "s1"}'
+        mock_result.stderr = ''
+        mock_result.returncode = 0
+        mock_generator.safe_generate.return_value = mock_result
+        mock_generator.parse_response.return_value = {}
+        mock_generator.extract_tools.return_value = []
+        mock_generator.extract_skills.return_value = []
+        evaluator._finalize_scenario = MagicMock()
+
+        evaluator.process_scenario(
+            scenario=scenario,
+            eval_result=MagicMock(),
+            job_id="job1",
+            metadata={}
+        )
+
+        # Verify create_command received timeout=45 from scenario JSON override
+        mock_generator.create_command.assert_called_once_with(
+            cli="1.0",
+            prompt="hello",
+            env={},
+            resume=False,
+            session_id=None,
+            cwd=None,
+            timeout=45,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

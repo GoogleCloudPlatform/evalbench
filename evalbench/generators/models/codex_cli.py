@@ -1,4 +1,4 @@
-from .agent_cli import AgentCliGenerator
+from .agent_cli import AgentCliGenerator, process_timeout
 from .tool_naming import canonical_tool_name
 import subprocess
 import os
@@ -42,13 +42,14 @@ def _fetch_secret_manager(path: str) -> str:
 
 
 class CLICommand:
-    def __init__(self, cli, prompt, env=None, resume=False, session_id=None, cwd=None):
+    def __init__(self, cli, prompt, env=None, resume=False, session_id=None, cwd=None, timeout=None):
         self.cli = cli
         self.prompt = prompt
         self.env = env if env else {}
         self.resume = resume
         self.session_id = session_id
         self.cwd = cwd
+        self.timeout = timeout
 
 
 class CodexCliGenerator(AgentCliGenerator):
@@ -719,6 +720,7 @@ class CodexCliGenerator(AgentCliGenerator):
 
     def _execute_cli_command(
         self, command: list[str], env: dict[str, str] | None = None, cwd: str | None = None,
+        timeout: float | int | None = None,
     ) -> tuple[subprocess.CompletedProcess, dict[str, int]]:
         """Runs the Codex CLI with line-streamed stdout so we can stamp the
         wall-clock time at which each NDJSON event arrives.
@@ -736,6 +738,7 @@ class CodexCliGenerator(AgentCliGenerator):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 bufsize=1,  # line-buffered so events arrive as Codex flushes them
+                start_new_session=True,
             )
         except FileNotFoundError:
             return subprocess.CompletedProcess(
@@ -762,22 +765,30 @@ class CodexCliGenerator(AgentCliGenerator):
         started_at_ms: dict[str, float] = {}
         tool_durations: dict[str, int] = {}
 
-        try:
-            for line in proc.stdout:
-                arrival_ms = time.monotonic() * 1000
-                stdout_lines.append(line)
-                self._stamp_tool_event(
-                    line, arrival_ms, started_at_ms, tool_durations,
-                )
-        except Exception as e:
-            logging.warning(f"stdout stream read failed: {e}")
+        with process_timeout(proc, timeout) as is_timed_out:
+            try:
+                for line in proc.stdout:
+                    arrival_ms = time.monotonic() * 1000
+                    stdout_lines.append(line)
+                    self._stamp_tool_event(
+                        line, arrival_ms, started_at_ms, tool_durations,
+                    )
+            except Exception as e:
+                logging.warning(f"stdout stream read failed: {e}")
 
-        proc.wait()
-        stderr_thread.join(timeout=5)
+            proc.wait()
+            stderr_thread.join(timeout=5)
+
+        stderr_str = "".join(stderr_chunks)
+        if is_timed_out():
+            stderr_str = (stderr_str + "\n" if stderr_str else "") + f"Error: Command timed out after {timeout} seconds."
+            proc_returncode = 124
+        else:
+            proc_returncode = proc.returncode
 
         completed = subprocess.CompletedProcess(
-            command, proc.returncode,
-            "".join(stdout_lines), "".join(stderr_chunks),
+            command, proc_returncode,
+            "".join(stdout_lines), stderr_str,
         )
         return completed, tool_durations
 
@@ -866,7 +877,7 @@ class CodexCliGenerator(AgentCliGenerator):
         logging.info(f"Running Codex CLI: {' '.join(command)}")
 
         start_ms = time.monotonic()
-        result, tool_durations = self._execute_cli_command(command, env=env, cwd=cli_cmd.cwd)
+        result, tool_durations = self._execute_cli_command(command, env=env, cwd=cli_cmd.cwd, timeout=cli_cmd.timeout)
         duration_ms = int((time.monotonic() - start_ms) * 1000)
         if result.stdout:
             result.stdout = self._parse_stream_json(
@@ -1304,12 +1315,12 @@ class CodexCliGenerator(AgentCliGenerator):
 
     def create_command(
         self, cli: str, prompt: str, env: dict = None, resume: bool = False,
-        session_id: str = None, cwd: str = None,
+        session_id: str = None, cwd: str = None, timeout: float | int = None,
     ) -> CLICommand:
         merged_env = self.env.copy()
         if env:
             merged_env.update(env)
         return CLICommand(
             cli=cli, prompt=prompt, env=merged_env,
-            resume=resume, session_id=session_id, cwd=cwd,
+            resume=resume, session_id=session_id, cwd=cwd, timeout=timeout,
         )

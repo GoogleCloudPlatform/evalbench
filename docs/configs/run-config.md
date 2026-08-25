@@ -19,6 +19,7 @@ This section defines the primary resources used during evaluation, including the
 | `num_trials`      | Optional     | Number of trials to run for each prompt. |
 | `scenarios`      | Optional     | A list of specific scenario IDs to run (only applies to scenario-based agentic datasets like `gemini-cli-format` or `cortado-format`). Defaults to empty (runs all scenarios). |
 | `scenario_pattern` | Optional     | A glob pattern of scenario IDs to run (only applies to scenario-based agentic datasets). Defaults to None (runs all scenarios). |
+| `runners` | Optional | Dictionary configuring concurrency (`agent_runners`, default: 10) and prompt timeouts (`prompt_timeout_seconds`, e.g. `300` seconds per CLI execution turn). |
 ---
 
 ## 2. Prompt and Generation Modules

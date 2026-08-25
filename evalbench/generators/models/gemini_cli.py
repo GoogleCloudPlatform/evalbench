@@ -1,4 +1,4 @@
-from .agent_cli import AgentCliGenerator
+from .agent_cli import AgentCliGenerator, process_timeout
 from .tool_naming import canonicalize_gemini_tool_name
 import subprocess
 import os
@@ -11,13 +11,14 @@ from util.context import rpc_id_var
 
 
 class CLICommand:
-    def __init__(self, cli, prompt, env=None, resume=False, yolo=True, cwd=None):
+    def __init__(self, cli, prompt, env=None, resume=False, yolo=True, cwd=None, timeout=None):
         self.cli = cli
         self.prompt = prompt
         self.env = env if env else {}
         self.resume = resume
         self.yolo = yolo
         self.cwd = cwd
+        self.timeout = timeout
 
 
 class GeminiCliGenerator(AgentCliGenerator):
@@ -790,20 +791,37 @@ class GeminiCliGenerator(AgentCliGenerator):
         return self._run_gemini_cli(cli_cmd)
 
     def _execute_cli_command(
-        self, command: list[str], env: dict[str, str] | None = None, cwd: str | None = None
+        self, command: list[str], env: dict[str, str] | None = None, cwd: str | None = None,
+        timeout: float | int | None = None,
     ) -> subprocess.CompletedProcess:
         try:
-            result = subprocess.run(command, capture_output=True, text=True, check=False, env=env, cwd=cwd if cwd else self.fake_home)
+            proc = subprocess.Popen(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env,
+                cwd=cwd if cwd else self.fake_home,
+                start_new_session=True,
+            )
+            with process_timeout(proc, timeout) as is_timed_out:
+                stdout, stderr = proc.communicate()
+
             # Filter out benign schema warnings from json decoder from stderr to reduce noise
-            if result.stderr:
-                result.stderr = "\n".join(
+            if stderr:
+                stderr = "\n".join(
                     [
-                        line
-                        for line in result.stderr.splitlines()
+                        line for line in stderr.splitlines()
                         if 'unknown format "google-duration" ignored' not in line
                     ]
                 )
-            return result
+
+            if is_timed_out():
+                stderr = (stderr + "\n" if stderr else "") + f"Error: Command timed out after {timeout} seconds."
+                return subprocess.CompletedProcess(command, 124, stdout or "", stderr)
+
+            return subprocess.CompletedProcess(command, proc.returncode, stdout or "", stderr)
         except FileNotFoundError:
             return subprocess.CompletedProcess(
                 command, 127, "", f"Error: Command not found: {command[0]}"
@@ -847,8 +865,8 @@ class GeminiCliGenerator(AgentCliGenerator):
             ]
         )
 
-        result = self._execute_cli_command(command, env=env, cwd=cli_cmd.cwd)
-        if result.returncode == 0 and result.stdout:
+        result = self._execute_cli_command(command, env=env, cwd=cli_cmd.cwd, timeout=cli_cmd.timeout)
+        if result.stdout:
             result.stdout = self._parse_stream_json(result.stdout)
 
         return result
@@ -1083,7 +1101,7 @@ class GeminiCliGenerator(AgentCliGenerator):
 
     def create_command(
         self, cli: str, prompt: str, env: dict = None, resume: bool = False,
-        session_id: str = None, cwd: str = None,
+        session_id: str = None, cwd: str = None, timeout: float | int = None,
     ) -> CLICommand:
         merged_env = self.env.copy()
 
@@ -1094,4 +1112,4 @@ class GeminiCliGenerator(AgentCliGenerator):
 
         if env:
             merged_env.update(env)
-        return CLICommand(cli=cli, prompt=prompt, env=merged_env, resume=resume, cwd=cwd)
+        return CLICommand(cli=cli, prompt=prompt, env=merged_env, resume=resume, cwd=cwd, timeout=timeout)

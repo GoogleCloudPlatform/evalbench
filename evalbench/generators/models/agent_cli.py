@@ -1,13 +1,17 @@
 from abc import abstractmethod
+from contextlib import contextmanager
+import logging
+import os
+import shutil
+import signal
+import subprocess
+import threading
 
 from mcp import types as mcp_types
 
 from . import mcp_client
 from .generator import QueryGenerator
 from .tool_naming import canonical_tool_name
-import logging
-import os
-import shutil
 
 
 class AgentCliGenerator(QueryGenerator):
@@ -91,7 +95,7 @@ class AgentCliGenerator(QueryGenerator):
     @abstractmethod
     def create_command(
         self, cli: str, prompt: str, env: dict = None, resume: bool = False,
-        session_id: str = None, cwd: str = None,
+        session_id: str = None, cwd: str = None, timeout: float | int = None,
     ):
         raise NotImplementedError("Subclasses must implement this method")
 
@@ -110,3 +114,70 @@ class AgentCliGenerator(QueryGenerator):
     @abstractmethod
     def extract_skills(self, stdout: str) -> list:
         raise NotImplementedError("Subclasses must implement this method")
+
+
+def parse_timeout_seconds(timeout: float | int | str | None) -> float | None:
+    if timeout is None:
+        return None
+    if isinstance(timeout, (int, float)):
+        return float(timeout)
+    if isinstance(timeout, str):
+        s = timeout.strip()
+        unit = 1.0
+        if s.lower().endswith("s"):
+            s = s[:-1]
+        elif s.lower().endswith("m"):
+            s = s[:-1]
+            unit = 60.0
+        elif s.lower().endswith("h"):
+            s = s[:-1]
+            unit = 3600.0
+
+        try:
+            return float(s) * unit
+        except ValueError as e:
+            logging.warning("Failed to parse timeout string %r: %s", timeout, e)
+    return None
+
+
+def _kill_process_group(proc: subprocess.Popen):
+    """Terminates proc's process group with SIGKILL, falling back to proc.kill()."""
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        return
+    except (ProcessLookupError, OSError) as e:
+        logging.warning("os.killpg failed for pid %s: %s; trying proc.kill()", proc.pid, e)
+    except Exception as e:
+        logging.warning("Unexpected error in os.killpg for pid %s: %s; trying proc.kill()", proc.pid, e)
+
+    try:
+        proc.kill()
+    except (ProcessLookupError, OSError) as e:
+        logging.warning("proc.kill() failed for pid %s: %s", proc.pid, e)
+    except Exception as e:
+        logging.warning("Unexpected error in proc.kill() for pid %s: %s", proc.pid, e)
+
+
+@contextmanager
+def process_timeout(proc: subprocess.Popen, timeout: float | int | str | None):
+    """Context manager that sets a timer to kill ``proc``'s process group on timeout.
+
+    Yields a callable ``is_timed_out() -> bool``.
+    """
+    timed_out = False
+    timer = None
+    timeout_sec = parse_timeout_seconds(timeout)
+    if timeout_sec:
+        def _on_timeout():
+            nonlocal timed_out
+            timed_out = True
+            _kill_process_group(proc)
+
+        timer = threading.Timer(timeout_sec, _on_timeout)
+        timer.start()
+
+    try:
+        yield lambda: timed_out
+    finally:
+        if timer:
+            timer.cancel()

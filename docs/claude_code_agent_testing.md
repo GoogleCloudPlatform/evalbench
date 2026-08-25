@@ -206,6 +206,7 @@ The model config defines the Claude Code CLI version, model, auth, environment, 
 | `vertex_project_id` | If `use_vertex` | GCP project for Vertex AI |
 | `vertex_region` | If `use_vertex` | Vertex region (e.g., `us-east5`) |
 | `env` | Optional | Environment variables passed to the CLI process |
+| `prompt_timeout_seconds` | Optional | Timeout limit in seconds for each CLI prompt turn (e.g., `180`) |
 | `setup.mcp_servers` | Optional | MCP server configurations (see [MCP Servers](#mcp-servers)) |
 | `allowed_tools` | Optional | List of tool names to allow (e.g., `["Bash", "mcp__cloud-sql"]`) |
 

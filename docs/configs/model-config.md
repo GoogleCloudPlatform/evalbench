@@ -15,6 +15,7 @@ These settings are passed to all generators, regardless of the specific engine u
 | `max_tokens`       | Optional     | N/A               | Specifies the maximum number of tokens the model can generate in a single output.                                                                                                                                                                            |
 | `execs_per_minute` | Optional     | `60`              | Sets the maximum number of executions allowed per minute. If not provided, it defaults to `60`. This helps throttle the rate of query generation.                                                                                                                                                                        |
 | `max_attempts`     | Optional     | `3`               | Specifies the maximum number of attempts for query generation in case of failures. Defaults to `3` if not provided.                                                                                                                                                                          |
+| `prompt_timeout_seconds` | Optional | N/A | Timeout limit in seconds for each CLI prompt execution turn (e.g. `180`). Overrides run config `runners.prompt_timeout_seconds`. |
 
 ## GCP Specific Configuration
 

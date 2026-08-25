@@ -1,4 +1,5 @@
 import os
+import signal
 import sys
 from unittest.mock import MagicMock, patch, ANY
 
@@ -88,3 +89,40 @@ def test_install_plugin_runs_init_and_install(mock_open, mock_makedirs, monkeypa
         assert "plugins" in second_call_args
         assert "install" in second_call_args
         assert "my-plugin" in second_call_args
+
+
+def test_execute_cli_command_timeout_preserves_stdout_and_kills_pg(monkeypatch):
+    monkeypatch.setenv("HOME", "/fake/real_home")
+
+    with (
+        patch('generators.models.claude_code.os.makedirs'),
+        patch('generators.models.claude_code.open', create=True),
+    ):
+        generator = ClaudeCodeGenerator({})
+
+    mock_proc = MagicMock()
+    mock_proc.pid = 54321
+    stream_output = '{"type":"assistant","message":{"content":[{"type":"text","text":"claude response"}]}}\n'
+    mock_proc.communicate.return_value = (stream_output, "")
+
+    with (
+        patch('generators.models.claude_code.subprocess.Popen', return_value=mock_proc) as mock_popen,
+        patch('generators.models.agent_cli.os.killpg') as mock_killpg,
+        patch('generators.models.agent_cli.os.getpgid', return_value=54321),
+        patch('generators.models.agent_cli.threading.Timer') as mock_timer_cls,
+    ):
+        def fake_timer(interval, function):
+            function()
+            return MagicMock()
+
+        mock_timer_cls.side_effect = fake_timer
+
+        cli_cmd = generator.create_command("claude", "prompt", timeout=2)
+        res = generator._run_claude_code(cli_cmd)
+
+        mock_popen.assert_called_once()
+        assert mock_popen.call_args.kwargs.get("start_new_session") is True
+        mock_killpg.assert_called_once_with(54321, signal.SIGKILL)
+        assert res.returncode == 124
+        assert "Error: Command timed out after 2 seconds." in res.stderr
+        assert "claude response" in res.stdout
