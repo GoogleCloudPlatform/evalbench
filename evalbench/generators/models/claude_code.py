@@ -8,7 +8,9 @@ import shlex
 import sys
 import re
 import shutil
+import time
 from typing import Optional, Union, Dict, List
+import uuid
 from util.context import rpc_id_var
 
 
@@ -632,10 +634,32 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                 command, 1, "", f"An unexpected error occurred: {e}"
             )
 
+    @staticmethod
+    def _session_id_headers() -> str:
+        """Builds a dynamic per-run ``ANTHROPIC_CUSTOM_HEADERS`` value carrying a unique session id.
+
+        A short uuid suffix is appended to the epoch seconds so concurrent runs
+        landing in the same second still get distinct session ids.
+        """
+        session_id = f"sess-{int(time.time())}-{uuid.uuid4().hex[:8]}"
+        return f"X-Vertex-Ai-Session-Id: {session_id}"
+
     def _run_claude_code(self, cli_cmd: CLICommand, timeout_seconds=None):
         env = os.environ.copy()
         env.update(self.env)
         env.update(cli_cmd.env)
+
+        # Attach a fresh session-id header per run. If one is already set (from
+        # the inherited process env or model config), warn and override so every
+        # run gets a distinct, non-stale session id.
+        session_headers = self._session_id_headers()
+        existing = env.get("ANTHROPIC_CUSTOM_HEADERS")
+        if existing:
+            logging.warning(
+                "Overriding existing ANTHROPIC_CUSTOM_HEADERS "
+                f"({existing!r}) with per-run session header {session_headers!r}."
+            )
+        env["ANTHROPIC_CUSTOM_HEADERS"] = session_headers
 
         # If the version looks like an npm package spec (contains "/" or starts
         # with "@"), use `npm exec` to pin that version (like Gemini CLI does).
