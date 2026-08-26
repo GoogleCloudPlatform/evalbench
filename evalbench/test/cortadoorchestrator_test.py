@@ -131,6 +131,7 @@ class TestCortadoOrchestrator(unittest.TestCase):
         mock_get_database.return_value = mock_db
 
         mock_generator = MagicMock()
+
         def mock_generate(eval_result):
             if "district" in eval_result.nl_prompt:
                 eval_result.generated_nl_response = "Filtered results"
