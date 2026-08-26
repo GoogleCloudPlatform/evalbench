@@ -98,14 +98,24 @@ class GrpcProxyModel(QueryGenerator):
             nl_response = getattr(
                 inbound_response, "generated_nl_response", "")
             sql_response = getattr(inbound_response, "generated_sql", "")
+            other_dict = {}
+            if hasattr(inbound_response, "other"):
+                for k, v in inbound_response.other.items():
+                    other_dict[k] = v
 
             # Update the eval_output object with the results from the client.
             if hasattr(eval_output, "__setitem__"):
                 eval_output["generated_sql"] = sql_response
                 eval_output["generated_nl_response"] = nl_response
+                if "other" not in eval_output or not isinstance(eval_output["other"], dict):
+                    eval_output["other"] = {}
+                eval_output["other"].update(other_dict)
             else:
                 setattr(eval_output, "generated_sql", sql_response)
                 setattr(eval_output, "generated_nl_response", nl_response)
+                if not hasattr(eval_output, "other") or not isinstance(eval_output.other, dict):
+                    setattr(eval_output, "other", {})
+                eval_output.other.update(other_dict)
 
             return eval_output
 

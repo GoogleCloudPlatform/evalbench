@@ -27,6 +27,7 @@ class EvalCortadoRequest:
 
         self.agent_results = []
         self.scoring_results = []
+        self.other = {}
 
     @classmethod
     def init_from_proto(cls, proto):
@@ -39,23 +40,31 @@ class EvalCortadoRequest:
 
         raw_dict["id"] = str(getattr(proto, "id", "-1"))
 
-        return cls(
+        obj = cls(
             raw_dict=raw_dict,
             job_id=getattr(proto, "job_id", ""),
             trace_id=getattr(proto, "trace_id", ""),
         )
+        if hasattr(proto, "other"):
+            for k, v in proto.other.items():
+                obj.other[k] = v
+        return obj
 
     def to_proto(self):
         """Packs the object into the Protobuf to send to Google3."""
         # Note: You must import eval_request_pb2 here to prevent circular dependencies
         from evalproto import eval_request_pb2
 
-        return eval_request_pb2.EvalInputRequest(
+        proto_req = eval_request_pb2.EvalInputRequest(
             id=int(self.id) if self.id.isdigit() else 0,
             payload=self.payload_str,
             # We map starting_prompt to nl_prompt for backwards compatibility
             nl_prompt=self.nl_prompt
         )
+        if hasattr(self, "other") and isinstance(self.other, dict):
+            for k, v in self.other.items():
+                proto_req.other[k] = str(v)
+        return proto_req
 
     def copy(self):
         return copy.deepcopy(self)

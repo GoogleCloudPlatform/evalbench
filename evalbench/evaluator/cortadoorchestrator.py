@@ -18,7 +18,7 @@ class CortadoOrchestrator(Orchestrator):
         self.total_scoring_results = []
 
     def evaluate(self, dataset: list[EvalCortadoRequest]):
-        evaluator = CortadoEvaluator(self.config)
+        evaluator = CortadoEvaluator(self.config, db_configs=self.db_configs)
         eval_outputs, scoring_results = evaluator.evaluate(
             dataset, self.job_id, self.run_time
         )
