@@ -506,7 +506,7 @@ class AgyCliGenerator(AgentCliGenerator):
 
         env = self._merged_env()
         cmd = self._base_agy_command(
-            self.agy_bin, "ping", model=self.model
+            self.agy_bin, "ping", model=self.model, add_dirs=[self.fake_home]
         )
         try:
             subprocess.run(
@@ -833,7 +833,7 @@ class AgyCliGenerator(AgentCliGenerator):
     def _base_agy_command(
         cli: str, prompt: str, resume: bool = False, model: str = None,
         output_format: str = None, log_file: str = None,
-        timeout: str = None,
+        timeout: str = None, add_dirs: list[str] | str | None = None,
     ) -> list:
         """Builds the non-interactive ``agy -p`` argv shared by the eval
         turn path and the setup-time MCP probe.
@@ -854,6 +854,11 @@ class AgyCliGenerator(AgentCliGenerator):
         defaults to agy's internal default (5 minutes).
         """
         command = [cli, "-p", prompt, "--dangerously-skip-permissions"]
+        if add_dirs:
+            if isinstance(add_dirs, str):
+                add_dirs = [add_dirs]
+            for d in add_dirs:
+                command += ["--add-dir", d]
         if model:
             command += ["--model", model]
         if output_format:
@@ -895,15 +900,15 @@ class AgyCliGenerator(AgentCliGenerator):
 
     def _run_agy_cli(self, cli_cmd: CLICommand):
         env = self._merged_env(cli_cmd.env)
+        cwd = cli_cmd.cwd if cli_cmd.cwd else self.fake_home
         # The executable is always this session's sandbox binary, regardless of
         # the label carried on cli_cmd.cli (the evaluator passes agent_version,
         # "agy", which is not a path).
         command = self._base_agy_command(
             self.agy_bin, cli_cmd.prompt, cli_cmd.resume, self.model,
             output_format="stream-json", log_file=self.cli_log_path,
-            timeout=self.timeout,
+            timeout=self.timeout, add_dirs=[cwd],
         )
-        cwd = cli_cmd.cwd if cli_cmd.cwd else self.fake_home
         result = self._execute_cli_command(command, env=env, cwd=cwd)
 
         # Parse whenever agy emitted a stream, even on a non-zero exit: a

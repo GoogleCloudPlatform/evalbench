@@ -265,7 +265,7 @@ def test_ensure_agy_installed_raises_when_binary_absent_after_install(
 
 def test_run_command_argv_shape(mock_run, sandbox):
     """``_run_agy_cli`` must build ``agy -p <prompt>
-    --dangerously-skip-permissions --output-format stream-json``."""
+    --dangerously-skip-permissions --add-dir <cwd> --output-format stream-json``."""
     generator = AgyCliGenerator({})
     cmd = CLICommand(cli="agy", prompt="hello world")
     generator._run_agy_cli(cmd)
@@ -273,7 +273,8 @@ def test_run_command_argv_shape(mock_run, sandbox):
     sent_argv = mock_run.call_args[0][0]
     assert sent_argv == [
         generator.agy_bin, "-p", "hello world",
-        "--dangerously-skip-permissions", "--output-format", "stream-json",
+        "--dangerously-skip-permissions", "--add-dir", generator.fake_home,
+        "--output-format", "stream-json",
         "--log-file", generator.cli_log_path,
     ]
 
@@ -286,7 +287,8 @@ def test_run_command_argv_shape_with_continue(mock_run, sandbox):
     sent_argv = mock_run.call_args[0][0]
     assert sent_argv == [
         generator.agy_bin, "-p", "next turn",
-        "--dangerously-skip-permissions", "--output-format", "stream-json",
+        "--dangerously-skip-permissions", "--add-dir", generator.fake_home,
+        "--output-format", "stream-json",
         "--log-file", generator.cli_log_path, "--continue",
     ]
 
@@ -321,7 +323,8 @@ def test_run_command_argv_shape_with_timeout(mock_run, sandbox):
     sent_argv = mock_run.call_args[0][0]
     assert sent_argv == [
         generator.agy_bin, "-p", "hello world",
-        "--dangerously-skip-permissions", "--output-format", "stream-json",
+        "--dangerously-skip-permissions", "--add-dir", generator.fake_home,
+        "--output-format", "stream-json",
         "--log-file", generator.cli_log_path, "--print-timeout", "20m",
     ]
 
