@@ -11,6 +11,9 @@ class QueryGenerator(ABC):
             "execs_per_minute") or None
         self.max_attempts = querygenerator_config.get("max_attempts") or 3
         self.semaphore = Semaphore(self.execs_per_minute or 1)
+        self.prompt_timeout_seconds = querygenerator_config.get(
+            "prompt_timeout_seconds"
+        )
 
     def generate(self, prompt):
         try:

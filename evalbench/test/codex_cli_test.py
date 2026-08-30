@@ -1,3 +1,4 @@
+import errno
 import os
 import sys
 from unittest.mock import MagicMock, patch
@@ -108,3 +109,100 @@ def test_write_config_toml_escapes_plugin_id(monkeypatch, tmp_path):
     content = config_file.read_text()
     assert '[plugins."dak@evalbench-local-marketplace"]' in content
     assert '[plugins.clean_plugin]' in content
+
+
+@patch('generators.models.codex_cli.subprocess.Popen')
+def test_execute_cli_command_timeout_wall_clock(mock_popen, monkeypatch):
+    monkeypatch.setenv("HOME", "/fake/real_home")
+
+    with (
+        patch('generators.models.codex_cli.os.makedirs'),
+        patch('generators.models.codex_cli.open', create=True),
+    ):
+        generator = CodexCliGenerator({"model": "gpt-4"})
+
+    r, w = os.pipe()
+    stdout_file = os.fdopen(r, "r")
+
+    mock_proc = MagicMock()
+    mock_proc.stdout = stdout_file
+    mock_proc.stderr = []
+    mock_proc.returncode = None
+
+    def mock_kill():
+        try:
+            os.close(w)
+        except OSError as e:
+            # Ignore EBADF if the write pipe descriptor was already closed
+            if e.errno != errno.EBADF:
+                raise
+
+    mock_proc.kill.side_effect = mock_kill
+    mock_popen.return_value = mock_proc
+
+    import time
+    start = time.monotonic()
+    res, _ = generator._execute_cli_command(["codex"], timeout=0.2)
+    elapsed = time.monotonic() - start
+
+    assert res.returncode == 124
+    assert "timed out after 0.2 seconds" in res.stderr
+    mock_proc.kill.assert_called_once()
+    assert elapsed < 0.6
+
+
+def test_create_command_passes_timeout():
+    with (
+        patch('generators.models.codex_cli.os.makedirs'),
+        patch('generators.models.codex_cli.open', create=True),
+    ):
+        generator = CodexCliGenerator({"model": "gpt-4"})
+
+    cli_cmd = generator.create_command("codex", "do something", timeout=120)
+    assert cli_cmd.timeout == 120
+
+    with patch.object(generator, '_execute_cli_command', return_value=(MagicMock(stdout="", stderr="", returncode=0), {})) as mock_exec:
+        generator._run_codex_cli(cli_cmd)
+        mock_exec.assert_called_once()
+        assert mock_exec.call_args.kwargs.get("timeout") == 120
+
+
+@patch('generators.models.codex_cli.subprocess.Popen')
+def test_execute_cli_command_timeout_when_stdout_closes_before_proc_exit(mock_popen, monkeypatch):
+    monkeypatch.setenv("HOME", "/fake/real_home")
+
+    with (
+        patch('generators.models.codex_cli.os.makedirs'),
+        patch('generators.models.codex_cli.open', create=True),
+    ):
+        generator = CodexCliGenerator({"model": "gpt-4"})
+
+    mock_proc = MagicMock()
+    mock_proc.stdout = []  # EOF immediately on stdout
+    mock_proc.stderr = []
+    mock_proc.returncode = None
+    mock_proc.pid = 99999
+
+    import threading
+    wait_event = threading.Event()
+
+    def mock_wait():
+        wait_event.wait(timeout=2.0)
+        return 0
+
+    def mock_kill():
+        wait_event.set()
+
+    mock_proc.wait.side_effect = mock_wait
+    mock_proc.kill.side_effect = mock_kill
+    mock_popen.return_value = mock_proc
+
+    import time
+    start = time.monotonic()
+    res, _ = generator._execute_cli_command(["codex"], timeout=0.2)
+    elapsed = time.monotonic() - start
+
+    assert res.returncode == 124
+    assert "timed out after 0.2 seconds" in res.stderr
+    mock_proc.kill.assert_called_once()
+    assert elapsed < 0.6

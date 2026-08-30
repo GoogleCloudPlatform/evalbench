@@ -1,4 +1,5 @@
 import os
+import signal
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -337,3 +338,41 @@ def test_setup_skill_dict_disable(
         "my-skill",
     ]
     assert expected_cmd in calls
+
+
+def test_execute_cli_command_timeout_preserves_stdout_and_kills_pg(monkeypatch):
+    monkeypatch.setenv("HOME", "/fake/real_home")
+
+    with (
+        patch('generators.models.gemini_cli.os.makedirs'),
+        patch('generators.models.gemini_cli.os.path.exists', return_value=False),
+        patch('generators.models.gemini_cli.open', create=True),
+    ):
+        generator = GeminiCliGenerator({})
+
+    mock_proc = MagicMock()
+    mock_proc.pid = 12345
+    stream_output = '{"type":"init","session_id":"s1"}\n{"type":"message","role":"assistant","content":"hello"}\n'
+    mock_proc.communicate.return_value = (stream_output, "")
+
+    with (
+        patch('generators.models.gemini_cli.subprocess.Popen', return_value=mock_proc) as mock_popen,
+        patch('generators.models.agent_cli.os.killpg') as mock_killpg,
+        patch('generators.models.agent_cli.os.getpgid', return_value=12345),
+        patch('generators.models.agent_cli.threading.Timer') as mock_timer_cls,
+    ):
+        def fake_timer(interval, function):
+            function()
+            return MagicMock()
+
+        mock_timer_cls.side_effect = fake_timer
+
+        cli_cmd = generator.create_command("gemini", "prompt", timeout=1)
+        res = generator._run_gemini_cli(cli_cmd)
+
+        mock_popen.assert_called_once()
+        assert mock_popen.call_args.kwargs.get("start_new_session") is True
+        mock_killpg.assert_called_once_with(12345, signal.SIGKILL)
+        assert res.returncode == 124
+        assert "Error: Command timed out after 1 seconds." in res.stderr
+        assert "hello" in res.stdout

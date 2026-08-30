@@ -141,6 +141,12 @@ class AgentEvaluator:
                         "Declared env file not found in session: %s", src_path
                     )
 
+        prompt_timeout = (
+            scenario.get("prompt_timeout_seconds")
+            or getattr(self.generator, "prompt_timeout_seconds", None)
+            or self.config.get("runners", {}).get("prompt_timeout_seconds")
+        )
+
         session_id = None
         for turn in range(max_turns):
             logging.info(
@@ -153,6 +159,7 @@ class AgentEvaluator:
                     resume=(turn > 0),
                     session_id=session_id,
                     cwd=resolved_work_dir,
+                    timeout=prompt_timeout,
                 )
                 try:
                     result = self.generator.safe_generate(cli_cmd)

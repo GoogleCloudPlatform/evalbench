@@ -213,6 +213,7 @@ The model config defines the Codex CLI version, model, auth, sandbox/approval po
 | `profile` | Optional | Codex profile name (forwarded as `--profile <name>`) |
 | `json_flag` | Optional | `"--json"` (default, newer Codex versions) or `"--experimental-json"` (older versions). Codex requires NDJSON for the eval pipeline to extract tool calls and tokens. |
 | `pricing` | Optional | Per-model rates used to compute `cost_usd` per turn. See [Pricing & Cost Tracking](#pricing--cost-tracking). |
+| `prompt_timeout_seconds` | Optional | Timeout limit in seconds for each CLI prompt turn (e.g., `180`) |
 | `env` | Optional | Environment variables passed to the CLI process (e.g., `GOOGLE_CLOUD_PROJECT` for Cloud SQL MCP) |
 | `setup.mcp_servers` | Optional | MCP server configurations (see [MCP Servers](#mcp-servers)) |
 | `setup.config` | Optional | Free-form key/value pairs written to the top of `~/.codex/config.toml`. Merged on top of the default `forced_login_method = "api"`. |

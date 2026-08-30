@@ -166,6 +166,7 @@ simulated_user_model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
 
 runners:
   agent_runners: 10
+  prompt_timeout_seconds: 300
 
 scorers:
   trajectory_matcher: {}
@@ -183,11 +184,12 @@ reporting:
 ```
 
 ### 2. Model Configuration (e.g., `gemini_cli_model.yaml`)
-Specifies tested version, model ID, and environment variables.
+Specifies tested version, model ID, environment variables, and prompt timeout.
 
 ```yaml
 gemini_cli_version: "@google/gemini-cli@0.36.0"
 generator: gemini_cli
+prompt_timeout_seconds: 180
 env:
   GOOGLE_CLOUD_PROJECT: "my-evaluation-project"
   GOOGLE_CLOUD_LOCATION: "us-central1"
@@ -211,7 +213,8 @@ Contains the test cases.
       "conversation_plan": "Ensure the agent accurately calls list_instances. Verify the output is returned correctly.",
       "expected_trajectory": ["cloud-sql__list_instances"],
       "env": { "GOOGLE_CLOUD_PROJECT": "my-evaluation-project" },
-      "max_turns": 4
+      "max_turns": 4,
+      "prompt_timeout_seconds": 120
     }
   ]
 }

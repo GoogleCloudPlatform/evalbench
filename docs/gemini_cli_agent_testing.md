@@ -255,6 +255,7 @@ The evalset JSON file defines the test scenarios. Each scenario represents an ag
 | `max_turns` | Yes | Maximum number of conversation turns before the evaluation stops |
 | `env` | Optional | Per-scenario environment variables (merged with model config env) |
 | `kind` | Optional | Category label (e.g., `"tools"`) |
+| `prompt_timeout_seconds` | Optional | Timeout limit in seconds for each CLI prompt turn in this scenario. Overrides model config and run config timeout settings. |
 
 #### Tool name format
 

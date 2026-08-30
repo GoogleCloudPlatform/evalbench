@@ -55,11 +55,24 @@ def skip_agy_install(request):
 
 @pytest.fixture
 def mock_run():
-    """Patches the generator's ``subprocess.run`` with a success-by-default
+    """Patches the generator's ``subprocess.run`` and ``subprocess.Popen`` with a success-by-default
     mock. Tests needing custom behavior set ``side_effect``."""
-    with patch("generators.models.agy_cli.subprocess.run") as m:
-        m.return_value = MagicMock(returncode=0, stdout="", stderr="")
-        yield m
+    with patch("generators.models.agy_cli.subprocess.run") as m_run, \
+         patch("generators.models.agy_cli.subprocess.Popen") as m_popen:
+        m_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+        def popen_side_effect(*args, **kwargs):
+            res = m_run(*args, **kwargs)
+            proc = MagicMock()
+            proc.pid = 12345
+            proc.returncode = getattr(res, "returncode", 0) if not isinstance(getattr(res, "returncode", 0), MagicMock) else 0
+            stdout = res.stdout if isinstance(getattr(res, "stdout", None), str) else ""
+            stderr = res.stderr if isinstance(getattr(res, "stderr", None), str) else ""
+            proc.communicate.return_value = (stdout, stderr)
+            return proc
+
+        m_popen.side_effect = popen_side_effect
+        yield m_run
 
 
 def _install_calls(mock_run):
@@ -324,6 +337,21 @@ def test_run_command_argv_shape_with_timeout(mock_run, sandbox):
         "--dangerously-skip-permissions", "--output-format", "stream-json",
         "--log-file", generator.cli_log_path, "--print-timeout", "20m",
     ]
+
+
+def test_run_command_with_int_prompt_timeout_routes_to_executor_not_argv(mock_run, sandbox):
+    """An integer timeout on CLICommand (e.g. from prompt_timeout_seconds) must
+    NOT be appended to argv as --print-timeout <int>, which crashes Popen.
+    It must be routed to _execute_cli_command(timeout=...)."""
+    generator = AgyCliGenerator({})
+    cmd = CLICommand(cli="agy", prompt="hello world", timeout=180)
+
+    with patch.object(generator, "_execute_cli_command", return_value=MagicMock(stdout="", stderr="", returncode=0)) as mock_exec:
+        generator._run_agy_cli(cmd)
+        mock_exec.assert_called_once()
+        assert mock_exec.call_args.kwargs.get("timeout") == 180
+        sent_argv = mock_exec.call_args.args[0]
+        assert "--print-timeout" not in sent_argv
 
 
 def test_run_agy_cli_parses_stream_on_nonzero_exit(mock_run, sandbox):

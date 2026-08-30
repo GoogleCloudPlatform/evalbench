@@ -167,6 +167,7 @@ Specifies the generator, model label, execution timeouts, and environment:
 | `generator` | Yes | Must be `agy_cli` |
 | `model` | Optional | Model label (e.g. `"Gemini 3.1 Pro (Low)"` or `"Gemini 3.5 Flash (Medium)"`). Omit to use agy's default. |
 | `timeout` | Optional | CLI turn timeout string (e.g. `"20m"`, passed to `--print-timeout`). Defaults to 5m. |
+| `prompt_timeout_seconds` | Optional | Timeout limit in seconds for each CLI prompt turn (e.g., `180`). |
 | `env` | Optional | Environment block. Set `GOOGLE_CLOUD_PROJECT` (see below); `GOOGLE_CLOUD_LOCATION` defaults to `global`. |
 | `setup` | Optional | Tool setup block for `mcp_servers`, `skills`, or `fake_mcp_servers`. |
 
