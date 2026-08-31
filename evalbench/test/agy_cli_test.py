@@ -291,6 +291,32 @@ def test_run_command_argv_shape_with_continue(mock_run, sandbox):
     ]
 
 
+def test_run_command_argv_passes_work_dir_as_add_dir(mock_run, sandbox):
+    """A scenario ``work_dir`` must reach agy as ``--add-dir``, not just as the
+    subprocess cwd: without a registered workspace agy runs its shell and write
+    tools in ``<appDataDir>/scratch``, so agent writes miss ``work_dir``."""
+    generator = AgyCliGenerator({})
+    cmd = CLICommand(cli="agy", prompt="hello world", cwd="/tmp/workspace")
+    generator._run_agy_cli(cmd)
+
+    sent_argv = mock_run.call_args[0][0]
+    assert sent_argv == [
+        generator.agy_bin, "-p", "hello world",
+        "--dangerously-skip-permissions", "--output-format", "stream-json",
+        "--log-file", generator.cli_log_path, "--add-dir", "/tmp/workspace",
+    ]
+    assert mock_run.call_args.kwargs["cwd"] == "/tmp/workspace"
+
+
+def test_run_command_argv_omits_add_dir_without_work_dir(mock_run, sandbox):
+    """No ``work_dir`` means no ``--add-dir``, leaving agy's default workspace
+    behaviour untouched for scenarios that never asked for one."""
+    generator = AgyCliGenerator({})
+    generator._run_agy_cli(CLICommand(cli="agy", prompt="hello world"))
+
+    assert "--add-dir" not in mock_run.call_args[0][0]
+
+
 def test_init_raises_on_non_string_timeout(sandbox):
     """The generator should raise TypeError if timeout is not a string."""
     with pytest.raises(TypeError, match="timeout must be a string"):

@@ -833,7 +833,7 @@ class AgyCliGenerator(AgentCliGenerator):
     def _base_agy_command(
         cli: str, prompt: str, resume: bool = False, model: str = None,
         output_format: str = None, log_file: str = None,
-        timeout: str = None,
+        timeout: str = None, add_dir: str = None,
     ) -> list:
         """Builds the non-interactive ``agy -p`` argv shared by the eval
         turn path and the setup-time MCP probe.
@@ -852,6 +852,11 @@ class AgyCliGenerator(AgentCliGenerator):
 
         ``timeout`` maps to ``--print-timeout`` (e.g. "20m"). If omitted,
         defaults to agy's internal default (5 minutes).
+
+        ``add_dir`` maps to ``--add-dir``, registering the scenario's
+        ``work_dir`` as an agy workspace. Required on top of the subprocess
+        cwd: unregistered, agy runs its shell and write tools in
+        ``<appDataDir>/scratch`` and agent writes miss ``work_dir``.
         """
         command = [cli, "-p", prompt, "--dangerously-skip-permissions"]
         if model:
@@ -862,6 +867,8 @@ class AgyCliGenerator(AgentCliGenerator):
             command += ["--log-file", log_file]
         if timeout:
             command += ["--print-timeout", timeout]
+        if add_dir:
+            command += ["--add-dir", add_dir]
         if resume:
             command.append("--continue")
         return command
@@ -901,7 +908,7 @@ class AgyCliGenerator(AgentCliGenerator):
         command = self._base_agy_command(
             self.agy_bin, cli_cmd.prompt, cli_cmd.resume, self.model,
             output_format="stream-json", log_file=self.cli_log_path,
-            timeout=self.timeout,
+            timeout=self.timeout, add_dir=cli_cmd.cwd,
         )
         cwd = cli_cmd.cwd if cli_cmd.cwd else self.fake_home
         result = self._execute_cli_command(command, env=env, cwd=cwd)
