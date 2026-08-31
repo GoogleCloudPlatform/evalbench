@@ -296,7 +296,10 @@ def test_run_command_argv_passes_work_dir_as_add_dir(mock_run, sandbox):
     subprocess cwd: without a registered workspace agy runs its shell and write
     tools in ``<appDataDir>/scratch``, so agent writes miss ``work_dir``."""
     generator = AgyCliGenerator({})
-    cmd = CLICommand(cli="agy", prompt="hello world", cwd="/tmp/workspace")
+    cmd = generator.create_command(
+        cli="agy", prompt="hello world", cwd="/tmp/workspace"
+    )
+    assert cmd.cwd == "/tmp/workspace"
     generator._run_agy_cli(cmd)
 
     sent_argv = mock_run.call_args[0][0]
