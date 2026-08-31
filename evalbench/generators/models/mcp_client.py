@@ -20,23 +20,11 @@ class McpToolsError(Exception):
     """Raised when a tools spec cannot be fetched or parsed."""
 
 
-def sanitize_url(url: str) -> str:
-    """Ensure the URL has a scheme and ends with ``/mcp``.
-
-    ``/mcp`` is the conventional path where the MCP protocol is exposed.
-    """
-    stripped_url = (url or "").strip()
-    if stripped_url.startswith(("http://", "https://")):
-        url_with_scheme = stripped_url
-    elif "localhost" in stripped_url:
-        url_with_scheme = f"http://{stripped_url}"
-    else:
-        url_with_scheme = f"https://{stripped_url}"
-
-    rstripped_url = url_with_scheme.rstrip("/")
-    if not rstripped_url.endswith("/mcp"):
-        return f"{rstripped_url}/mcp"
-    return rstripped_url
+def _format_error(e: BaseException) -> str:
+    """Unpack ExceptionGroup/TaskGroup leaf errors for error messages."""
+    if hasattr(e, "exceptions") and getattr(e, "exceptions"):
+        return f"{e} ({', '.join(map(_format_error, e.exceptions))})"
+    return f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
 
 
 def auth_headers(server_config: dict) -> dict | None:
@@ -73,7 +61,7 @@ def fetch_tools_http(
     raw_url: str, headers: dict | None = None, timeout: int = 30
 ) -> list[mcp_types.Tool]:
     """``tools/list`` over Streamable HTTP."""
-    url = sanitize_url(raw_url)
+    url = (raw_url or "").strip()
     try:
         return anyio.run(
             functools.partial(_async_fetch_http, url, headers, timeout)
@@ -81,7 +69,10 @@ def fetch_tools_http(
     except McpToolsError:
         raise
     except Exception as e:
-        raise McpToolsError(f"Failed to fetch tools from {url}: {e}") from e
+        err = _format_error(e)
+        raise McpToolsError(
+            f"Failed to fetch tools from {url}: {err}"
+        ) from e
 
 
 def fetch_tools_stdio(
@@ -99,8 +90,9 @@ def fetch_tools_stdio(
     except McpToolsError:
         raise
     except Exception as e:
+        err = _format_error(e)
         raise McpToolsError(
-            f"Failed to fetch tools from stdio server '{command}': {e}"
+            f"Failed to fetch tools from stdio server '{command}': {err}"
         ) from e
 
 
