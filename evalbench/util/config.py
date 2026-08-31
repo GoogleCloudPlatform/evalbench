@@ -4,8 +4,9 @@ import logging
 import os
 import csv
 import random
+import re
 import string
-from typing import List
+from typing import List, Optional
 
 from pyaml_env import parse_config
 import pandas as pd
@@ -240,3 +241,72 @@ def breakdown_db_configs_by_dialect(db_configs: list[dict]):
         else:
             db_configs_by_dialect[dialect] = [db_config]
     return db_configs_by_dialect
+
+
+def parse_timeout_seconds(val) -> Optional[float]:
+    """Parses a timeout duration (int, float, or string like '300', '5m', '1h', '500ms') into seconds as float.
+
+    Returns None if val is None or empty string.
+    Raises ValueError if val is negative or has an invalid format string.
+    Raises TypeError if val is not int, float, str, or None.
+    """
+    if val is None:
+        return None
+    if isinstance(val, bool):
+        raise TypeError(f"Timeout cannot be a boolean: {val}")
+    if isinstance(val, (int, float)):
+        if val < 0:
+            raise ValueError(f"Timeout cannot be negative: {val}")
+        return float(val)
+    if not isinstance(val, str):
+        raise TypeError(
+            f"Timeout must be int, float, str, or None, got {type(val).__name__}"
+        )
+
+    s = val.strip()
+    if not s:
+        return None
+
+    try:
+        f = float(s)
+        if f < 0:
+            raise ValueError(f"Timeout cannot be negative: {val}")
+        return f
+    except ValueError:
+        pass
+
+    matches = list(re.finditer(r"(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)", s))
+    if not matches:
+        raise ValueError(f"Invalid timeout format: '{val}'")
+
+    matched_len = sum(len(m.group(1)) + len(m.group(2)) for m in matches)
+    if matched_len != len(re.sub(r"\s+", "", s)):
+        raise ValueError(f"Invalid timeout format: '{val}'")
+
+    unit_multipliers = {
+        "ms": 0.001,
+        "s": 1.0,
+        "m": 60.0,
+        "h": 3600.0,
+        "d": 86400.0,
+    }
+
+    total = 0.0
+    for m in matches:
+        amount = float(m.group(1))
+        unit = m.group(2)
+        total += amount * unit_multipliers[unit]
+
+    if total < 0:
+        raise ValueError(f"Timeout cannot be negative: {val}")
+
+    return total
+
+
+def get_eval_case_timeout(config: dict) -> Optional[float]:
+    """Extracts and parses eval_case_timeout setting from run config or scenario."""
+    if not isinstance(config, dict):
+        return None
+
+    val = config.get("eval_case_timeout")
+    return parse_timeout_seconds(val) if val is not None else None
