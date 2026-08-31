@@ -72,7 +72,8 @@ class Evaluator:
         self.sqlexec_runners = runner_config.get("sqlexec_runners", 10)
         self.scoring_runners = runner_config.get("scoring_runners", 10)
         self.task_timeout_seconds = runner_config.get(
-            "task_timeout_seconds", 600)
+            "task_timeout_seconds", 600
+        )
         self.num_trials = self.config.get("num_trials", 1)
 
     def evaluate(

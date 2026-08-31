@@ -1,4 +1,6 @@
 from abc import abstractmethod
+import subprocess
+from typing import Optional
 
 from mcp import types as mcp_types
 
@@ -96,7 +98,9 @@ class AgentCliGenerator(QueryGenerator):
         raise NotImplementedError("Subclasses must implement this method")
 
     @abstractmethod
-    def safe_generate(self, cli_cmd):
+    def safe_generate(
+        self, cli_cmd, timeout_seconds: Optional[float] = None
+    ) -> subprocess.CompletedProcess:
         raise NotImplementedError("Subclasses must implement this method")
 
     @abstractmethod

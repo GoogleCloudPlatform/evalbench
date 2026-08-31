@@ -9,6 +9,7 @@ import shutil
 import sys
 import threading
 import time
+from typing import Optional, Union, Dict, List
 from util.context import rpc_id_var
 
 
@@ -703,10 +704,10 @@ class CodexCliGenerator(AgentCliGenerator):
             return "{ " + inner + " }"
         return json.dumps(str(value))
 
-    def generate_internal(self, cli_cmd):
+    def generate_internal(self, cli_cmd, timeout_seconds=None):
         if not isinstance(cli_cmd, CLICommand):
             cli_cmd = CLICommand(self.codex_cli_version, str(cli_cmd))
-        return self._run_codex_cli(cli_cmd)
+        return self._run_codex_cli(cli_cmd, timeout_seconds=timeout_seconds)
 
     _EV_ITEM_STARTED = "item.started"
     _EV_ITEM_UPDATED = "item.updated"
@@ -719,6 +720,7 @@ class CodexCliGenerator(AgentCliGenerator):
 
     def _execute_cli_command(
         self, command: list[str], env: dict[str, str] | None = None, cwd: str | None = None,
+        timeout_seconds: float | int | None = None,
     ) -> tuple[subprocess.CompletedProcess, dict[str, int]]:
         """Runs the Codex CLI with line-streamed stdout so we can stamp the
         wall-clock time at which each NDJSON event arrives.
@@ -762,17 +764,32 @@ class CodexCliGenerator(AgentCliGenerator):
         started_at_ms: dict[str, float] = {}
         tool_durations: dict[str, int] = {}
 
-        try:
-            for line in proc.stdout:
-                arrival_ms = time.monotonic() * 1000
-                stdout_lines.append(line)
-                self._stamp_tool_event(
-                    line, arrival_ms, started_at_ms, tool_durations,
-                )
-        except Exception as e:
-            logging.warning(f"stdout stream read failed: {e}")
+        def _drain_stdout():
+            try:
+                for line in proc.stdout:
+                    arrival_ms = time.monotonic() * 1000
+                    stdout_lines.append(line)
+                    self._stamp_tool_event(
+                        line, arrival_ms, started_at_ms, tool_durations,
+                    )
+            except Exception as e:
+                logging.warning(f"stdout stream read failed: {e}")
 
-        proc.wait()
+        stdout_thread = threading.Thread(target=_drain_stdout, daemon=True)
+        stdout_thread.start()
+
+        try:
+            proc.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            stdout_thread.join(timeout=5)
+            stderr_thread.join(timeout=5)
+            return subprocess.CompletedProcess(
+                command, 124, "".join(stdout_lines), f"TimeoutError: Command timed out after {timeout_seconds} seconds"
+            ), tool_durations
+
+        stdout_thread.join(timeout=5)
         stderr_thread.join(timeout=5)
 
         completed = subprocess.CompletedProcess(
@@ -813,7 +830,7 @@ class CodexCliGenerator(AgentCliGenerator):
             if t0 is not None:
                 tool_durations[item_id] = max(0, int(arrival_ms - t0))
 
-    def _run_codex_cli(self, cli_cmd: CLICommand):
+    def _run_codex_cli(self, cli_cmd: CLICommand, timeout_seconds=None):
         env = os.environ.copy()
         env.update(self.env)
         env.update(cli_cmd.env)
@@ -866,7 +883,7 @@ class CodexCliGenerator(AgentCliGenerator):
         logging.info(f"Running Codex CLI: {' '.join(command)}")
 
         start_ms = time.monotonic()
-        result, tool_durations = self._execute_cli_command(command, env=env, cwd=cli_cmd.cwd)
+        result, tool_durations = self._execute_cli_command(command, env=env, cwd=cli_cmd.cwd, timeout_seconds=timeout_seconds)
         duration_ms = int((time.monotonic() - start_ms) * 1000)
         if result.stdout:
             result.stdout = self._parse_stream_json(
@@ -1294,8 +1311,10 @@ class CodexCliGenerator(AgentCliGenerator):
 
         return items
 
-    def safe_generate(self, cli_cmd: CLICommand) -> subprocess.CompletedProcess:
-        result = self.generate_internal(cli_cmd)
+    def safe_generate(
+        self, cli_cmd: CLICommand, timeout_seconds: Optional[float] = None
+    ) -> subprocess.CompletedProcess:
+        result = self.generate_internal(cli_cmd, timeout_seconds=timeout_seconds)
         if isinstance(result, str):
             return subprocess.CompletedProcess(args=[], returncode=0, stdout=result)
         if not result.stdout and result.returncode != 0:
