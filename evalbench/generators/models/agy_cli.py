@@ -922,9 +922,9 @@ class AgyCliGenerator(AgentCliGenerator):
             output_format="stream-json", log_file=self.cli_log_path,
             timeout=self.timeout, add_dir=cli_cmd.cwd,
         )
-        # The fallback is deliberately not mirrored into --add-dir: fake_home
-        # holds harness internals (agy binary, settings, MCP config, session
-        # state), which the agent has no business editing as workspace files.
+        # The fallback is not mirrored into --add-dir: fake_home is agy's own
+        # HOME (binary, settings, MCP config, session state) plus the staged
+        # ADC copy, not a scenario workspace.
         cwd = cli_cmd.cwd if cli_cmd.cwd else self.fake_home
         result = self._execute_cli_command(command, env=env, cwd=cwd, timeout_seconds=timeout_seconds)
 
