@@ -1,3 +1,4 @@
+import json
 import queue
 import threading
 import unittest
@@ -87,9 +88,7 @@ class TestAgenticReverseProxy(unittest.TestCase):
                 scorer_name="dataform_compile",
                 score=100.0,
                 success=True,
-                exit_code=0,
-                stdout="Compiled 1 action",
-                logs="Verified",
+                result_json=json.dumps({"status": "verified"}),
             )
             reply = eval_agent_pb2.AgentStreamMessage(
                 session_id=self.session_id,
@@ -116,7 +115,7 @@ class TestAgenticReverseProxy(unittest.TestCase):
         t.join()
 
         self.assertEqual(score, 100.0)
-        self.assertEqual(logs, "Verified")
+        self.assertEqual(logs, json.dumps({"status": "verified"}))
 
     def test_remote_reporter_success(self):
         reporter = RemoteReporter(

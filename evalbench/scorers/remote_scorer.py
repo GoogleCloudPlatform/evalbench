@@ -92,5 +92,5 @@ class RemoteScorerProxy(Comparator):
             return (0.0, f"Error: Unexpected payload on stream: {err_details}")
 
         r = resp_msg.scoring_response.result
-        log_output = r.logs or r.stdout or r.result_json or r.error_message or f"exit_code={r.exit_code}"
+        log_output = r.result_json or r.error_message or ("PASSED" if r.success else "FAILED")
         return (float(r.score), log_output)

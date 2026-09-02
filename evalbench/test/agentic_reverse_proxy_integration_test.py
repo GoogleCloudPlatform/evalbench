@@ -279,9 +279,7 @@ class TestAgenticReverseProxyIntegration(unittest.IsolatedAsyncioTestCase):
                         scorer_name=spec.scorer_name,
                         score=100.0,
                         success=True,
-                        exit_code=0,
-                        stdout=f"{spec.scorer_name} verified in sandbox",
-                        logs="PASSED",
+                        result_json=json.dumps({"stdout": f"{spec.scorer_name} verified in sandbox"}),
                     )
                     reply = eval_agent_pb2.AgentStreamMessage(
                         session_id=session_id,
@@ -425,9 +423,7 @@ class TestAgenticReverseProxyIntegration(unittest.IsolatedAsyncioTestCase):
                         scorer_name=spec.scorer_name,
                         score=100.0,
                         success=True,
-                        exit_code=0,
-                        stdout=f"{spec.scorer_name} ok",
-                        logs="PASSED",
+                        result_json=json.dumps({"stdout": f"{spec.scorer_name} ok"}),
                     )
                     reply = eval_agent_pb2.AgentStreamMessage(
                         session_id=session_id,
