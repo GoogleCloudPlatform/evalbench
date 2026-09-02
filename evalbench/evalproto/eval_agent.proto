@@ -29,12 +29,10 @@ message AgentStreamMessage {
 message TurnRequest {
   int32 turn_index = 1;
   string prompt = 2;
-  string system_instruction = 3;
-  map<string, string> env = 4;
-  string working_dir = 5;
-  float timeout_seconds = 6;
-  bool resume = 7;
-  repeated string env_files = 8;
+  map<string, string> env = 3;
+  string working_dir = 4;
+  float timeout_seconds = 5;
+  bool resume = 6;
 }
 
 message ToolCallRecord {
