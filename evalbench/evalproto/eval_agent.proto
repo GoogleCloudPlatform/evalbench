@@ -8,62 +8,24 @@ message AgentStreamMessage {
   string correlation_id = 3;  // Correlates async requests and responses across threads
 
   oneof payload {
-    // 0. Pre-Flight Health & Readiness Probe
-    HealthCheckRequest health_check_request = 5;
-    HealthCheckResponse health_check_response = 6;
+    // 1. Turn Execution
+    TurnRequest turn_request = 10;
+    TurnResponse turn_response = 11;
 
-    // 1. Scenario Lifecycle
-    LifecycleRequest lifecycle_request = 10;
-    LifecycleResponse lifecycle_response = 11;
+    // 2. Delegated In-Sandbox Scoring Execution
+    ScoringRequest scoring_request = 20;
+    ScoringResponse scoring_response = 21;
 
-    // 2. Turn Execution
-    TurnRequest turn_request = 20;
-    TurnResponse turn_response = 21;
+    // 3. Delegated Workspace & Telemetry Reporting
+    ReportingRequest reporting_request = 30;
+    ReportingResponse reporting_response = 31;
 
-    // 3. In-Flight Scoring Execution (Named Remote Scorers)
-    ScoringRequest scoring_request = 30;
-    ScoringResponse scoring_response = 31;
-
-    // 4. Remote Workspace Archival
-    ArtifactRequest artifact_request = 40;
-    ArtifactResponse artifact_response = 41;
-
-    // 5. Final Session Completion
-    SessionSummaryMessage session_summary = 50;
+    // 4. Final Session Completion Summary
+    SessionSummaryMessage session_summary = 40;
   }
 }
 
-// --- 0. Health Check Messages ---
-message HealthCheckRequest {
-  string probe_command = 1;
-  float timeout_seconds = 2;
-}
-
-message HealthCheckResponse {
-  bool is_healthy = 1;
-  bool internet_egress_ok = 2;
-  int32 active_skills_count = 3;
-  repeated string available_tools = 4;
-  string diagnostic_output = 5;
-  string error_message = 6;
-}
-
-// --- 1. Lifecycle Messages ---
-message LifecycleRequest {
-  enum Stage { STAGE_UNSPECIFIED = 0; SETUP = 1; RESET = 2; TEARDOWN = 3; }
-  Stage stage = 1;
-  string command = 2;
-  map<string, string> env_vars = 3;
-}
-
-message LifecycleResponse {
-  int32 exit_code = 1;
-  string stdout = 2;
-  string stderr = 3;
-  string error_message = 4;
-}
-
-// --- 2. Turn Execution Messages ---
+// --- 1. Turn Execution Messages ---
 message TurnRequest {
   int32 turn_index = 1;
   string prompt = 2;
@@ -72,6 +34,7 @@ message TurnRequest {
   string working_dir = 5;
   float timeout_seconds = 6;
   bool resume = 7;
+  repeated string env_files = 8;
 }
 
 message ToolCallRecord {
@@ -95,47 +58,56 @@ message TurnResponse {
   string error_message = 9;
 }
 
-// --- 3. In-Flight Scoring Messages ---
-message RemoteScorerSpec {
-  string name = 1;                  // Scorer identifier, e.g. "dataform_compile", "dbt_run", "notebook_eval"
-  string config_json = 2;           // Serialized configuration dictionary from YAML
-  float timeout_seconds = 3;        // Timeout per scorer
+// --- 2. In-Flight Scoring Messages ---
+message ScorerSpec {
+  string scorer_name = 1;       // Scorer identifier, e.g. "dataform_compile", "dbt_run", "rubric"
+  string config_json = 2;       // Serialized configuration dictionary from YAML
+  float timeout_seconds = 3;    // Timeout per scorer
 }
 
 message ScoringRequest {
-  repeated RemoteScorerSpec scorers = 1;
+  ScorerSpec scorer = 1;
 }
 
 message ScoreResult {
-  string name = 1;
-  float score = 2;                  // 100.0 (PASS), 0.0 (FAIL), or continuous score
-  int32 exit_code = 3;
-  string stdout = 4;
-  string stderr = 5;
-  string logs = 6;
-  string error_message = 7;
+  string scorer_name = 1;
+  float score = 2;              // 100.0 (PASS), 0.0 (FAIL), or continuous score
+  bool success = 3;
+  int32 exit_code = 4;
+  string stdout = 5;
+  string stderr = 6;
+  string logs = 7;
+  string result_json = 8;       // Generic JSON payload returned by scorer (metrics, logs, details)
+  string error_message = 9;
 }
 
 message ScoringResponse {
-  repeated ScoreResult results = 1;
+  ScoreResult result = 1;
 }
 
-// --- 4. Artifact Archival Messages ---
-message ArtifactRequest {
-  string target_gcs_bucket = 1;
-  string target_gcs_prefix = 2;
-  string export_path = 3;
-  repeated string exclude_patterns = 4;
+// --- 3. Delegated Reporting Messages ---
+message ReporterSpec {
+  string reporter_name = 1;     // Reporter identifier, e.g. "gcs", "s3", "custom"
+  string config_json = 2;       // Serialized configuration dictionary from YAML
+  float timeout_seconds = 3;
 }
 
-message ArtifactResponse {
-  string gcs_uri = 1;
-  int64 archive_size_bytes = 2;
-  repeated string exported_files = 3;
+message ReportingRequest {
+  ReporterSpec reporter = 1;
+}
+
+message ReporterResult {
+  string reporter_name = 1;
+  bool success = 2;
+  string result_json = 3;       // Generic JSON payload returned by reporter (URIs, paths, metadata)
   string error_message = 4;
 }
 
-// --- 5. Session Summary ---
+message ReportingResponse {
+  ReporterResult result = 1;
+}
+
+// --- 4. Session Summary ---
 message SessionSummaryMessage {
   string job_id = 1;
   string summary_json = 2;

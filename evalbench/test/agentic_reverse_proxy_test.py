@@ -1,12 +1,15 @@
 import queue
+import threading
 import unittest
 
+import pandas as pd
 from evalproto import eval_agent_pb2
 from generators.models.agentic_reverse_proxy import (
     AGENT_PROXY_QUEUES,
     AgenticReverseProxyGenerator,
 )
-from reporting.remote_artifact_reporter import RemoteArtifactReporter
+from reporting.remote_reporter import RemoteReporter
+from reporting.report import STORETYPE
 from scorers.remote_scorer import RemoteScorerProxy
 from util.context import rpc_id_var
 
@@ -57,7 +60,6 @@ class TestAgenticReverseProxy(unittest.TestCase):
             )
             self.inboxes[corr_id].put(reply)
 
-        import threading
         t = threading.Thread(target=answer)
         t.start()
 
@@ -78,12 +80,13 @@ class TestAgenticReverseProxy(unittest.TestCase):
             msg = self.out_queue.get(timeout=2.0)
             corr_id = msg.correlation_id
             self.assertEqual(msg.WhichOneof("payload"), "scoring_request")
-            spec = msg.scoring_request.scorers[0]
-            self.assertEqual(spec.name, "dataform_compile")
+            spec = msg.scoring_request.scorer
+            self.assertEqual(spec.scorer_name, "dataform_compile")
 
             score_res = eval_agent_pb2.ScoreResult(
-                name="dataform_compile",
+                scorer_name="dataform_compile",
                 score=100.0,
+                success=True,
                 exit_code=0,
                 stdout="Compiled 1 action",
                 logs="Verified",
@@ -91,11 +94,10 @@ class TestAgenticReverseProxy(unittest.TestCase):
             reply = eval_agent_pb2.AgentStreamMessage(
                 session_id=self.session_id,
                 correlation_id=corr_id,
-                scoring_response=eval_agent_pb2.ScoringResponse(results=[score_res]),
+                scoring_response=eval_agent_pb2.ScoringResponse(result=score_res),
             )
             self.inboxes[corr_id].put(reply)
 
-        import threading
         t = threading.Thread(target=answer_scorer)
         t.start()
 
@@ -116,40 +118,41 @@ class TestAgenticReverseProxy(unittest.TestCase):
         self.assertEqual(score, 100.0)
         self.assertEqual(logs, "Verified")
 
-    def test_remote_artifact_reporter_success(self):
-        reporter = RemoteArtifactReporter(
-            {"bucket": "test-bucket", "path_prefix": "runs", "export_path": "/workspace"},
+    def test_remote_reporter_success(self):
+        reporter = RemoteReporter(
+            "gcs",
+            {"bucket": "test-bucket", "path_prefix": "runs"},
             job_id="job_123",
             run_time="2026-08-18",
         )
 
-        def answer_artifact():
+        def answer_reporter():
             msg = self.out_queue.get(timeout=2.0)
             corr_id = msg.correlation_id
-            self.assertEqual(msg.WhichOneof("payload"), "artifact_request")
-            art_req = msg.artifact_request
-            self.assertEqual(art_req.target_gcs_bucket, "test-bucket")
+            self.assertEqual(msg.WhichOneof("payload"), "reporting_request")
+            rep_spec = msg.reporting_request.reporter
+            self.assertEqual(rep_spec.reporter_name, "gcs")
 
             reply = eval_agent_pb2.AgentStreamMessage(
                 session_id=self.session_id,
                 correlation_id=corr_id,
-                artifact_response=eval_agent_pb2.ArtifactResponse(
-                    gcs_uri="gs://test-bucket/runs/fake_home.zip",
-                    archive_size_bytes=2048,
-                    exported_files=["notes.txt"],
+                reporting_response=eval_agent_pb2.ReportingResponse(
+                    result=eval_agent_pb2.ReporterResult(
+                        reporter_name="gcs",
+                        success=True,
+                        result_json='{"uri": "gs://test-bucket/runs/archive.zip"}',
+                    )
                 ),
             )
             self.inboxes[corr_id].put(reply)
 
-        import threading
-        t = threading.Thread(target=answer_artifact)
+        t = threading.Thread(target=answer_reporter)
         t.start()
 
-        import pandas as pd
-        from reporting.report import STORETYPE
         df = pd.DataFrame({"eval_id": ["1"]})
         reporter.store(df, STORETYPE.EVALS)
         t.join()
+        self.assertTrue(reporter._reported)
 
 
 if __name__ == "__main__":

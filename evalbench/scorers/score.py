@@ -141,8 +141,8 @@ def get_scorer_instance(
     if not isinstance(scorer_config, dict):
         return []
 
-    # If marked remote, delegate across reverse bidi stream
-    if scorer_config.get("remote", False):
+    # If marked delegated or remote, proxy across reverse bidi stream
+    if scorer_config.get("delegated", False) or scorer_config.get("remote", False):
         return [RemoteScorerProxy(scorer_name, scorer_config)]
 
     # Direct match in global DEFAULT_SCORERS map
