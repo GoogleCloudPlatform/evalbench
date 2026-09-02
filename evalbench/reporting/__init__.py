@@ -12,7 +12,6 @@ DEFAULT_REPORTERS: dict[str, type[Reporter]] = {
     "csv": CsvReporter,
     "gcs": GcsReporter,
     "gcs_artifacts": GcsReporter,
-    "artifacts": GcsReporter,
 }
 
 
