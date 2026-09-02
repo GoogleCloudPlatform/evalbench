@@ -26,12 +26,16 @@ class MPRunner:
     The runner owns a `ThreadPoolExecutor`, whose worker threads have no idle
     timeout: once started they stay alive, blocked on the pool's internal work
     queue, until the pool is shut down or the interpreter exits. Callers must
-    therefore release the runner when they are done with it, either explicitly
-    via `shutdown()` or by using it as a context manager::
+    therefore release the runner when they are done with it. Exiting a `with`
+    block runs every submitted work item to completion and then releases the
+    threads::
 
         with MPRunner(10) as runner:
             runner.execute_work(work_obj)
             ...
+
+    A caller that must abandon work in progress, such as one that has already
+    timed a stage out, calls `shutdown()` directly instead.
 
     Runners that are created per sub-dataset and never released leak their
     worker threads for the remaining lifetime of the process.
@@ -69,6 +73,10 @@ class MPRunner:
         `RuntimeError`, so a caller that runs more than once needs a fresh
         runner per run.
 
+        Both defaults are the opposite of `Executor.shutdown`, which waits and
+        keeps queued work. They suit a caller that has already collected the
+        results it wants and now only needs the threads back.
+
         Args:
           wait: Whether to block until every running work item has finished.
             Defaults to False so a work item that has hung (and that the caller
@@ -84,4 +92,7 @@ class MPRunner:
         return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback) -> None:
-        self.shutdown()
+        # Matches `Executor.__exit__`: run everything that was submitted and
+        # block until it finishes. A caller that wants the abandoning
+        # behaviour asks for it by calling `shutdown()` directly.
+        self.shutdown(wait=True, cancel_futures=False)

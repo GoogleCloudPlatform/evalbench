@@ -47,13 +47,18 @@ class TestMPRunnerShutdown(unittest.TestCase):
             t.join(timeout=30)
         self.assertEqual(_live(worker_threads), 0)
 
-    def test_context_manager_shuts_down_on_exit(self):
+    def test_context_manager_drains_before_shutting_down(self):
+        """`with` runs queued work to completion, like Executor.__exit__."""
         threads = []
-        with mprunner.MPRunner(2) as runner:
-            for _ in range(2):
-                runner.execute_work(_RecordingWork(threads))
-            concurrent.futures.wait(runner.futures, timeout=30)
+        with mprunner.MPRunner(1) as runner:
+            # The second item cannot start until the first returns, so it is
+            # still queued when the block exits.
+            runner.execute_work(_RecordingWork(threads))
+            runner.execute_work(_RecordingWork(threads))
 
+        self.assertEqual(len(threads), 2)
+        self.assertTrue(all(f.done() and not f.cancelled()
+                            for f in runner.futures))
         for t in set(threads):
             t.join(timeout=30)
         self.assertEqual(_live(set(threads)), 0)
@@ -106,7 +111,9 @@ class TestMPRunnerShutdown(unittest.TestCase):
             self.assertTrue(runner.futures[1].cancelled())
         finally:
             release.set()
-        concurrent.futures.wait(runner.futures, timeout=30)
+        # Only the running item can finish. A cancelled future never reaches
+        # CANCELLED_AND_NOTIFIED, so waiting on it would burn the full timeout.
+        concurrent.futures.wait([runner.futures[0]], timeout=30)
         self.assertEqual(len(threads), 1)
 
     def test_shutdown_keeps_queued_work_when_cancel_disabled(self):
