@@ -1,0 +1,4 @@
+# Agentic Reverse Proxy Model Config
+# Connects EvalBench to remote/sandboxed agent environments via bidirectional gRPC streaming (AgentInteract).
+generator: agentic_reverse_proxy
+timeout_seconds: 120.0
