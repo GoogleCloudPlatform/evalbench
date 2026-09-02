@@ -1,29 +1,35 @@
-from .csv import CsvReporter
+from typing import Any
+
 from .bqstore import BigQueryReporter
-from .report import Reporter
+from .csv import CsvReporter
 from .gcs_artifact import GcsReporter
 from .remote_reporter import RemoteReporter
+from .report import Reporter
 
 
-def get_reporters(reporting_config, job_id, run_time) -> list[Reporter]:
+DEFAULT_REPORTERS: dict[str, type[Reporter]] = {
+    "bigquery": BigQueryReporter,
+    "csv": CsvReporter,
+    "gcs": GcsReporter,
+    "gcs_artifacts": GcsReporter,
+    "artifacts": GcsReporter,
+}
+
+
+def get_reporters(
+    reporting_config: dict[str, Any] | None,
+    job_id: str,
+    run_time: Any,
+) -> list[Reporter]:
+    """Resolves and instantiates reporter instances for a given run config."""
     reporters: list[Reporter] = []
-    if not reporting_config:
+    if not reporting_config or not isinstance(reporting_config, dict):
         return reporters
-    if "bigquery" in reporting_config:
-        reporters.append(
-            BigQueryReporter(reporting_config["bigquery"], job_id, run_time)
-        )
-    if "csv" in reporting_config:
-        reporters.append(CsvReporter(
-            reporting_config["csv"], job_id, run_time))
 
-    # Check for any delegated reporters
     for key, cfg in reporting_config.items():
-        if key in ("bigquery", "csv"):
-            continue
         if isinstance(cfg, dict) and cfg.get("delegated", False):
             reporters.append(RemoteReporter(key, cfg, job_id, run_time))
-        elif key in ("gcs", "gcs_artifacts", "artifacts"):
-            reporters.append(GcsReporter(cfg, job_id, run_time))
+        elif key in DEFAULT_REPORTERS:
+            reporters.append(DEFAULT_REPORTERS[key](cfg, job_id, run_time))
 
     return reporters
