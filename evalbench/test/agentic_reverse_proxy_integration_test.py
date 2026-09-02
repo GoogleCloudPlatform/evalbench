@@ -26,6 +26,7 @@ from evalproto import (
     eval_request_pb2,
     eval_service_pb2_grpc,
 )
+from util import get_SessionManager
 
 
 class TestAgenticReverseProxyIntegration(unittest.IsolatedAsyncioTestCase):
@@ -179,6 +180,9 @@ class TestAgenticReverseProxyIntegration(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.channel.close()
         await self.server.stop(grace=0)
+        session_mgr = get_SessionManager()
+        for sid in list(session_mgr.get_sessions().keys()):
+            session_mgr.delete_session(sid)
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     async def _run_client_session(self, session_id: str, run_config: dict, skill_name: str = "dataform_best_practices"):
