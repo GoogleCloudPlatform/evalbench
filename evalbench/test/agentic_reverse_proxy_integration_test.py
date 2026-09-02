@@ -308,7 +308,7 @@ class TestAgenticReverseProxyIntegration(unittest.IsolatedAsyncioTestCase):
 
         finally:
             await send_queue.put(None)
-            await sender_task
+            await asyncio.gather(sender_task)
 
         return summary_payload
 
@@ -454,7 +454,7 @@ class TestAgenticReverseProxyIntegration(unittest.IsolatedAsyncioTestCase):
 
         finally:
             await send_queue.put(None)
-            await sender_task
+            await asyncio.gather(sender_task)
 
         self.assertIsNotNone(summary_payload)
         self.assertEqual(summary_payload["total"], 3)
