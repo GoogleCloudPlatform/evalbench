@@ -2,12 +2,19 @@ import asyncio
 import json
 import os
 import shutil
+import sys
 import tempfile
 import unittest
 import uuid
 
 import grpc
 import yaml
+
+_PROTO_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "evalproto"
+)
+if _PROTO_DIR not in sys.path:
+    sys.path.insert(0, _PROTO_DIR)
 
 from eval_service import EvalServicer, SessionManagerInterceptor
 from evalproto import (

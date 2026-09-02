@@ -23,8 +23,14 @@ import reporting.analyzer as analyzer
 from util.config import update_google3_relative_paths, set_session_configs, config_to_df
 from util import get_SessionManager
 from util.scriptrunner import run_script
+import sys
 from util.sessionmgr import SESSION_RESOURCES_PATH
 from dataset.dataset import load_dataset_from_json
+
+_PROTO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "evalproto")
+if _PROTO_DIR not in sys.path:
+    sys.path.insert(0, _PROTO_DIR)
+
 from evalproto import (
     eval_request_pb2,
     eval_response_pb2,
