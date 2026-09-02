@@ -10,6 +10,8 @@ import uuid
 import grpc
 import yaml
 
+# protoc generates flat imports in eval_service_pb2_grpc (e.g. import
+# eval_agent_pb2). Ensure evalproto is in sys.path so stubs resolve cleanly.
 _PROTO_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "evalproto"
 )

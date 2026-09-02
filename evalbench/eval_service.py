@@ -27,6 +27,8 @@ import sys
 from util.sessionmgr import SESSION_RESOURCES_PATH
 from dataset.dataset import load_dataset_from_json
 
+# protoc generates flat imports in eval_service_pb2_grpc (e.g. import
+# eval_agent_pb2). Ensure evalproto is in sys.path so stubs resolve cleanly.
 _PROTO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "evalproto")
 if _PROTO_DIR not in sys.path:
     sys.path.insert(0, _PROTO_DIR)
