@@ -4,12 +4,14 @@ import concurrent.futures
 import logging
 import os
 import shutil
+import time
 import threading
 
 from dataset.evalgeminicliinput import EvalGeminiCliRequest
 from generators.models import get_generator
 from generators.models.agent_cli import AgentCliGenerator
 from mp import mprunner
+from util.config import get_eval_case_timeout
 from work.agentgenwork import AgentGenWork
 from evaluator.simulateduser import SimulatedUser
 from work.agentscorework import AgentScoreWork
@@ -24,6 +26,7 @@ class AgentEvaluator:
         config,
     ):
         self.config = config
+        self.eval_case_timeout_seconds = get_eval_case_timeout(config)
 
         model_config_path = config.get("model_config")
         if not isinstance(model_config_path, str):
@@ -142,7 +145,46 @@ class AgentEvaluator:
                     )
 
         session_id = None
+
+        # Dynamically calculate the effective timeout, taking into account
+        # both the scenario timeout and the global timeout.
+        start_time = time.monotonic()
+        scenario_timeout = get_eval_case_timeout(scenario)
+        effective_case_timeout_seconds = (
+            scenario_timeout
+            if scenario_timeout is not None
+            else self.eval_case_timeout_seconds
+        )
+        last_result = None
+
         for turn in range(max_turns):
+            remaining_timeout_seconds = None
+            if effective_case_timeout_seconds is not None:
+                elapsed_seconds = time.monotonic() - start_time
+                remaining_timeout_seconds = effective_case_timeout_seconds - elapsed_seconds
+                if remaining_timeout_seconds <= 0:
+                    logging.warning(
+                        f"Eval case timeout ({effective_case_timeout_seconds}s) reached before turn {turn + 1}."
+                    )
+                    timeout_msg = f"TimeoutError: Scenario timed out after {effective_case_timeout_seconds}s before turn {turn + 1}"
+                    if last_result is None:
+                        last_result = subprocess.CompletedProcess(
+                            args=[self.agent_version],
+                            returncode=124,
+                            stdout="",
+                            stderr=timeout_msg,
+                        )
+                    else:
+                        current_stderr = getattr(last_result, "stderr", "") or ""
+                        new_stderr = f"{current_stderr}\n{timeout_msg}".strip()
+                        last_result = subprocess.CompletedProcess(
+                            args=getattr(last_result, "args", [self.agent_version]),
+                            returncode=124,
+                            stdout=getattr(last_result, "stdout", "") or "",
+                            stderr=new_stderr,
+                        )
+                    break
+
             logging.info(
                 f"Turn {turn + 1}/{max_turns} - Prompt: {current_prompt}")
             if isinstance(self.generator, AgentCliGenerator):
@@ -155,7 +197,9 @@ class AgentEvaluator:
                     cwd=resolved_work_dir,
                 )
                 try:
-                    result = self.generator.safe_generate(cli_cmd)
+                    result = self.generator.safe_generate(
+                        cli_cmd, timeout_seconds=remaining_timeout_seconds
+                    )
                     if result.stdout:
                         parsed = self.generator.parse_response(result.stdout)
                         if parsed.get("session_id"):
@@ -205,17 +249,21 @@ class AgentEvaluator:
                 else:
                     break
 
-        if last_result:
-            self._finalize_scenario(
-                scenario,
-                last_result,
-                conversation_history,
-                accumulated_tools,
-                accumulated_skills,
-                eval_result,
-                job_id,
-                metadata
+        if last_result is None:
+            last_result = subprocess.CompletedProcess(
+                args=[self.agent_version], returncode=0, stdout="", stderr=""
             )
+
+        self._finalize_scenario(
+            scenario,
+            last_result,
+            conversation_history,
+            accumulated_tools,
+            accumulated_skills,
+            eval_result,
+            job_id,
+            metadata
+        )
 
     def _log_cli_result(self, turn: int, max_turns: int, result: subprocess.CompletedProcess):
         generator_name = self.generator.name
@@ -238,12 +286,18 @@ class AgentEvaluator:
         metadata: Dict[str, Any]
     ):
         """Finalizes the scenario by scoring and appending results."""
+        timed_out = (
+            getattr(last_result, "returncode", 0) == 124
+            or "TimeoutError" in (getattr(last_result, "stderr", "") or "")
+        )
+
         # Prepare intermediate eval_output with all necessary data for scoring
         eval_output_data = {
             "eval_id": scenario["id"],
-            "stdout": last_result.stdout,
-            "stderr": last_result.stderr,
-            "returncode": last_result.returncode,
+            "stdout": getattr(last_result, "stdout", "") or "",
+            "stderr": getattr(last_result, "stderr", "") or "",
+            "returncode": getattr(last_result, "returncode", 0),
+            "timed_out": timed_out,
             "prompt_generator_error": None,
             "generated_error": None,
             "sql_generator_error": None,

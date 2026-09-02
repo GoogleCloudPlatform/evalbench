@@ -3,6 +3,7 @@ import logging
 import mesop as me
 import pandas as pd
 from main import State
+from run_index import list_run_directories
 
 def get_results_dir():
     # Try to read from environment variable
@@ -103,12 +104,8 @@ def trends_component():
             
     # Fallback to computing on the fly if cache is missing or failed
     if df is None:
-        directories = [
-            d
-            for d in os.listdir(results_dir)
-            if os.path.isdir(os.path.join(results_dir, d))
-        ]
-        
+        directories = list_run_directories(results_dir)
+
         data = []
         
         for d in directories:

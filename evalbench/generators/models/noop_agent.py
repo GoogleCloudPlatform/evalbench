@@ -9,6 +9,8 @@ all the work lives in the scorer.
 
 import subprocess
 
+from typing import Optional
+
 from .agent_cli import AgentCliGenerator
 
 
@@ -31,7 +33,9 @@ class NoopAgentGenerator(AgentCliGenerator):
     ):
         return []
 
-    def safe_generate(self, cli_cmd):
+    def safe_generate(
+        self, cli_cmd, timeout_seconds: Optional[float] = None
+    ) -> subprocess.CompletedProcess:
         return subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )

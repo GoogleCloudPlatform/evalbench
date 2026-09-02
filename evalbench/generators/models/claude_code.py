@@ -8,6 +8,9 @@ import shlex
 import sys
 import re
 import shutil
+import time
+from typing import Optional, Union, Dict, List
+import uuid
 from util.context import rpc_id_var
 
 
@@ -597,21 +600,31 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         else:
             logging.info(f"Successfully installed plugin '{plugin_id}'")
 
-    def generate_internal(self, cli_cmd):
+    def generate_internal(self, cli_cmd, timeout_seconds=None):
         if not isinstance(cli_cmd, CLICommand):
             cli_cmd = CLICommand(self.claude_code_version, str(cli_cmd))
-        return self._run_claude_code(cli_cmd)
+        return self._run_claude_code(cli_cmd, timeout_seconds=timeout_seconds)
 
     def _execute_cli_command(
         self, command: list[str], env: dict[str, str] | None = None,
-        cwd: str | None = None,
+        cwd: str | None = None, timeout_seconds: float | int | None = None,
     ) -> subprocess.CompletedProcess:
         try:
             result = subprocess.run(
                 command, capture_output=True, text=True, check=False, env=env,
-                cwd=cwd if cwd else self.fake_home, stdin=subprocess.DEVNULL
+                cwd=cwd if cwd else self.fake_home, stdin=subprocess.DEVNULL,
+                timeout=timeout_seconds,
             )
             return result
+        except subprocess.TimeoutExpired as e:
+            stdout_str = e.stdout if isinstance(e.stdout, str) else (e.stdout.decode() if e.stdout else "")
+            stderr_str = f"TimeoutError: Command timed out after {timeout_seconds} seconds"
+            if e.stderr:
+                err_text = e.stderr if isinstance(e.stderr, str) else e.stderr.decode()
+                stderr_str = f"{stderr_str}\n{err_text}"
+            return subprocess.CompletedProcess(
+                command, 124, stdout_str, stderr_str
+            )
         except FileNotFoundError:
             return subprocess.CompletedProcess(
                 command, 127, "", f"Error: Command not found: {command[0]}"
@@ -621,10 +634,32 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                 command, 1, "", f"An unexpected error occurred: {e}"
             )
 
-    def _run_claude_code(self, cli_cmd: CLICommand):
+    @staticmethod
+    def _session_id_headers() -> str:
+        """Builds a dynamic per-run ``ANTHROPIC_CUSTOM_HEADERS`` value carrying a unique session id.
+
+        A short uuid suffix is appended to the epoch seconds so concurrent runs
+        landing in the same second still get distinct session ids.
+        """
+        session_id = f"sess-{int(time.time())}-{uuid.uuid4().hex[:8]}"
+        return f"X-Vertex-Ai-Session-Id: {session_id}"
+
+    def _run_claude_code(self, cli_cmd: CLICommand, timeout_seconds=None):
         env = os.environ.copy()
         env.update(self.env)
         env.update(cli_cmd.env)
+
+        # Attach a fresh session-id header per run. If one is already set (from
+        # the inherited process env or model config), warn and override so every
+        # run gets a distinct, non-stale session id.
+        session_headers = self._session_id_headers()
+        existing = env.get("ANTHROPIC_CUSTOM_HEADERS")
+        if existing:
+            logging.warning(
+                "Overriding existing ANTHROPIC_CUSTOM_HEADERS "
+                f"({existing!r}) with per-run session header {session_headers!r}."
+            )
+        env["ANTHROPIC_CUSTOM_HEADERS"] = session_headers
 
         # If the version looks like an npm package spec (contains "/" or starts
         # with "@"), use `npm exec` to pin that version (like Gemini CLI does).
@@ -673,7 +708,7 @@ class ClaudeCodeGenerator(AgentCliGenerator):
 
         logging.info(f"Running Claude Code CLI: {' '.join(command)}")
 
-        result = self._execute_cli_command(command, env=env, cwd=cli_cmd.cwd)
+        result = self._execute_cli_command(command, env=env, cwd=cli_cmd.cwd, timeout_seconds=timeout_seconds)
         if result.stdout:
             result.stdout = self._parse_stream_json(result.stdout)
 
@@ -1054,8 +1089,10 @@ class ClaudeCodeGenerator(AgentCliGenerator):
             return []
         return self._extract_script_names(by_name)
 
-    def safe_generate(self, cli_cmd: CLICommand) -> subprocess.CompletedProcess:
-        result = self.generate_internal(cli_cmd)
+    def safe_generate(
+        self, cli_cmd: CLICommand, timeout_seconds: Optional[float] = None
+    ) -> subprocess.CompletedProcess:
+        result = self.generate_internal(cli_cmd, timeout_seconds=timeout_seconds)
         if isinstance(result, str):
             return subprocess.CompletedProcess(args=[], returncode=0, stdout=result)
 

@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.16.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.15.0...v1.16.0) (2026-09-01)
+
+
+### Features
+
+* Add support for eval case level timeouts ([7d11688](https://github.com/GoogleCloudPlatform/evalbench/commit/7d11688c8bfa49e98e62e096a1d7ad73b6157bc0))
+* Add support for eval case level timeouts ([d04e130](https://github.com/GoogleCloudPlatform/evalbench/commit/d04e130b4815daa1de354d21ee1cbbd61abe5664))
+* **analytics-scorer:** add AnalyticsScorer implementation and update… ([#578](https://github.com/GoogleCloudPlatform/evalbench/issues/578)) ([249191c](https://github.com/GoogleCloudPlatform/evalbench/commit/249191cf542a45c554bd4492f8fe0a2d931e16a1))
+* **dataset-quality:** count skills in trajectory coverage ([#568](https://github.com/GoogleCloudPlatform/evalbench/issues/568)) ([2768d7c](https://github.com/GoogleCloudPlatform/evalbench/commit/2768d7c41f3d7634ada08b56d218a7bc88c26e89))
+* **evalbench:** add native Agent Runtime generator support and deployment guide ([f022fea](https://github.com/GoogleCloudPlatform/evalbench/commit/f022fea5a930d3c8f5d7592e612e25e296d5cfe1))
+* normalize namespaced skill names in SkillsTrajectoryMatcher ([1480f53](https://github.com/GoogleCloudPlatform/evalbench/commit/1480f5334a6f84b654927c5a2d5d9673bc552655))
+* normalize namespaced skill names in SkillsTrajectoryMatcher ([1e4d549](https://github.com/GoogleCloudPlatform/evalbench/commit/1e4d549f673e02c7468b033c4bc7d08203967d88))
+* **query_data_api:** capture pipeline_debug_info in eval reports via REST ([7135ce0](https://github.com/GoogleCloudPlatform/evalbench/commit/7135ce09d1e5053b11a2f80f9d228737c69768c8))
+* **query_data_api:** capture pipeline_debug_info in eval reports via REST ([beeae53](https://github.com/GoogleCloudPlatform/evalbench/commit/beeae53c2dee653e65fc7788b3b3faf4abe4146d))
+* **scorers:** pass config dictionary and runtime kwargs to pythonscorer script input ([ba0136e](https://github.com/GoogleCloudPlatform/evalbench/commit/ba0136ea24bf21d8e916b4f809e6bd1872964635))
+* support generated and default columns in Spanner database driver ([cc70805](https://github.com/GoogleCloudPlatform/evalbench/commit/cc708051392d0c803681a0861e0f28f44ca19ff9))
+
+
+### Bug Fixes
+
+* **agy:** register work_dir as an agy workspace via --add-dir ([#585](https://github.com/GoogleCloudPlatform/evalbench/issues/585)) ([ac855ee](https://github.com/GoogleCloudPlatform/evalbench/commit/ac855ee327fc29f4647b08d80e492120a83d0f25))
+* attache session id header so to address unstable caching ([9fe2010](https://github.com/GoogleCloudPlatform/evalbench/commit/9fe20102e794e66498eac41fc18632411f5f6bff))
+* attache session id header so to address unstable caching ([827e004](https://github.com/GoogleCloudPlatform/evalbench/commit/827e004c4d2112670faa9db668c54972232db30b))
+* **examples:** fix Jupyter Notebook JSON schema validation errors and update title ([5e6d03d](https://github.com/GoogleCloudPlatform/evalbench/commit/5e6d03d49762c21d5fa6e200f4b0c2afc7ac68ed))
+* **examples:** update notebook title and repair schema validation errors ([0f962c1](https://github.com/GoogleCloudPlatform/evalbench/commit/0f962c1ba35a32767f101ccf1f64a8bb8b575f93))
+* **mcp:** trust configured MCP server URL directly and unwrap taskgroup errors ([#583](https://github.com/GoogleCloudPlatform/evalbench/issues/583)) ([f38b38a](https://github.com/GoogleCloudPlatform/evalbench/commit/f38b38a385181930a860a0c441c121bc301f8898))
+* Replace Spanner column slicing with explicit synthetic column exclusion ([abe01c9](https://github.com/GoogleCloudPlatform/evalbench/commit/abe01c9d25187550eeef77e15c118e6c934137b5))
+
 ## [1.15.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.14.0...v1.15.0) (2026-08-11)
 
 
