@@ -10,7 +10,6 @@ from .report import Reporter
 DEFAULT_REPORTERS: dict[str, type[Reporter]] = {
     "bigquery": BigQueryReporter,
     "csv": CsvReporter,
-    "gcs": GcsReporter,
     "gcs_artifacts": GcsReporter,
 }
 

@@ -120,7 +120,7 @@ class TestAgenticReverseProxy(unittest.TestCase):
 
     def test_remote_reporter_success(self):
         reporter = RemoteReporter(
-            "gcs",
+            "gcs_artifacts",
             {"bucket": "test-bucket", "path_prefix": "runs"},
             job_id="job_123",
             run_time="2026-08-18",
@@ -131,14 +131,14 @@ class TestAgenticReverseProxy(unittest.TestCase):
             corr_id = msg.correlation_id
             self.assertEqual(msg.WhichOneof("payload"), "reporting_request")
             rep_spec = msg.reporting_request.reporter
-            self.assertEqual(rep_spec.reporter_name, "gcs")
+            self.assertEqual(rep_spec.reporter_name, "gcs_artifacts")
 
             reply = eval_agent_pb2.AgentStreamMessage(
                 session_id=self.session_id,
                 correlation_id=corr_id,
                 reporting_response=eval_agent_pb2.ReportingResponse(
                     result=eval_agent_pb2.ReporterResult(
-                        reporter_name="gcs",
+                        reporter_name="gcs_artifacts",
                         success=True,
                         result_json='{"uri": "gs://test-bucket/runs/archive.zip"}',
                     )
