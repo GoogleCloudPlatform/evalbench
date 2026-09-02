@@ -48,10 +48,9 @@ class TestAgenticReverseProxy(unittest.TestCase):
             turn_resp = eval_agent_pb2.TurnResponse(
                 turn_index=1,
                 response_text="Found files",
-                stdout="done",
-                exit_code=0,
                 tool_calls=[t1],
                 token_stats={"input_tokens": 100},
+                success=True,
                 execution_completed=True,
             )
             reply = eval_agent_pb2.AgentStreamMessage(

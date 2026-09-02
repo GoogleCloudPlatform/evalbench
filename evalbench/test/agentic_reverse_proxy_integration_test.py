@@ -241,10 +241,9 @@ class TestAgenticReverseProxyIntegration(unittest.IsolatedAsyncioTestCase):
                         turn_resp = eval_agent_pb2.TurnResponse(
                             turn_index=1,
                             response_text="Found pipeline files, preparing to compile.",
-                            stdout="Found definitions",
-                            exit_code=0,
                             tool_calls=[t1, t2],
                             token_stats={"input_tokens": 100, "output_tokens": 50},
+                            success=True,
                             execution_completed=False,
                         )
                     else:
@@ -259,10 +258,9 @@ class TestAgenticReverseProxyIntegration(unittest.IsolatedAsyncioTestCase):
                         turn_resp = eval_agent_pb2.TurnResponse(
                             turn_index=2,
                             response_text="Dataform compiled successfully.",
-                            stdout="1 action compiled",
-                            exit_code=0,
                             tool_calls=[t3],
                             token_stats={"input_tokens": 150, "output_tokens": 80},
+                            success=True,
                             execution_completed=True,
                         )
 
@@ -404,10 +402,9 @@ class TestAgenticReverseProxyIntegration(unittest.IsolatedAsyncioTestCase):
                     turn_resp = eval_agent_pb2.TurnResponse(
                         turn_index=1,
                         response_text=f"Completed {srv} action.",
-                        stdout=f"{srv} ok",
-                        exit_code=0,
                         tool_calls=[t_skill, t_mcp],
                         token_stats={"input_tokens": 120, "output_tokens": 60},
+                        success=True,
                         execution_completed=True,
                     )
                     reply = eval_agent_pb2.AgentStreamMessage(

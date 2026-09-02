@@ -200,12 +200,14 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
                 tools_by_name[tname] = {"parameters": []}
             tools_by_name[tname]["parameters"].append(params_raw)
 
+        exit_code = 0 if turn_resp.success else 1
         envelope = {
             "session_id": session_id,
             "response": turn_resp.response_text,
-            "stdout": turn_resp.stdout,
-            "stderr": turn_resp.stderr,
-            "exit_code": turn_resp.exit_code,
+            "stdout": turn_resp.response_text,
+            "stderr": turn_resp.error_message,
+            "exit_code": exit_code,
+            "execution_completed": turn_resp.execution_completed,
             "tool_calls": tool_calls_list,
             "stats": {
                 "tools": {
@@ -219,9 +221,9 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
         raw_stdout = json.dumps(envelope, indent=2)
         return subprocess.CompletedProcess(
             args=["agentic_reverse_proxy"],
-            returncode=turn_resp.exit_code,
+            returncode=exit_code,
             stdout=raw_stdout,
-            stderr=turn_resp.stderr,
+            stderr=turn_resp.error_message,
         )
 
     def parse_response(self, stdout: str) -> dict:

@@ -47,13 +47,11 @@ message ToolCallRecord {
 message TurnResponse {
   int32 turn_index = 1;
   string response_text = 2;
-  string stdout = 3;
-  string stderr = 4;
-  int32 exit_code = 5;
-  repeated ToolCallRecord tool_calls = 6;
-  map<string, int64> token_stats = 7;
-  bool execution_completed = 8;
-  string error_message = 9;
+  repeated ToolCallRecord tool_calls = 3;
+  map<string, int64> token_stats = 4;
+  bool success = 5;
+  bool execution_completed = 6;
+  string error_message = 7;
 }
 
 // --- 2. In-Flight Scoring Messages ---
