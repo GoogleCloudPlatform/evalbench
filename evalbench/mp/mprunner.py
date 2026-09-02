@@ -23,10 +23,23 @@ def do_work(work_obj: work.Work, item_config: Any = None) -> Any:
 class MPRunner:
     """Multi-processing class that implements threadpool execution of work.
 
+    The runner owns a `ThreadPoolExecutor`, whose worker threads have no idle
+    timeout: once started they stay alive, blocked on the pool's internal work
+    queue, until the pool is shut down or the interpreter exits. Callers must
+    therefore release the runner when they are done with it, either explicitly
+    via `shutdown()` or by using it as a context manager::
+
+        with MPRunner(10) as runner:
+            runner.execute_work(work_obj)
+            ...
+
+    Runners that are created per sub-dataset and never released leak their
+    worker threads for the remaining lifetime of the process.
+
     Attributes:
 
-      executor:
-      futures:
+      executor: The thread pool backing this runner.
+      futures: The futures of every work item submitted so far.
     """
 
     def __init__(self, concurrent_tests: int = 10) -> None:
@@ -46,3 +59,29 @@ class MPRunner:
         """
         ctx = contextvars.copy_context()
         self.futures.append(self.executor.submit(ctx.run, do_work, work_obj))
+
+    def shutdown(self, wait: bool = False, cancel_futures: bool = True) -> None:
+        """Release the pool's worker threads.
+
+        Idle workers exit as soon as they pick up the shutdown sentinel. A
+        worker that is still executing a work item exits once that item
+        returns. The runner is spent afterwards: `execute_work` raises
+        `RuntimeError`, so a caller that runs more than once needs a fresh
+        runner per run.
+
+        Args:
+          wait: Whether to block until every running work item has finished.
+            Defaults to False so a work item that has hung (and that the caller
+            has already abandoned, e.g. after a stage timeout) cannot stall the
+            rest of the evaluation.
+          cancel_futures: Whether to cancel work items that are queued but have
+            not started running. Defaults to True, since the caller is done
+            with this runner and any remaining queued work is dead work.
+        """
+        self.executor.shutdown(wait=wait, cancel_futures=cancel_futures)
+
+    def __enter__(self) -> "MPRunner":
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_traceback) -> None:
+        self.shutdown()
