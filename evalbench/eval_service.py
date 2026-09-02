@@ -460,7 +460,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         request_iterator: AsyncIterator[eval_agent_pb2.AgentStreamMessage],
         context: grpc.ServicerContext,
     ) -> AsyncGenerator[eval_agent_pb2.AgentStreamMessage, None]:
-        """Bidirectional stream linking Google3 Autonomous Agents to Evalbench AgentEvaluator."""
+        """Bidirectional stream linking remote autonomous agents to Evalbench AgentEvaluator."""
         session_id = rpc_id_var.get()
         session = SESSIONMANAGER.get_session(session_id)
         config, db_configs, model_config, setup_config = load_session_configs(session)
