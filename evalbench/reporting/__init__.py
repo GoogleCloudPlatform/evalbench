@@ -17,11 +17,11 @@ def get_reporters(reporting_config, job_id, run_time) -> list[Reporter]:
         reporters.append(CsvReporter(
             reporting_config["csv"], job_id, run_time))
 
-    # Check for any delegated or remote reporters
+    # Check for any delegated reporters
     for key, cfg in reporting_config.items():
         if key in ("bigquery", "csv"):
             continue
-        if isinstance(cfg, dict) and (cfg.get("delegated", False) or cfg.get("remote", False)):
+        if isinstance(cfg, dict) and cfg.get("delegated", False):
             reporters.append(RemoteReporter(key, cfg, job_id, run_time))
         elif key in ("gcs", "gcs_artifacts", "artifacts"):
             reporters.append(GcsReporter(cfg, job_id, run_time))
