@@ -71,7 +71,11 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
             cwd=cwd,
         )
 
-    def safe_generate(self, cli_cmd: CLICommand | dict | str) -> subprocess.CompletedProcess:
+    def safe_generate(
+        self,
+        cli_cmd: CLICommand | dict | str,
+        timeout_seconds: float | None = None,
+    ) -> subprocess.CompletedProcess:
         if isinstance(cli_cmd, CLICommand):
             prompt = cli_cmd.prompt
             session_id = cli_cmd.session_id or rpc_id_var.get()
@@ -90,6 +94,8 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
             resume = False
             env = {}
             cwd = None
+
+        effective_timeout = timeout_seconds if timeout_seconds is not None else self.timeout_seconds
 
         if session_id not in AGENT_PROXY_QUEUES:
             ctx_id = rpc_id_var.get()
@@ -118,7 +124,7 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
             prompt=prompt,
             env={k: str(v) for k, v in env.items()} if env else {},
             working_dir=cwd or "/workspace",
-            timeout_seconds=self.timeout_seconds,
+            timeout_seconds=effective_timeout,
             resume=resume,
         )
 
@@ -132,7 +138,7 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
         out_queue.put(msg)
 
         try:
-            resp_msg = inbox.get(timeout=self.timeout_seconds)
+            resp_msg = inbox.get(timeout=effective_timeout)
         except queue.Empty:
             logger.error("[REVERSE_PROXY] Timed out waiting for TurnResponse (correlation_id=%s)", correlation_id)
             return subprocess.CompletedProcess(
