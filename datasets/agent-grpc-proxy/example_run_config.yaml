@@ -39,24 +39,25 @@ scorers:
   effective_billed_tokens: {}
 
   # Delegated In-Sandbox Scorers
-  # (Dispatched across reverse gRPC stream to execute inside the agent sandbox)
-  dbt_compile:
-    delegated: true                   # <--- Delegated In-Sandbox Scorer
-    timeout_seconds: 60.0
-  dbt_run:
-    delegated: true                   # <--- Delegated In-Sandbox Scorer
-    timeout_seconds: 120.0
+  # (Dispatched across reverse gRPC stream to execute inside the agent sandbox,
+  # e.g. compilation checks, dbt/dataform runs, or custom script evaluations)
+  # dbt_compile:
+  #   delegated: true                   # <--- Delegated In-Sandbox Scorer
+  #   timeout_seconds: 60.0
+  # dbt_run:
+  #   delegated: true                   # <--- Delegated In-Sandbox Scorer
+  #   timeout_seconds: 120.0
 
 ############################################################
 ### Reporting Related Configs
 ############################################################
 reporting:
-  # Local Telemetry & Results
+  # Local Telemetry & Results (evaluated and written locally by Evalbench)
   csv:
     output_directory: "results"
 
   # Delegated Sandbox Workspace / Artifact Archive
-  # (Dispatched across reverse gRPC stream to export artifacts from the worker)
+  # (Dispatched across reverse gRPC stream to export artifacts from the remote worker)
   gcs_artifacts:
     delegated: true                   # <--- Delegated Artifact Reporter
     bucket: "sobi_eval_share"
