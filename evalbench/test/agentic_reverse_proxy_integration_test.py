@@ -253,8 +253,8 @@ class TestAgenticReverseProxyIntegration(unittest.IsolatedAsyncioTestCase):
                     else:
                         t3 = eval_agent_pb2.ToolCallRecord(
                             tool_id=f"call_{uuid.uuid4().hex[:6]}",
-                            tool_name="call_mcp_tool",
-                            parameters_json=json.dumps({"ServerName": "dataform", "ToolName": "compile"}),
+                            tool_name="dataform__compile",
+                            parameters_json=json.dumps({"action": "compile"}),
                             output="Compiled 1 action successfully",
                             status="success",
                             duration_ms=200,
@@ -397,8 +397,8 @@ class TestAgenticReverseProxyIntegration(unittest.IsolatedAsyncioTestCase):
                     )
                     t_mcp = eval_agent_pb2.ToolCallRecord(
                         tool_id=f"call_{uuid.uuid4().hex[:6]}",
-                        tool_name="call_mcp_tool",
-                        parameters_json=json.dumps({"ServerName": srv, "ToolName": tool}),
+                        tool_name=f"{srv}__{tool}",
+                        parameters_json=json.dumps({"action": tool}),
                         output=f"Executed {srv}__{tool}",
                         status="success",
                         duration_ms=100,

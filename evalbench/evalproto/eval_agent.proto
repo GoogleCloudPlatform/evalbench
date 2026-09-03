@@ -39,6 +39,10 @@ message TurnRequest {
 
 message ToolCallRecord {
   string tool_id = 1;
+  // Name of the tool executed. For Model Context Protocol (MCP) tools, the
+  // expected format is "<server_name>__<tool_name>" (double underscore)
+  // to align with Evalbench trajectory matching. Native/built-in tools
+  // use their bare name (e.g. "run_command", "read_file").
   string tool_name = 2;
   string parameters_json = 3;
   string output = 4;

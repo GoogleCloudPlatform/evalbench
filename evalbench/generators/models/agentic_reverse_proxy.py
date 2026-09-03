@@ -9,11 +9,6 @@ from evalproto import eval_agent_pb2
 from util.context import rpc_id_var
 
 from .agent_cli import AgentCliGenerator
-from .tool_naming import (
-    canonicalize_agy_tool_name,
-    canonicalize_claude_tool_name,
-    canonicalize_gemini_tool_name,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -112,32 +107,10 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
         tool_calls_list = []
         tools_by_name = {}
         for tc in turn_resp.tool_calls:
-            raw_name = tc.tool_name
-            params_raw = tc.parameters_json
-            params_dict = {}
-            if params_raw:
-                try:
-                    params_dict = (
-                        json.loads(params_raw)
-                        if isinstance(params_raw, str)
-                        else params_raw
-                    )
-                except Exception:
-                    params_dict = {}
-
-            # Canonicalize tool name to <server>__<tool> if needed
-            if raw_name == "call_mcp_tool" and isinstance(params_dict, dict):
-                tname = canonicalize_agy_tool_name(raw_name, params_dict)
-            elif raw_name.startswith("mcp__"):
-                tname = canonicalize_claude_tool_name(raw_name)
-            elif raw_name.startswith("mcp_") and "_" in raw_name[4:]:
-                tname = canonicalize_gemini_tool_name(raw_name)
-            else:
-                tname = raw_name
-
+            tname = tc.tool_name
             t_entry = {
                 "tool_name": tname,
-                "parameters": params_raw,
+                "parameters": tc.parameters_json,
                 "output": tc.output,
                 "status": tc.status,
                 "duration_ms": tc.duration_ms,
@@ -145,7 +118,7 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
             tool_calls_list.append(t_entry)
             if tname not in tools_by_name:
                 tools_by_name[tname] = {"parameters": []}
-            tools_by_name[tname]["parameters"].append(params_raw)
+            tools_by_name[tname]["parameters"].append(tc.parameters_json)
 
         exit_code = 0 if turn_resp.success else 1
         envelope = {
