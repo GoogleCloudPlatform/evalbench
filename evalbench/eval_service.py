@@ -468,17 +468,47 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         request_iterator: AsyncIterator[eval_agent_pb2.AgentStreamMessage],
         context: grpc.ServicerContext,
     ) -> AsyncGenerator[eval_agent_pb2.AgentStreamMessage, None]:
-        """Bidirectional stream linking remote autonomous agents to Evalbench AgentEvaluator."""
+        """Bidirectional stream linking remote autonomous agents to Evalbench
+        AgentEvaluator.
+        """
         session_id = rpc_id_var.get()
         session = SESSIONMANAGER.get_session(session_id)
-        config, db_configs, model_config, setup_config = load_session_configs(session)
+        config, db_configs, model_config, setup_config = load_session_configs(
+            session
+        )
 
         if config is None:
             context.set_code(grpc.StatusCode.FAILED_PRECONDITION)
             context.set_details("Session not configured")
             return
 
-        logging.info("Starting an AgentInteract bidirectional stream for session %s...", session_id)
+        is_bidirectional = (
+            session.get("bidirectional_stream", False) if session else False
+        )
+        if not is_bidirectional:
+            error_msg = (
+                "AgentInteract must be used with bidirectional streaming"
+            )
+            logging.error(error_msg)
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details(error_msg)
+            return
+
+        generator = (model_config or {}).get("generator")
+        if generator != "agent_grpc_proxy":
+            error_msg = (
+                "AgentInteract stream failed: run config must use "
+                f"'agent_grpc_proxy' generator (received '{generator}')"
+            )
+            logging.error(error_msg)
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details(error_msg)
+            return
+
+        logging.info(
+            "Starting an AgentInteract bidirectional stream for session %s...",
+            session_id,
+        )
         config["session_id"] = session_id
 
         inboxes: dict[str, queue.Queue] = {}  # correlation_id -> queue.Queue
@@ -500,7 +530,9 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         if num_evals and int(num_evals) > 0:
             dataset = dataset[:int(num_evals)]
 
-        orchestrator = get_orchestrator(config, db_configs, setup_config, report_progress=True)
+        orchestrator = get_orchestrator(
+            config, db_configs, setup_config, report_progress=True
+        )
         loop = asyncio.get_event_loop()
         ctx = contextvars.copy_context()
 
@@ -508,14 +540,27 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             def _cleanup_on_drop(ctx):
                 if session_id in AGENT_GRPC_PROXY_QUEUES:
                     AGENT_GRPC_PROXY_QUEUES.pop(session_id, None)
-                    logging.info(f"Cleaned up agent proxy queues for session {session_id}")
+                    logging.info(
+                        "Cleaned up agent proxy queues for session %s",
+                        session_id,
+                    )
 
             context.add_done_callback(_cleanup_on_drop)
 
             async def run_eval_and_process():
-                await loop.run_in_executor(None, ctx.run, orchestrator.evaluate, dataset)
-                job_id, run_time, results_tf, scores_tf, multi_trial_scores_tf = orchestrator.process()
-                reporters = get_reporters(config.get("reporting") or {}, job_id, run_time)
+                await loop.run_in_executor(
+                    None, ctx.run, orchestrator.evaluate, dataset
+                )
+                (
+                    job_id,
+                    run_time,
+                    results_tf,
+                    scores_tf,
+                    multi_trial_scores_tf,
+                ) = orchestrator.process()
+                reporters = get_reporters(
+                    config.get("reporting") or {}, job_id, run_time
+                )
                 logging.info("Processing agent evaluation results...")
                 summary = await loop.run_in_executor(
                     None,
@@ -539,7 +584,8 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                 async for response in request_iterator:
                     corr_id = response.correlation_id
                     logging.info(
-                        "Server-Inbound: Received AgentStreamMessage (correlation_id=%s, payload=%s)",
+                        "Server-Inbound: Received AgentStreamMessage "
+                        "(correlation_id=%s, payload=%s)",
                         corr_id,
                         response.WhichOneof("payload"),
                     )
@@ -547,7 +593,8 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                         inboxes[corr_id].put(response)
                     else:
                         logging.warning(
-                            "Server-Inbound: Orphaned AgentStreamMessage correlation_id '%s' (active inboxes: %s)",
+                            "Server-Inbound: Orphaned AgentStreamMessage "
+                            "correlation_id '%s' (active inboxes: %s)",
                             corr_id,
                             list(inboxes.keys()),
                         )
@@ -559,23 +606,40 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             summary = None
             while True:
                 if eval_task.done():
-                    logging.info("Agent Evaluator & Reporting task finished for session %s.", session_id)
+                    logging.info(
+                        "Agent Evaluator & Reporting task finished for "
+                        "session %s.",
+                        session_id,
+                    )
                     try:
                         job_id, summary = eval_task.result()
                     except Exception as e:
-                        logging.error("Agent Evaluator & Reporting task failed: %s", e, exc_info=True)
+                        logging.error(
+                            "Agent Evaluator & Reporting task failed: %s",
+                            e,
+                            exc_info=True,
+                        )
+                        context.set_code(grpc.StatusCode.INTERNAL)
+                        context.set_details(f"Agent evaluation failed: {e}")
+                        return
                     break
 
                 if SESSIONMANAGER.get_session(session_id) is None:
-                    logging.warning(f"Session {session_id} deleted. Terminating stream.")
+                    logging.warning(
+                        "Session %s deleted. Terminating stream.",
+                        session_id,
+                    )
                     context.set_code(grpc.StatusCode.NOT_FOUND)
                     context.set_details("Session deleted")
                     return
 
                 try:
-                    out_msg: eval_agent_pb2.AgentStreamMessage = await asyncio.to_thread(out_queue.get, True, 0.5)
+                    out_msg: eval_agent_pb2.AgentStreamMessage = (
+                        await asyncio.to_thread(out_queue.get, True, 0.5)
+                    )
                     logging.info(
-                        "Server-Outbound: Yielding AgentStreamMessage (correlation_id=%s, payload=%s)",
+                        "Server-Outbound: Yielding AgentStreamMessage "
+                        "(correlation_id=%s, payload=%s)",
                         out_msg.correlation_id,
                         out_msg.WhichOneof("payload"),
                     )
@@ -583,7 +647,11 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                 except queue.Empty:
                     continue
                 except Exception as e:
-                    logging.error("Server-Outbound: Error yielding message: %s", e, exc_info=True)
+                    logging.error(
+                        "Server-Outbound: Error yielding message: %s",
+                        e,
+                        exc_info=True,
+                    )
                     continue
 
             # Flush any remaining messages from out_queue before finishing
@@ -598,11 +666,15 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             try:
                 await read_task
             except asyncio.CancelledError:
-                # Expected when cleaning up inbound reader task upon eval completion
+                # Expected when cleaning up inbound reader task upon eval
                 pass
 
             if job_id and summary:
-                logging.info(f"Finished Agent Evaluation Job ID {job_id}. Summary: {summary}")
+                logging.info(
+                    "Finished Agent Evaluation Job ID %s. Summary: %s",
+                    job_id,
+                    summary,
+                )
                 final_msg = eval_agent_pb2.AgentStreamMessage(
                     session_id=session_id,
                     correlation_id="final_summary",
@@ -615,7 +687,10 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
 
         finally:
             AGENT_GRPC_PROXY_QUEUES.pop(session_id, None)
-            logging.info(f"Cleaned up agent proxy queues for session {session_id}")
+            logging.info(
+                "Cleaned up agent proxy queues for session %s",
+                session_id,
+            )
 
 
 def _process_results(
