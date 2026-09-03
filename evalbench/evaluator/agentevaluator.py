@@ -49,7 +49,6 @@ class AgentEvaluator:
 
         runner_config = self.config.get("runners", {})
         self.agent_runners = runner_config.get("agent_runners", 10)
-        self.agentrunner = mprunner.MPRunner(self.agent_runners)
 
     def evaluate(
         self,
@@ -74,8 +73,6 @@ class AgentEvaluator:
         generator_name = type(self.generator).__name__
         logging.info(f"Running {generator_name} evaluation")
 
-        self.agentrunner.futures.clear()
-
         # Extract generic metadata
         metadata = {
             "dialects": self.config.get("dialects", []),
@@ -83,26 +80,30 @@ class AgentEvaluator:
             "scorers": self.config.get("scorers", {}),
         }
 
-        for item in dataset:
-            simulated_user = SimulatedUser(self.config)
-            work = AgentGenWork(
-                processor=self.process_scenario,
-                eval_result=item,
-                job_id=job_id,
-                metadata=metadata,
-                simulated_user=simulated_user
-            )
-            self.agentrunner.execute_work(work)
+        self.agentrunner = mprunner.MPRunner(self.agent_runners)
+        try:
+            for item in dataset:
+                simulated_user = SimulatedUser(self.config)
+                work = AgentGenWork(
+                    processor=self.process_scenario,
+                    eval_result=item,
+                    job_id=job_id,
+                    metadata=metadata,
+                    simulated_user=simulated_user
+                )
+                self.agentrunner.execute_work(work)
 
-        for future in concurrent.futures.as_completed(self.agentrunner.futures):
-            item = future.result()
+            for future in concurrent.futures.as_completed(self.agentrunner.futures):
+                item = future.result()
 
-            if hasattr(item, "agent_results"):
-                eval_outputs.extend(item.agent_results)
-            if hasattr(item, "scoring_results"):
-                scoring_results.extend(item.scoring_results)
+                if hasattr(item, "agent_results"):
+                    eval_outputs.extend(item.agent_results)
+                if hasattr(item, "scoring_results"):
+                    scoring_results.extend(item.scoring_results)
 
-        return eval_outputs, scoring_results
+            return eval_outputs, scoring_results
+        finally:
+            self.agentrunner.shutdown()
 
     def process_scenario(
         self,
