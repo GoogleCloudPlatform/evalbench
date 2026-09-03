@@ -1,3 +1,14 @@
+# ==============================================================================
+# Evalbench Run Configuration: Agent gRPC Proxy (Bidirectional Streaming)
+# ==============================================================================
+# NOTE: agent_grpc_proxy is a distributed streaming generator (AgentInteract).
+# It routes evaluation turns, in-sandbox scoring, and artifact reporting across
+# a bidirectional gRPC stream to an external or sandboxed agent worker.
+#
+# To run this flow end-to-end hermetically in tests:
+#   pytest evalbench/test/agent_grpc_proxy_integration_test.py
+# ==============================================================================
+
 ############################################################
 ### Dataset / Eval Items
 ############################################################
