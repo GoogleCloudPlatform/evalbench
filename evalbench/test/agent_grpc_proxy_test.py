@@ -5,9 +5,9 @@ import unittest
 
 import pandas as pd
 from evalproto import eval_agent_pb2
-from generators.models.agentic_reverse_proxy import (
-    AGENT_PROXY_QUEUES,
-    AgenticReverseProxyGenerator,
+from generators.models.agent_grpc_proxy import (
+    AGENT_GRPC_PROXY_QUEUES,
+    AgentGrpcProxyGenerator,
 )
 from reporting.remote_reporter import RemoteReporter
 from reporting.report import STORETYPE
@@ -15,20 +15,20 @@ from scorers.remote_scorer import RemoteScorerProxy
 from util.context import rpc_id_var
 
 
-class TestAgenticReverseProxy(unittest.TestCase):
+class TestAgentGrpcProxy(unittest.TestCase):
 
     def setUp(self):
         self.session_id = "test_session_123"
         self.inboxes = {}
         self.out_queue = queue.Queue()
-        AGENT_PROXY_QUEUES[self.session_id] = (self.inboxes, self.out_queue)
+        AGENT_GRPC_PROXY_QUEUES[self.session_id] = (self.inboxes, self.out_queue)
         rpc_id_var.set(self.session_id)
 
     def tearDown(self):
-        AGENT_PROXY_QUEUES.pop(self.session_id, None)
+        AGENT_GRPC_PROXY_QUEUES.pop(self.session_id, None)
 
     def test_generator_turn_success(self):
-        generator = AgenticReverseProxyGenerator({"timeout_seconds": 5.0})
+        generator = AgentGrpcProxyGenerator({"timeout_seconds": 5.0})
 
         def answer():
             msg = self.out_queue.get(timeout=2.0)

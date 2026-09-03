@@ -29,8 +29,8 @@ from evalproto import (
 from util import get_SessionManager
 
 
-class TestAgenticReverseProxyIntegration(unittest.IsolatedAsyncioTestCase):
-    """Hermetic end-to-end integration test for the Agentic Reverse Proxy mechanism,
+class TestAgentGrpcProxyIntegration(unittest.IsolatedAsyncioTestCase):
+    """Hermetic end-to-end integration test for the Agent gRPC Proxy mechanism,
     including multi-turn evaluations, concurrent sessions, and concurrent scenario multiplexing."""
 
     async def asyncSetUp(self):
@@ -39,7 +39,7 @@ class TestAgenticReverseProxyIntegration(unittest.IsolatedAsyncioTestCase):
 
         self.model_config_path = os.path.join(self.temp_dir, "model_config.yaml")
         with open(self.model_config_path, "w") as f:
-            yaml.dump({"generator": "agentic_reverse_proxy", "timeout_seconds": 10.0}, f)
+            yaml.dump({"generator": "agent_grpc_proxy", "timeout_seconds": 10.0}, f)
 
         self.simulated_user_config_path = os.path.join(self.temp_dir, "simulated_user.yaml")
         with open(self.simulated_user_config_path, "w") as f:
@@ -105,7 +105,7 @@ class TestAgenticReverseProxyIntegration(unittest.IsolatedAsyncioTestCase):
             json.dump(multi_scenario_data, f)
 
         self.run_config = {
-            "experiment_name": "test_agentic_reverse_proxy_integration",
+            "experiment_name": "test_agent_grpc_proxy_integration",
             "orchestrator": "agent",
             "model_config": self.model_config_path,
             "simulated_user_model_config": self.simulated_user_config_path,
@@ -314,7 +314,7 @@ class TestAgenticReverseProxyIntegration(unittest.IsolatedAsyncioTestCase):
 
         return summary_payload
 
-    async def test_multi_turn_reverse_proxy_e2e(self):
+    async def test_multi_turn_agent_grpc_proxy_e2e(self):
         """Tests a complete multi-turn scenario with skills, MCP tools, and delegated scoring."""
         session_id = uuid.uuid4().hex
         summary = await self._run_client_session(

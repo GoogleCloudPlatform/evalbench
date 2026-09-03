@@ -1,11 +1,11 @@
 """
-This module defines the AgenticReverseProxyGenerator, which acts as a proxy
+This module defines the AgentGrpcProxyGenerator, which acts as a proxy
 within Evalbench to delegate multi-turn agent execution across a bidirectional
 gRPC stream.
 
-The AgenticReverseProxyGenerator does not launch or execute agent CLI binaries
+The AgentGrpcProxyGenerator does not launch or execute agent CLI binaries
 locally. Instead, it marshals turn requests from the AgentEvaluator into
-TurnRequest protobuf messages, dispatches them over the reverse stream to a
+TurnRequest protobuf messages, dispatches them over the gRPC stream to a
 remote agent runner/sandbox, and adapts incoming TurnResponse protobuf messages
 into CompletedProcess results expected by Evalbench evaluators and scorers.
 """
@@ -24,9 +24,11 @@ from .agent_cli import AgentCliGenerator
 
 logger = logging.getLogger(__name__)
 
-# Global dictionary for active reverse proxy sessions:
+# Global dictionary for active agent gRPC proxy sessions:
 # session_id -> (inboxes_dict, out_queue)
-AGENT_PROXY_QUEUES: dict[str, tuple[dict[str, queue.Queue], queue.Queue]] = {}
+AGENT_GRPC_PROXY_QUEUES: dict[
+    str, tuple[dict[str, queue.Queue], queue.Queue]
+] = {}
 
 
 class CLICommand:
@@ -47,25 +49,25 @@ class CLICommand:
         self.cwd = cwd
 
 
-class AgenticReverseProxyGenerator(AgentCliGenerator):
-    """Generator proxying multi-turn agent execution across reverse stream."""
+class AgentGrpcProxyGenerator(AgentCliGenerator):
+    """Generator proxying multi-turn agent execution across gRPC stream."""
 
     def __init__(self, querygenerator_config: dict[str, Any]):
         super().__init__(querygenerator_config)
-        self.name = "agentic_reverse_proxy"
+        self.name = "agent_grpc_proxy"
         self.env = querygenerator_config.get("env") or {}
         self.timeout_seconds = float(
             querygenerator_config.get("timeout_seconds", 300.0)
         )
         self.turn_counter: dict[str, int] = {}
         logger.info(
-            "Initialized AgenticReverseProxyGenerator (timeout=%ss)",
+            "Initialized AgentGrpcProxyGenerator (timeout=%ss)",
             self.timeout_seconds,
         )
 
     @property
     def version(self) -> str:
-        return "agentic_reverse_proxy"
+        return "agent_grpc_proxy"
 
     def generate_internal(self, prompt: str) -> str:
         res = self.safe_generate(self.create_command(self.name, prompt))
@@ -152,7 +154,7 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
 
         raw_stdout = json.dumps(envelope, indent=2)
         return subprocess.CompletedProcess(
-            args=["agentic_reverse_proxy"],
+            args=["agent_grpc_proxy"],
             returncode=exit_code,
             stdout=raw_stdout,
             stderr=turn_resp.error_message,
@@ -170,25 +172,25 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
             else self.timeout_seconds
         )
 
-        if session_id not in AGENT_PROXY_QUEUES:
+        if session_id not in AGENT_GRPC_PROXY_QUEUES:
             ctx_id = rpc_id_var.get()
-            if ctx_id in AGENT_PROXY_QUEUES:
+            if ctx_id in AGENT_GRPC_PROXY_QUEUES:
                 session_id = ctx_id
             else:
                 logger.error(
-                    "AgenticReverseProxy: session_id %s not in "
-                    "AGENT_PROXY_QUEUES (keys: %s)",
+                    "AgentGrpcProxy: session_id %s not in "
+                    "AGENT_GRPC_PROXY_QUEUES (keys: %s)",
                     session_id,
-                    list(AGENT_PROXY_QUEUES.keys()),
+                    list(AGENT_GRPC_PROXY_QUEUES.keys()),
                 )
                 return subprocess.CompletedProcess(
-                    args=["agentic_reverse_proxy"],
+                    args=["agent_grpc_proxy"],
                     returncode=1,
                     stdout="",
                     stderr=f"Session {session_id} not connected to stream",
                 )
 
-        inboxes, out_queue = AGENT_PROXY_QUEUES[session_id]
+        inboxes, out_queue = AGENT_GRPC_PROXY_QUEUES[session_id]
 
         turn_idx = self.turn_counter.get(session_id, 0) + 1
         self.turn_counter[session_id] = turn_idx
@@ -209,7 +211,7 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
         )
 
         logger.info(
-            "[REVERSE_PROXY] Dispatching TurnRequest turn=%d "
+            "[AGENT_GRPC_PROXY] Dispatching TurnRequest turn=%d "
             "(correlation_id=%s) to out_queue",
             turn_idx,
             correlation_id,
@@ -220,12 +222,12 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
             resp_msg = inbox.get(timeout=effective_timeout)
         except queue.Empty:
             logger.error(
-                "[REVERSE_PROXY] Timed out waiting for TurnResponse "
+                "[AGENT_GRPC_PROXY] Timed out waiting for TurnResponse "
                 "(correlation_id=%s)",
                 correlation_id,
             )
             return subprocess.CompletedProcess(
-                args=["agentic_reverse_proxy"],
+                args=["agent_grpc_proxy"],
                 returncode=124,
                 stdout="",
                 stderr="Timed out waiting for agent response from stream",
@@ -236,11 +238,11 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
         if not resp_msg.HasField("turn_response"):
             err_details = resp_msg.WhichOneof("payload")
             logger.error(
-                "[REVERSE_PROXY] Unexpected message received on inbox: %s",
+                "[AGENT_GRPC_PROXY] Unexpected message received on inbox: %s",
                 err_details,
             )
             return subprocess.CompletedProcess(
-                args=["agentic_reverse_proxy"],
+                args=["agent_grpc_proxy"],
                 returncode=1,
                 stdout="",
                 stderr=f"Unexpected payload on stream: {err_details}",

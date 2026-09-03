@@ -44,7 +44,7 @@ from util.service import (
     get_dataset_from_request,
 )
 from generators.models.grpc_proxy import PROXY_QUEUES
-from generators.models.agentic_reverse_proxy import AGENT_PROXY_QUEUES
+from generators.models.agent_grpc_proxy import AGENT_GRPC_PROXY_QUEUES
 
 import threading
 from util.context import rpc_id_var
@@ -486,7 +486,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
 
         config["agent_inboxes"] = inboxes
         config["agent_out_queue"] = out_queue
-        AGENT_PROXY_QUEUES[session_id] = (inboxes, out_queue)
+        AGENT_GRPC_PROXY_QUEUES[session_id] = (inboxes, out_queue)
 
         # Load dataset and instantiate orchestrator
         dataset_config_json = config.get("dataset_config")
@@ -506,8 +506,8 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
 
         try:
             def _cleanup_on_drop(ctx):
-                if session_id in AGENT_PROXY_QUEUES:
-                    AGENT_PROXY_QUEUES.pop(session_id, None)
+                if session_id in AGENT_GRPC_PROXY_QUEUES:
+                    AGENT_GRPC_PROXY_QUEUES.pop(session_id, None)
                     logging.info(f"Cleaned up agent proxy queues for session {session_id}")
 
             context.add_done_callback(_cleanup_on_drop)
@@ -614,7 +614,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                 yield final_msg
 
         finally:
-            AGENT_PROXY_QUEUES.pop(session_id, None)
+            AGENT_GRPC_PROXY_QUEUES.pop(session_id, None)
             logging.info(f"Cleaned up agent proxy queues for session {session_id}")
 
 

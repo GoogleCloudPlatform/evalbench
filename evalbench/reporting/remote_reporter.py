@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 from evalproto import eval_agent_pb2
-from generators.models.agentic_reverse_proxy import AGENT_PROXY_QUEUES
+from generators.models.agent_grpc_proxy import AGENT_GRPC_PROXY_QUEUES
 from reporting.report import Reporter
 from util.context import rpc_id_var
 
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class RemoteReporter(Reporter):
-    """Generic reporter proxy delegating telemetry or artifact exports across the reverse stream."""
+    """Generic reporter proxy delegating telemetry or artifact exports across the stream."""
 
     def __init__(
         self,
@@ -43,14 +43,15 @@ class RemoteReporter(Reporter):
             return
 
         session_id = rpc_id_var.get()
-        if session_id not in AGENT_PROXY_QUEUES:
+        if session_id not in AGENT_GRPC_PROXY_QUEUES:
             logger.warning(
-                "RemoteReporter: session_id %s not in AGENT_PROXY_QUEUES, skipping delegated reporting",
+                "RemoteReporter: session_id %s not in AGENT_GRPC_PROXY_QUEUES, "
+                "skipping delegated reporting",
                 session_id,
             )
             return
 
-        inboxes, out_queue = AGENT_PROXY_QUEUES[session_id]
+        inboxes, out_queue = AGENT_GRPC_PROXY_QUEUES[session_id]
         correlation_id = str(uuid.uuid4())
         inbox: queue.Queue[eval_agent_pb2.AgentStreamMessage] = queue.Queue()
         inboxes[correlation_id] = inbox
