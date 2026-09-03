@@ -1,6 +1,4 @@
 """Tests for evalproto packaging and lazy loading."""
-from unittest.mock import MagicMock
-from util.config import load_yaml_config
 
 
 def test_evalproto_pb2_imports():
