@@ -1,0 +1,76 @@
+# ==============================================================================
+# Evalbench Run Configuration: Agent gRPC Proxy (Bidirectional Streaming)
+# ==============================================================================
+# NOTE: agent_grpc_proxy is a distributed streaming generator (AgentInteract).
+# It routes evaluation turns, in-sandbox scoring, and artifact reporting across
+# a bidirectional gRPC stream to an external or sandboxed agent worker.
+#
+# To run this flow end-to-end hermetically in tests:
+#   pytest evalbench/test/agent_grpc_proxy_integration_test.py
+# ==============================================================================
+
+############################################################
+### Dataset / Eval Items
+############################################################
+dataset_config: datasets/agent-grpc-proxy/agent-grpc-proxy.evalset.json
+dataset_format: agent-format
+
+# Orchestrator Configuration
+# `agent` orchestrator runs the multi-turn simulated user loop
+orchestrator: agent
+model_config: datasets/model_configs/agent_grpc_proxy_model.yaml
+simulated_user_model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+
+# Concurrency: number of scenarios to run in parallel
+runners:
+  agent_runners: 1
+
+############################################################
+### Scorer Related Configs
+############################################################
+scorers:
+  # Trajectory & Skills Matchers
+  trajectory_matcher: {}
+  skills_trajectory:
+    enforce_order: false
+
+  # Local LLM Judge & Behavioral Metrics
+  goal_completion:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  behavioral_metrics:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  parameter_analysis:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  turn_count: {}
+  agent_steps: {}
+  end_to_end_latency: {}
+  tool_call_latency: {}
+  token_consumption: {}
+  tokens_processed: {}
+  effective_billed_tokens: {}
+
+  # Delegated In-Sandbox Scorers
+  # (Dispatched across reverse gRPC stream to execute inside the agent sandbox,
+  # e.g. compilation checks, dbt/dataform runs, or custom script evaluations)
+  # dbt_compile:
+  #   delegated: true                   # <--- Delegated In-Sandbox Scorer
+  #   timeout_seconds: 60.0
+  # dbt_run:
+  #   delegated: true                   # <--- Delegated In-Sandbox Scorer
+  #   timeout_seconds: 120.0
+
+############################################################
+### Reporting Related Configs
+############################################################
+reporting:
+  # Local Telemetry & Results (evaluated and written locally by Evalbench)
+  csv:
+    output_directory: "results"
+
+  # Delegated Sandbox Workspace / Artifact Archive
+  # (Dispatched across reverse gRPC stream to export artifacts from the remote worker)
+  gcs_artifacts:
+    delegated: true                   # <--- Delegated Artifact Reporter
+    bucket: "sobi_eval_share"
+    path_prefix: "runs"
+    exclude_patterns: [".venv", "node_modules", "skills"]

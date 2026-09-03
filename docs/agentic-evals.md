@@ -24,6 +24,7 @@ Each scenario starts from a prompt and is driven forward by an **LLM-based simul
 | Codex CLI | `codex_cli` | `agent` | [Codex CLI guide](/docs/codex_cli_agent_testing.md) |
 | Antigravity (agy) CLI | `agy_cli` | `agent` | [Antigravity CLI guide](/docs/agy_cli_agent_testing.md) |
 | Conversational data agents | `dataagent` | `dataagent` / `interact` | [Data agent spec](/docs/dataagent_spec.md) |
+| Agent gRPC Proxy | `agent_grpc_proxy` | `agent` | Bidirectional gRPC streaming agent |
 
 The `generator` is set in your [model config](/docs/configs/model-config.md); the `orchestrator` is set in your [run config](/docs/configs/run-config.md), or inferred from `dataset_format`.
 

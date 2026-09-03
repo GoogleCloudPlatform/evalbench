@@ -23,18 +23,28 @@ import reporting.analyzer as analyzer
 from util.config import update_google3_relative_paths, set_session_configs, config_to_df
 from util import get_SessionManager
 from util.scriptrunner import run_script
+import sys
 from util.sessionmgr import SESSION_RESOURCES_PATH
 from dataset.dataset import load_dataset_from_json
+
+# protoc generates flat imports in eval_service_pb2_grpc (e.g. import
+# eval_agent_pb2). Ensure evalproto is in sys.path so stubs resolve cleanly.
+_PROTO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "evalproto")
+if _PROTO_DIR not in sys.path:
+    sys.path.insert(0, _PROTO_DIR)
+
 from evalproto import (
     eval_request_pb2,
     eval_response_pb2,
     eval_service_pb2_grpc,
+    eval_agent_pb2,
 )
 from util.service import (
     load_session_configs,
     get_dataset_from_request,
 )
 from generators.models.grpc_proxy import PROXY_QUEUES
+from generators.models.agent_grpc_proxy import AGENT_GRPC_PROXY_QUEUES
 
 import threading
 from util.context import rpc_id_var
@@ -452,6 +462,235 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             # Clean up the global registry to prevent memory leaks.
             PROXY_QUEUES.pop(session_id, None)
             logging.info(f"Cleaned up proxy queues for session {session_id}")
+
+    async def AgentInteract(
+        self,
+        request_iterator: AsyncIterator[eval_agent_pb2.AgentStreamMessage],
+        context: grpc.ServicerContext,
+    ) -> AsyncGenerator[eval_agent_pb2.AgentStreamMessage, None]:
+        """Bidirectional stream linking remote autonomous agents to Evalbench
+        AgentEvaluator.
+        """
+        session_id = rpc_id_var.get()
+        session = SESSIONMANAGER.get_session(session_id)
+        config, db_configs, model_config, setup_config = load_session_configs(
+            session
+        )
+
+        if config is None:
+            context.set_code(grpc.StatusCode.FAILED_PRECONDITION)
+            context.set_details("Session not configured")
+            return
+
+        is_bidirectional = (
+            session.get("bidirectional_stream", False) if session else False
+        )
+        if not is_bidirectional:
+            error_msg = (
+                "AgentInteract must be used with bidirectional streaming"
+            )
+            logging.error(error_msg)
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details(error_msg)
+            return
+
+        generator = (model_config or {}).get("generator")
+        if generator != "agent_grpc_proxy":
+            error_msg = (
+                "AgentInteract stream failed: run config must use "
+                f"'agent_grpc_proxy' generator (received '{generator}')"
+            )
+            logging.error(error_msg)
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details(error_msg)
+            return
+
+        logging.info(
+            "Starting an AgentInteract bidirectional stream for session %s...",
+            session_id,
+        )
+        config["session_id"] = session_id
+
+        inboxes: dict[str, queue.Queue] = {}  # correlation_id -> queue.Queue
+        out_queue = queue.Queue()  # Evalbench -> worker
+
+        config["agent_inboxes"] = inboxes
+        config["agent_out_queue"] = out_queue
+        AGENT_GRPC_PROXY_QUEUES[session_id] = (inboxes, out_queue)
+
+        # Load dataset and instantiate orchestrator
+        dataset_config_json = config.get("dataset_config")
+        dataset_dict = load_dataset_from_json(dataset_config_json, config)
+
+        dataset = []
+        for _, item_list in dataset_dict.items():
+            dataset.extend(item_list)
+
+        num_evals = config.get("num_evals_to_run")
+        if num_evals and int(num_evals) > 0:
+            dataset = dataset[:int(num_evals)]
+
+        orchestrator = get_orchestrator(
+            config, db_configs, setup_config, report_progress=True
+        )
+        loop = asyncio.get_event_loop()
+        ctx = contextvars.copy_context()
+
+        try:
+            def _cleanup_on_drop(ctx):
+                if session_id in AGENT_GRPC_PROXY_QUEUES:
+                    AGENT_GRPC_PROXY_QUEUES.pop(session_id, None)
+                    logging.info(
+                        "Cleaned up agent proxy queues for session %s",
+                        session_id,
+                    )
+
+            context.add_done_callback(_cleanup_on_drop)
+
+            async def run_eval_and_process():
+                await loop.run_in_executor(
+                    None, ctx.run, orchestrator.evaluate, dataset
+                )
+                (
+                    job_id,
+                    run_time,
+                    results_tf,
+                    scores_tf,
+                    multi_trial_scores_tf,
+                ) = orchestrator.process()
+                reporters = get_reporters(
+                    config.get("reporting") or {}, job_id, run_time
+                )
+                logging.info("Processing agent evaluation results...")
+                summary = await loop.run_in_executor(
+                    None,
+                    ctx.run,
+                    _process_results,
+                    reporters,
+                    job_id,
+                    run_time,
+                    results_tf,
+                    scores_tf,
+                    multi_trial_scores_tf,
+                    config,
+                    model_config,
+                    db_configs,
+                )
+                return job_id, summary
+
+            eval_task = asyncio.create_task(run_eval_and_process())
+
+            async def read_from_client():
+                async for response in request_iterator:
+                    corr_id = response.correlation_id
+                    logging.info(
+                        "Server-Inbound: Received AgentStreamMessage "
+                        "(correlation_id=%s, payload=%s)",
+                        corr_id,
+                        response.WhichOneof("payload"),
+                    )
+                    if corr_id in inboxes:
+                        inboxes[corr_id].put(response)
+                    else:
+                        logging.warning(
+                            "Server-Inbound: Orphaned AgentStreamMessage "
+                            "correlation_id '%s' (active inboxes: %s)",
+                            corr_id,
+                            list(inboxes.keys()),
+                        )
+
+            read_task = asyncio.create_task(read_from_client())
+
+            # Yield loop: pop from out_queue and yield to worker
+            job_id = None
+            summary = None
+            while True:
+                if eval_task.done():
+                    logging.info(
+                        "Agent Evaluator & Reporting task finished for "
+                        "session %s.",
+                        session_id,
+                    )
+                    try:
+                        job_id, summary = eval_task.result()
+                    except Exception as e:
+                        logging.error(
+                            "Agent Evaluator & Reporting task failed: %s",
+                            e,
+                            exc_info=True,
+                        )
+                        context.set_code(grpc.StatusCode.INTERNAL)
+                        context.set_details(f"Agent evaluation failed: {e}")
+                        return
+                    break
+
+                if SESSIONMANAGER.get_session(session_id) is None:
+                    logging.warning(
+                        "Session %s deleted. Terminating stream.",
+                        session_id,
+                    )
+                    context.set_code(grpc.StatusCode.NOT_FOUND)
+                    context.set_details("Session deleted")
+                    return
+
+                try:
+                    out_msg: eval_agent_pb2.AgentStreamMessage = (
+                        await asyncio.to_thread(out_queue.get, True, 0.5)
+                    )
+                    logging.info(
+                        "Server-Outbound: Yielding AgentStreamMessage "
+                        "(correlation_id=%s, payload=%s)",
+                        out_msg.correlation_id,
+                        out_msg.WhichOneof("payload"),
+                    )
+                    yield out_msg
+                except queue.Empty:
+                    continue
+                except Exception as e:
+                    logging.error(
+                        "Server-Outbound: Error yielding message: %s",
+                        e,
+                        exc_info=True,
+                    )
+                    continue
+
+            # Flush any remaining messages from out_queue before finishing
+            while not out_queue.empty():
+                try:
+                    out_msg = out_queue.get_nowait()
+                    yield out_msg
+                except Exception:
+                    break
+
+            read_task.cancel()
+            try:
+                await read_task
+            except asyncio.CancelledError:
+                # Expected when cleaning up inbound reader task upon eval
+                pass
+
+            if job_id and summary:
+                logging.info(
+                    "Finished Agent Evaluation Job ID %s. Summary: %s",
+                    job_id,
+                    summary,
+                )
+                final_msg = eval_agent_pb2.AgentStreamMessage(
+                    session_id=session_id,
+                    correlation_id="final_summary",
+                    session_summary=eval_agent_pb2.SessionSummaryMessage(
+                        job_id=job_id,
+                        summary_json=json.dumps(summary),
+                    ),
+                )
+                yield final_msg
+
+        finally:
+            AGENT_GRPC_PROXY_QUEUES.pop(session_id, None)
+            logging.info(
+                "Cleaned up agent proxy queues for session %s",
+                session_id,
+            )
 
 
 def _process_results(

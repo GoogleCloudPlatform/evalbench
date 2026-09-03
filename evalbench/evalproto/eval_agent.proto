@@ -1,0 +1,111 @@
+edition = "2023";
+
+package cloud_databases_eval_proto;
+
+option java_multiple_files = true;
+
+message AgentStreamMessage {
+  string session_id = 1;
+  string correlation_id = 2;  // Correlates async requests and responses across threads
+
+  oneof payload {
+    // 1. Turn Execution
+    TurnRequest turn_request = 10;
+    TurnResponse turn_response = 11;
+
+    // 2. Delegated In-Sandbox Scoring Execution
+    ScoringRequest scoring_request = 20;
+    ScoringResponse scoring_response = 21;
+
+    // 3. Delegated Workspace & Telemetry Reporting
+    ReportingRequest reporting_request = 30;
+    ReportingResponse reporting_response = 31;
+
+    // 4. Final Session Completion Summary
+    SessionSummaryMessage session_summary = 40;
+  }
+}
+
+// --- 1. Turn Execution Messages ---
+message TurnRequest {
+  int32 turn_index = 1;
+  string prompt = 2;
+  map<string, string> env = 3;
+  string working_dir = 4;
+  float timeout_seconds = 5;
+  bool resume = 6;
+}
+
+message ToolCallRecord {
+  string tool_id = 1;
+  // Name of the tool executed. For Model Context Protocol (MCP) tools, the
+  // expected format is "<server_name>__<tool_name>" (double underscore)
+  // to align with Evalbench trajectory matching. Native/built-in tools
+  // use their bare name (e.g. "run_command", "read_file").
+  string tool_name = 2;
+  string parameters_json = 3;
+  string output = 4;
+  string status = 5;            // "success", "error"
+  int64 duration_ms = 6;
+}
+
+message TurnResponse {
+  int32 turn_index = 1;
+  string response_text = 2;
+  repeated ToolCallRecord tool_calls = 3;
+  map<string, int64> token_stats = 4;
+  bool success = 5;
+  bool execution_completed = 6;
+  string error_message = 7;
+}
+
+// --- 2. In-Flight Scoring Messages ---
+message ScorerSpec {
+  string scorer_name = 1;       // Scorer identifier, e.g. "dataform_compile", "dbt_run", "rubric"
+  string config_json = 2;       // Serialized configuration dictionary from YAML
+  float timeout_seconds = 3;    // Timeout per scorer
+}
+
+message ScoringRequest {
+  ScorerSpec scorer = 1;
+}
+
+message ScoreResult {
+  string scorer_name = 1;
+  float score = 2;              // 100.0 (PASS), 0.0 (FAIL), or continuous score
+  bool success = 3;
+  string result_json = 4;       // Generic JSON payload or diagnostics returned by scorer
+  string error_message = 5;
+}
+
+message ScoringResponse {
+  ScoreResult result = 1;
+}
+
+// --- 3. Delegated Reporting Messages ---
+message ReporterSpec {
+  string reporter_name = 1;     // Reporter identifier, e.g. "gcs", "s3", "custom"
+  string config_json = 2;       // Serialized configuration dictionary from YAML
+  float timeout_seconds = 3;
+}
+
+message ReportingRequest {
+  ReporterSpec reporter = 1;
+}
+
+message ReporterResult {
+  string reporter_name = 1;
+  bool success = 2;
+  string result_json = 3;       // Generic JSON payload returned by reporter (URIs, paths, metadata)
+  string error_message = 4;
+}
+
+message ReportingResponse {
+  ReporterResult result = 1;
+}
+
+// --- 4. Session Summary ---
+message SessionSummaryMessage {
+  string job_id = 1;
+  string summary_json = 2;
+}

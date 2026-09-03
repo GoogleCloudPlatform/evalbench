@@ -33,6 +33,7 @@ from scorers import toolcalllatency
 from scorers import trajectorymatcher
 from scorers import turncount
 from scorers.dataset_quality.scorer import DatasetQualityScorer
+from scorers.remote_scorer import RemoteScorerProxy
 
 
 DEFAULT_SCORERS: dict[str, type[comparator.Comparator]] = {
@@ -142,6 +143,10 @@ def get_scorer_instance(
         scorer_config = {}
     elif not isinstance(scorer_config, dict):
         return []
+
+    # If marked delegated, proxy across reverse bidi stream
+    if scorer_config.get("delegated", False):
+        return [RemoteScorerProxy(scorer_name, scorer_config)]
 
     # Direct match in global DEFAULT_SCORERS map
     if scorer_name in DEFAULT_SCORERS:
