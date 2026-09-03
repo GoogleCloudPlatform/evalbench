@@ -14,7 +14,7 @@ import shutil
 
 class AgentCliGenerator(QueryGenerator):
     """Shared base for CLI-driven agent generators (gemini_cli, claude_code,
-    codex_cli, agy_cli).
+    codex_cli, agy_cli, agent_grpc_proxy).
 
     The evaluator treats every subclass uniformly: build a command with
     ``create_command``, run it with ``safe_generate``, then read structured

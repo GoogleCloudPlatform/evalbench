@@ -42,8 +42,9 @@ class AgentEvaluator:
         if not isinstance(self.generator, AgentCliGenerator):
             raise ValueError(
                 f"AgentEvaluator only supports agent CLI generators "
-                f"(gemini_cli, claude_code, codex_cli, agy_cli), got "
-                f"{type(self.generator).__name__}")
+                f"(gemini_cli, claude_code, codex_cli, agy_cli, "
+                f"agent_grpc_proxy), got {type(self.generator).__name__}"
+            )
         self.agent_version = self.generator.version
 
         runner_config = self.config.get("runners", {})
