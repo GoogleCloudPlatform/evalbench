@@ -1,27 +1,45 @@
 {
   "scenarios": [
     {
-      "id": "scenario-dataform-compile-01",
-      "starting_prompt": "Inspect the repository files and compile the Dataform pipeline in definitions/",
-      "conversation_plan": [
-        "Turn 1: Instruct the agent to inspect the definitions/ folder and check SQLX files.",
-        "Turn 2: Confirm findings and instruct the agent to run dataform compile and verify 0 errors."
-      ],
+      "id": "dbt-compile-models-01",
+      "starting_prompt": "Inspect the dbt project in models/ and compile all models.",
+      "conversation_plan": "The user wants to verify their dbt project syntax and ref() dependencies. Instruct the agent to inspect the models/ directory, activate dbt best practices if needed, and run dbt compile. Once the compilation finishes, verify that all models compiled with 0 errors.",
       "expected_trajectory": [
-        "dataform__compile"
+        "dbt__compile"
       ],
       "expected_skills": [
-        "dataform_best_practices"
+        "dbt_best_practices"
       ],
       "binary_rubric": [
-        "Dataform pipeline compiled without syntax or dependency errors",
-        "Agent used the dataform compile tool to verify the output"
+        "dbt models compiled without SQL syntax or ref() errors",
+        "Agent invoked dbt compile to validate models"
       ],
       "env": {
-        "GOOGLE_CLOUD_PROJECT": "evalbench-testing"
+        "GOOGLE_CLOUD_PROJECT": "${EVAL_GCP_PROJECT_ID}"
+      },
+      "kind": "tools",
+      "max_turns": 3
+    },
+    {
+      "id": "dbt-run-models-staging-01",
+      "starting_prompt": "Run the staging models in the dbt project and verify table materialization.",
+      "conversation_plan": "The user wants to execute and materialize staging models in BigQuery. The agent should inspect the project, select the staging model path (+models/staging), execute dbt run, and report the execution status.",
+      "expected_trajectory": [
+        "dbt__run"
+      ],
+      "expected_skills": [
+        "dbt_best_practices"
+      ],
+      "binary_rubric": [
+        "dbt staging models executed and materialized successfully",
+        "Agent verified execution return status"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "${EVAL_GCP_PROJECT_ID}"
       },
       "kind": "tools",
       "max_turns": 3
     }
   ]
 }
+

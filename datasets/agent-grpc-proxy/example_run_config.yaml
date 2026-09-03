@@ -20,7 +20,8 @@ runners:
 scorers:
   # Trajectory & Skills Matchers
   trajectory_matcher: {}
-  skills_trajectory: {}
+  skills_trajectory:
+    enforce_order: false
 
   # Local LLM Judge & Behavioral Metrics
   goal_completion:
@@ -39,7 +40,7 @@ scorers:
 
   # Delegated In-Sandbox Scorers
   # (Dispatched across reverse gRPC stream to execute inside the agent sandbox)
-  dataform_compile:
+  dbt_compile:
     delegated: true                   # <--- Delegated In-Sandbox Scorer
     timeout_seconds: 60.0
   dbt_run:
