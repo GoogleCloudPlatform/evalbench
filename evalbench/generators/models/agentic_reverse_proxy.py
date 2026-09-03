@@ -1,3 +1,15 @@
+"""
+This module defines the AgenticReverseProxyGenerator, which acts as a proxy
+within Evalbench to delegate multi-turn agent execution across a bidirectional
+gRPC stream.
+
+The AgenticReverseProxyGenerator does not launch or execute agent CLI binaries
+locally. Instead, it marshals turn requests from the AgentEvaluator into
+TurnRequest protobuf messages, dispatches them over the reverse stream to a
+remote agent runner/sandbox, and adapts incoming TurnResponse protobuf messages
+into CompletedProcess results expected by Evalbench evaluators and scorers.
+"""
+
 import json
 import logging
 import queue
