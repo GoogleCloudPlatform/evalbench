@@ -1,0 +1,27 @@
+{
+  "scenarios": [
+    {
+      "id": "scenario-dataform-compile-01",
+      "starting_prompt": "Inspect the repository files and compile the Dataform pipeline in definitions/",
+      "conversation_plan": [
+        "Turn 1: Instruct the agent to inspect the definitions/ folder and check SQLX files.",
+        "Turn 2: Confirm findings and instruct the agent to run dataform compile and verify 0 errors."
+      ],
+      "expected_trajectory": [
+        "dataform__compile"
+      ],
+      "expected_skills": [
+        "dataform_best_practices"
+      ],
+      "binary_rubric": [
+        "Dataform pipeline compiled without syntax or dependency errors",
+        "Agent used the dataform compile tool to verify the output"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "evalbench-testing"
+      },
+      "kind": "tools",
+      "max_turns": 3
+    }
+  ]
+}
