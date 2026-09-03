@@ -6,8 +6,7 @@ option java_multiple_files = true;
 
 message AgentStreamMessage {
   string session_id = 1;
-  string scenario_id = 2;
-  string correlation_id = 3;  // Correlates async requests and responses across threads
+  string correlation_id = 2;  // Correlates async requests and responses across threads
 
   oneof payload {
     // 1. Turn Execution
