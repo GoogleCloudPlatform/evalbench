@@ -1,42 +1,35 @@
 {
   "scenarios": [
     {
-      "id": "dbt-compile-models-01",
-      "starting_prompt": "Inspect the dbt project in models/ and compile all models.",
-      "conversation_plan": "The user wants to verify their dbt project syntax and ref() dependencies. Instruct the agent to inspect the models/ directory, activate dbt best practices if needed, and run dbt compile. Once the compilation finishes, verify that all models compiled with 0 errors.",
+      "id": "create-greeting-file-01",
+      "starting_prompt": "Create a file named greeting.txt in the workspace containing today's date, current time, and a friendly greeting in English.",
+      "conversation_plan": "The user wants to generate a new greeting file. The agent should write a file named greeting.txt containing a friendly English greeting along with the current date and time. Once created, the agent should report that the file was created successfully.",
       "expected_trajectory": [
-        "dbt__compile"
+        "write_file"
       ],
-      "expected_skills": [
-        "dbt_best_practices"
-      ],
+      "expected_skills": [],
       "binary_rubric": [
-        "dbt models compiled without SQL syntax or ref() errors",
-        "Agent invoked dbt compile to validate models"
+        "greeting.txt was created with current date, time, and an English greeting",
+        "Agent used the write_file tool to create the file"
       ],
-      "env": {
-        "GOOGLE_CLOUD_PROJECT": "${EVAL_GCP_PROJECT_ID}"
-      },
+      "env": {},
       "kind": "tools",
-      "max_turns": 3
+      "max_turns": 2
     },
     {
-      "id": "dbt-run-models-staging-01",
-      "starting_prompt": "Run the staging models in the dbt project and verify table materialization.",
-      "conversation_plan": "The user wants to execute and materialize staging models in BigQuery. The agent should inspect the project, select the staging model path (+models/staging), execute dbt run, and report the execution status.",
+      "id": "read-and-review-greeting-file-01",
+      "starting_prompt": "Read greeting.txt from the workspace and append a 'Reviewed: Verified by QA' message at the bottom.",
+      "conversation_plan": "The user wants to inspect and edit an existing file. The agent should first read greeting.txt to check its contents, and then edit or write to the file to append 'Reviewed: Verified by QA' at the end.",
       "expected_trajectory": [
-        "dbt__run"
+        "read_file",
+        "write_file"
       ],
-      "expected_skills": [
-        "dbt_best_practices"
-      ],
+      "expected_skills": [],
       "binary_rubric": [
-        "dbt staging models executed and materialized successfully",
-        "Agent verified execution return status"
+        "greeting.txt was read and updated to include the reviewed message at the bottom",
+        "Agent invoked read_file and write_file to inspect and modify the file"
       ],
-      "env": {
-        "GOOGLE_CLOUD_PROJECT": "${EVAL_GCP_PROJECT_ID}"
-      },
+      "env": {},
       "kind": "tools",
       "max_turns": 3
     }
