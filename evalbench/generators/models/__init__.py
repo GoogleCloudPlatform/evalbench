@@ -3,7 +3,6 @@ from databases import DB
 from generators.models.generator import QueryGenerator
 from .gemini import GeminiGenerator
 from .passthrough import NOOPGenerator
-from .grpc_proxy import GrpcProxyModel
 from .claude import ClaudeGenerator
 from .querydata import QueryData
 from .query_data_api import QueryDataAPIGenerator
@@ -15,8 +14,17 @@ from .agy_cli import AgyCliGenerator
 from .mcp_tools import McpToolsGenerator
 from .noop_agent import NoopAgentGenerator
 from .agent_runtime import AgentRuntimeGenerator
-from .agent_grpc_proxy import AgentGrpcProxyGenerator
 from util.config import load_yaml_config
+
+
+def _get_grpc_proxy(config):
+    from .grpc_proxy import GrpcProxyModel
+    return GrpcProxyModel(config)
+
+
+def _get_agent_grpc_proxy(config):
+    from .agent_grpc_proxy import AgentGrpcProxyGenerator
+    return AgentGrpcProxyGenerator(config)
 
 
 def get_generator(global_models, model_config_path: str, db: DB = None):
@@ -34,8 +42,8 @@ def get_generator(global_models, model_config_path: str, db: DB = None):
             "alloydb_ai_nl": lambda: AlloyDBGenerator(db, config),
             "querydata": lambda: QueryData(config),
             "query_data_api": lambda: QueryDataAPIGenerator(config),
-            "grpc_proxy": lambda: GrpcProxyModel(config),
-            "agent_grpc_proxy": lambda: AgentGrpcProxyGenerator(config),
+            "grpc_proxy": lambda: _get_grpc_proxy(config),
+            "agent_grpc_proxy": lambda: _get_agent_grpc_proxy(config),
             "gemini_cli": lambda: GeminiCliGenerator(config),
             "claude_code": lambda: ClaudeCodeGenerator(config),
             "codex_cli": lambda: CodexCliGenerator(config),

@@ -87,6 +87,9 @@ google-evalbench = "evalbench.evalbench:run"
 [tool.setuptools.packages.find]
 include = ["evalbench*"]
 
+[tool.setuptools.package-data]
+evalbench = ["evalproto/*.proto", "evalproto/*.pyi"]
+
 [tool.uv.workspace]
 members = [
     "viewer",
