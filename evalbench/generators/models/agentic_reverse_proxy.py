@@ -41,14 +41,20 @@ class CLICommand:
 
 
 class AgenticReverseProxyGenerator(AgentCliGenerator):
-    """Generator proxying multi-turn agent execution across the reverse bidi stream."""
+    """Generator proxying multi-turn agent execution across reverse stream."""
 
     def __init__(self, querygenerator_config: dict[str, Any]):
         super().__init__(querygenerator_config)
         self.name = "agentic_reverse_proxy"
-        self.timeout_seconds = float(querygenerator_config.get("timeout_seconds", 300.0))
+        self.env = querygenerator_config.get("env") or {}
+        self.timeout_seconds = float(
+            querygenerator_config.get("timeout_seconds", 300.0)
+        )
         self.turn_counter: dict[str, int] = {}
-        logger.info("Initialized AgenticReverseProxyGenerator (timeout=%ss)", self.timeout_seconds)
+        logger.info(
+            "Initialized AgenticReverseProxyGenerator (timeout=%ss)",
+            self.timeout_seconds,
+        )
 
     @property
     def version(self) -> str:
@@ -67,10 +73,13 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
         session_id: str | None = None,
         cwd: str | None = None,
     ) -> CLICommand:
+        merged_env = self.env.copy()
+        if env:
+            merged_env.update(env)
         return CLICommand(
             cli=cli or self.name,
             prompt=prompt,
-            env=env,
+            env=merged_env,
             resume=resume,
             session_id=session_id,
             cwd=cwd,
@@ -78,41 +87,37 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
 
     def safe_generate(
         self,
-        cli_cmd: CLICommand | dict | str,
+        cli_cmd: CLICommand,
         timeout_seconds: float | None = None,
     ) -> subprocess.CompletedProcess:
-        if isinstance(cli_cmd, CLICommand):
-            prompt = cli_cmd.prompt
-            session_id = cli_cmd.session_id or rpc_id_var.get()
-            resume = cli_cmd.resume
-            env = cli_cmd.env
-            cwd = cli_cmd.cwd
-        elif isinstance(cli_cmd, dict):
-            prompt = cli_cmd.get("prompt", "")
-            session_id = cli_cmd.get("session_id") or rpc_id_var.get()
-            resume = cli_cmd.get("resume", False)
-            env = cli_cmd.get("env", {})
-            cwd = cli_cmd.get("cwd")
-        else:
-            prompt = str(cli_cmd)
-            session_id = rpc_id_var.get()
-            resume = False
-            env = {}
-            cwd = None
+        prompt = cli_cmd.prompt
+        session_id = cli_cmd.session_id or rpc_id_var.get()
+        resume = cli_cmd.resume
+        env = cli_cmd.env
+        cwd = cli_cmd.cwd
 
-        effective_timeout = timeout_seconds if timeout_seconds is not None else self.timeout_seconds
+        effective_timeout = (
+            timeout_seconds
+            if timeout_seconds is not None
+            else self.timeout_seconds
+        )
 
         if session_id not in AGENT_PROXY_QUEUES:
             ctx_id = rpc_id_var.get()
             if ctx_id in AGENT_PROXY_QUEUES:
                 session_id = ctx_id
             else:
-                logger.error("AgenticReverseProxy: session_id %s not in AGENT_PROXY_QUEUES (keys: %s)", session_id, list(AGENT_PROXY_QUEUES.keys()))
+                logger.error(
+                    "AgenticReverseProxy: session_id %s not in "
+                    "AGENT_PROXY_QUEUES (keys: %s)",
+                    session_id,
+                    list(AGENT_PROXY_QUEUES.keys()),
+                )
                 return subprocess.CompletedProcess(
                     args=["agentic_reverse_proxy"],
                     returncode=1,
                     stdout="",
-                    stderr=f"Session {session_id} not connected to reverse stream",
+                    stderr=f"Session {session_id} not connected to stream",
                 )
 
         inboxes, out_queue = AGENT_PROXY_QUEUES[session_id]

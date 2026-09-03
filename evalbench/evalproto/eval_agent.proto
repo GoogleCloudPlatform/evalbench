@@ -2,6 +2,8 @@ edition = "2023";
 
 package cloud_databases_eval_proto;
 
+option java_multiple_files = true;
+
 message AgentStreamMessage {
   string session_id = 1;
   string scenario_id = 2;
