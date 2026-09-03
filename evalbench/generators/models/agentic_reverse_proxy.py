@@ -85,92 +85,30 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
             cwd=cwd,
         )
 
-    def safe_generate(
+    def _build_turn_request(
         self,
         cli_cmd: CLICommand,
-        timeout_seconds: float | None = None,
+        turn_index: int,
+        timeout_seconds: float,
+    ) -> eval_agent_pb2.TurnRequest:
+        """Constructs a TurnRequest proto message from a CLICommand."""
+        return eval_agent_pb2.TurnRequest(
+            turn_index=turn_index,
+            prompt=cli_cmd.prompt,
+            env={
+                k: str(v) for k, v in cli_cmd.env.items()
+            } if cli_cmd.env else {},
+            working_dir=cli_cmd.cwd or "/workspace",
+            timeout_seconds=timeout_seconds,
+            resume=cli_cmd.resume,
+        )
+
+    def _turn_response_to_process(
+        self,
+        turn_resp: eval_agent_pb2.TurnResponse,
+        session_id: str,
     ) -> subprocess.CompletedProcess:
-        prompt = cli_cmd.prompt
-        session_id = cli_cmd.session_id or rpc_id_var.get()
-        resume = cli_cmd.resume
-        env = cli_cmd.env
-        cwd = cli_cmd.cwd
-
-        effective_timeout = (
-            timeout_seconds
-            if timeout_seconds is not None
-            else self.timeout_seconds
-        )
-
-        if session_id not in AGENT_PROXY_QUEUES:
-            ctx_id = rpc_id_var.get()
-            if ctx_id in AGENT_PROXY_QUEUES:
-                session_id = ctx_id
-            else:
-                logger.error(
-                    "AgenticReverseProxy: session_id %s not in "
-                    "AGENT_PROXY_QUEUES (keys: %s)",
-                    session_id,
-                    list(AGENT_PROXY_QUEUES.keys()),
-                )
-                return subprocess.CompletedProcess(
-                    args=["agentic_reverse_proxy"],
-                    returncode=1,
-                    stdout="",
-                    stderr=f"Session {session_id} not connected to stream",
-                )
-
-        inboxes, out_queue = AGENT_PROXY_QUEUES[session_id]
-
-        turn_idx = self.turn_counter.get(session_id, 0) + 1
-        self.turn_counter[session_id] = turn_idx
-
-        correlation_id = str(uuid.uuid4())
-        inbox: queue.Queue[eval_agent_pb2.AgentStreamMessage] = queue.Queue()
-        inboxes[correlation_id] = inbox
-
-        turn_req = eval_agent_pb2.TurnRequest(
-            turn_index=turn_idx,
-            prompt=prompt,
-            env={k: str(v) for k, v in env.items()} if env else {},
-            working_dir=cwd or "/workspace",
-            timeout_seconds=effective_timeout,
-            resume=resume,
-        )
-
-        msg = eval_agent_pb2.AgentStreamMessage(
-            session_id=session_id,
-            correlation_id=correlation_id,
-            turn_request=turn_req,
-        )
-
-        logger.info("[REVERSE_PROXY] Dispatching TurnRequest turn=%d (correlation_id=%s) to out_queue", turn_idx, correlation_id)
-        out_queue.put(msg)
-
-        try:
-            resp_msg = inbox.get(timeout=effective_timeout)
-        except queue.Empty:
-            logger.error("[REVERSE_PROXY] Timed out waiting for TurnResponse (correlation_id=%s)", correlation_id)
-            return subprocess.CompletedProcess(
-                args=["agentic_reverse_proxy"],
-                returncode=124,
-                stdout="",
-                stderr="Timed out waiting for agent response from reverse stream",
-            )
-        finally:
-            inboxes.pop(correlation_id, None)
-
-        if not resp_msg.HasField("turn_response"):
-            err_details = resp_msg.WhichOneof("payload")
-            logger.error("[REVERSE_PROXY] Unexpected message received on inbox: %s", err_details)
-            return subprocess.CompletedProcess(
-                args=["agentic_reverse_proxy"],
-                returncode=1,
-                stdout="",
-                stderr=f"Unexpected payload on stream: {err_details}",
-            )
-
-        turn_resp = resp_msg.turn_response
+        """Converts a TurnResponse proto message into a CompletedProcess."""
         tool_calls_list = []
         tools_by_name = {}
         for tc in turn_resp.tool_calls:
@@ -179,7 +117,11 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
             params_dict = {}
             if params_raw:
                 try:
-                    params_dict = json.loads(params_raw) if isinstance(params_raw, str) else params_raw
+                    params_dict = (
+                        json.loads(params_raw)
+                        if isinstance(params_raw, str)
+                        else params_raw
+                    )
                 except Exception:
                     params_dict = {}
 
@@ -229,6 +171,99 @@ class AgenticReverseProxyGenerator(AgentCliGenerator):
             returncode=exit_code,
             stdout=raw_stdout,
             stderr=turn_resp.error_message,
+        )
+
+    def safe_generate(
+        self,
+        cli_cmd: CLICommand,
+        timeout_seconds: float | None = None,
+    ) -> subprocess.CompletedProcess:
+        session_id = cli_cmd.session_id or rpc_id_var.get()
+        effective_timeout = (
+            timeout_seconds
+            if timeout_seconds is not None
+            else self.timeout_seconds
+        )
+
+        if session_id not in AGENT_PROXY_QUEUES:
+            ctx_id = rpc_id_var.get()
+            if ctx_id in AGENT_PROXY_QUEUES:
+                session_id = ctx_id
+            else:
+                logger.error(
+                    "AgenticReverseProxy: session_id %s not in "
+                    "AGENT_PROXY_QUEUES (keys: %s)",
+                    session_id,
+                    list(AGENT_PROXY_QUEUES.keys()),
+                )
+                return subprocess.CompletedProcess(
+                    args=["agentic_reverse_proxy"],
+                    returncode=1,
+                    stdout="",
+                    stderr=f"Session {session_id} not connected to stream",
+                )
+
+        inboxes, out_queue = AGENT_PROXY_QUEUES[session_id]
+
+        turn_idx = self.turn_counter.get(session_id, 0) + 1
+        self.turn_counter[session_id] = turn_idx
+
+        correlation_id = str(uuid.uuid4())
+        inbox: queue.Queue[eval_agent_pb2.AgentStreamMessage] = queue.Queue()
+        inboxes[correlation_id] = inbox
+
+        turn_req = self._build_turn_request(
+            cli_cmd=cli_cmd,
+            turn_index=turn_idx,
+            timeout_seconds=effective_timeout,
+        )
+        msg = eval_agent_pb2.AgentStreamMessage(
+            session_id=session_id,
+            correlation_id=correlation_id,
+            turn_request=turn_req,
+        )
+
+        logger.info(
+            "[REVERSE_PROXY] Dispatching TurnRequest turn=%d "
+            "(correlation_id=%s) to out_queue",
+            turn_idx,
+            correlation_id,
+        )
+        out_queue.put(msg)
+
+        try:
+            resp_msg = inbox.get(timeout=effective_timeout)
+        except queue.Empty:
+            logger.error(
+                "[REVERSE_PROXY] Timed out waiting for TurnResponse "
+                "(correlation_id=%s)",
+                correlation_id,
+            )
+            return subprocess.CompletedProcess(
+                args=["agentic_reverse_proxy"],
+                returncode=124,
+                stdout="",
+                stderr="Timed out waiting for agent response from stream",
+            )
+        finally:
+            inboxes.pop(correlation_id, None)
+
+        if not resp_msg.HasField("turn_response"):
+            err_details = resp_msg.WhichOneof("payload")
+            logger.error(
+                "[REVERSE_PROXY] Unexpected message received on inbox: %s",
+                err_details,
+            )
+            return subprocess.CompletedProcess(
+                args=["agentic_reverse_proxy"],
+                returncode=1,
+                stdout="",
+                stderr=f"Unexpected payload on stream: {err_details}",
+            )
+
+        return self._turn_response_to_process(
+            turn_resp=resp_msg.turn_response,
+            session_id=session_id,
         )
 
     def parse_response(self, stdout: str) -> dict:
