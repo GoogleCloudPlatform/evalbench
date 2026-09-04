@@ -63,19 +63,28 @@ class RemoteScorerProxy(Comparator):
             timeout_seconds=self.timeout_seconds,
         )
 
+        def _to_str(val: Any) -> str:
+            if val is None:
+                return ""
+            if isinstance(val, str):
+                return val
+            if isinstance(val, (dict, list)):
+                return json.dumps(val)
+            return str(val)
+
         database = kwargs.get("database", "")
         scoring_context = eval_agent_pb2.ScoringContext(
-            nl_prompt=str(nl_prompt or ""),
-            golden_query=str(golden_sql or ""),
-            query_type=str(query_type or ""),
-            golden_result=str(golden_result or ""),
-            golden_eval_results=str(golden_eval_results or ""),
-            golden_error=str(golden_error or ""),
-            generated_query=str(generated_sql or ""),
-            generated_result=str(generated_result or ""),
-            eval_results=str(eval_results or ""),
-            generated_error=str(generated_error or ""),
-            database=str(database or ""),
+            nl_prompt=nl_prompt or "",
+            golden_query=golden_sql or "",
+            query_type=query_type or "",
+            golden_result=_to_str(golden_result),
+            golden_eval_results=_to_str(golden_eval_results),
+            golden_error=_to_str(golden_error),
+            generated_query=generated_sql or "",
+            generated_result=_to_str(generated_result),
+            eval_results=_to_str(eval_results),
+            generated_error=_to_str(generated_error),
+            database=_to_str(database),
         )
 
         scoring_req = eval_agent_pb2.ScoringRequest(
