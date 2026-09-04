@@ -277,16 +277,16 @@ class TestAgentGrpcProxyIntegration(unittest.IsolatedAsyncioTestCase):
 
                 elif payload_type == "scoring_request":
                     spec = msg.scoring_request.scorer
-                    score_res = eval_agent_pb2.ScoreResult(
-                        scorer_name=spec.scorer_name,
+                    metric = eval_agent_pb2.MetricScore(
+                        metric_name=spec.scorer_name,
                         score=100.0,
+                        comparison_logs=f"{spec.scorer_name} verified in sandbox",
                         success=True,
-                        result_json=json.dumps({"stdout": f"{spec.scorer_name} verified in sandbox"}),
                     )
                     reply = eval_agent_pb2.AgentStreamMessage(
                         session_id=session_id,
                         correlation_id=corr_id,
-                        scoring_response=eval_agent_pb2.ScoringResponse(result=score_res),
+                        scoring_response=eval_agent_pb2.ScoringResponse(scores=[metric]),
                     )
                     await send_queue.put(reply)
 
@@ -420,16 +420,16 @@ class TestAgentGrpcProxyIntegration(unittest.IsolatedAsyncioTestCase):
 
                 elif payload_type == "scoring_request":
                     spec = msg.scoring_request.scorer
-                    score_res = eval_agent_pb2.ScoreResult(
-                        scorer_name=spec.scorer_name,
+                    metric = eval_agent_pb2.MetricScore(
+                        metric_name=spec.scorer_name,
                         score=100.0,
+                        comparison_logs=f"{spec.scorer_name} ok",
                         success=True,
-                        result_json=json.dumps({"stdout": f"{spec.scorer_name} ok"}),
                     )
                     reply = eval_agent_pb2.AgentStreamMessage(
                         session_id=session_id,
                         correlation_id=corr_id,
-                        scoring_response=eval_agent_pb2.ScoringResponse(result=score_res),
+                        scoring_response=eval_agent_pb2.ScoringResponse(scores=[metric]),
                     )
                     await send_queue.put(reply)
 

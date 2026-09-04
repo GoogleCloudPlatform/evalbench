@@ -63,7 +63,53 @@ class RemoteScorerProxy(Comparator):
             timeout_seconds=self.timeout_seconds,
         )
 
-        scoring_req = eval_agent_pb2.ScoringRequest(scorer=scorer_spec)
+        database = kwargs.get("database", "")
+        scenario_id = ""
+        if isinstance(eval_results, dict):
+            scenario_id = eval_results.get("scenario", {}).get(
+                "id", ""
+            ) or eval_results.get("eval_id", "")
+        elif eval_results and isinstance(eval_results, str):
+            try:
+                parsed_eval = json.loads(eval_results)
+                if isinstance(parsed_eval, dict):
+                    scenario_id = parsed_eval.get("scenario", {}).get(
+                        "id", ""
+                    ) or parsed_eval.get("eval_id", "")
+            except Exception:
+                pass
+
+        scoring_context = eval_agent_pb2.ScoringContext(
+            nl_prompt=str(nl_prompt or ""),
+            golden_query=str(golden_sql or ""),
+            query_type=str(query_type or ""),
+            golden_result_json=(
+                json.dumps(golden_result, default=str)
+                if not isinstance(golden_result, str)
+                else golden_result
+            ),
+            golden_eval_results=str(golden_eval_results or ""),
+            golden_error=str(golden_error or ""),
+            generated_query=str(generated_sql or ""),
+            generated_result_json=(
+                json.dumps(generated_result, default=str)
+                if not isinstance(generated_result, str)
+                else generated_result
+            ),
+            eval_results_json=(
+                json.dumps(eval_results, default=str)
+                if isinstance(eval_results, dict)
+                else str(eval_results or "")
+            ),
+            generated_error=str(generated_error or ""),
+            database=str(database or ""),
+            scenario_id=str(scenario_id or ""),
+        )
+
+        scoring_req = eval_agent_pb2.ScoringRequest(
+            scorer=scorer_spec,
+            context=scoring_context,
+        )
         msg = eval_agent_pb2.AgentStreamMessage(
             session_id=session_id,
             correlation_id=correlation_id,
@@ -71,9 +117,10 @@ class RemoteScorerProxy(Comparator):
         )
 
         logger.info(
-            "[REVERSE_SCORER] Dispatching ScoringRequest for '%s' (correlation_id=%s)",
+            "[REVERSE_SCORER] Dispatching ScoringRequest for '%s' (correlation_id=%s, scenario=%s)",
             self.name,
             correlation_id,
+            scenario_id,
         )
         out_queue.put(msg)
 
@@ -94,6 +141,26 @@ class RemoteScorerProxy(Comparator):
             logger.error("[REVERSE_SCORER] Unexpected message on stream: %s", err_details)
             return (0.0, f"Error: Unexpected payload on stream: {err_details}")
 
-        r = resp_msg.scoring_response.result
-        log_output = r.result_json or r.error_message or ("PASSED" if r.success else "FAILED")
-        return (float(r.score), log_output)
+        scores = resp_msg.scoring_response.scores
+        if not scores:
+            return (0.0, "Error: Empty score response from remote scorer")
+
+        if len(scores) == 1:
+            s = scores[0]
+            log_output = (
+                s.comparison_logs
+                or s.error_message
+                or ("PASSED" if s.success else "FAILED")
+            )
+            return (float(s.score), log_output)
+
+        return [
+            (
+                s.metric_name or self.name,
+                float(s.score),
+                s.comparison_logs
+                or s.error_message
+                or ("PASSED" if s.success else "FAILED"),
+            )
+            for s in scores
+        ]

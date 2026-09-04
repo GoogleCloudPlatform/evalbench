@@ -83,16 +83,24 @@ class TestAgentGrpcProxy(unittest.TestCase):
             spec = msg.scoring_request.scorer
             self.assertEqual(spec.scorer_name, "dataform_compile")
 
-            score_res = eval_agent_pb2.ScoreResult(
-                scorer_name="dataform_compile",
+            # Verify ScoringContext fields were properly populated
+            ctx = msg.scoring_request.context
+            self.assertEqual(ctx.nl_prompt, "build pipeline")
+            self.assertEqual(ctx.database, "bigquery")
+            self.assertEqual(ctx.scenario_id, "scenario_01")
+            self.assertIn("write_to_file", ctx.golden_result_json)
+            self.assertIn("write_to_file", ctx.generated_result_json)
+
+            m_score = eval_agent_pb2.MetricScore(
+                metric_name="dataform_compile",
                 score=100.0,
+                comparison_logs="Compilation successful",
                 success=True,
-                result_json=json.dumps({"status": "verified"}),
             )
             reply = eval_agent_pb2.AgentStreamMessage(
                 session_id=self.session_id,
                 correlation_id=corr_id,
-                scoring_response=eval_agent_pb2.ScoringResponse(result=score_res),
+                scoring_response=eval_agent_pb2.ScoringResponse(scores=[m_score]),
             )
             self.inboxes[corr_id].put(reply)
 
@@ -101,6 +109,50 @@ class TestAgentGrpcProxy(unittest.TestCase):
 
         score, logs = scorer.compare(
             nl_prompt="build pipeline",
+            golden_sql="",
+            query_type="",
+            golden_result=["write_to_file"],
+            golden_eval_results="",
+            golden_error="",
+            generated_sql="",
+            generated_result=["write_to_file"],
+            eval_results={"scenario": {"id": "scenario_01"}},
+            generated_error="",
+            database="bigquery",
+        )
+        t.join()
+
+        self.assertEqual(score, 100.0)
+        self.assertEqual(logs, "Compilation successful")
+
+    def test_remote_scorer_sub_scores(self):
+        scorer = RemoteScorerProxy("multi_aspect_scorer", {"timeout_seconds": 5.0})
+
+        def answer_multi_scorer():
+            msg = self.out_queue.get(timeout=2.0)
+            corr_id = msg.correlation_id
+            self.assertEqual(msg.WhichOneof("payload"), "scoring_request")
+
+            scores_list = [
+                eval_agent_pb2.MetricScore(
+                    metric_name="syntax", score=100.0, comparison_logs="Clean syntax", success=True
+                ),
+                eval_agent_pb2.MetricScore(
+                    metric_name="efficiency", score=80.0, comparison_logs="2 turns", success=True
+                ),
+            ]
+            reply = eval_agent_pb2.AgentStreamMessage(
+                session_id=self.session_id,
+                correlation_id=corr_id,
+                scoring_response=eval_agent_pb2.ScoringResponse(scores=scores_list),
+            )
+            self.inboxes[corr_id].put(reply)
+
+        t = threading.Thread(target=answer_multi_scorer)
+        t.start()
+
+        result = scorer.compare(
+            nl_prompt="test",
             golden_sql="",
             query_type="",
             golden_result="",
@@ -113,8 +165,27 @@ class TestAgentGrpcProxy(unittest.TestCase):
         )
         t.join()
 
-        self.assertEqual(score, 100.0)
-        self.assertEqual(logs, json.dumps({"status": "verified"}))
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0], ("syntax", 100.0, "Clean syntax"))
+        self.assertEqual(result[1], ("efficiency", 80.0, "2 turns"))
+
+    def test_remote_scorer_timeout(self):
+        scorer = RemoteScorerProxy("slow_scorer", {"timeout_seconds": 0.1})
+        score, logs = scorer.compare(
+            nl_prompt="test",
+            golden_sql="",
+            query_type="",
+            golden_result="",
+            golden_eval_results="",
+            golden_error="",
+            generated_sql="",
+            generated_result="",
+            eval_results="",
+            generated_error="",
+        )
+        self.assertEqual(score, 0.0)
+        self.assertIn("Timed out waiting for remote scorer", logs)
 
     def test_remote_reporter_success(self):
         reporter = RemoteReporter(

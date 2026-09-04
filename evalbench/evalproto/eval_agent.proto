@@ -66,20 +66,38 @@ message ScorerSpec {
   float timeout_seconds = 3;    // Timeout per scorer
 }
 
-message ScoringRequest {
-  ScorerSpec scorer = 1;
+message ScoringContext {
+  string nl_prompt = 1;
+  string golden_query = 2;
+  string query_type = 3;
+  string golden_result_json = 4;        // Expected trajectory / golden outputs
+  string golden_eval_results = 5;
+  string golden_error = 6;
+  string generated_query = 7;
+  string generated_result_json = 8;     // Actual tool calls / outputs
+  string eval_results_json = 9;         // Full turn-by-turn trajectory & logs
+  string generated_error = 10;
+  string database = 11;
+  string scenario_id = 12;
 }
 
-message ScoreResult {
-  string scorer_name = 1;
-  float score = 2;              // 100.0 (PASS), 0.0 (FAIL), or continuous score
-  bool success = 3;
-  string result_json = 4;       // Generic JSON payload or diagnostics returned by scorer
+message ScoringRequest {
+  ScorerSpec scorer = 1;
+  ScoringContext context = 2;
+}
+
+message MetricScore {
+  string metric_name = 1;       // Comparator / metric name
+  float score = 2;              // Continuous or discrete score
+  string comparison_logs = 3;   // Verification output, logs, or LLM judge reasoning
+  bool success = 4;
   string error_message = 5;
+  int64 execution_duration_ms = 6;
+  string result_json = 7;
 }
 
 message ScoringResponse {
-  ScoreResult result = 1;
+  repeated MetricScore scores = 1;  // Flat list of 1 or more score rows
 }
 
 // --- 3. Delegated Reporting Messages ---
