@@ -83,24 +83,22 @@ class TestAgentGrpcProxy(unittest.TestCase):
             spec = msg.scoring_request.scorer
             self.assertEqual(spec.scorer_name, "dataform_compile")
 
-            # Verify ScoringContext fields were properly populated
+            # Verify ScoringContext fields were passed directly as strings
             ctx = msg.scoring_request.context
             self.assertEqual(ctx.nl_prompt, "build pipeline")
             self.assertEqual(ctx.database, "bigquery")
-            self.assertEqual(ctx.scenario_id, "scenario_01")
-            self.assertIn("write_to_file", ctx.golden_result_json)
-            self.assertIn("write_to_file", ctx.generated_result_json)
+            self.assertEqual(ctx.golden_result, "golden_output")
+            self.assertEqual(ctx.generated_result, "generated_output")
+            self.assertEqual(ctx.eval_results, "step1_passed")
 
-            m_score = eval_agent_pb2.MetricScore(
-                metric_name="dataform_compile",
+            single = eval_agent_pb2.SingleScore(
                 score=100.0,
                 comparison_logs="Compilation successful",
-                success=True,
             )
             reply = eval_agent_pb2.AgentStreamMessage(
                 session_id=self.session_id,
                 correlation_id=corr_id,
-                scoring_response=eval_agent_pb2.ScoringResponse(scores=[m_score]),
+                scoring_response=eval_agent_pb2.ScoringResponse(single_score=single),
             )
             self.inboxes[corr_id].put(reply)
 
@@ -111,12 +109,12 @@ class TestAgentGrpcProxy(unittest.TestCase):
             nl_prompt="build pipeline",
             golden_sql="",
             query_type="",
-            golden_result=["write_to_file"],
+            golden_result="golden_output",
             golden_eval_results="",
             golden_error="",
             generated_sql="",
-            generated_result=["write_to_file"],
-            eval_results={"scenario": {"id": "scenario_01"}},
+            generated_result="generated_output",
+            eval_results="step1_passed",
             generated_error="",
             database="bigquery",
         )
@@ -135,16 +133,17 @@ class TestAgentGrpcProxy(unittest.TestCase):
 
             scores_list = [
                 eval_agent_pb2.MetricScore(
-                    metric_name="syntax", score=100.0, comparison_logs="Clean syntax", success=True
+                    metric_name="syntax", score=100.0, comparison_logs="Clean syntax"
                 ),
                 eval_agent_pb2.MetricScore(
-                    metric_name="efficiency", score=80.0, comparison_logs="2 turns", success=True
+                    metric_name="efficiency", score=80.0, comparison_logs="2 turns"
                 ),
             ]
+            multi = eval_agent_pb2.MultiScore(scores=scores_list)
             reply = eval_agent_pb2.AgentStreamMessage(
                 session_id=self.session_id,
                 correlation_id=corr_id,
-                scoring_response=eval_agent_pb2.ScoringResponse(scores=scores_list),
+                scoring_response=eval_agent_pb2.ScoringResponse(multi_score=multi),
             )
             self.inboxes[corr_id].put(reply)
 

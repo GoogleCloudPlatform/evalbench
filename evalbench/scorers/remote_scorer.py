@@ -64,49 +64,18 @@ class RemoteScorerProxy(Comparator):
         )
 
         database = kwargs.get("database", "")
-        scenario_id = ""
-        if isinstance(eval_results, dict):
-            scenario_id = eval_results.get("scenario", {}).get(
-                "id", ""
-            ) or eval_results.get("eval_id", "")
-        elif eval_results and isinstance(eval_results, str):
-            try:
-                parsed_eval = json.loads(eval_results)
-                if isinstance(parsed_eval, dict):
-                    scenario_id = parsed_eval.get("scenario", {}).get(
-                        "id", ""
-                    ) or parsed_eval.get("eval_id", "")
-            except json.JSONDecodeError:
-                logger.debug(
-                    "RemoteScorerProxy: eval_results is not valid JSON; "
-                    "continuing without scenario_id"
-                )
-
         scoring_context = eval_agent_pb2.ScoringContext(
             nl_prompt=str(nl_prompt or ""),
             golden_query=str(golden_sql or ""),
             query_type=str(query_type or ""),
-            golden_result_json=(
-                json.dumps(golden_result, default=str)
-                if not isinstance(golden_result, str)
-                else golden_result
-            ),
+            golden_result=str(golden_result or ""),
             golden_eval_results=str(golden_eval_results or ""),
             golden_error=str(golden_error or ""),
             generated_query=str(generated_sql or ""),
-            generated_result_json=(
-                json.dumps(generated_result, default=str)
-                if not isinstance(generated_result, str)
-                else generated_result
-            ),
-            eval_results_json=(
-                json.dumps(eval_results, default=str)
-                if isinstance(eval_results, dict)
-                else str(eval_results or "")
-            ),
+            generated_result=str(generated_result or ""),
+            eval_results=str(eval_results or ""),
             generated_error=str(generated_error or ""),
             database=str(database or ""),
-            scenario_id=str(scenario_id or ""),
         )
 
         scoring_req = eval_agent_pb2.ScoringRequest(
@@ -120,10 +89,9 @@ class RemoteScorerProxy(Comparator):
         )
 
         logger.info(
-            "[REVERSE_SCORER] Dispatching ScoringRequest for '%s' (correlation_id=%s, scenario=%s)",
+            "[REVERSE_SCORER] Dispatching ScoringRequest for '%s' (correlation_id=%s)",
             self.name,
             correlation_id,
-            scenario_id,
         )
         out_queue.put(msg)
 
@@ -144,26 +112,20 @@ class RemoteScorerProxy(Comparator):
             logger.error("[REVERSE_SCORER] Unexpected message on stream: %s", err_details)
             return (0.0, f"Error: Unexpected payload on stream: {err_details}")
 
-        scores = resp_msg.scoring_response.scores
-        if not scores:
-            return (0.0, "Error: Empty score response from remote scorer")
+        scoring_resp = resp_msg.scoring_response
+        result_type = scoring_resp.WhichOneof("result")
 
-        if len(scores) == 1:
-            s = scores[0]
-            log_output = (
-                s.comparison_logs
-                or s.error_message
-                or ("PASSED" if s.success else "FAILED")
-            )
-            return (float(s.score), log_output)
+        if result_type == "single_score":
+            s = scoring_resp.single_score
+            return (float(s.score), s.comparison_logs)
+        elif result_type == "multi_score":
+            return [
+                (
+                    s.metric_name or self.name,
+                    float(s.score),
+                    s.comparison_logs,
+                )
+                for s in scoring_resp.multi_score.scores
+            ]
 
-        return [
-            (
-                s.metric_name or self.name,
-                float(s.score),
-                s.comparison_logs
-                or s.error_message
-                or ("PASSED" if s.success else "FAILED"),
-            )
-            for s in scores
-        ]
+        return (0.0, "Error: Empty score response from remote scorer")

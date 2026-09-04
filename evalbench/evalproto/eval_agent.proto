@@ -70,15 +70,14 @@ message ScoringContext {
   string nl_prompt = 1;
   string golden_query = 2;
   string query_type = 3;
-  string golden_result_json = 4;        // Expected trajectory / golden outputs
+  string golden_result = 4;
   string golden_eval_results = 5;
   string golden_error = 6;
   string generated_query = 7;
-  string generated_result_json = 8;     // Actual tool calls / outputs
-  string eval_results_json = 9;         // Full turn-by-turn trajectory & logs
+  string generated_result = 8;
+  string eval_results = 9;
   string generated_error = 10;
   string database = 11;
-  string scenario_id = 12;
 }
 
 message ScoringRequest {
@@ -86,18 +85,26 @@ message ScoringRequest {
   ScoringContext context = 2;
 }
 
+message SingleScore {
+  float score = 1;
+  string comparison_logs = 2;
+}
+
 message MetricScore {
-  string metric_name = 1;       // Comparator / metric name
-  float score = 2;              // Continuous or discrete score
-  string comparison_logs = 3;   // Verification output, logs, or LLM judge reasoning
-  bool success = 4;
-  string error_message = 5;
-  int64 execution_duration_ms = 6;
-  string result_json = 7;
+  string metric_name = 1;
+  float score = 2;
+  string comparison_logs = 3;
+}
+
+message MultiScore {
+  repeated MetricScore scores = 1;
 }
 
 message ScoringResponse {
-  repeated MetricScore scores = 1;  // Flat list of 1 or more score rows
+  oneof result {
+    SingleScore single_score = 1;
+    MultiScore multi_score = 2;
+  }
 }
 
 // --- 3. Delegated Reporting Messages ---

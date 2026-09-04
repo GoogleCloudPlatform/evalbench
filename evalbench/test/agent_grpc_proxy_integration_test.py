@@ -277,16 +277,14 @@ class TestAgentGrpcProxyIntegration(unittest.IsolatedAsyncioTestCase):
 
                 elif payload_type == "scoring_request":
                     spec = msg.scoring_request.scorer
-                    metric = eval_agent_pb2.MetricScore(
-                        metric_name=spec.scorer_name,
+                    single = eval_agent_pb2.SingleScore(
                         score=100.0,
                         comparison_logs=f"{spec.scorer_name} verified in sandbox",
-                        success=True,
                     )
                     reply = eval_agent_pb2.AgentStreamMessage(
                         session_id=session_id,
                         correlation_id=corr_id,
-                        scoring_response=eval_agent_pb2.ScoringResponse(scores=[metric]),
+                        scoring_response=eval_agent_pb2.ScoringResponse(single_score=single),
                     )
                     await send_queue.put(reply)
 
@@ -420,16 +418,14 @@ class TestAgentGrpcProxyIntegration(unittest.IsolatedAsyncioTestCase):
 
                 elif payload_type == "scoring_request":
                     spec = msg.scoring_request.scorer
-                    metric = eval_agent_pb2.MetricScore(
-                        metric_name=spec.scorer_name,
+                    single = eval_agent_pb2.SingleScore(
                         score=100.0,
                         comparison_logs=f"{spec.scorer_name} ok",
-                        success=True,
                     )
                     reply = eval_agent_pb2.AgentStreamMessage(
                         session_id=session_id,
                         correlation_id=corr_id,
-                        scoring_response=eval_agent_pb2.ScoringResponse(scores=[metric]),
+                        scoring_response=eval_agent_pb2.ScoringResponse(single_score=single),
                     )
                     await send_queue.put(reply)
 
