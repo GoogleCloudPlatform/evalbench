@@ -5,7 +5,7 @@ default: deploy
 .PHONY: default build build-test container shell push-test push push-corprun \
         deploy deploy-test deploy-corprun create-precompute-job run-precompute-job \
         undeploy undeploy-test redeploy redeploy-test pod-shell pod-shell-test \
-        proto clean test style run binary
+        proto proto-clean clean test style run binary
 
 CONTAINER_ENGINE ?= docker
 
@@ -204,6 +204,9 @@ proto:
 		--experimental_editions evalbench/evalproto/*.proto
 
 clean:
+	@rm -rf build dist *.egg-info .pytest_cache
+
+proto-clean:
 	@rm -fr evalbench/evalproto/*.py
 	@rm -fr evalbench/evalproto/*.pyi
 
