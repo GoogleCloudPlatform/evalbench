@@ -1,11 +1,13 @@
-"""Unit tests for McpStyleReadabilityScorer._generate token/truncation handling.
+"""Unit tests for McpStyleReadabilityScorer generation and response parsing.
 
-These cover the Gemini-3.x follow-ups: a high ``max_output_tokens`` is set on the
-JSON-mode call, and a truncated response (``finish_reason == MAX_TOKENS``) raises
-a clear ``TruncatedResponseError`` instead of falling through to a cryptic JSON
-parse failure.
+Generation covers the Gemini-3.x follow-ups: a high ``max_output_tokens`` is set
+on the JSON-mode call, and a truncated response (``finish_reason ==
+MAX_TOKENS``) raises a clear ``TruncatedResponseError`` instead of falling
+through to a cryptic JSON parse failure. Parsing covers the per-tool findings
+layout and the distinct-rule P0/P1/P2 counts derived from it.
 """
 
+import json
 import os
 import tempfile
 import types as pytypes
@@ -110,6 +112,79 @@ class GenerateTruncationTest(unittest.TestCase):
         out = scorer._generate("prompt")
         self.assertTrue(model.generate_called)
         self.assertIn("readability_score", out)
+
+
+class ParsePerToolFindingsTest(unittest.TestCase):
+    """`_parse` takes the judge's per-tool grouping and counts each rule once."""
+
+    def _parse(self, by_tool):
+        scorer = McpStyleReadabilityScorer.__new__(McpStyleReadabilityScorer)
+        return scorer._parse(json.dumps({"findings_by_tool": by_tool}))
+
+    def test_grouping_is_kept_as_returned(self):
+        out = self._parse(
+            [
+                {
+                    "tool": "general",
+                    "findings": [
+                        {"severity": "P0", "rule_id": "Tool Count Limits"}
+                    ],
+                },
+                {
+                    "tool": "create_instance",
+                    "findings": [
+                        {
+                            "severity": "P0",
+                            "rule_id": "Avoid complex parameters",
+                            "message": "pscInstanceConfig is deeply nested.",
+                        }
+                    ],
+                },
+            ]
+        )
+        # Entry order and per-tool findings come straight from the judge.
+        self.assertEqual(
+            [e["tool"] for e in out["findings_by_tool"]],
+            ["general", "create_instance"],
+        )
+        self.assertIn(
+            "pscInstanceConfig",
+            out["findings_by_tool"][1]["findings"][0]["message"],
+        )
+        self.assertEqual(out["p0_issues"], 2)
+
+    def test_same_rule_under_two_tools_counts_once(self):
+        rule = {"severity": "P0", "rule_id": "Avoid complex parameters"}
+        out = self._parse(
+            [
+                {"tool": "create_instance", "findings": [dict(rule)]},
+                {"tool": "update_instance", "findings": [dict(rule)]},
+            ]
+        )
+        self.assertEqual(out["p0_issues"], 1)
+        self.assertEqual(len(out["findings_by_tool"]), 2)
+
+    def test_ruleless_findings_each_count(self):
+        # Without a rule_id there is nothing to collapse on, so both count.
+        out = self._parse(
+            [
+                {"tool": "a", "findings": [{"severity": "P2"}]},
+                {"tool": "b", "findings": [{"severity": "P2"}]},
+            ]
+        )
+        self.assertEqual(out["p2_issues"], 2)
+
+    def test_unusable_entries_are_dropped(self):
+        out = self._parse(
+            [
+                "not an entry",
+                {"tool": "", "findings": [{"severity": "P0"}]},
+                {"tool": "a", "findings": "not a list"},
+                {"tool": "b", "findings": [{"severity": "P1"}]},
+            ]
+        )
+        self.assertEqual([e["tool"] for e in out["findings_by_tool"]], ["b"])
+        self.assertEqual(out["p1_issues"], 1)
 
 
 if __name__ == "__main__":
