@@ -51,3 +51,64 @@ class ScoreContribution:
     row_fields: dict[str, Any] = field(default_factory=dict)
     score: int = 100
     logs: str = ""
+
+
+# Severity display order, and the badge each finding bullet is prefixed with now
+# that findings are grouped by tool rather than by severity.
+SEVERITY_BADGES = {"P0": "🚫 P0", "P1": "⚠️ P1", "P2": "💡 P2"}
+
+# Bucket for findings the judge reported without naming a tool (a guide-wide
+# issue), listed ahead of the per-tool buckets.
+ALL_TOOLS = "All tools"
+
+
+def findings_by_tool(findings) -> list[tuple[str, list[dict]]]:
+    """Group style-judge findings into one list per affected tool.
+
+    Shared by the dashboard HTML (``McpStyleReadabilityScorer.to_html``) and the
+    Markdown comparison report so both present the same buckets. The judge
+    attributes each finding to one tool, but a finding naming several
+    (comma-separated) is listed under each of them; findings with no tool land in
+    :data:`ALL_TOOLS`.
+
+    Buckets are ordered with :data:`ALL_TOOLS` first, then tools alphabetically;
+    within a bucket findings run P0 -> P1 -> P2.
+    """
+    buckets: dict[str, list[dict]] = {}
+    for finding in findings:
+        if not isinstance(finding, dict):
+            continue
+        named = [t.strip() for t in str(finding.get("tool", "")).split(",")]
+        for tool in [t for t in named if t] or [ALL_TOOLS]:
+            buckets.setdefault(tool, []).append(finding)
+
+    severity_rank = {sev: i for i, sev in enumerate(SEVERITY_BADGES)}
+    ordered = sorted(buckets, key=lambda t: (t != ALL_TOOLS, t.lower()))
+    return [
+        (
+            tool,
+            sorted(
+                buckets[tool],
+                key=lambda f: severity_rank.get(
+                    str(f.get("severity", "")).upper(), len(severity_rank)
+                ),
+            ),
+        )
+        for tool in ordered
+    ]
+
+
+def severity_tally(findings: list[dict]) -> str:
+    """Summarize a tool's findings as e.g. ``"1 P0, 2 P2"`` (zeros omitted)."""
+    counts = {sev: 0 for sev in SEVERITY_BADGES}
+    other = 0
+    for finding in findings:
+        sev = str(finding.get("severity", "")).upper()
+        if sev in counts:
+            counts[sev] += 1
+        else:
+            other += 1
+    parts = [f"{n} {sev}" for sev, n in counts.items() if n]
+    if other:
+        parts.append(f"{other} unclassified")
+    return ", ".join(parts) or "no findings"

@@ -195,13 +195,18 @@ def test_scorer_parse_and_html():
     assert fb["readability_score"] == 75
     # title flows through the parser unchanged.
     assert fb["findings"][0]["title"] == "Bad name"
+    # The persisted feedback also carries a per-tool view of those findings.
+    assert fb["findings_by_tool"] == [
+        {"tool": "t", "findings": fb["findings"]}
+    ]
 
     html = McpStyleReadabilityScorer.to_html(fb, product_name="Cloud SQL")
     # Human-readable report: product heading + summary, no numeric score.
     assert "MCP Tool Readability Review — Cloud SQL" in html
     assert "readability score" not in html.lower()
-    # Findings are grouped by severity and carry their title/rule.
-    assert "Blockers (P0) — 1" in html
+    # Findings are grouped per tool, tallied by severity, and carry their
+    # title/rule with a severity badge.
+    assert "<h4>t — 1 P0, 1 P2</h4>" in html
     assert "P0-X" in html and "Bad name" in html
     # Allowed exceptions section surfaces the waiver, reason, and flag note.
     assert "Allowed exceptions (waived) — 1" in html

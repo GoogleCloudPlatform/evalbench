@@ -1,11 +1,13 @@
-"""Unit tests for McpStyleReadabilityScorer._generate token/truncation handling.
+"""Unit tests for McpStyleReadabilityScorer generation and response parsing.
 
-These cover the Gemini-3.x follow-ups: a high ``max_output_tokens`` is set on the
-JSON-mode call, and a truncated response (``finish_reason == MAX_TOKENS``) raises
-a clear ``TruncatedResponseError`` instead of falling through to a cryptic JSON
-parse failure.
+Generation covers the Gemini-3.x follow-ups: a high ``max_output_tokens`` is set
+on the JSON-mode call, and a truncated response (``finish_reason ==
+MAX_TOKENS``) raises a clear ``TruncatedResponseError`` instead of falling
+through to a cryptic JSON parse failure. Parsing covers the per-tool findings
+layout and the distinct-rule P0/P1/P2 counts derived from it.
 """
 
+import json
 import os
 import tempfile
 import types as pytypes
@@ -15,6 +17,7 @@ from unittest.mock import patch
 from google.genai.types import FinishReason
 
 from scorers import mcp_style_readability
+from scorers.mcp_readability_scoring import ALL_TOOLS
 from scorers.mcp_style_readability import (
     McpStyleReadabilityScorer,
     TruncatedResponseError,
@@ -110,6 +113,72 @@ class GenerateTruncationTest(unittest.TestCase):
         out = scorer._generate("prompt")
         self.assertTrue(model.generate_called)
         self.assertIn("readability_score", out)
+
+
+class ParsePerToolFindingsTest(unittest.TestCase):
+    """`_parse` keeps one finding per tool but counts each rule once."""
+
+    def _parse(self, findings):
+        scorer = McpStyleReadabilityScorer.__new__(McpStyleReadabilityScorer)
+        return scorer._parse(json.dumps({"findings": findings}))
+
+    def test_same_rule_across_tools_counts_once_but_keeps_both(self):
+        out = self._parse(
+            [
+                {
+                    "severity": "P0",
+                    "rule_id": "Avoid complex parameters",
+                    "tool": "create_instance",
+                    "message": "pscInstanceConfig is deeply nested.",
+                },
+                {
+                    "severity": "P0",
+                    "rule_id": "Avoid complex parameters",
+                    "tool": "update_instance",
+                    "message": "settingsConfig is deeply nested.",
+                },
+            ]
+        )
+        # One rule broken by two tools: one P0, but each tool keeps its own
+        # finding and its own tool-specific message.
+        self.assertEqual(out["p0_issues"], 1)
+        self.assertEqual(len(out["findings"]), 2)
+        self.assertEqual(
+            [t["tool"] for t in out["findings_by_tool"]],
+            ["create_instance", "update_instance"],
+        )
+        self.assertIn(
+            "settingsConfig",
+            out["findings_by_tool"][1]["findings"][0]["message"],
+        )
+
+    def test_distinct_rules_are_counted_separately(self):
+        out = self._parse(
+            [
+                {"severity": "P0", "rule_id": "Safe Pagination", "tool": "a"},
+                {"severity": "P0", "rule_id": "Be Consistent", "tool": "a"},
+                {"severity": "P1", "rule_id": "Use Enums", "tool": "b"},
+            ]
+        )
+        self.assertEqual(out["p0_issues"], 2)
+        self.assertEqual(out["p1_issues"], 1)
+
+    def test_toolless_finding_lands_in_all_tools_bucket(self):
+        out = self._parse(
+            [{"severity": "P1", "rule_id": "Missing capability", "tool": ""}]
+        )
+        self.assertEqual(out["findings"][0]["tool"], "")
+        self.assertEqual(out["findings_by_tool"][0]["tool"], ALL_TOOLS)
+
+    def test_ruleless_findings_each_count(self):
+        # Without a rule_id there is nothing to collapse on, so both count.
+        out = self._parse(
+            [
+                {"severity": "P2", "tool": "a", "title": "no rule"},
+                {"severity": "P2", "tool": "b", "title": "no rule"},
+            ]
+        )
+        self.assertEqual(out["p2_issues"], 2)
 
 
 if __name__ == "__main__":
