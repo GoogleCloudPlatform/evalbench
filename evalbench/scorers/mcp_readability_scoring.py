@@ -54,49 +54,8 @@ class ScoreContribution:
 
 
 # Severity display order, and the badge each finding bullet is prefixed with now
-# that findings are grouped by tool rather than by severity.
+# that the judge groups its findings by tool rather than by severity.
 SEVERITY_BADGES = {"P0": "🚫 P0", "P1": "⚠️ P1", "P2": "💡 P2"}
-
-# Bucket for findings that belong to the tool set rather than to any one tool --
-# too many tools for one server, a missing polling or discovery tool, a parameter
-# named inconsistently across tools. Listed ahead of the per-tool buckets.
-GENERAL = "General issues"
-
-
-def findings_by_tool(findings) -> list[tuple[str, list[dict]]]:
-    """Group style-judge findings into one list per affected tool.
-
-    Shared by the dashboard HTML (``McpStyleReadabilityScorer.to_html``) and the
-    Markdown comparison report so both present the same buckets. The judge
-    attributes each finding to one tool, but a finding naming several
-    (comma-separated) is listed under each of them; findings with no tool land in
-    :data:`GENERAL`.
-
-    Buckets are ordered with :data:`GENERAL` first, then tools alphabetically;
-    within a bucket findings run P0 -> P1 -> P2.
-    """
-    buckets: dict[str, list[dict]] = {}
-    for finding in findings:
-        if not isinstance(finding, dict):
-            continue
-        named = [t.strip() for t in str(finding.get("tool", "")).split(",")]
-        for tool in [t for t in named if t] or [GENERAL]:
-            buckets.setdefault(tool, []).append(finding)
-
-    severity_rank = {sev: i for i, sev in enumerate(SEVERITY_BADGES)}
-    ordered = sorted(buckets, key=lambda t: (t != GENERAL, t.lower()))
-    return [
-        (
-            tool,
-            sorted(
-                buckets[tool],
-                key=lambda f: severity_rank.get(
-                    str(f.get("severity", "")).upper(), len(severity_rank)
-                ),
-            ),
-        )
-        for tool in ordered
-    ]
 
 
 def severity_tally(findings: list[dict]) -> str:

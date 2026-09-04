@@ -22,7 +22,6 @@ from scorers.mcp_readability_scoring import (
     EndpointContext,
     SEVERITY_BADGES,
     ScoreContribution,
-    findings_by_tool,
     severity_tally,
 )
 
@@ -52,16 +51,23 @@ Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
   "p0_issues": <integer>,
   "p1_issues": <integer>,
   "p2_issues": <integer>,
-  "findings": [
-    {{"severity": "P0|P1|P2", "rule_id": "<string>", "tool": "<tool name or ''>",
-      "title": "<short one-line summary>", "message": "<what is wrong>",
-      "suggestion": "<how to fix>"}}
+  "findings_by_tool": [
+    {{"tool": "<tool name, or 'general'>",
+      "findings": [
+        {{"severity": "P0|P1|P2", "rule_id": "<string>",
+          "title": "<short one-line summary>", "message": "<what is wrong>",
+          "suggestion": "<how to fix>"}}
+      ]}}
   ],
   "waived": [
     {{"rule_id": "<string>", "reason": "<reason>", "would_have_violated": <true|false>}}
   ],
   "summary": "<one-paragraph overall assessment>"
 }}
+Emit one "findings_by_tool" entry per tool that has findings, in the order the
+tools appear in the man page, with the "general" entry (if any) first. Within an
+entry, order findings P0, then P1, then P2. Omit tools with no findings.
+
 The counts p0_issues/p1_issues/p2_issues are DISTINCT RULES violated at each
 severity: a rule_id reported for several tools counts once, no matter how many
 findings carry it."""
@@ -106,15 +112,16 @@ How to assign severity and rule_id:
   about platform/registration/dashboards that cannot be judged from the tool
   schema alone should not be flagged as violations.
 
-Attribute every finding to a tool:
-- Report a violation SEPARATELY for each tool it affects: one finding per tool,
-  with "tool" set to that tool's name and a "message"/"suggestion" written for
-  that tool specifically (name its own parameters, description, or wording).
-  Repeating the same rule_id across tools is expected -- a rule broken by ten
-  tools yields ten findings, and is still counted as one rule violated.
-- Use "tool": "" (empty string) only for an issue that belongs to no individual
-  tool, e.g. the tool set as a whole is missing a capability or two tools
-  overlap.
+Group findings under the tool they affect:
+- Report a violation SEPARATELY for each tool it affects, under that tool's
+  entry, with a "message"/"suggestion" written for that tool specifically (name
+  its own parameters, description, or wording). Repeating the same rule_id under
+  several tools is expected -- a rule broken by ten tools appears under all ten,
+  and is still counted as one rule violated.
+- Use the "general" entry only for an issue that belongs to no individual tool:
+  the server exposes too many tools, the tool set is missing a capability (e.g.
+  no polling tool for a long-running operation), or a parameter for the same
+  concept is named inconsistently across tools.
 - Do not paper over the difference between tools: if a rule is broken in a
   different way by two tools, say what is wrong with each.
 - Keep each message and suggestion to one or two sentences -- one finding per
@@ -296,16 +303,15 @@ class McpStyleReadabilityScorer:
     def _parse(self, raw: str) -> dict:
         """Normalize the model output into a stable feedback dict."""
         data = self._extract_json(raw)
-        findings = data.get("findings") or []
-        if not isinstance(findings, list):
-            findings = []
+        by_tool = _clean_findings_by_tool(data.get("findings_by_tool"))
+        all_findings = [f for entry in by_tool for f in entry["findings"]]
 
         # Counts derived from findings are authoritative (a single pass). Only
         # fall back to the model's self-reported integers when there are no
         # findings at all -- otherwise a legitimately-zero severity would be
         # overwritten by a mismatched self-reported count.
-        if findings:
-            counts = _severity_counts(findings)
+        if all_findings:
+            counts = _severity_counts(all_findings)
             p0, p1, p2 = counts["P0"], counts["P1"], counts["P2"]
         else:
             p0 = _safe_int(data.get("p0_issues"))
@@ -317,14 +323,7 @@ class McpStyleReadabilityScorer:
             "p0_issues": p0,
             "p1_issues": p1,
             "p2_issues": p2,
-            "findings": findings,
-            # Per-tool view of the same findings, for consumers that read the
-            # JSON column directly. A rule broken by several tools appears under
-            # each of them here, but only once in the p0/p1/p2 counts.
-            "findings_by_tool": [
-                {"tool": tool, "findings": items}
-                for tool, items in findings_by_tool(findings)
-            ],
+            "findings_by_tool": by_tool,
             "waived": data.get("waived") or [],
             "summary": data.get("summary", ""),
         }
@@ -333,10 +332,11 @@ class McpStyleReadabilityScorer:
     def to_html(feedback: dict, product_name: str = "") -> str:
         """Render feedback as a human-readable HTML fragment.
 
-        Leads with the overall summary, gives each tool its own findings list
-        (severity-ordered), ends with the allowed exceptions (waived rules) and
-        their reasons. It deliberately omits any numeric readability score -- the intent is review
-        notes an engineer can act on, not a grade.
+        Leads with the overall summary, renders the judge's per-tool findings
+        lists in the order it returned them, and ends with the allowed exceptions
+        (waived rules) and their reasons. It deliberately omits any numeric
+        readability score -- the intent is review notes an engineer can act on,
+        not a grade.
 
         HTML (rather than Markdown) because this column is surfaced in a
         dashboard that renders it as HTML. All model-supplied text is escaped.
@@ -355,11 +355,14 @@ class McpStyleReadabilityScorer:
         if summary:
             parts.append(f"<p><b>Summary:</b> {esc(summary)}</p>")
 
-        by_tool = findings_by_tool(feedback.get("findings") or [])
+        by_tool = _clean_findings_by_tool(feedback.get("findings_by_tool"))
         if not by_tool:
             parts.append("<p><i>No findings</i></p>")
-        for tool, items in by_tool:
-            parts.append(f"<h4>{esc(tool)} — {severity_tally(items)}</h4>")
+        for entry in by_tool:
+            items = entry["findings"]
+            parts.append(
+                f"<h4>{esc(entry['tool'])} — {severity_tally(items)}</h4>"
+            )
             parts.append("<ul>")
             for f in items:
                 rule = esc(str(f.get("rule_id", "")).strip() or "(rule)")
@@ -399,6 +402,30 @@ class McpStyleReadabilityScorer:
 
         parts.append("</div>")
         return "".join(parts)
+
+
+def _clean_findings_by_tool(by_tool) -> list[dict]:
+    """The judge's per-tool findings, with unusable entries dropped.
+
+    The judge groups findings itself, so this only guards the shape: an entry
+    needs a tool name and a list of dict findings to be renderable. Entry and
+    finding order are the judge's -- it is told to lead with "general" and to
+    order findings P0 -> P1 -> P2.
+    """
+    if not isinstance(by_tool, list):
+        return []
+    cleaned = []
+    for entry in by_tool:
+        if not isinstance(entry, dict):
+            continue
+        tool = str(entry.get("tool", "")).strip()
+        raw_findings = entry.get("findings")
+        if not isinstance(raw_findings, list):
+            continue
+        findings = [f for f in raw_findings if isinstance(f, dict)]
+        if tool and findings:
+            cleaned.append({"tool": tool, "findings": findings})
+    return cleaned
 
 
 def _severity_counts(findings: list) -> dict[str, int]:

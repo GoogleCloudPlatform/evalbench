@@ -17,7 +17,6 @@ from unittest.mock import patch
 from google.genai.types import FinishReason
 
 from scorers import mcp_style_readability
-from scorers.mcp_readability_scoring import GENERAL
 from scorers.mcp_style_readability import (
     McpStyleReadabilityScorer,
     TruncatedResponseError,
@@ -116,69 +115,76 @@ class GenerateTruncationTest(unittest.TestCase):
 
 
 class ParsePerToolFindingsTest(unittest.TestCase):
-    """`_parse` keeps one finding per tool but counts each rule once."""
+    """`_parse` takes the judge's per-tool grouping and counts each rule once."""
 
-    def _parse(self, findings):
+    def _parse(self, by_tool):
         scorer = McpStyleReadabilityScorer.__new__(McpStyleReadabilityScorer)
-        return scorer._parse(json.dumps({"findings": findings}))
+        return scorer._parse(json.dumps({"findings_by_tool": by_tool}))
 
-    def test_same_rule_across_tools_counts_once_but_keeps_both(self):
+    def test_grouping_is_kept_as_returned(self):
         out = self._parse(
             [
                 {
-                    "severity": "P0",
-                    "rule_id": "Avoid complex parameters",
-                    "tool": "create_instance",
-                    "message": "pscInstanceConfig is deeply nested.",
+                    "tool": "general",
+                    "findings": [
+                        {"severity": "P0", "rule_id": "Tool Count Limits"}
+                    ],
                 },
                 {
-                    "severity": "P0",
-                    "rule_id": "Avoid complex parameters",
-                    "tool": "update_instance",
-                    "message": "settingsConfig is deeply nested.",
+                    "tool": "create_instance",
+                    "findings": [
+                        {
+                            "severity": "P0",
+                            "rule_id": "Avoid complex parameters",
+                            "message": "pscInstanceConfig is deeply nested.",
+                        }
+                    ],
                 },
             ]
         )
-        # One rule broken by two tools: one P0, but each tool keeps its own
-        # finding and its own tool-specific message.
-        self.assertEqual(out["p0_issues"], 1)
-        self.assertEqual(len(out["findings"]), 2)
+        # Entry order and per-tool findings come straight from the judge.
         self.assertEqual(
-            [t["tool"] for t in out["findings_by_tool"]],
-            ["create_instance", "update_instance"],
+            [e["tool"] for e in out["findings_by_tool"]],
+            ["general", "create_instance"],
         )
         self.assertIn(
-            "settingsConfig",
+            "pscInstanceConfig",
             out["findings_by_tool"][1]["findings"][0]["message"],
         )
+        self.assertEqual(out["p0_issues"], 2)
 
-    def test_distinct_rules_are_counted_separately(self):
+    def test_same_rule_under_two_tools_counts_once(self):
+        rule = {"severity": "P0", "rule_id": "Avoid complex parameters"}
         out = self._parse(
             [
-                {"severity": "P0", "rule_id": "Safe Pagination", "tool": "a"},
-                {"severity": "P0", "rule_id": "Be Consistent", "tool": "a"},
-                {"severity": "P1", "rule_id": "Use Enums", "tool": "b"},
+                {"tool": "create_instance", "findings": [dict(rule)]},
+                {"tool": "update_instance", "findings": [dict(rule)]},
             ]
         )
-        self.assertEqual(out["p0_issues"], 2)
-        self.assertEqual(out["p1_issues"], 1)
-
-    def test_toolless_finding_lands_in_all_tools_bucket(self):
-        out = self._parse(
-            [{"severity": "P1", "rule_id": "Missing capability", "tool": ""}]
-        )
-        self.assertEqual(out["findings"][0]["tool"], "")
-        self.assertEqual(out["findings_by_tool"][0]["tool"], GENERAL)
+        self.assertEqual(out["p0_issues"], 1)
+        self.assertEqual(len(out["findings_by_tool"]), 2)
 
     def test_ruleless_findings_each_count(self):
         # Without a rule_id there is nothing to collapse on, so both count.
         out = self._parse(
             [
-                {"severity": "P2", "tool": "a", "title": "no rule"},
-                {"severity": "P2", "tool": "b", "title": "no rule"},
+                {"tool": "a", "findings": [{"severity": "P2"}]},
+                {"tool": "b", "findings": [{"severity": "P2"}]},
             ]
         )
         self.assertEqual(out["p2_issues"], 2)
+
+    def test_unusable_entries_are_dropped(self):
+        out = self._parse(
+            [
+                "not an entry",
+                {"tool": "", "findings": [{"severity": "P0"}]},
+                {"tool": "a", "findings": "not a list"},
+                {"tool": "b", "findings": [{"severity": "P1"}]},
+            ]
+        )
+        self.assertEqual([e["tool"] for e in out["findings_by_tool"]], ["b"])
+        self.assertEqual(out["p1_issues"], 1)
 
 
 if __name__ == "__main__":
