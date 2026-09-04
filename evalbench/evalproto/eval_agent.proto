@@ -107,7 +107,6 @@ message ReporterResult {
   bool success = 2;
   string result_json = 3;       // Generic JSON payload returned by reporter (URIs, paths, metadata)
   string error_message = 4;
-  repeated string artifact_uris = 5; // Direct URIs produced (e.g. GCS URLs, archive paths)
 }
 
 message ReportingResponse {

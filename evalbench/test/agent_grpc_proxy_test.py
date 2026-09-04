@@ -147,7 +147,6 @@ class TestAgentGrpcProxy(unittest.TestCase):
                         reporter_name="gcs_artifacts",
                         success=True,
                         result_json='{"uri": "gs://test-bucket/runs/archive.zip"}',
-                        artifact_uris=["gs://test-bucket/runs/archive.zip"],
                     )
                 ),
             )
@@ -159,9 +158,6 @@ class TestAgentGrpcProxy(unittest.TestCase):
         df = pd.DataFrame({"eval_id": ["1"]})
         reporter.store(df, STORETYPE.EVALS)
         t.join()
-
-        self.assertEqual(reporter.artifact_uris, ["gs://test-bucket/runs/archive.zip"])
-        reporter.print_dashboard_links()
 
     def test_remote_reporter_all_store_types(self):
         reporter = RemoteReporter(
@@ -218,7 +214,6 @@ class TestAgentGrpcProxy(unittest.TestCase):
         df = pd.DataFrame({"eval_id": ["1"]})
         # Should complete without raising exception
         reporter.store(df, STORETYPE.EVALS)
-        self.assertEqual(len(reporter.artifact_uris), 0)
 
     def test_remote_reporter_failure_response(self):
         reporter = RemoteReporter(
@@ -251,7 +246,6 @@ class TestAgentGrpcProxy(unittest.TestCase):
         df = pd.DataFrame({"eval_id": ["1"]})
         reporter.store(df, STORETYPE.EVALS)
         t.join()
-        self.assertEqual(len(reporter.artifact_uris), 0)
 
 
 if __name__ == "__main__":

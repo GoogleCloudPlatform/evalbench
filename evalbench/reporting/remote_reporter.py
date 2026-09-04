@@ -28,7 +28,6 @@ class RemoteReporter(Reporter):
         self.config = dict(reporting_config) if isinstance(reporting_config, dict) else {}
         self.timeout_seconds = float(self.config.get("timeout_seconds", 300.0))
         self.database = str(self.config.get("database", ""))
-        self.artifact_uris: list[str] = []
         logger.info(
             "Initialized RemoteReporter: name=%s, config=%s",
             self.reporter_name,
@@ -106,8 +105,6 @@ class RemoteReporter(Reporter):
                         type_name,
                         res.result_json,
                     )
-                    if res.artifact_uris:
-                        self.artifact_uris.extend(res.artifact_uris)
                 else:
                     logger.error(
                         "[REMOTE_REPORTER] Delegated reporter '%s' (%s) failed: %s",
@@ -128,7 +125,3 @@ class RemoteReporter(Reporter):
             )
         finally:
             inboxes.pop(correlation_id, None)
-
-    def print_dashboard_links(self) -> None:
-        # TODO: Surface remote artifact URIs and dashboard links once UX format is finalized.
-        pass
