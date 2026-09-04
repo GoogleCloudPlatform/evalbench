@@ -186,6 +186,59 @@ class TestAgentGrpcProxy(unittest.TestCase):
         self.assertEqual(score, 0.0)
         self.assertIn("Timed out waiting for remote scorer", logs)
 
+    def test_remote_scorer_runtime_type_coercion(self):
+        scorer = RemoteScorerProxy("rubric_scorer", {"timeout_seconds": 5.0})
+
+        def answer_scorer():
+            msg = self.out_queue.get(timeout=2.0)
+            corr_id = msg.correlation_id
+            self.assertEqual(msg.WhichOneof("payload"), "scoring_request")
+
+            ctx = msg.scoring_request.context
+            # Non-string runtime types (list, dict) should be coerced to JSON strings
+            self.assertEqual(
+                ctx.generated_result,
+                json.dumps(["activate_skill", "run_command"]),
+            )
+            self.assertEqual(
+                ctx.eval_results,
+                json.dumps({"turn": 2, "tokens": 120}),
+            )
+            # None should be mapped to empty string
+            self.assertEqual(ctx.generated_error, "")
+
+            single = eval_agent_pb2.SingleScore(
+                score=100.0,
+                comparison_logs="Trajectory verified",
+            )
+            reply = eval_agent_pb2.AgentStreamMessage(
+                session_id=self.session_id,
+                correlation_id=corr_id,
+                scoring_response=eval_agent_pb2.ScoringResponse(single_score=single),
+            )
+            self.inboxes[corr_id].put(reply)
+
+        t = threading.Thread(target=answer_scorer)
+        t.start()
+
+        score, logs = scorer.compare(
+            nl_prompt="verify skills",
+            golden_query="",
+            query_type="",
+            golden_result="",
+            golden_eval_results="",
+            golden_error="",
+            generated_query="",
+            generated_result=["activate_skill", "run_command"],
+            eval_results={"turn": 2, "tokens": 120},
+            generated_error=None,
+            database="bigquery",
+        )
+        t.join()
+
+        self.assertEqual(score, 100.0)
+        self.assertEqual(logs, "Trajectory verified")
+
     def test_remote_reporter_success(self):
         reporter = RemoteReporter(
             "gcs_artifacts",

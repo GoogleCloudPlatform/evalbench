@@ -82,11 +82,19 @@ class RemoteScorerProxy(Comparator):
         golden_query = golden_query or kwargs.get("golden_sql", "")
         generated_query = generated_query or kwargs.get("generated_sql", "")
         database = database or kwargs.get("database", "")
+        if golden_result in ("", None):
+            golden_result = kwargs.get("golden_execution_result", "")
+        if golden_eval_results in ("", None):
+            golden_eval_results = kwargs.get("golden_eval_result", "")
+        if generated_result in ("", None):
+            generated_result = kwargs.get("generated_execution_result", "")
+        if eval_results in ("", None):
+            eval_results = kwargs.get("generated_eval_result", "")
 
         scoring_context = eval_agent_pb2.ScoringContext(
-            nl_prompt=nl_prompt or "",
+            nl_prompt=_to_str(nl_prompt),
             golden_query=_to_str(golden_query),
-            query_type=query_type or "",
+            query_type=_to_str(query_type),
             golden_result=_to_str(golden_result),
             golden_eval_results=_to_str(golden_eval_results),
             golden_error=_to_str(golden_error),
@@ -108,7 +116,7 @@ class RemoteScorerProxy(Comparator):
         )
 
         logger.info(
-            "[REVERSE_SCORER] Dispatching ScoringRequest for '%s' (correlation_id=%s)",
+            "[REMOTE_SCORER] Dispatching ScoringRequest for '%s' (correlation_id=%s)",
             self.name,
             correlation_id,
         )
@@ -118,7 +126,7 @@ class RemoteScorerProxy(Comparator):
             resp_msg = inbox.get(timeout=self.timeout_seconds)
         except queue.Empty:
             logger.error(
-                "[REVERSE_SCORER] Timed out waiting for ScoringResponse for '%s' (correlation_id=%s)",
+                "[REMOTE_SCORER] Timed out waiting for ScoringResponse for '%s' (correlation_id=%s)",
                 self.name,
                 correlation_id,
             )
@@ -128,7 +136,7 @@ class RemoteScorerProxy(Comparator):
 
         if not resp_msg.HasField("scoring_response"):
             err_details = resp_msg.WhichOneof("payload")
-            logger.error("[REVERSE_SCORER] Unexpected message on stream: %s", err_details)
+            logger.error("[REMOTE_SCORER] Unexpected message on stream: %s", err_details)
             return (0.0, f"Error: Unexpected payload on stream: {err_details}")
 
         scoring_resp = resp_msg.scoring_response
