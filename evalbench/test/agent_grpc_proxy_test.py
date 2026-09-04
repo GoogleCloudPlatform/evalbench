@@ -119,7 +119,7 @@ class TestAgentGrpcProxy(unittest.TestCase):
     def test_remote_reporter_success(self):
         reporter = RemoteReporter(
             "gcs_artifacts",
-            {"bucket": "test-bucket", "path_prefix": "runs"},
+            {"bucket": "test-bucket", "path_prefix": "runs", "database": "bigquery"},
             job_id="job_123",
             run_time="2026-08-18",
         )
@@ -131,6 +131,14 @@ class TestAgentGrpcProxy(unittest.TestCase):
             rep_spec = msg.reporting_request.reporter
             self.assertEqual(rep_spec.reporter_name, "gcs_artifacts")
 
+            ctx = msg.reporting_request.context
+            self.assertEqual(ctx.job_id, "job_123")
+            self.assertEqual(ctx.run_time, "2026-08-18")
+            self.assertEqual(ctx.store_type, "EVALS")
+            self.assertEqual(ctx.database, "bigquery")
+            parsed_data = json.loads(ctx.results_json)
+            self.assertEqual(parsed_data, [{"eval_id": "1"}])
+
             reply = eval_agent_pb2.AgentStreamMessage(
                 session_id=self.session_id,
                 correlation_id=corr_id,
@@ -139,6 +147,7 @@ class TestAgentGrpcProxy(unittest.TestCase):
                         reporter_name="gcs_artifacts",
                         success=True,
                         result_json='{"uri": "gs://test-bucket/runs/archive.zip"}',
+                        artifact_uris=["gs://test-bucket/runs/archive.zip"],
                     )
                 ),
             )
@@ -150,7 +159,99 @@ class TestAgentGrpcProxy(unittest.TestCase):
         df = pd.DataFrame({"eval_id": ["1"]})
         reporter.store(df, STORETYPE.EVALS)
         t.join()
-        self.assertTrue(reporter._reported)
+
+        self.assertEqual(reporter.artifact_uris, ["gs://test-bucket/runs/archive.zip"])
+        reporter.print_dashboard_links()
+
+    def test_remote_reporter_all_store_types(self):
+        reporter = RemoteReporter(
+            "csv",
+            {"output_directory": "/tmp/results"},
+            job_id="job_456",
+            run_time="2026-08-18",
+        )
+
+        dispatched_types = []
+
+        def answer_reporter():
+            for _ in range(4):
+                msg = self.out_queue.get(timeout=2.0)
+                corr_id = msg.correlation_id
+                ctx = msg.reporting_request.context
+                dispatched_types.append(ctx.store_type)
+
+                reply = eval_agent_pb2.AgentStreamMessage(
+                    session_id=self.session_id,
+                    correlation_id=corr_id,
+                    reporting_response=eval_agent_pb2.ReportingResponse(
+                        result=eval_agent_pb2.ReporterResult(
+                            reporter_name="csv",
+                            success=True,
+                            result_json=json.dumps({"written": ctx.store_type}),
+                        )
+                    ),
+                )
+                self.inboxes[corr_id].put(reply)
+
+        t = threading.Thread(target=answer_reporter)
+        t.start()
+
+        df = pd.DataFrame({"key": ["val"]})
+        reporter.store(df, STORETYPE.CONFIGS)
+        reporter.store(df, STORETYPE.EVALS)
+        reporter.store(df, STORETYPE.SCORES)
+        reporter.store(df, STORETYPE.SUMMARY)
+        t.join()
+
+        self.assertEqual(
+            dispatched_types,
+            ["CONFIGS", "EVALS", "SCORES", "SUMMARY"],
+        )
+
+    def test_remote_reporter_timeout(self):
+        reporter = RemoteReporter(
+            "slow_reporter",
+            {"timeout_seconds": 0.1},
+            job_id="job_slow",
+            run_time="2026-08-18",
+        )
+        df = pd.DataFrame({"eval_id": ["1"]})
+        # Should complete without raising exception
+        reporter.store(df, STORETYPE.EVALS)
+        self.assertEqual(len(reporter.artifact_uris), 0)
+
+    def test_remote_reporter_failure_response(self):
+        reporter = RemoteReporter(
+            "failing_reporter",
+            {"timeout_seconds": 5.0},
+            job_id="job_fail",
+            run_time="2026-08-18",
+        )
+
+        def answer_failure():
+            msg = self.out_queue.get(timeout=2.0)
+            corr_id = msg.correlation_id
+
+            reply = eval_agent_pb2.AgentStreamMessage(
+                session_id=self.session_id,
+                correlation_id=corr_id,
+                reporting_response=eval_agent_pb2.ReportingResponse(
+                    result=eval_agent_pb2.ReporterResult(
+                        reporter_name="failing_reporter",
+                        success=False,
+                        error_message="GCS bucket not accessible",
+                    )
+                ),
+            )
+            self.inboxes[corr_id].put(reply)
+
+        t = threading.Thread(target=answer_failure)
+        t.start()
+
+        df = pd.DataFrame({"eval_id": ["1"]})
+        reporter.store(df, STORETYPE.EVALS)
+        t.join()
+        self.assertEqual(len(reporter.artifact_uris), 0)
 
 
 if __name__ == "__main__":

@@ -27,7 +27,8 @@ class RemoteReporter(Reporter):
         self.reporter_name = reporter_name
         self.config = dict(reporting_config) if isinstance(reporting_config, dict) else {}
         self.timeout_seconds = float(self.config.get("timeout_seconds", 300.0))
-        self._reported = False
+        self.database = str(self.config.get("database", ""))
+        self.artifact_uris: list[str] = []
         logger.info(
             "Initialized RemoteReporter: name=%s, config=%s",
             self.reporter_name,
@@ -36,18 +37,14 @@ class RemoteReporter(Reporter):
 
     def store(self, results: pd.DataFrame, store_type: Any) -> None:
         type_name = getattr(store_type, "name", str(store_type))
-        # Delegate once during evaluation results processing
-        if type_name != "EVALS":
-            return
-        if self._reported:
-            return
 
         session_id = rpc_id_var.get()
         if session_id not in AGENT_GRPC_PROXY_QUEUES:
             logger.warning(
                 "RemoteReporter: session_id %s not in AGENT_GRPC_PROXY_QUEUES, "
-                "skipping delegated reporting",
+                "skipping delegated reporting for %s",
                 session_id,
+                type_name,
             )
             return
 
@@ -62,15 +59,38 @@ class RemoteReporter(Reporter):
             timeout_seconds=self.timeout_seconds,
         )
 
+        results_json = ""
+        if isinstance(results, pd.DataFrame) and not results.empty:
+            try:
+                results_json = results.to_json(orient="records", date_format="iso")
+            except Exception as e:
+                logger.warning(
+                    "RemoteReporter: Failed to serialize DataFrame to JSON: %s",
+                    e,
+                )
+                results_json = ""
+
+        reporting_context = eval_agent_pb2.ReportingContext(
+            job_id=str(self.job_id or ""),
+            run_time=str(self.run_time or ""),
+            store_type=type_name,
+            results_json=results_json,
+            database=self.database,
+        )
+
         msg = eval_agent_pb2.AgentStreamMessage(
             session_id=session_id,
             correlation_id=correlation_id,
-            reporting_request=eval_agent_pb2.ReportingRequest(reporter=reporter_spec),
+            reporting_request=eval_agent_pb2.ReportingRequest(
+                reporter=reporter_spec,
+                context=reporting_context,
+            ),
         )
 
         logger.info(
-            "[REVERSE_REPORTER] Dispatching ReportingRequest for '%s' (correlation_id=%s)",
+            "[REMOTE_REPORTER] Dispatching ReportingRequest for '%s' type=%s (correlation_id=%s)",
             self.reporter_name,
+            type_name,
             correlation_id,
         )
         out_queue.put(msg)
@@ -81,26 +101,34 @@ class RemoteReporter(Reporter):
                 res = resp_msg.reporting_response.result
                 if res.success:
                     logger.info(
-                        "[REVERSE_REPORTER] Delegated reporter '%s' completed successfully: %s",
+                        "[REMOTE_REPORTER] Delegated reporter '%s' (%s) completed successfully: %s",
                         self.reporter_name,
+                        type_name,
                         res.result_json,
                     )
+                    if res.artifact_uris:
+                        self.artifact_uris.extend(res.artifact_uris)
                 else:
                     logger.error(
-                        "[REVERSE_REPORTER] Delegated reporter '%s' failed: %s",
+                        "[REMOTE_REPORTER] Delegated reporter '%s' (%s) failed: %s",
                         self.reporter_name,
+                        type_name,
                         res.error_message,
                     )
-                self._reported = True
             else:
                 logger.warning(
-                    "[REVERSE_REPORTER] Received unexpected response on stream: %s",
+                    "[REMOTE_REPORTER] Received unexpected response on stream: %s",
                     resp_msg.WhichOneof("payload"),
                 )
         except queue.Empty:
             logger.error(
-                "[REVERSE_REPORTER] Timed out waiting for ReportingResponse for '%s'",
+                "[REMOTE_REPORTER] Timed out waiting for ReportingResponse for '%s' (%s)",
                 self.reporter_name,
+                type_name,
             )
         finally:
             inboxes.pop(correlation_id, None)
+
+    def print_dashboard_links(self) -> None:
+        # TODO: Surface remote artifact URIs and dashboard links once UX format is finalized.
+        pass

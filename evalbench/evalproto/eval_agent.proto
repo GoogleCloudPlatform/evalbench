@@ -89,8 +89,17 @@ message ReporterSpec {
   float timeout_seconds = 3;
 }
 
+message ReportingContext {
+  string job_id = 1;
+  string run_time = 2;          // Timestamp of evaluation run
+  string store_type = 3;        // "CONFIGS", "EVALS", "SCORES", "SUMMARY"
+  string results_json = 4;      // Serialized DataFrame records as JSON string (orient="records")
+  string database = 5;          // Optional target database name
+}
+
 message ReportingRequest {
   ReporterSpec reporter = 1;
+  ReportingContext context = 2;
 }
 
 message ReporterResult {
@@ -98,6 +107,7 @@ message ReporterResult {
   bool success = 2;
   string result_json = 3;       // Generic JSON payload returned by reporter (URIs, paths, metadata)
   string error_message = 4;
+  repeated string artifact_uris = 5; // Direct URIs produced (e.g. GCS URLs, archive paths)
 }
 
 message ReportingResponse {
