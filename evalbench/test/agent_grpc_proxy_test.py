@@ -11,7 +11,7 @@ from generators.models.agent_grpc_proxy import (
 )
 from reporting.remote_reporter import RemoteReporter
 from reporting.report import STORETYPE
-from scorers.remote_scorer import RemoteScorerProxy
+from scorers.remote_scorer import RemoteScorerProxy, _to_str
 from util.context import rpc_id_var
 
 
@@ -238,6 +238,13 @@ class TestAgentGrpcProxy(unittest.TestCase):
 
         self.assertEqual(score, 100.0)
         self.assertEqual(logs, "Trajectory verified")
+
+    def test_to_str_helper(self):
+        self.assertEqual(_to_str(None), "")
+        self.assertEqual(_to_str("already_a_string"), "already_a_string")
+        self.assertEqual(_to_str(["tool_a", "tool_b"]), '["tool_a", "tool_b"]')
+        self.assertEqual(_to_str({"key": "val"}), '{"key": "val"}')
+        self.assertEqual(_to_str(123), "123")
 
     def test_remote_reporter_success(self):
         reporter = RemoteReporter(

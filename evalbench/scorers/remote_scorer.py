@@ -13,6 +13,25 @@ from util.context import rpc_id_var
 logger = logging.getLogger(__name__)
 
 
+def _to_str(val: Any) -> str:
+    """Defensively coerces evaluation arguments to strings for Protobuf packing.
+
+    Note: While Comparator.compare hints string types, EvalBench runners
+    do not strictly enforce strings at runtime. Specifically, agent evaluations
+    (agentscorework.py) pass raw Python lists (e.g. tool calls in generated_result),
+    dictionaries (eval_results), or None (generated_error). Because Google Protobuf
+    string fields require str/bytes and raise a TypeError if passed list/dict/None,
+    we defensively coerce them to strings (JSON-serialized for lists/dicts) before packing.
+    """
+    if val is None:
+        return ""
+    if isinstance(val, str):
+        return val
+    if isinstance(val, (dict, list)):
+        return json.dumps(val)
+    return str(val)
+
+
 class RemoteScorerProxy(Comparator):
     """Comparator proxying scoring evaluation across the reverse bidi stream."""
 
@@ -63,21 +82,6 @@ class RemoteScorerProxy(Comparator):
             config_json=json.dumps(self.config),
             timeout_seconds=self.timeout_seconds,
         )
-
-        # Note: While Comparator.compare hints string types, EvalBench runners
-        # do not strictly enforce strings at runtime. Specifically, agent evaluations
-        # (agentscorework.py) pass raw Python lists (e.g. tool calls in generated_result),
-        # dictionaries (eval_results), or None (generated_error). Because Google Protobuf
-        # string fields require str/bytes and raise a TypeError if passed list/dict/None,
-        # we defensively coerce them to strings (JSON-serialized for lists/dicts) before packing.
-        def _to_str(val: Any) -> str:
-            if val is None:
-                return ""
-            if isinstance(val, str):
-                return val
-            if isinstance(val, (dict, list)):
-                return json.dumps(val)
-            return str(val)
 
         golden_query = golden_query or kwargs.get("golden_sql", "")
         generated_query = generated_query or kwargs.get("generated_sql", "")
