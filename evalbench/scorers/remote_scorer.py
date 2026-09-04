@@ -30,15 +30,16 @@ class RemoteScorerProxy(Comparator):
     def compare(
         self,
         nl_prompt: str,
-        golden_sql: str,
-        query_type: str,
-        golden_result: str,
-        golden_eval_results: str,
-        golden_error: str,
-        generated_sql: str,
-        generated_result: str,
-        eval_results: str,
-        generated_error: str,
+        golden_query: str = "",
+        query_type: str = "",
+        golden_result: Any = "",
+        golden_eval_results: Any = "",
+        golden_error: Any = "",
+        generated_query: str = "",
+        generated_result: Any = "",
+        eval_results: Any = "",
+        generated_error: Any = "",
+        database: str = "",
         **kwargs: Any,
     ) -> tuple[float, str] | list[tuple[str, float, str]]:
         session_id = rpc_id_var.get()
@@ -63,6 +64,12 @@ class RemoteScorerProxy(Comparator):
             timeout_seconds=self.timeout_seconds,
         )
 
+        # Note: While Comparator.compare hints string types, EvalBench runners
+        # do not strictly enforce strings at runtime. Specifically, agent evaluations
+        # (agentscorework.py) pass raw Python lists (e.g. tool calls in generated_result),
+        # dictionaries (eval_results), or None (generated_error). Because Google Protobuf
+        # string fields require str/bytes and raise a TypeError if passed list/dict/None,
+        # we defensively coerce them to strings (JSON-serialized for lists/dicts) before packing.
         def _to_str(val: Any) -> str:
             if val is None:
                 return ""
@@ -72,15 +79,18 @@ class RemoteScorerProxy(Comparator):
                 return json.dumps(val)
             return str(val)
 
-        database = kwargs.get("database", "")
+        golden_query = golden_query or kwargs.get("golden_sql", "")
+        generated_query = generated_query or kwargs.get("generated_sql", "")
+        database = database or kwargs.get("database", "")
+
         scoring_context = eval_agent_pb2.ScoringContext(
             nl_prompt=nl_prompt or "",
-            golden_query=golden_sql or "",
+            golden_query=_to_str(golden_query),
             query_type=query_type or "",
             golden_result=_to_str(golden_result),
             golden_eval_results=_to_str(golden_eval_results),
             golden_error=_to_str(golden_error),
-            generated_query=generated_sql or "",
+            generated_query=_to_str(generated_query),
             generated_result=_to_str(generated_result),
             eval_results=_to_str(eval_results),
             generated_error=_to_str(generated_error),
