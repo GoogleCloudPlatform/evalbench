@@ -76,8 +76,11 @@ class RemoteScorerProxy(Comparator):
                     scenario_id = parsed_eval.get("scenario", {}).get(
                         "id", ""
                     ) or parsed_eval.get("eval_id", "")
-            except Exception:
-                pass
+            except json.JSONDecodeError:
+                logger.debug(
+                    "RemoteScorerProxy: eval_results is not valid JSON; "
+                    "continuing without scenario_id"
+                )
 
         scoring_context = eval_agent_pb2.ScoringContext(
             nl_prompt=str(nl_prompt or ""),
