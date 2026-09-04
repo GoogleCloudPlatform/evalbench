@@ -57,9 +57,10 @@ class ScoreContribution:
 # that findings are grouped by tool rather than by severity.
 SEVERITY_BADGES = {"P0": "🚫 P0", "P1": "⚠️ P1", "P2": "💡 P2"}
 
-# Bucket for findings the judge reported without naming a tool (a guide-wide
-# issue), listed ahead of the per-tool buckets.
-ALL_TOOLS = "All tools"
+# Bucket for findings that belong to the tool set rather than to any one tool --
+# too many tools for one server, a missing polling or discovery tool, a parameter
+# named inconsistently across tools. Listed ahead of the per-tool buckets.
+GENERAL = "General issues"
 
 
 def findings_by_tool(findings) -> list[tuple[str, list[dict]]]:
@@ -69,9 +70,9 @@ def findings_by_tool(findings) -> list[tuple[str, list[dict]]]:
     Markdown comparison report so both present the same buckets. The judge
     attributes each finding to one tool, but a finding naming several
     (comma-separated) is listed under each of them; findings with no tool land in
-    :data:`ALL_TOOLS`.
+    :data:`GENERAL`.
 
-    Buckets are ordered with :data:`ALL_TOOLS` first, then tools alphabetically;
+    Buckets are ordered with :data:`GENERAL` first, then tools alphabetically;
     within a bucket findings run P0 -> P1 -> P2.
     """
     buckets: dict[str, list[dict]] = {}
@@ -79,11 +80,11 @@ def findings_by_tool(findings) -> list[tuple[str, list[dict]]]:
         if not isinstance(finding, dict):
             continue
         named = [t.strip() for t in str(finding.get("tool", "")).split(",")]
-        for tool in [t for t in named if t] or [ALL_TOOLS]:
+        for tool in [t for t in named if t] or [GENERAL]:
             buckets.setdefault(tool, []).append(finding)
 
     severity_rank = {sev: i for i, sev in enumerate(SEVERITY_BADGES)}
-    ordered = sorted(buckets, key=lambda t: (t != ALL_TOOLS, t.lower()))
+    ordered = sorted(buckets, key=lambda t: (t != GENERAL, t.lower()))
     return [
         (
             tool,

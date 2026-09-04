@@ -17,7 +17,7 @@ from unittest.mock import patch
 from google.genai.types import FinishReason
 
 from scorers import mcp_style_readability
-from scorers.mcp_readability_scoring import ALL_TOOLS
+from scorers.mcp_readability_scoring import GENERAL
 from scorers.mcp_style_readability import (
     McpStyleReadabilityScorer,
     TruncatedResponseError,
@@ -168,7 +168,7 @@ class ParsePerToolFindingsTest(unittest.TestCase):
             [{"severity": "P1", "rule_id": "Missing capability", "tool": ""}]
         )
         self.assertEqual(out["findings"][0]["tool"], "")
-        self.assertEqual(out["findings_by_tool"][0]["tool"], ALL_TOOLS)
+        self.assertEqual(out["findings_by_tool"][0]["tool"], GENERAL)
 
     def test_ruleless_findings_each_count(self):
         # Without a rule_id there is nothing to collapse on, so both count.
