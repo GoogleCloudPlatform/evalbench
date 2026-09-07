@@ -96,209 +96,232 @@ class Evaluator:
         self.genrunner = mprunner.MPRunner(self.sqlgen_runners)
         self.sqlrunner = mprunner.MPRunner(self.sqlexec_runners)
         self.scoringrunner = mprunner.MPRunner(self.scoring_runners)
-        prompt_generator.setup()
+        try:
+            prompt_generator.setup()
 
-        self.promptrunner.futures.clear()
-        self.genrunner.futures.clear()
-        self.sqlrunner.futures.clear()
-        self.scoringrunner.futures.clear()
+            self.promptrunner.futures.clear()
+            self.genrunner.futures.clear()
+            self.sqlrunner.futures.clear()
+            self.scoringrunner.futures.clear()
 
-        prompt_future_to_eval = {}
-        prompt_future_to_input = {}
-        for eval_input in dataset:
-            eval_output = EvalOutput(eval_input)
-            eval_output["job_id"] = job_id
-            eval_output["run_time"] = run_time
-            work = promptgenwork.SQLPromptGenWork(
-                prompt_generator, eval_output)
-            self.promptrunner.execute_work(work)
-            prompt_future_to_eval[self.promptrunner.futures[-1]] = eval_output
-            prompt_future_to_input[self.promptrunner.futures[-1]] = eval_input
+            prompt_future_to_eval = {}
+            prompt_future_to_input = {}
+            for eval_input in dataset:
+                eval_output = EvalOutput(eval_input)
+                eval_output["job_id"] = job_id
+                eval_output["run_time"] = run_time
+                work = promptgenwork.SQLPromptGenWork(
+                    prompt_generator, eval_output)
+                self.promptrunner.execute_work(work)
+                prompt_future_to_eval[self.promptrunner.futures[-1]] = eval_output
+                prompt_future_to_input[self.promptrunner.futures[-1]] = eval_input
 
-        gen_future_to_eval = {}
-        for future, eval_output, timed_out in _process_futures_with_timeout(
-            self.promptrunner.futures,
-            prompt_future_to_eval,
-            timeout=self.task_timeout_seconds,
-        ):
-            if timed_out:
-                eval_output["prompt_generator_error"] = (
-                    "TimeoutError: Task hung for too long."
-                )
-            else:
-                try:
-                    future.result()
-                except Exception as e:
-
-                    logging.error(f"Promptgen future error: {e}")
-                    eval_output["prompt_generator_error"] = str(e)
-
-            record_successful_prompt_gen(progress_reporting)
-
-            eval_input = prompt_future_to_input[future]
-
-            query_type = eval_output.get("query_type", "dql").lower()
-            trials_to_run = self.num_trials if query_type == "dql" else 1
-            for trial_idx in range(trials_to_run):
-                trial_output = EvalOutput(eval_input)
-                trial_output["job_id"] = job_id
-                trial_output["run_time"] = run_time
-                trial_output.update(eval_output)
-
-                trial_output["prompt_id"] = eval_output["id"]
-                trial_output["trial_index"] = trial_idx
-                trial_output["id"] = f"{eval_output['id']}_trial_{trial_idx}"
-
-                work = sqlgenwork.SQLGenWork(model_generator, trial_output)
-                self.genrunner.execute_work(work)
-                gen_future_to_eval[self.genrunner.futures[-1]] = trial_output
-
-        exec_future_to_eval = {}
-        score_future_to_eval = {}
-        for future, eval_output, timed_out in _process_futures_with_timeout(
-            self.genrunner.futures,
-            gen_future_to_eval,
-            timeout=self.task_timeout_seconds,
-        ):
-            if timed_out:
-                eval_output["sql_generator_error"] = (
-                    "TimeoutError: Task hung for too long."
-                )
-            else:
-                try:
-                    future.result()
-                except Exception as e:
-
-                    logging.error(f"SQLgen future error: {e}")
-                    eval_output["sql_generator_error"] = str(e)
-
-            record_successful_sql_gen(progress_reporting)
-
-            try:
-                db_conn = db_queue.get(timeout=180)
-                work = sqlexecwork.SQLExecWork(
-                    db_conn, self.config, eval_output, db_queue
-                )
-                self.sqlrunner.execute_work(work)
-                exec_future_to_eval[self.sqlrunner.futures[-1]] = eval_output
-            except queue.Empty:
-                error_msg = f"Timeout Error: Waited too long (queue.Empty) for database '{eval_output.get('database', 'unknown')}'"
-                logging.error(error_msg)
-                eval_output["generated_error"] = error_msg
-
-                record_successful_sql_exec(progress_reporting)
-                work = scorework.ScorerWork(
-                    self.config, eval_output, scoring_results, global_models
-                )
-                self.scoringrunner.execute_work(work)
-                score_future_to_eval[self.scoringrunner.futures[-1]
-                                     ] = eval_output
-            except Exception as e:
-                exc_msg = str(e) or type(e).__name__
-                logging.error(
-                    "Failed to acquire DB connection from queue for database"
-                    f" '{eval_output.get('database')}': {exc_msg}"
-                )
-                eval_output["generated_error"] = f"Failed to acquire DB connection: {exc_msg}"
-                record_successful_sql_exec(progress_reporting)
-                work = scorework.ScorerWork(
-                    self.config, eval_output, scoring_results, global_models
-                )
-                self.scoringrunner.execute_work(work)
-                score_future_to_eval[self.scoringrunner.futures[-1]
-                                     ] = eval_output
-
-        for future, eval_output, timed_out in _process_futures_with_timeout(
-            self.sqlrunner.futures,
-            exec_future_to_eval,
-            timeout=self.task_timeout_seconds,
-        ):
-            if timed_out:
-                eval_output["generated_error"] = "TimeoutError: Task hung for too long."
-            else:
-                try:
-                    future.result()
-                except Exception as e:
-
-                    logging.error(f"SQLExec future error: {e}")
-                    eval_output["generated_error"] = str(e)
-
-            record_successful_sql_exec(progress_reporting)
-            work = scorework.ScorerWork(
-                self.config, eval_output, scoring_results, global_models
-            )
-            self.scoringrunner.execute_work(work)
-            score_future_to_eval[self.scoringrunner.futures[-1]] = eval_output
-
-        for future, eval_output, timed_out in _process_futures_with_timeout(
-            self.scoringrunner.futures,
-            score_future_to_eval,
-            timeout=self.task_timeout_seconds,
-        ):
-            if timed_out:
-                eval_output["scoring_error"] = "TimeoutError: Task hung for too long."
-            else:
-                try:
-                    future.result()
-                except Exception as e:
-
-                    logging.error(f"Scoring future error: {e}")
-                    eval_output["scoring_error"] = str(e)
-
-            record_successful_scoring(progress_reporting)
-            try:
-                truncateExecutionOutputs(
-                    eval_output,
-                    self.config,
-                )
-            except Exception as e:
-
-                logging.error(f"Truncation error: {e}")
-            eval_outputs.append(eval_output)
-
-        if self.num_trials > 1:
-            grouped_trials = collections.defaultdict(list)
-            for eo in eval_outputs:
-                prompt_id = eo.get("prompt_id")
-                if prompt_id:
-                    grouped_trials[prompt_id].append(eo)
-
-            multi_trial_futures = {}
-            for prompt_id, trials in grouped_trials.items():
-                nl_prompt = trials[0].get("nl_prompt", "")
-                work = multi_trial_scorework.MultiTrialScorerWork(
-                    prompt_id,
-                    nl_prompt,
-                    trials,
-                    self.config,
-                    multi_trial_scoring_results,
-                    global_models,
-                    progress_reporting,
-                )
-                self.scoringrunner.execute_work(work)
-                multi_trial_futures[self.scoringrunner.futures[-1]] = trials[0]
-
-            for future, _, timed_out in _process_futures_with_timeout(
-                list(multi_trial_futures.keys()),
-                multi_trial_futures,
+            gen_future_to_eval = {}
+            for future, eval_output, timed_out in _process_futures_with_timeout(
+                self.promptrunner.futures,
+                prompt_future_to_eval,
                 timeout=self.task_timeout_seconds,
             ):
                 if timed_out:
-                    logging.error("Multi-trial scoring timed out.")
+                    eval_output["prompt_generator_error"] = (
+                        "TimeoutError: Task hung for too long."
+                    )
                 else:
                     try:
                         future.result()
                     except Exception as e:
-                        logging.error(f"Multi-trial scoring future error: {e}")
 
-        if close_connections and db_queue:
-            while True:
+                        logging.error(f"Promptgen future error: {e}")
+                        eval_output["prompt_generator_error"] = str(e)
+
+                record_successful_prompt_gen(progress_reporting)
+
+                eval_input = prompt_future_to_input[future]
+
+                query_type = eval_output.get("query_type", "dql").lower()
+                trials_to_run = self.num_trials if query_type == "dql" else 1
+                for trial_idx in range(trials_to_run):
+                    trial_output = EvalOutput(eval_input)
+                    trial_output["job_id"] = job_id
+                    trial_output["run_time"] = run_time
+                    trial_output.update(eval_output)
+
+                    trial_output["prompt_id"] = eval_output["id"]
+                    trial_output["trial_index"] = trial_idx
+                    trial_output["id"] = f"{eval_output['id']}_trial_{trial_idx}"
+
+                    work = sqlgenwork.SQLGenWork(model_generator, trial_output)
+                    self.genrunner.execute_work(work)
+                    gen_future_to_eval[self.genrunner.futures[-1]] = trial_output
+
+            exec_future_to_eval = {}
+            score_future_to_eval = {}
+            for future, eval_output, timed_out in _process_futures_with_timeout(
+                self.genrunner.futures,
+                gen_future_to_eval,
+                timeout=self.task_timeout_seconds,
+            ):
+                if timed_out:
+                    eval_output["sql_generator_error"] = (
+                        "TimeoutError: Task hung for too long."
+                    )
+                else:
+                    try:
+                        future.result()
+                    except Exception as e:
+
+                        logging.error(f"SQLgen future error: {e}")
+                        eval_output["sql_generator_error"] = str(e)
+
+                record_successful_sql_gen(progress_reporting)
+
                 try:
-                    db = db_queue.get(block=False)
-                    db.close_connections()
+                    db_conn = db_queue.get(timeout=180)
+                    work = sqlexecwork.SQLExecWork(
+                        db_conn, self.config, eval_output, db_queue
+                    )
+                    self.sqlrunner.execute_work(work)
+                    exec_future_to_eval[self.sqlrunner.futures[-1]] = eval_output
                 except queue.Empty:
-                    break
-                except Exception:
-                    break
+                    error_msg = f"Timeout Error: Waited too long (queue.Empty) for database '{eval_output.get('database', 'unknown')}'"
+                    logging.error(error_msg)
+                    eval_output["generated_error"] = error_msg
 
-        return eval_outputs, scoring_results, multi_trial_scoring_results
+                    record_successful_sql_exec(progress_reporting)
+                    work = scorework.ScorerWork(
+                        self.config, eval_output, scoring_results, global_models
+                    )
+                    self.scoringrunner.execute_work(work)
+                    score_future_to_eval[self.scoringrunner.futures[-1]
+                                         ] = eval_output
+                except Exception as e:
+                    exc_msg = str(e) or type(e).__name__
+                    logging.error(
+                        "Failed to acquire DB connection from queue for database"
+                        f" '{eval_output.get('database')}': {exc_msg}"
+                    )
+                    eval_output["generated_error"] = f"Failed to acquire DB connection: {exc_msg}"
+                    record_successful_sql_exec(progress_reporting)
+                    work = scorework.ScorerWork(
+                        self.config, eval_output, scoring_results, global_models
+                    )
+                    self.scoringrunner.execute_work(work)
+                    score_future_to_eval[self.scoringrunner.futures[-1]
+                                         ] = eval_output
+
+            for future, eval_output, timed_out in _process_futures_with_timeout(
+                self.sqlrunner.futures,
+                exec_future_to_eval,
+                timeout=self.task_timeout_seconds,
+            ):
+                if timed_out:
+                    eval_output["generated_error"] = "TimeoutError: Task hung for too long."
+                else:
+                    try:
+                        future.result()
+                    except Exception as e:
+
+                        logging.error(f"SQLExec future error: {e}")
+                        eval_output["generated_error"] = str(e)
+
+                record_successful_sql_exec(progress_reporting)
+                work = scorework.ScorerWork(
+                    self.config, eval_output, scoring_results, global_models
+                )
+                self.scoringrunner.execute_work(work)
+                score_future_to_eval[self.scoringrunner.futures[-1]] = eval_output
+
+            for future, eval_output, timed_out in _process_futures_with_timeout(
+                self.scoringrunner.futures,
+                score_future_to_eval,
+                timeout=self.task_timeout_seconds,
+            ):
+                if timed_out:
+                    eval_output["scoring_error"] = "TimeoutError: Task hung for too long."
+                else:
+                    try:
+                        future.result()
+                    except Exception as e:
+
+                        logging.error(f"Scoring future error: {e}")
+                        eval_output["scoring_error"] = str(e)
+
+                record_successful_scoring(progress_reporting)
+                try:
+                    truncateExecutionOutputs(
+                        eval_output,
+                        self.config,
+                    )
+                except Exception as e:
+
+                    logging.error(f"Truncation error: {e}")
+                eval_outputs.append(eval_output)
+
+            if self.num_trials > 1:
+                grouped_trials = collections.defaultdict(list)
+                for eo in eval_outputs:
+                    prompt_id = eo.get("prompt_id")
+                    if prompt_id:
+                        grouped_trials[prompt_id].append(eo)
+
+                multi_trial_futures = {}
+                for prompt_id, trials in grouped_trials.items():
+                    nl_prompt = trials[0].get("nl_prompt", "")
+                    work = multi_trial_scorework.MultiTrialScorerWork(
+                        prompt_id,
+                        nl_prompt,
+                        trials,
+                        self.config,
+                        multi_trial_scoring_results,
+                        global_models,
+                        progress_reporting,
+                    )
+                    self.scoringrunner.execute_work(work)
+                    multi_trial_futures[self.scoringrunner.futures[-1]] = trials[0]
+
+                for future, _, timed_out in _process_futures_with_timeout(
+                    list(multi_trial_futures.keys()),
+                    multi_trial_futures,
+                    timeout=self.task_timeout_seconds,
+                ):
+                    if timed_out:
+                        logging.error("Multi-trial scoring timed out.")
+                    else:
+                        try:
+                            future.result()
+                        except Exception as e:
+                            logging.error(f"Multi-trial scoring future error: {e}")
+
+            if close_connections and db_queue:
+                while True:
+                    try:
+                        db = db_queue.get(block=False)
+                        db.close_connections()
+                    except queue.Empty:
+                        break
+                    except Exception:
+                        break
+
+            return eval_outputs, scoring_results, multi_trial_scoring_results
+        finally:
+            self._shutdown_runners()
+
+    def _shutdown_runners(self) -> None:
+        """Releases the worker threads owned by every stage runner.
+
+        `evaluate` is called once per (dialect, database, query type)
+        sub-dataset and builds a fresh pool per stage, so leaving these pools
+        open would leak `promptgen + sqlgen + sqlexec + scoring` worker threads
+        per call for the remaining lifetime of the process.
+
+        The sqlexec pool keeps its queued work rather than cancelling it. This
+        loop takes a connection off `db_queue` before submitting each
+        `SQLExecWork`, and only `SQLExecWork.run` returns that connection, so a
+        cancelled item would strand one. `StreamingOrchestrator` reuses a
+        single `db_queue` across eval inputs, where a stranded connection
+        shrinks the pool for every later input. Letting the queued items run
+        still releases the worker threads, just after the queue drains.
+        """
+        for runner in (self.promptrunner, self.genrunner, self.scoringrunner):
+            runner.shutdown()
+        self.sqlrunner.shutdown(cancel_futures=False)

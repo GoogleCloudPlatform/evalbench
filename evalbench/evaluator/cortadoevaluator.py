@@ -35,14 +35,11 @@ class CortadoEvaluator:
 
         runner_config = self.config.get("runners", {})
         self.agent_runners = runner_config.get("agent_runners", 10)
-        self.agentrunner = mprunner.MPRunner(self.agent_runners)
 
     def evaluate(self, dataset: List[EvalCortadoRequest], job_id: str, run_time: datetime.datetime):
         eval_outputs: List[Any] = []
         scoring_results: List[Any] = []
         logging.info("Running Cortado gRPC evaluation")
-
-        self.agentrunner.futures.clear()
 
         metadata = {
             "dialects": self.config.get("dialects", []),
@@ -50,31 +47,35 @@ class CortadoEvaluator:
             "scorers": self.config.get("scorers", {}),
         }
 
-        # Spin up threads for concurrent conversation processing
-        for item in dataset:
-            simulated_user = SimulatedUser(self.config)
-            work = AgentGenWork(
-                processor=self.process_scenario,
-                eval_result=item,
-                job_id=job_id,
-                metadata=metadata,
-                simulated_user=simulated_user
-            )
-            self.agentrunner.execute_work(work)
+        self.agentrunner = mprunner.MPRunner(self.agent_runners)
+        try:
+            # Spin up threads for concurrent conversation processing
+            for item in dataset:
+                simulated_user = SimulatedUser(self.config)
+                work = AgentGenWork(
+                    processor=self.process_scenario,
+                    eval_result=item,
+                    job_id=job_id,
+                    metadata=metadata,
+                    simulated_user=simulated_user
+                )
+                self.agentrunner.execute_work(work)
 
-        for future in concurrent.futures.as_completed(self.agentrunner.futures):
-            try:
-                # This now contains the returned object from process_scenario
-                modified_item = future.result()
-                if hasattr(modified_item, "agent_results"):
-                    eval_outputs.extend(modified_item.agent_results)
-                if hasattr(modified_item, "scoring_results"):
-                    scoring_results.extend(modified_item.scoring_results)
-            except Exception as e:
-                logging.error(
-                    f"Error getting result from future: {e}", exc_info=True)
+            for future in concurrent.futures.as_completed(self.agentrunner.futures):
+                try:
+                    # This now contains the returned object from process_scenario
+                    modified_item = future.result()
+                    if hasattr(modified_item, "agent_results"):
+                        eval_outputs.extend(modified_item.agent_results)
+                    if hasattr(modified_item, "scoring_results"):
+                        scoring_results.extend(modified_item.scoring_results)
+                except Exception as e:
+                    logging.error(
+                        f"Error getting result from future: {e}", exc_info=True)
 
-        return eval_outputs, scoring_results
+            return eval_outputs, scoring_results
+        finally:
+            self.agentrunner.shutdown()
 
     def process_scenario(
         self, scenario: Dict[str, Any], eval_result: Any, job_id: str,

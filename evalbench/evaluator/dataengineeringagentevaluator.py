@@ -55,7 +55,6 @@ class DataEngineeringAgentEvaluator:
 
         runner_config = self.config.get("runners", {})
         self.agent_runners = runner_config.get("agent_runners", 10)
-        self.agentrunner = mprunner.MPRunner(self.agent_runners)
 
     def _get_session_dir(self, job_id: str) -> str:
         """Resolves the session directory path for a given job ID."""
@@ -119,7 +118,7 @@ class DataEngineeringAgentEvaluator:
                 "'dataform_workspace', 'gcp_project_id', and 'gcp_region' in your run config."
             )
 
-        self.agentrunner.futures.clear()
+        self.agentrunner = mprunner.MPRunner(self.agent_runners)
 
         metadata = {
             "dialects": self.config.get("dialects", []),
@@ -150,6 +149,13 @@ class DataEngineeringAgentEvaluator:
                 except Exception as e:
                     logger.exception(f"Error getting result from future: {e}")
         finally:
+            # Shut down before archiving. On the normal path as_completed has
+            # already drained every scenario, so this cancels nothing. On the
+            # error path it stops scenarios that are still queued from mutating
+            # the Dataform workspace while _archive_workspace_to_gcs zips it. A
+            # scenario already running is not interrupted, so the archive can
+            # still catch one mid-write.
+            self.agentrunner.shutdown()
             self._archive_workspace_to_gcs(workspace_uri, job_id, dataset)
 
         return eval_outputs, scoring_results
