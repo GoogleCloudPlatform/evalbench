@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.17.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.16.0...v1.17.0) (2026-09-04)
+
+
+### Features
+
+* **agentic_reverse_proxy:** canonicalize MCP tools and enhance skill extraction ([e8721c6](https://github.com/GoogleCloudPlatform/evalbench/commit/e8721c699e93c248619cbea267683ab6666e5cb8))
+* **agent:** introduce generalized reverse proxy bidirectional streaming evaluation ([d623c85](https://github.com/GoogleCloudPlatform/evalbench/commit/d623c85dc4a0ad05367a905190ed25ae786531a9))
+
+
+### Bug Fixes
+
+* **agentic_reverse_proxy:** accept timeout_seconds in safe_generate ([0f504b4](https://github.com/GoogleCloudPlatform/evalbench/commit/0f504b4bac3cb9ec790e355e60f425e15cef61a3))
+* **eval_service:** ensure evalproto directory is in sys.path for proto imports ([ed1d249](https://github.com/GoogleCloudPlatform/evalbench/commit/ed1d249a8f14ce18b97f42b671746f40fc1d265e))
+* **packaging:** track evalproto stubs and lazily import gRPC generators ([#589](https://github.com/GoogleCloudPlatform/evalbench/issues/589)) ([3f4b1eb](https://github.com/GoogleCloudPlatform/evalbench/commit/3f4b1eb8f24b4035efea03ec1957d0eb47d84305))
+* **service:** add generator and stream guards with error propagation to AgentInteract ([2c6a0f3](https://github.com/GoogleCloudPlatform/evalbench/commit/2c6a0f37e55ac649ba55dec36c8e787e9adeecde))
+* **test:** clean up SessionManager sessions in asyncTearDown ([653cf9b](https://github.com/GoogleCloudPlatform/evalbench/commit/653cf9b7b9520b54e508aad6b5f1d7c58c1b0478))
+* **test:** consume sender task via asyncio.gather in integration test ([dc73810](https://github.com/GoogleCloudPlatform/evalbench/commit/dc73810779725c88ed6eb77b5ce5fe71f2c2c921))
+
 ## [1.16.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.15.0...v1.16.0) (2026-09-01)
 
 
