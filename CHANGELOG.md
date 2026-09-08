@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.18.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.17.0...v1.18.0) (2026-09-08)
+
+
+### Features
+
+* **reporting:** align delegated reporter protocol with ReportingContext and multi-type dispatch ([7d973b9](https://github.com/GoogleCloudPlatform/evalbench/commit/7d973b9c2d1ec39f74fee2ade836d205996ccd83))
+* **scorers:** align remote delegated scorer signatures with native comparators ([fde9cbe](https://github.com/GoogleCloudPlatform/evalbench/commit/fde9cbe1ba74e2ee6f2579a38c3b5dcdbac55e81))
+
+
+### Bug Fixes
+
+* **mp:** release stage thread pools so evaluate() stops leaking workers ([55b9c7e](https://github.com/GoogleCloudPlatform/evalbench/commit/55b9c7e0f45b502fa1dd9de74080d13651b61cde))
+
 ## [1.17.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.16.0...v1.17.0) (2026-09-04)
 
 
