@@ -94,7 +94,11 @@ class AgentEvaluator:
                 self.agentrunner.execute_work(work)
 
             for future in concurrent.futures.as_completed(self.agentrunner.futures):
-                item = future.result()
+                try:
+                    item = future.result()
+                except Exception as e:
+                    logging.exception(f"Agent eval case failed: {e}")
+                    continue
 
                 if hasattr(item, "agent_results"):
                     eval_outputs.extend(item.agent_results)
