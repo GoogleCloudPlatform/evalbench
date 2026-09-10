@@ -855,10 +855,10 @@ class AgyCliGenerator(AgentCliGenerator):
         ``timeout`` maps to ``--print-timeout`` (e.g. "20m"). If omitted,
         defaults to agy's internal default (5 minutes).
 
-        ``add_dir`` maps to ``--add-dir``, registering the scenario's
-        ``work_dir`` as an agy workspace. Required on top of the subprocess
-        cwd: unregistered, agy runs its shell and write tools in
-        ``<appDataDir>/scratch`` and agent writes miss ``work_dir``.
+        ``add_dir`` maps to ``--add-dir``, registering the working directory
+        as an agy workspace. Required on top of the subprocess cwd:
+        unregistered, agy runs its shell and write tools in
+        ``<appDataDir>/scratch`` rather than the cwd.
         """
         command = [cli, "-p", prompt, "--dangerously-skip-permissions"]
         if model:
@@ -914,18 +914,18 @@ class AgyCliGenerator(AgentCliGenerator):
 
     def _run_agy_cli(self, cli_cmd: CLICommand, timeout_seconds=None):
         env = self._merged_env(cli_cmd.env)
+        # Registered via --add-dir below, fake_home fallback included: without
+        # that, a scenario with no work_dir writes to <appDataDir>/scratch
+        # instead of the cwd, unlike the other CLI harnesses.
+        cwd = cli_cmd.cwd if cli_cmd.cwd else self.fake_home
         # The executable is always this session's sandbox binary, regardless of
         # the label carried on cli_cmd.cli (the evaluator passes agent_version,
         # "agy", which is not a path).
         command = self._base_agy_command(
             self.agy_bin, cli_cmd.prompt, cli_cmd.resume, self.model,
             output_format="stream-json", log_file=self.cli_log_path,
-            timeout=self.timeout, add_dir=cli_cmd.cwd,
+            timeout=self.timeout, add_dir=cwd,
         )
-        # The fallback is not mirrored into --add-dir: fake_home is agy's own
-        # HOME (binary, settings, MCP config, session state) plus the staged
-        # ADC copy, not a scenario workspace.
-        cwd = cli_cmd.cwd if cli_cmd.cwd else self.fake_home
         result = self._execute_cli_command(command, env=env, cwd=cwd, timeout_seconds=timeout_seconds)
 
         # Parse whenever agy emitted a stream, even on a non-zero exit: a
