@@ -181,9 +181,11 @@ def test_generator_missing_file_raises():
 # --------------------------------------------------------------------------
 def test_scorer_parse_and_html():
     raw = """```json
-    {"readability_score": 75, "findings": [
-       {"severity": "P0", "rule_id": "P0-X", "tool": "t", "title": "Bad name", "message": "m", "suggestion": "s"},
-       {"severity": "P2", "rule_id": "P2-Y", "tool": "t", "message": "m", "suggestion": "s"}
+    {"readability_score": 75, "findings_by_tool": [
+       {"tool": "t", "findings": [
+         {"severity": "P0", "rule_id": "P0-X", "title": "Bad name", "message": "m", "suggestion": "s"},
+         {"severity": "P2", "rule_id": "P2-Y", "message": "m", "suggestion": "s"}
+       ]}
      ], "waived": [{"rule_id": "use-enums", "reason": "legacy", "would_have_violated": true}],
      "summary": "ok"}
     ```"""
@@ -193,15 +195,17 @@ def test_scorer_parse_and_html():
     assert fb["p0_issues"] == 1
     assert fb["p2_issues"] == 1
     assert fb["readability_score"] == 75
-    # title flows through the parser unchanged.
-    assert fb["findings"][0]["title"] == "Bad name"
+    # The judge's grouping flows through the parser unchanged.
+    assert fb["findings_by_tool"][0]["tool"] == "t"
+    assert fb["findings_by_tool"][0]["findings"][0]["title"] == "Bad name"
 
     html = McpStyleReadabilityScorer.to_html(fb, product_name="Cloud SQL")
     # Human-readable report: product heading + summary, no numeric score.
     assert "MCP Tool Readability Review — Cloud SQL" in html
     assert "readability score" not in html.lower()
-    # Findings are grouped by severity and carry their title/rule.
-    assert "Blockers (P0) — 1" in html
+    # Findings are grouped per tool, tallied by severity, and carry their
+    # title/rule with a severity badge.
+    assert "<h4>t — 1 P0, 1 P2</h4>" in html
     assert "P0-X" in html and "Bad name" in html
     # Allowed exceptions section surfaces the waiver, reason, and flag note.
     assert "Allowed exceptions (waived) — 1" in html
@@ -210,19 +214,20 @@ def test_scorer_parse_and_html():
 
 
 def test_scorer_counts_are_authoritative_from_findings():
-    """A severity with zero findings must stay 0 even if the model over-reports.
-
-    Regression: the old `_count(sev) or _safe_int(...)` fell back to the model's
-    self-reported integer whenever a severity's true count was 0.
-    """
+    """Counts come from the findings, never from model-reported integers."""
     raw = json.dumps(
         {
             "readability_score": 90,
             # No P0 findings, but the model wrongly claims 3.
             "p0_issues": 3,
-            "findings": [
-                {"severity": "P1", "rule_id": "P1-A", "tool": "t",
-                 "message": "m", "suggestion": "s"},
+            "findings_by_tool": [
+                {
+                    "tool": "t",
+                    "findings": [
+                        {"severity": "P1", "rule_id": "P1-A",
+                         "message": "m", "suggestion": "s"},
+                    ],
+                }
             ],
             "summary": "ok",
         }
@@ -232,10 +237,12 @@ def test_scorer_counts_are_authoritative_from_findings():
     assert fb["p0_issues"] == 0  # derived from findings, not the bogus 3
     assert fb["p1_issues"] == 1
 
-    # When there are NO findings at all, fall back to the reported integers.
-    raw2 = json.dumps({"readability_score": 50, "p0_issues": 2, "findings": []})
+    # No findings means zero, whatever the model reports.
+    raw2 = json.dumps(
+        {"readability_score": 50, "p0_issues": 2, "findings_by_tool": []}
+    )
     fb2 = scorer._parse(raw2)
-    assert fb2["p0_issues"] == 2
+    assert fb2["p0_issues"] == 0
 
 
 def test_scorer_single_pass():
@@ -287,9 +294,14 @@ class _FakeLLM:
         return json.dumps(
             {
                 "readability_score": 80,
-                "findings": [
-                    {"severity": "P1", "rule_id": "P1-A", "tool": "list_datasets",
-                     "message": "m", "suggestion": "s"},
+                "findings_by_tool": [
+                    {
+                        "tool": "list_datasets",
+                        "findings": [
+                            {"severity": "P1", "rule_id": "P1-A",
+                             "message": "m", "suggestion": "s"},
+                        ],
+                    }
                 ],
                 "waived": [{"rule_id": "use-enums", "reason": "r"}],
                 "summary": "fine",
