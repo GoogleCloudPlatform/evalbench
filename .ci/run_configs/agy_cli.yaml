@@ -1,0 +1,29 @@
+dataset_config: .ci/harness_smoke.evalset.json
+dataset_format: agent-format
+
+orchestrator: agent
+model_config: datasets/model_configs/agy_cli_model.yaml
+simulated_user_model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+
+# Only trajectory_matcher is thresholded. The rest are liveness-checked by
+# .ci/verify_harness.py: they must run against real harness output without
+# erroring. Judge verdicts are never gated on -- a wobbling gate gets ignored.
+scorers:
+  trajectory_matcher: {}
+  turn_count: {}
+  agent_steps: {}
+  end_to_end_latency: {}
+  tool_call_latency: {}
+  token_consumption: {}
+  tokens_processed: {}
+  effective_billed_tokens: {}
+  goal_completion:
+    model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+  behavioral_metrics:
+    model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+  parameter_analysis:
+    model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+
+reporting:
+  csv:
+    output_directory: 'results/ci/agy_cli'

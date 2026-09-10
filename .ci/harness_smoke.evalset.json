@@ -1,0 +1,31 @@
+{
+  "scenarios": [
+    {
+      "id": "ci-csql-list-and-get",
+      "starting_prompt": "list all instances in project ${EVAL_GCP_PROJECT_ID}",
+      "conversation_plan": "Ask the agent to list instances in project ${EVAL_GCP_PROJECT_ID}. Once all instances are listed if ${CI_CSQL_INSTANCE} exist get its state and validate its RUNNABLE",
+      "expected_trajectory": [
+        "cloud-sql__list_instances",
+        "cloud-sql__get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "${EVAL_GCP_PROJECT_ID}"
+      },
+      "kind": "tools",
+      "max_turns": 3
+    },
+    {
+      "id": "ci-csql-get-instance-not-found",
+      "starting_prompt": "Get the details for the Cloud SQL instance named 'ci-missing-instance-do-not-create' in project '${EVAL_GCP_PROJECT_ID}'.",
+      "conversation_plan": "The user wants details for an instance that does not exist. The agent should call get_instance once, receive a not-found error, and report to the user that the instance could not be found. The user accepts that answer and ends the conversation. The user must not ask the agent to list instances, search for similar names, or otherwise recover.",
+      "expected_trajectory": [
+        "cloud-sql__get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "${EVAL_GCP_PROJECT_ID}"
+      },
+      "kind": "tools",
+      "max_turns": 2
+    }
+  ]
+}
