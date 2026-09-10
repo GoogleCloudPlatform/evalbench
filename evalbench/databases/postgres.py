@@ -36,7 +36,16 @@ GRANT USAGE ON SCHEMA public TO {DML_USERNAME};
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {DML_USERNAME};
 """
 
-CONNECTOR = Connector()
+_CONNECTOR = None
+
+
+def get_connector():
+    # Built on first use: the constructor resolves ADC, which would make
+    # importing evalbench fail on machines without credentials.
+    global _CONNECTOR
+    if _CONNECTOR is None:
+        _CONNECTOR = Connector()
+    return _CONNECTOR
 
 
 class PGDB(DB):
@@ -66,7 +75,7 @@ class PGDB(DB):
 
         def get_conn():
             # Only used for Cloud SQL Connector path
-            conn = CONNECTOR.connect(
+            conn = get_connector().connect(
                 self.db_path,
                 "pg8000",
                 user=self.username,
