@@ -2,8 +2,10 @@
 SkillsTrajectoryMatcher
 
 Compares expected activated skills vs actual activated skill names.
-Supports flexible coverage matching (when allow_extra_skills is True),
-Jaccard set similarity (default), and strict Levenshtein sequence alignment.
+Scores based on:
+  denominator = number of skills expected to activate (across all turns)
+  numerator = number of expected skills activated (across all turns)
+Also supports strict Levenshtein sequence alignment when enforce_order is True.
 """
 from typing import Tuple, Any, List
 from scorers import comparator
@@ -116,20 +118,15 @@ class SkillsTrajectoryMatcher(comparator.Comparator):
                 f"(Distance: {distance}, Max: {max_len}). "
                 f"Expected: {expected}, Actual: {actual}"
             )
-        elif self.allow_extra_skills:
-            expected_set = set(expected)
-            actual_set = set(actual)
-            matched = expected_set & actual_set
-            similarity = len(matched) / len(expected_set)
-            score = similarity * 100.0
-            return score, (
-                f"Skills Coverage (allow_extra_skills=True): {score:.2f}%. "
-                f"Expected: {expected_set}, Actual: {actual_set}, Matched: {matched}"
-            )
-        else:
-            similarity = self._jaccard_similarity(set(expected), set(actual))
-            score = similarity * 100.0
-            return score, (
-                f"Skills Jaccard Similarity: {score:.2f}. "
-                f"Expected: {set(expected)}, Actual: {set(actual)}"
-            )
+
+        expected_set = set(expected)
+        actual_set = set(actual)
+        matched = expected_set & actual_set
+        similarity = len(matched) / len(expected_set) if expected_set else (1.0 if not actual_set or self.allow_extra_skills else 0.0)
+        score = similarity * 100.0
+        return score, (
+            f"Skills Trajectory Match: {score:.2f}% "
+            f"({len(matched)}/{len(expected_set)} expected skills activated). "
+            f"Expected: {expected_set}, Actual: {actual_set}, Matched: {matched}"
+        )
+

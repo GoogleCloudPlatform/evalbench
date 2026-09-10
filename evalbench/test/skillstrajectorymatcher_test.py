@@ -45,7 +45,7 @@ class SkillsTrajectoryMatcherTest(unittest.TestCase):
         matcher = SkillsTrajectoryMatcher({"allow_extra_skills": False})
         score, explanation = _compare(matcher, [], ["dataform_bigquery"])
         self.assertEqual(score, 0.0)
-        self.assertIn("Jaccard Similarity: 0.00", explanation)
+        self.assertIn("0/0 expected skills activated", explanation)
 
     def test_empty_expected_skills_with_extra_skills_when_allow_extra_true(self):
         matcher = SkillsTrajectoryMatcher({"allow_extra_skills": True})
@@ -53,14 +53,14 @@ class SkillsTrajectoryMatcherTest(unittest.TestCase):
         self.assertEqual(score, 100.0)
         self.assertIn("extra skills are allowed", explanation)
 
-    def test_default_uses_jaccard_similarity(self):
+    def test_default_ratio_scoring(self):
         matcher = SkillsTrajectoryMatcher({})
         expected = ["dataform_bigquery"]
         actual = ["dataform_bigquery", "gcp_pipeline_orchestration"]
 
         score, explanation = _compare(matcher, expected, actual)
-        self.assertEqual(score, 50.0)
-        self.assertIn("Jaccard Similarity", explanation)
+        self.assertEqual(score, 100.0)
+        self.assertIn("1/1 expected skills activated", explanation)
 
     def test_allow_extra_skills_enabled(self):
         matcher = SkillsTrajectoryMatcher({"allow_extra_skills": True})
@@ -69,15 +69,16 @@ class SkillsTrajectoryMatcherTest(unittest.TestCase):
 
         score, explanation = _compare(matcher, expected, actual)
         self.assertEqual(score, 100.0)
-        self.assertIn("allow_extra_skills=True", explanation)
+        self.assertIn("1/1 expected skills activated", explanation)
 
     def test_partial_coverage(self):
-        matcher = SkillsTrajectoryMatcher({"allow_extra_skills": True})
+        matcher = SkillsTrajectoryMatcher({})
         expected = ["dataform_bigquery", "dbt_bigquery"]
         actual = ["dataform_bigquery"]
 
         score, explanation = _compare(matcher, expected, actual)
         self.assertEqual(score, 50.0)
+        self.assertIn("1/2 expected skills activated", explanation)
 
     def test_enforce_order(self):
         matcher = SkillsTrajectoryMatcher({"enforce_order": True})
@@ -98,23 +99,23 @@ class SkillsTrajectoryMatcherTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             SkillsTrajectoryMatcher({"enforce_order": True, "allow_extra_skills": True})
 
-    def test_namespace_normalization_default_jaccard(self):
+    def test_namespace_normalization_default_ratio(self):
         matcher = SkillsTrajectoryMatcher({"ignore_prefix": "dak:"})
         expected = ["dataform_bigquery"]
         actual = ["dak:dataform_bigquery", "gcp_pipeline_orchestration"]
 
         score, explanation = _compare(matcher, expected, actual)
-        self.assertEqual(score, 50.0)
-        self.assertIn("Jaccard Similarity", explanation)
+        self.assertEqual(score, 100.0)
+        self.assertIn("1/1 expected skills activated", explanation)
 
-    def test_namespace_normalization_allow_extra_skills(self):
-        matcher = SkillsTrajectoryMatcher({"allow_extra_skills": True, "ignore_prefix": "dak:"})
-        expected = ["dataform_bigquery"]
+    def test_namespace_normalization_partial_match(self):
+        matcher = SkillsTrajectoryMatcher({"ignore_prefix": "dak:"})
+        expected = ["dataform_bigquery", "dbt_bigquery"]
         actual = ["dak:dataform_bigquery", "gcp_pipeline_orchestration"]
 
         score, explanation = _compare(matcher, expected, actual)
-        self.assertEqual(score, 100.0)
-        self.assertIn("allow_extra_skills=True", explanation)
+        self.assertEqual(score, 50.0)
+        self.assertIn("1/2 expected skills activated", explanation)
 
     def test_namespace_normalization_enforce_order(self):
         matcher = SkillsTrajectoryMatcher({"enforce_order": True, "ignore_prefix": "dak:"})
