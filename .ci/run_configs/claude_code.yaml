@@ -2,7 +2,7 @@ dataset_config: .ci/harness_smoke.evalset.json
 dataset_format: agent-format
 
 orchestrator: agent
-model_config: datasets/model_configs/claude_code_model.yaml
+model_config: .ci/model_configs/claude_code_model.yaml
 simulated_user_model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
 
 # Only trajectory_matcher is thresholded. The rest are liveness-checked by
