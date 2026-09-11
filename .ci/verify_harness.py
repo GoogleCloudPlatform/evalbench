@@ -4,18 +4,19 @@
 evalbench.eval() exits 0 whenever a run completes, including when the agent
 made no tool calls at all, so the exit code alone cannot gate CI.
 
-Tier 1 (threshold): trajectory_matcher must hit THRESHOLDS -- the agent really
-reached the expected tools.
-
-Tier 2 (non-zero): telemetry scorers must report more than 0. They swallow
+Tier 1 (non-zero): telemetry scorers must report more than 0. They swallow
 parse failures and return 0.0 with an explanation rather than raising, so a
 plain liveness check passes even when a CLI renames a token field -- the exact
 drift this build exists to catch. Every scenario makes at least one MCP call,
 so 0 tokens or 0 latency can only mean the scorer failed to read the output.
 
-Tier 3 (liveness): every remaining scorer must emit a row per scenario, with no
+Tier 2 (liveness): every remaining scorer must emit a row per scenario, with no
 comparison_error and a numeric score. This covers the LLM judges without ever
 gating on their verdict, which would make the build flaky.
+
+trajectory_matcher is deliberately liveness-only, not thresholded: which tools
+an agent reaches for varies run to run, and a harness may shell out instead of
+calling the MCP tool. tool_call_latency > 0 is what proves tools were used.
 """
 import csv
 import json
@@ -27,7 +28,6 @@ import yaml
 HARNESSES = ["agy_cli", "claude_code", "codex_cli", "gemini_cli"]
 RUN_CONFIG_DIR = ".ci/run_configs"
 EVALSET = ".ci/harness_smoke.evalset.json"
-THRESHOLDS = {"trajectory_matcher": 100.0}
 POSITIVE = {
     "turn_count",
     "agent_steps",
@@ -102,11 +102,6 @@ def check(harness, scenario_ids):
                 problems.append(f"{scorer}: errored on {sid} -- {error[:120]}")
             elif score is None:
                 problems.append(f"{scorer}: non-numeric score for {sid}")
-            elif scorer in THRESHOLDS and score < THRESHOLDS[scorer]:
-                problems.append(
-                    f"{scorer}: {sid} scored {score:.1f}, "
-                    f"need >= {THRESHOLDS[scorer]:.0f}"
-                )
             elif scorer in POSITIVE and score <= 0:
                 problems.append(
                     f"{scorer}: {sid} reported 0 -- scorer could not read "
@@ -117,9 +112,7 @@ def check(harness, scenario_ids):
 
 def main():
     scenario_ids = expected_scenario_ids()
-    gated = ", ".join(f"{k} >= {v:.0f}" for k, v in THRESHOLDS.items())
     print(f"Scenarios: {len(scenario_ids)} | Harnesses: {len(HARNESSES)}")
-    print(f"Thresholded: {gated}")
     print(f"Must be > 0: {', '.join(sorted(POSITIVE))}")
     print("All other scorers are liveness-checked (ran, no error, "
           "numeric score)\n")

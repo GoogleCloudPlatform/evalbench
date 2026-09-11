@@ -15,10 +15,19 @@ steps:
            '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/evalbench-harness-ci:cache',
            '-f', 'evalbench_service/Dockerfile', '.']
 
+  # Pushed here rather than via top-level `images:`, which only runs when the
+  # whole build succeeds -- the failing builds would never warm the cache.
+  - id: push-cache
+    name: 'gcr.io/cloud-builders/docker'
+    waitFor: ['build-image']
+    allowFailure: true
+    args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/evalbench-harness-ci:cache']
+
   # 3. Fetch SA key ONLY for agy-cli
   - id: fetch-sa-key
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: 'bash'
+    waitFor: ['-']
     args:
       - '-c'
       - |
@@ -91,10 +100,6 @@ steps:
     volumes: *results_volume
 
 timeout: '3600s'
-
-# Republished every build so the next one starts warm.
-images:
-  - 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/evalbench-harness-ci:cache'
 
 options:
   logging: CLOUD_LOGGING_ONLY
