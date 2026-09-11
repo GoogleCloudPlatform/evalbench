@@ -17,12 +17,24 @@ steps:
            '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/evalbench-harness-ci:cache',
            '-f', 'evalbench_service/Dockerfile', '.']
 
-  # allowFailure on all four: verify-harnesses is the gate, so one broken
-  # harness must not cancel the others before they report.
+  # Fetch the Secret Manager key into a shared volume
+  - id: fetch-sa-key
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        mkdir -p /etc/evalbench-sa-key
+        gcloud secrets versions access latest --secret="evalbench-sa-key" --project="$_EVAL_PROJECT" > /etc/evalbench-sa-key/key.json
+    volumes:
+      - name: 'evalbench_sa_key_volume'
+        path: '/etc/evalbench-sa-key'
+
+  # agy-cli step (mounts /etc/evalbench-sa-key)
   - id: agy-cli
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
-    waitFor: ['build-image']
+    waitFor: ['build-image', 'fetch-sa-key']
     allowFailure: true
     args: ['uv', 'run', '--no-sync', 'evalbench/evalbench.py',
            '--experiment_config=.ci/run_configs/agy_cli.yaml']
@@ -31,9 +43,11 @@ steps:
       - 'EVAL_GCP_PROJECT_REGION=global'
       - 'CI_CSQL_INSTANCE=${_CI_CSQL_INSTANCE}'
       - 'UV_CACHE_DIR=/tmp/uv-cache'
-    volumes: &results_volume
+    volumes: &all_volumes
       - name: 'eval_results'
         path: '/evalbench/results'
+      - name: 'evalbench_sa_key_volume'
+        path: '/etc/evalbench-sa-key'
 
   - id: claude-code
     name: 'evalbench-harness-ci'
