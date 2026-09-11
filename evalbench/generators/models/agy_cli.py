@@ -511,7 +511,7 @@ class AgyCliGenerator(AgentCliGenerator):
             self.agy_bin, "ping", model=self.model
         )
         try:
-            subprocess.run(
+            probe = subprocess.run(
                 cmd, env=env, cwd=self.fake_home,
                 stdin=subprocess.DEVNULL, capture_output=True, text=True,
                 timeout=120, check=False,
@@ -585,6 +585,11 @@ class AgyCliGenerator(AgentCliGenerator):
                 "MCP tools are missing."
             )
             msg += f"\nADC in use: {self.adc_path}"
+            msg += (
+                f"\nProbe exit code: {probe.returncode}"
+                f"\nProbe STDOUT:\n{probe.stdout}"
+                f"\nProbe STDERR:\n{probe.stderr}"
+            )
             if marker_hits:
                 msg += "\nProbe log fatal markers:\n" + "\n".join(
                     f"  {h}" for h in marker_hits
