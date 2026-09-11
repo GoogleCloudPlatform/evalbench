@@ -1,13 +1,11 @@
-# _EVAL_PROJECT and _CI_CSQL_INSTANCE are left undefined so the target project
-# and instance stay out of this public repo; the trigger supplies both.
-
 steps:
-  # Primes the layer cache. The pull fails on the first build, before the tag exists.
+  # 1. Pull cached Docker image
   - id: pull-cache
     name: 'gcr.io/cloud-builders/docker'
     entrypoint: 'bash'
     args: ['-c', 'docker pull us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/evalbench-harness-ci:cache || exit 0']
 
+  # 2. Build Docker image
   - id: build-image
     name: 'gcr.io/cloud-builders/docker'
     waitFor: ['pull-cache']
@@ -17,7 +15,7 @@ steps:
            '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/evalbench-harness-ci:cache',
            '-f', 'evalbench_service/Dockerfile', '.']
 
-  # Fetch the Secret Manager key into a shared volume
+  # 3. Fetch SA key ONLY for agy-cli
   - id: fetch-sa-key
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: 'bash'
@@ -27,10 +25,10 @@ steps:
         mkdir -p /etc/evalbench-sa-key
         gcloud secrets versions access latest --secret="evalbench-sa-key" --project="$_EVAL_PROJECT" > /etc/evalbench-sa-key/key.json
     volumes:
-      - name: 'evalbench_sa_key_volume'
+      - name: 'sa_key_volume'
         path: '/etc/evalbench-sa-key'
 
-  # agy-cli step (mounts /etc/evalbench-sa-key)
+  # 4. agy-cli: mounts results_volume + sa_key_volume
   - id: agy-cli
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
@@ -43,12 +41,13 @@ steps:
       - 'EVAL_GCP_PROJECT_REGION=global'
       - 'CI_CSQL_INSTANCE=${_CI_CSQL_INSTANCE}'
       - 'UV_CACHE_DIR=/tmp/uv-cache'
-    volumes: &all_volumes
+    volumes:
       - name: 'eval_results'
         path: '/evalbench/results'
-      - name: 'evalbench_sa_key_volume'
+      - name: 'sa_key_volume'
         path: '/etc/evalbench-sa-key'
 
+  # 5. claude-code: only requires results_volume
   - id: claude-code
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
@@ -57,8 +56,11 @@ steps:
     args: ['uv', 'run', '--no-sync', 'evalbench/evalbench.py',
            '--experiment_config=.ci/run_configs/claude_code.yaml']
     env: *harness_env
-    volumes: *results_volume
+    volumes: &results_volume
+      - name: 'eval_results'
+        path: '/evalbench/results'
 
+  # 6. codex-cli: only requires results_volume
   - id: codex-cli
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
@@ -69,6 +71,7 @@ steps:
     env: *harness_env
     volumes: *results_volume
 
+  # 7. gemini-cli: only requires results_volume
   - id: gemini-cli
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
@@ -79,6 +82,7 @@ steps:
     env: *harness_env
     volumes: *results_volume
 
+  # 8. verify-harnesses
   - id: verify-harnesses
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
