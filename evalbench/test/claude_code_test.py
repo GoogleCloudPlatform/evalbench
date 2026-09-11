@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 from unittest.mock import MagicMock, patch, ANY
@@ -88,3 +89,79 @@ def test_install_plugin_runs_init_and_install(mock_open, mock_makedirs, monkeypa
         assert "plugins" in second_call_args
         assert "install" in second_call_args
         assert "my-plugin" in second_call_args
+
+
+TOOL_USE_EVENT = {
+    "type": "assistant",
+    "message": {
+        "content": [
+            {
+                "type": "tool_use",
+                "id": "toolu_01",
+                "name": "mcp__cloud-sql__list_instances",
+                "input": {"project": "p"},
+            }
+        ]
+    },
+}
+
+TOOL_RESULT_EVENT = {
+    "type": "user",
+    "message": {
+        "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_01", "content": "ok"}
+        ]
+    },
+}
+
+RESULT_EVENT = {"type": "result", "session_id": "s1", "usage": {}}
+
+
+def test_stamp_tool_event_measures_gap_between_use_and_result():
+    started_at_ms = {}
+    tool_durations = {}
+
+    ClaudeCodeGenerator._stamp_tool_event(
+        json.dumps(TOOL_USE_EVENT), 1000.0, started_at_ms, tool_durations)
+    assert tool_durations == {}
+
+    ClaudeCodeGenerator._stamp_tool_event(
+        json.dumps(TOOL_RESULT_EVENT), 1250.0, started_at_ms, tool_durations)
+    assert tool_durations == {"toolu_01": 250}
+
+
+@patch('generators.models.claude_code.os.makedirs')
+@patch('generators.models.claude_code.open', create=True)
+def test_parse_stream_json_accumulates_tool_durations(
+        mock_open, mock_makedirs, monkeypatch):
+    """tool_call_latency scored 0 for every scenario because durationMs was
+    initialized and never accumulated."""
+    monkeypatch.setenv("HOME", "/fake/real_home")
+    mock_open.return_value.__enter__.return_value.read.return_value = '{}'
+
+    generator = ClaudeCodeGenerator({"model": "claude-opus-4-6"})
+    stream = "\n".join(
+        json.dumps(e)
+        for e in (TOOL_USE_EVENT, TOOL_RESULT_EVENT, RESULT_EVENT))
+
+    parsed = json.loads(generator._parse_stream_json(
+        stream, tool_durations={"toolu_01": 250}))
+
+    tools = parsed["stats"]["tools"]
+    assert tools["totalDurationMs"] == 250
+    assert tools["byName"]["cloud-sql__list_instances"]["durationMs"] == 250
+
+
+@patch('generators.models.claude_code.os.makedirs')
+@patch('generators.models.claude_code.open', create=True)
+def test_parse_stream_json_without_durations(
+        mock_open, mock_makedirs, monkeypatch):
+    monkeypatch.setenv("HOME", "/fake/real_home")
+    mock_open.return_value.__enter__.return_value.read.return_value = '{}'
+
+    generator = ClaudeCodeGenerator({"model": "claude-opus-4-6"})
+    stream = json.dumps(RESULT_EVENT)
+
+    parsed = json.loads(generator._parse_stream_json(stream))
+
+    assert parsed["stats"]["tools"]["totalDurationMs"] == 0
