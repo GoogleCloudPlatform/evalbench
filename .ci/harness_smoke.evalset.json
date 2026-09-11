@@ -3,7 +3,7 @@
     {
       "id": "ci-csql-list-and-get",
       "starting_prompt": "list all instances in project ${EVAL_GCP_PROJECT_ID}",
-      "conversation_plan": "Ask the agent to list instances in project ${EVAL_GCP_PROJECT_ID}. Once all instances are listed if ${CI_CSQL_INSTANCE} exist get its state and validate its RUNNABLE",
+      "conversation_plan": "The user wants to see every Cloud SQL instance in project ${EVAL_GCP_PROJECT_ID}, then check the health of one of them. Once the agent has listed the instances, the user asks for the current state of ${CI_CSQL_INSTANCE} and expects the agent to report whether it is RUNNABLE. The user accepts that answer and ends the conversation.",
       "expected_trajectory": [
         "cloud-sql__list_instances",
         "cloud-sql__get_instance"

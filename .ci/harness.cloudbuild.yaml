@@ -1,11 +1,9 @@
 steps:
-  # 1. Pull cached Docker image
   - id: pull-cache
     name: 'gcr.io/cloud-builders/docker'
     entrypoint: 'bash'
     args: ['-c', 'docker pull us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/evalbench-harness-ci:cache || exit 0']
 
-  # 2. Build Docker image
   - id: build-image
     name: 'gcr.io/cloud-builders/docker'
     waitFor: ['pull-cache']
@@ -23,7 +21,6 @@ steps:
     allowFailure: true
     args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/evalbench-harness-ci:cache']
 
-  # 3. Fetch SA key ONLY for agy-cli
   - id: fetch-sa-key
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: 'bash'
@@ -37,7 +34,6 @@ steps:
       - name: 'sa_key_volume'
         path: '/etc/evalbench-sa-key'
 
-  # 4. agy-cli: mounts results_volume + sa_key_volume
   - id: agy-cli
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
@@ -56,7 +52,6 @@ steps:
       - name: 'sa_key_volume'
         path: '/etc/evalbench-sa-key'
 
-  # 5. claude-code: only requires results_volume
   - id: claude-code
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
@@ -69,7 +64,6 @@ steps:
       - name: 'eval_results'
         path: '/evalbench/results'
 
-  # 6. codex-cli: only requires results_volume
   - id: codex-cli
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
@@ -80,7 +74,6 @@ steps:
     env: *harness_env
     volumes: *results_volume
 
-  # 7. gemini-cli: only requires results_volume
   - id: gemini-cli
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
@@ -91,7 +84,6 @@ steps:
     env: *harness_env
     volumes: *results_volume
 
-  # 8. verify-harnesses
   - id: verify-harnesses
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
