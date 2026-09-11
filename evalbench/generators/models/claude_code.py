@@ -8,6 +8,7 @@ import shlex
 import sys
 import re
 import shutil
+import threading
 import time
 from typing import Optional, Union, Dict, List
 import uuid
@@ -634,6 +635,135 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                 command, 1, "", f"An unexpected error occurred: {e}"
             )
 
+    def _execute_cli_streaming(
+        self, command: list[str], env: dict[str, str] | None = None,
+        cwd: str | None = None, timeout_seconds: float | int | None = None,
+    ) -> tuple[subprocess.CompletedProcess, dict[str, int]]:
+        """Runs the CLI with line-streamed stdout, returning the usual
+        CompletedProcess plus a `{tool_use_id: duration_ms}` map.
+
+        Claude's stream-json carries no timestamps, so stamping arrival times
+        here is the only path to per-tool latency.
+        """
+        try:
+            proc = subprocess.Popen(
+                command, env=env, cwd=cwd or self.fake_home, text=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=1,  # line-buffered so events arrive as Claude flushes them
+            )
+        except FileNotFoundError:
+            return subprocess.CompletedProcess(
+                command, 127, "", f"Error: Command not found: {command[0]}"
+            ), {}
+        except Exception as e:
+            return subprocess.CompletedProcess(
+                command, 1, "", f"An unexpected error occurred: {e}"
+            ), {}
+
+        stderr_chunks: list[str] = []
+
+        def _drain_stderr():
+            try:
+                for line in proc.stderr:
+                    stderr_chunks.append(line)
+            except Exception as e:
+                logging.debug(f"stderr drain failed: {e}")
+
+        stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+        stderr_thread.start()
+
+        stdout_lines: list[str] = []
+        started_at_ms: dict[str, float] = {}
+        tool_durations: dict[str, int] = {}
+
+        def _drain_stdout():
+            try:
+                for line in proc.stdout:
+                    arrival_ms = time.monotonic() * 1000
+                    stdout_lines.append(line)
+                    # Timing is a side channel; a bad line must not cost us
+                    # the rest of stdout.
+                    try:
+                        self._stamp_tool_event(
+                            line, arrival_ms, started_at_ms, tool_durations,
+                        )
+                    except Exception as e:
+                        logging.debug(f"tool timing skipped for a line: {e}")
+            except Exception as e:
+                logging.warning(f"stdout stream read failed: {e}")
+
+        stdout_thread = threading.Thread(target=_drain_stdout, daemon=True)
+        stdout_thread.start()
+
+        try:
+            proc.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            stdout_thread.join(timeout=5)
+            stderr_thread.join(timeout=5)
+            return subprocess.CompletedProcess(
+                command, 124, "".join(stdout_lines),
+                f"TimeoutError: Command timed out after {timeout_seconds} seconds",
+            ), tool_durations
+
+        stdout_thread.join(timeout=5)
+        stderr_thread.join(timeout=5)
+
+        completed = subprocess.CompletedProcess(
+            command, proc.returncode,
+            "".join(stdout_lines), "".join(stderr_chunks),
+        )
+        return completed, tool_durations
+
+    @staticmethod
+    def _stamp_tool_event(
+        line: str, arrival_ms: float,
+        started_at_ms: dict[str, float], tool_durations: dict[str, int],
+    ) -> None:
+        """Stamps a `tool_use` block's arrival and closes it on the matching
+        `tool_result`, which arrives either as its own event or nested in a
+        `user` message.
+        """
+        line = line.strip()
+        if not line:
+            return
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            return
+        if not isinstance(event, dict):
+            return
+
+        event_type = event.get("type")
+
+        if event_type == "assistant":
+            for block in event.get("message", {}).get("content", []):
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "tool_use" and block.get("id"):
+                    started_at_ms.setdefault(block["id"], arrival_ms)
+            return
+
+        if event_type == "tool_result":
+            result_ids = [event.get("tool_use_id") or event.get("id", "")]
+        elif event_type == "user":
+            result_ids = [
+                block.get("tool_use_id") or block.get("id", "")
+                for block in event.get("message", {}).get("content", [])
+                if isinstance(block, dict)
+                and block.get("type") == "tool_result"
+            ]
+        else:
+            return
+
+        for tool_id in result_ids:
+            t0 = started_at_ms.pop(tool_id, None) if tool_id else None
+            if t0 is not None:
+                tool_durations[tool_id] = max(0, int(arrival_ms - t0))
+
     @staticmethod
     def _session_id_headers() -> str:
         """Builds a dynamic per-run ``ANTHROPIC_CUSTOM_HEADERS`` value carrying a unique session id.
@@ -708,9 +838,11 @@ class ClaudeCodeGenerator(AgentCliGenerator):
 
         logging.info(f"Running Claude Code CLI: {' '.join(command)}")
 
-        result = self._execute_cli_command(command, env=env, cwd=cli_cmd.cwd, timeout_seconds=timeout_seconds)
+        result, tool_durations = self._execute_cli_streaming(
+            command, env=env, cwd=cli_cmd.cwd, timeout_seconds=timeout_seconds)
         if result.stdout:
-            result.stdout = self._parse_stream_json(result.stdout)
+            result.stdout = self._parse_stream_json(
+                result.stdout, tool_durations=tool_durations)
 
         return result
 
@@ -739,9 +871,16 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         tool_calls_dict[tool_id]["response"] = self._stringify_tool_result(
             content)
 
-    def _parse_stream_json(self, stream_output: str) -> str:
+    def _parse_stream_json(
+        self, stream_output: str,
+        tool_durations: dict[str, int] | None = None,
+    ) -> str:
         """Parses Claude Code stream-json output into a normalized format
-        compatible with the eval pipeline."""
+        compatible with the eval pipeline.
+
+        ``tool_durations`` maps tool_use ids to milliseconds.
+        """
+        tool_durations = tool_durations or {}
 
         from collections import OrderedDict
 
@@ -963,6 +1102,10 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                         tstat["parameters"].append(tc.get("parameters", {}))
                         tstat["decisions"]["accept"] += 1
                         tstat["decisions"]["auto_accept"] += 1
+
+                        duration = tool_durations.get(tc.get("tool_id"), 0)
+                        tstat["durationMs"] += duration
+                        tools_stats["totalDurationMs"] += duration
 
                         if tc.get("status") == "success":
                             tstat["success"] += 1
