@@ -5,9 +5,6 @@ orchestrator: agent
 model_config: .ci/model_configs/claude_code_model.yaml
 simulated_user_model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
 
-# Only trajectory_matcher is thresholded. The rest are liveness-checked by
-# .ci/verify_harness.py: they must run against real harness output without
-# erroring. Judge verdicts are never gated on -- a wobbling gate gets ignored.
 scorers:
   trajectory_matcher: {}
   turn_count: {}

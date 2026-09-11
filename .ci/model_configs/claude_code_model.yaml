@@ -4,8 +4,7 @@ model: "claude-opus-4-6"
 
 use_vertex: true
 vertex_project_id: !ENV ${EVAL_GCP_PROJECT_ID}
-# Claude on Vertex is only served from a few regions; us-east5 is the one
-# Model Garden enables for these model ids.
+# Not us-central1: Vertex serves Claude from only a few regions.
 vertex_region: "us-east5"
 
 env:

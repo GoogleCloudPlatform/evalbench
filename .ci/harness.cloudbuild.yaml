@@ -1,11 +1,24 @@
+# _EVAL_PROJECT and _CI_CSQL_INSTANCE are left undefined so the target project
+# and instance stay out of this public repo; the trigger supplies both.
+
 steps:
+  # Primes the layer cache. The pull fails on the first build, before the tag exists.
+  - id: pull-cache
+    name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args: ['-c', 'docker pull us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/evalbench-harness-ci:cache || exit 0']
+
   - id: build-image
     name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'evalbench-harness-ci', '-f', 'evalbench_service/Dockerfile', '.']
+    waitFor: ['pull-cache']
+    args: ['build',
+           '--cache-from', 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/evalbench-harness-ci:cache',
+           '-t', 'evalbench-harness-ci',
+           '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/evalbench-harness-ci:cache',
+           '-f', 'evalbench_service/Dockerfile', '.']
 
-  # The four harness steps share a waitFor, so Cloud Build runs them
-  # concurrently. allowFailure keeps a single broken harness from cancelling
-  # the others -- verify-harnesses is the gate, so one run reports on all four.
+  # allowFailure on all four: verify-harnesses is the gate, so one broken
+  # harness must not cancel the others before they report.
   - id: agy-cli
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
@@ -59,12 +72,13 @@ steps:
     args: ['uv', 'run', '--no-sync', 'python3', '.ci/verify_harness.py']
     volumes: *results_volume
 
-# _EVAL_PROJECT and _CI_CSQL_INSTANCE are deliberately left undefined so the
-# target project and instance stay out of this public repo. The trigger
-# supplies both; a build that omits either fails validation before any step
-# runs.
-
 timeout: '3600s'
+
+# Republished every build so the next one starts warm.
+images:
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/evalbench-harness-ci:cache'
 
 options:
   logging: CLOUD_LOGGING_ONLY
+  # Sized for the four concurrent harness steps, not for the build.
+  machineType: 'E2_HIGHCPU_8'
