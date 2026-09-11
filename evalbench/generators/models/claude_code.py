@@ -685,9 +685,14 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                 for line in proc.stdout:
                     arrival_ms = time.monotonic() * 1000
                     stdout_lines.append(line)
-                    self._stamp_tool_event(
-                        line, arrival_ms, started_at_ms, tool_durations,
-                    )
+                    # Timing is a side channel; never let it cost us the rest
+                    # of stdout, which carries the actual agent response.
+                    try:
+                        self._stamp_tool_event(
+                            line, arrival_ms, started_at_ms, tool_durations,
+                        )
+                    except Exception as e:
+                        logging.debug(f"tool timing skipped for a line: {e}")
             except Exception as e:
                 logging.warning(f"stdout stream read failed: {e}")
 
@@ -734,6 +739,8 @@ class ClaudeCodeGenerator(AgentCliGenerator):
             event = json.loads(line)
         except json.JSONDecodeError:
             return
+        if not isinstance(event, dict):
+            return
 
         event_type = event.get("type")
 
@@ -745,19 +752,22 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                     started_at_ms.setdefault(block["id"], arrival_ms)
             return
 
-        def _close(tool_id):
+        if event_type == "tool_result":
+            result_ids = [event.get("tool_use_id") or event.get("id", "")]
+        elif event_type == "user":
+            result_ids = [
+                block.get("tool_use_id") or block.get("id", "")
+                for block in event.get("message", {}).get("content", [])
+                if isinstance(block, dict)
+                and block.get("type") == "tool_result"
+            ]
+        else:
+            return
+
+        for tool_id in result_ids:
             t0 = started_at_ms.pop(tool_id, None) if tool_id else None
             if t0 is not None:
                 tool_durations[tool_id] = max(0, int(arrival_ms - t0))
-
-        if event_type == "tool_result":
-            _close(event.get("tool_use_id") or event.get("id", ""))
-        elif event_type == "user":
-            for block in event.get("message", {}).get("content", []):
-                if not isinstance(block, dict):
-                    continue
-                if block.get("type") == "tool_result":
-                    _close(block.get("tool_use_id") or block.get("id", ""))
 
     @staticmethod
     def _session_id_headers() -> str:
