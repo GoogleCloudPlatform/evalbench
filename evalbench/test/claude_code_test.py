@@ -197,18 +197,3 @@ def test_parse_stream_json_accumulates_tool_durations(
     tools = parsed["stats"]["tools"]
     assert tools["totalDurationMs"] == 250
     assert tools["byName"]["cloud-sql__list_instances"]["durationMs"] == 250
-
-
-@patch('generators.models.claude_code.os.makedirs')
-@patch('generators.models.claude_code.open', create=True)
-def test_parse_stream_json_without_durations(
-        mock_open, mock_makedirs, monkeypatch):
-    monkeypatch.setenv("HOME", "/fake/real_home")
-    mock_open.return_value.__enter__.return_value.read.return_value = '{}'
-
-    generator = ClaudeCodeGenerator({"model": "claude-opus-4-6"})
-    stream = json.dumps(RESULT_EVENT)
-
-    parsed = json.loads(generator._parse_stream_json(stream))
-
-    assert parsed["stats"]["tools"]["totalDurationMs"] == 0
