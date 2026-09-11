@@ -2,7 +2,7 @@ codex_cli_version: "@openai/codex@latest"
 generator: codex_cli
 model: "gpt-5.5"
 
-openai_api_key_secret: !ENV projects/${EVAL_GCP_PROJECT_ID}/secrets/openai-api-key/versions/1
+openai_api_key_secret: !ENV projects/${EVAL_GCP_PROJECT_ID}/secrets/openai-api-key/versions/latest
 
 # Codex reports token counts but no cost; these rates turn them into cost_usd.
 pricing:
