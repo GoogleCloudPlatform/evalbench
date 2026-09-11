@@ -1,0 +1,23 @@
+claude_code_version: "@anthropic-ai/claude-code@2.1.85"
+generator: claude_code
+model: "claude-opus-4-6"
+
+use_vertex: true
+vertex_project_id: !ENV ${EVAL_GCP_PROJECT_ID}
+# Not us-central1: Vertex serves Claude from only a few regions.
+vertex_region: "us-east5"
+
+env:
+  GOOGLE_CLOUD_PROJECT: !ENV ${EVAL_GCP_PROJECT_ID}
+  GOOGLE_CLOUD_LOCATION: "us-central1"
+
+setup:
+  mcp_servers:
+    "cloud-sql":
+      httpUrl: "https://sqladmin.googleapis.com/mcp"
+      authProviderType: google_credentials
+      oauth:
+        scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+      headers:
+        X-Goog-User-Project: !ENV ${EVAL_GCP_PROJECT_ID}

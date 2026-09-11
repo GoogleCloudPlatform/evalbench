@@ -1,0 +1,99 @@
+steps:
+  - id: pull-cache
+    name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args: ['-c', 'docker pull us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/evalbench-harness-ci:cache || exit 0']
+
+  - id: build-image
+    name: 'gcr.io/cloud-builders/docker'
+    waitFor: ['pull-cache']
+    args: ['build',
+           '--cache-from', 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/evalbench-harness-ci:cache',
+           '-t', 'evalbench-harness-ci',
+           '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/evalbench-harness-ci:cache',
+           '-f', 'evalbench_service/Dockerfile', '.']
+
+  # Pushed here rather than via top-level `images:`, which only runs when the
+  # whole build succeeds -- the failing builds would never warm the cache.
+  - id: push-cache
+    name: 'gcr.io/cloud-builders/docker'
+    waitFor: ['build-image']
+    allowFailure: true
+    args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/evalbench-harness-ci:cache']
+
+  - id: fetch-sa-key
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'bash'
+    waitFor: ['-']
+    args:
+      - '-c'
+      - |
+        mkdir -p /etc/evalbench-sa-key
+        gcloud secrets versions access latest --secret="evalbench-sa-key" --project="$_EVAL_PROJECT" > /etc/evalbench-sa-key/key.json
+    volumes:
+      - name: 'sa_key_volume'
+        path: '/etc/evalbench-sa-key'
+
+  - id: agy-cli
+    name: 'evalbench-harness-ci'
+    dir: '/evalbench'
+    waitFor: ['build-image', 'fetch-sa-key']
+    allowFailure: true
+    args: ['uv', 'run', '--no-sync', 'evalbench/evalbench.py',
+           '--experiment_config=.ci/run_configs/agy_cli.yaml']
+    env: &harness_env
+      - 'EVAL_GCP_PROJECT_ID=${_EVAL_PROJECT}'
+      - 'EVAL_GCP_PROJECT_REGION=global'
+      - 'CI_CSQL_INSTANCE=${_CI_CSQL_INSTANCE}'
+      - 'UV_CACHE_DIR=/tmp/uv-cache'
+    volumes:
+      - name: 'eval_results'
+        path: '/evalbench/results'
+      - name: 'sa_key_volume'
+        path: '/etc/evalbench-sa-key'
+
+  - id: claude-code
+    name: 'evalbench-harness-ci'
+    dir: '/evalbench'
+    waitFor: ['build-image']
+    allowFailure: true
+    args: ['uv', 'run', '--no-sync', 'evalbench/evalbench.py',
+           '--experiment_config=.ci/run_configs/claude_code.yaml']
+    env: *harness_env
+    volumes: &results_volume
+      - name: 'eval_results'
+        path: '/evalbench/results'
+
+  - id: codex-cli
+    name: 'evalbench-harness-ci'
+    dir: '/evalbench'
+    waitFor: ['build-image']
+    allowFailure: true
+    args: ['uv', 'run', '--no-sync', 'evalbench/evalbench.py',
+           '--experiment_config=.ci/run_configs/codex_cli.yaml']
+    env: *harness_env
+    volumes: *results_volume
+
+  - id: gemini-cli
+    name: 'evalbench-harness-ci'
+    dir: '/evalbench'
+    waitFor: ['build-image']
+    allowFailure: true
+    args: ['uv', 'run', '--no-sync', 'evalbench/evalbench.py',
+           '--experiment_config=.ci/run_configs/gemini_cli.yaml']
+    env: *harness_env
+    volumes: *results_volume
+
+  - id: verify-harnesses
+    name: 'evalbench-harness-ci'
+    dir: '/evalbench'
+    waitFor: ['agy-cli', 'claude-code', 'codex-cli', 'gemini-cli']
+    args: ['uv', 'run', '--no-sync', 'python3', '.ci/verify_harness.py']
+    volumes: *results_volume
+
+timeout: '3600s'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  # Sized for the four concurrent harness steps, not for the build.
+  machineType: 'E2_HIGHCPU_8'

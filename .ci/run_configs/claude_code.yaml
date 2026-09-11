@@ -1,0 +1,26 @@
+dataset_config: .ci/harness_smoke.evalset.json
+dataset_format: agent-format
+
+orchestrator: agent
+model_config: .ci/model_configs/claude_code_model.yaml
+simulated_user_model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+
+scorers:
+  trajectory_matcher: {}
+  turn_count: {}
+  agent_steps: {}
+  end_to_end_latency: {}
+  tool_call_latency: {}
+  token_consumption: {}
+  tokens_processed: {}
+  effective_billed_tokens: {}
+  goal_completion:
+    model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+  behavioral_metrics:
+    model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+  parameter_analysis:
+    model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+
+reporting:
+  csv:
+    output_directory: 'results/ci/claude_code'
