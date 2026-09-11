@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.19.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.18.0...v1.19.0) (2026-09-11)
+
+
+### Features
+
+* **mcp_readability:** group style findings per tool ([dae668e](https://github.com/GoogleCloudPlatform/evalbench/commit/dae668e680c8ee940f1058de80bf10311f5accd5))
+* **mcp_readability:** group style findings per tool ([c4541a3](https://github.com/GoogleCloudPlatform/evalbench/commit/c4541a369b7a8a7be00c8aa7933bcf0f0ca48c5e))
+
+
+### Bug Fixes
+
+* **agy:** register the cwd as a workspace, not just a declared work_dir ([#599](https://github.com/GoogleCloudPlatform/evalbench/issues/599)) ([40a338b](https://github.com/GoogleCloudPlatform/evalbench/commit/40a338b393fdeb7275c4037ed8cfe4a5fff05205))
+
 ## [1.18.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.17.0...v1.18.0) (2026-09-08)
 
 
