@@ -265,7 +265,11 @@ def test_ensure_agy_installed_raises_when_binary_absent_after_install(
 
 def test_run_command_argv_shape(mock_run, sandbox):
     """``_run_agy_cli`` must build ``agy -p <prompt>
-    --dangerously-skip-permissions --output-format stream-json``."""
+    --dangerously-skip-permissions --output-format stream-json``.
+
+    With no scenario ``work_dir``, the cwd fallback ``fake_home`` is still
+    registered via ``--add-dir`` so agent writes land there instead of
+    ``<appDataDir>/scratch`` -- parity with the other CLI harnesses."""
     generator = AgyCliGenerator({})
     cmd = CLICommand(cli="agy", prompt="hello world")
     generator._run_agy_cli(cmd)
@@ -275,7 +279,9 @@ def test_run_command_argv_shape(mock_run, sandbox):
         generator.agy_bin, "-p", "hello world",
         "--dangerously-skip-permissions", "--output-format", "stream-json",
         "--log-file", generator.cli_log_path,
+        "--add-dir", generator.fake_home,
     ]
+    assert mock_run.call_args.kwargs["cwd"] == generator.fake_home
 
 
 def test_run_command_argv_shape_with_continue(mock_run, sandbox):
@@ -287,14 +293,16 @@ def test_run_command_argv_shape_with_continue(mock_run, sandbox):
     assert sent_argv == [
         generator.agy_bin, "-p", "next turn",
         "--dangerously-skip-permissions", "--output-format", "stream-json",
-        "--log-file", generator.cli_log_path, "--continue",
+        "--log-file", generator.cli_log_path,
+        "--add-dir", generator.fake_home, "--continue",
     ]
 
 
 def test_run_command_argv_passes_work_dir_as_add_dir(mock_run, sandbox):
     """A scenario ``work_dir`` must reach agy as ``--add-dir``, not just as the
     subprocess cwd: without a registered workspace agy runs its shell and write
-    tools in ``<appDataDir>/scratch``, so agent writes miss ``work_dir``."""
+    tools in ``<appDataDir>/scratch``, so agent writes miss ``work_dir``. It
+    also takes precedence over the ``fake_home`` fallback."""
     generator = AgyCliGenerator({})
     cmd = generator.create_command(
         cli="agy", prompt="hello world", cwd="/tmp/workspace"
@@ -343,6 +351,7 @@ def test_run_command_argv_shape_with_timeout(mock_run, sandbox):
         generator.agy_bin, "-p", "hello world",
         "--dangerously-skip-permissions", "--output-format", "stream-json",
         "--log-file", generator.cli_log_path, "--print-timeout", "20m",
+        "--add-dir", generator.fake_home,
     ]
 
 
