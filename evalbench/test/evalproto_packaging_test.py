@@ -34,6 +34,15 @@ def test_generators_models_import_without_eager_grpc_proxy():
     assert not hasattr(models, "AgentGrpcProxyGenerator")
 
 
+def test_databases_import_without_eager_connector():
+    """Verify that importing databases does not resolve credentials."""
+    import evalbench.databases.alloydb as alloydb
+    import evalbench.databases.postgres as postgres
+
+    assert postgres._CONNECTOR is None
+    assert alloydb._CONNECTOR is None
+
+
 def test_reporting_import_without_eager_remote_reporter():
     """Verify that reporting imports without eagerly loading RemoteReporter."""
     import evalbench.reporting as reporting

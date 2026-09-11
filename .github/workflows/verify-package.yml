@@ -1,0 +1,35 @@
+name: verify-package
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions: read-all
+
+jobs:
+  wheel:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - name: Install uv
+      uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      with:
+        enable-cache: true
+        cache-dependency-glob: "uv.lock"
+    - name: Build wheel
+      run: uv build --wheel --out-dir dist
+    - name: Install wheel into a clean environment
+      run: |
+        uv venv /tmp/pkgcheck
+        VIRTUAL_ENV=/tmp/pkgcheck uv pip install dist/*.whl
+    # /tmp so the source tree cannot satisfy an import the wheel is missing.
+    - name: Import every module
+      working-directory: /tmp
+      run: /tmp/pkgcheck/bin/python "$GITHUB_WORKSPACE/.ci/verify_package.py"
