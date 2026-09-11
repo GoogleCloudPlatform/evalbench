@@ -28,7 +28,7 @@ steps:
            '--experiment_config=.ci/run_configs/agy_cli.yaml']
     env: &harness_env
       - 'EVAL_GCP_PROJECT_ID=${_EVAL_PROJECT}'
-      - 'EVAL_GCP_PROJECT_REGION=us-central1'
+      - 'EVAL_GCP_PROJECT_REGION=global'
       - 'CI_CSQL_INSTANCE=${_CI_CSQL_INSTANCE}'
       - 'UV_CACHE_DIR=/tmp/uv-cache'
     volumes: &results_volume
