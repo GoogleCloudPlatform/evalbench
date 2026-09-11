@@ -133,8 +133,6 @@ def test_stamp_tool_event_measures_gap_between_use_and_result():
 
 
 def test_stamp_tool_event_handles_top_level_tool_result():
-    """Some streams emit tool_result as its own event rather than nesting it
-    in a user message; both shapes must close the pending tool_use."""
     top_level = {"type": "tool_result", "tool_use_id": "toolu_01"}
     assert _stamp(
         [(TOOL_USE_EVENT, 1000.0), (top_level, 1100.0)]

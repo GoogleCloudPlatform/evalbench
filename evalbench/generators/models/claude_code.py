@@ -639,13 +639,11 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         self, command: list[str], env: dict[str, str] | None = None,
         cwd: str | None = None, timeout_seconds: float | int | None = None,
     ) -> tuple[subprocess.CompletedProcess, dict[str, int]]:
-        """Runs the Claude Code CLI with line-streamed stdout so we can stamp
-        the wall-clock time at which each stream-json event arrives.
+        """Runs the CLI with line-streamed stdout, returning the usual
+        CompletedProcess plus a `{tool_use_id: duration_ms}` map.
 
-        Returns the usual CompletedProcess plus a `{tool_use_id: duration_ms}`
-        map — measured as the gap between a `tool_use` block and its matching
-        `tool_result`. Claude's stream-json events carry no timestamps, so this
-        in-process stamping is the only path to per-tool latency.
+        Claude's stream-json carries no timestamps, so stamping arrival times
+        here is the only path to per-tool latency.
         """
         try:
             proc = subprocess.Popen(
@@ -685,8 +683,8 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                 for line in proc.stdout:
                     arrival_ms = time.monotonic() * 1000
                     stdout_lines.append(line)
-                    # Timing is a side channel; never let it cost us the rest
-                    # of stdout, which carries the actual agent response.
+                    # Timing is a side channel; a bad line must not cost us
+                    # the rest of stdout.
                     try:
                         self._stamp_tool_event(
                             line, arrival_ms, started_at_ms, tool_durations,
@@ -725,12 +723,9 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         line: str, arrival_ms: float,
         started_at_ms: dict[str, float], tool_durations: dict[str, int],
     ) -> None:
-        """Records a `tool_use` block's arrival time, and on the matching
-        `tool_result` computes its duration.
-
-        Mirrors the event shapes _parse_stream_json handles: tool results
-        arrive either as a top-level `tool_result` event or as content blocks
-        inside a `user` message.
+        """Stamps a `tool_use` block's arrival and closes it on the matching
+        `tool_result`, which arrives either as its own event or nested in a
+        `user` message.
         """
         line = line.strip()
         if not line:
@@ -883,8 +878,7 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         """Parses Claude Code stream-json output into a normalized format
         compatible with the eval pipeline.
 
-        ``tool_durations`` maps tool_use ids to milliseconds, measured by
-        _execute_cli_streaming; the stream itself carries no timing.
+        ``tool_durations`` maps tool_use ids to milliseconds.
         """
         tool_durations = tool_durations or {}
 
