@@ -3,7 +3,7 @@ generator: gemini_cli
 
 env:
   GOOGLE_CLOUD_PROJECT: !ENV ${EVAL_GCP_PROJECT_ID}
-  GOOGLE_CLOUD_LOCATION: "us-central1"
+  GOOGLE_CLOUD_LOCATION: "global"
   GOOGLE_GENAI_USE_VERTEXAI: "true"
   GEMINI_CLI_TRUST_WORKSPACE: "true"
 
