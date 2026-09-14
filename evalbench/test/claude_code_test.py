@@ -177,6 +177,38 @@ def test_stamp_tool_event_ignores_unpaired_and_malformed_lines():
     assert tool_durations == {}
 
 
+def test_streaming_timeout_keeps_stderr_diagnostics():
+    """The non-streaming path appends captured stderr to the timeout message;
+    dropping it here loses the CLI's own reason for hanging."""
+    generator = object.__new__(ClaudeCodeGenerator)
+    generator.fake_home = os.getcwd()
+
+    result, _ = ClaudeCodeGenerator._execute_cli_streaming(
+        generator,
+        ["sh", "-c", "echo 'rate limit reached' >&2; sleep 30"],
+        timeout_seconds=1,
+    )
+
+    assert result.returncode == 124
+    assert "TimeoutError: Command timed out after 1 seconds" in result.stderr
+    assert "rate limit reached" in result.stderr
+
+
+def test_stamp_tool_event_survives_null_message_and_content():
+    """A null `message`/`content` defeats dict.get defaults, and the raised
+    AttributeError would drop the timing for every tool after it."""
+    null_events = [
+        {"type": "user", "message": None},
+        {"type": "assistant", "message": None},
+        {"type": "assistant", "message": {"content": None}},
+        {"type": "user", "message": {"content": "plain text"}},
+    ]
+    events_at = [(event, 1050.0) for event in null_events]
+    assert _stamp(
+        [(TOOL_USE_EVENT, 1000.0)] + events_at + [(TOOL_RESULT_EVENT, 1250.0)]
+    ) == {"toolu_01": 250}
+
+
 @patch('generators.models.claude_code.os.makedirs')
 @patch('generators.models.claude_code.open', create=True)
 def test_parse_stream_json_accumulates_tool_durations(

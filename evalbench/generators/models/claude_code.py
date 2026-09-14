@@ -704,9 +704,12 @@ class ClaudeCodeGenerator(AgentCliGenerator):
             proc.wait()
             stdout_thread.join(timeout=5)
             stderr_thread.join(timeout=5)
+            stderr_str = (
+                f"TimeoutError: Command timed out after {timeout_seconds} seconds")
+            if stderr_chunks:
+                stderr_str = f"{stderr_str}\n{''.join(stderr_chunks)}"
             return subprocess.CompletedProcess(
-                command, 124, "".join(stdout_lines),
-                f"TimeoutError: Command timed out after {timeout_seconds} seconds",
+                command, 124, "".join(stdout_lines), stderr_str,
             ), tool_durations
 
         stdout_thread.join(timeout=5)
@@ -738,9 +741,13 @@ class ClaudeCodeGenerator(AgentCliGenerator):
             return
 
         event_type = event.get("type")
+        message = event.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            content = []
 
         if event_type == "assistant":
-            for block in event.get("message", {}).get("content", []):
+            for block in content:
                 if not isinstance(block, dict):
                     continue
                 if block.get("type") == "tool_use" and block.get("id"):
@@ -752,7 +759,7 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         elif event_type == "user":
             result_ids = [
                 block.get("tool_use_id") or block.get("id", "")
-                for block in event.get("message", {}).get("content", [])
+                for block in content
                 if isinstance(block, dict)
                 and block.get("type") == "tool_result"
             ]
