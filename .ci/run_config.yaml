@@ -1,8 +1,10 @@
+# Shared by all four harnesses. CI_HARNESS selects which one runs, so every
+# harness is scored identically and stays comparable.
 dataset_config: .ci/harness_smoke.evalset.json
 dataset_format: agent-format
 
 orchestrator: agent
-model_config: .ci/model_configs/agy_cli_model.yaml
+model_config: !ENV .ci/model_configs/${CI_HARNESS}_model.yaml
 simulated_user_model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
 
 scorers:
@@ -23,4 +25,4 @@ scorers:
 
 reporting:
   csv:
-    output_directory: 'results/ci/agy_cli'
+    output_directory: !ENV results/ci/${CI_HARNESS}

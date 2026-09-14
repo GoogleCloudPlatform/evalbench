@@ -23,10 +23,10 @@ import math
 import os
 import sys
 
-import yaml
+from pyaml_env import parse_config
 
 HARNESSES = ["agy_cli", "claude_code", "codex_cli", "gemini_cli"]
-RUN_CONFIG_DIR = ".ci/run_configs"
+RUN_CONFIG = ".ci/run_config.yaml"
 EVALSET = ".ci/harness_smoke.evalset.json"
 POSITIVE = {
     "trajectory_matcher",
@@ -46,8 +46,10 @@ def expected_scenario_ids():
 
 
 def run_config(harness):
-    with open(os.path.join(RUN_CONFIG_DIR, f"{harness}.yaml")) as f:
-        return yaml.safe_load(f)
+    # The run config resolves ${CI_HARNESS} into the model config and output
+    # paths, so it has to be re-parsed per harness.
+    os.environ["CI_HARNESS"] = harness
+    return parse_config(RUN_CONFIG)
 
 
 def latest_job_dir(output_dir):

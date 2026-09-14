@@ -39,8 +39,8 @@ steps:
     dir: '/evalbench'
     waitFor: ['build-image', 'fetch-sa-key']
     allowFailure: true
-    args: ['uv', 'run', '--no-sync', 'evalbench/evalbench.py',
-           '--experiment_config=.ci/run_configs/agy_cli.yaml']
+    entrypoint: 'bash'
+    args: ['-c', 'CI_HARNESS=agy_cli uv run --no-sync evalbench/evalbench.py --experiment_config=.ci/run_config.yaml']
     env: &harness_env
       - 'EVAL_GCP_PROJECT_ID=${_EVAL_PROJECT}'
       - 'EVAL_GCP_PROJECT_REGION=global'
@@ -57,8 +57,8 @@ steps:
     dir: '/evalbench'
     waitFor: ['build-image']
     allowFailure: true
-    args: ['uv', 'run', '--no-sync', 'evalbench/evalbench.py',
-           '--experiment_config=.ci/run_configs/claude_code.yaml']
+    entrypoint: 'bash'
+    args: ['-c', 'CI_HARNESS=claude_code uv run --no-sync evalbench/evalbench.py --experiment_config=.ci/run_config.yaml']
     env: *harness_env
     volumes: &results_volume
       - name: 'eval_results'
@@ -69,8 +69,8 @@ steps:
     dir: '/evalbench'
     waitFor: ['build-image']
     allowFailure: true
-    args: ['uv', 'run', '--no-sync', 'evalbench/evalbench.py',
-           '--experiment_config=.ci/run_configs/codex_cli.yaml']
+    entrypoint: 'bash'
+    args: ['-c', 'CI_HARNESS=codex_cli uv run --no-sync evalbench/evalbench.py --experiment_config=.ci/run_config.yaml']
     env: *harness_env
     volumes: *results_volume
 
@@ -79,8 +79,8 @@ steps:
     dir: '/evalbench'
     waitFor: ['build-image']
     allowFailure: true
-    args: ['uv', 'run', '--no-sync', 'evalbench/evalbench.py',
-           '--experiment_config=.ci/run_configs/gemini_cli.yaml']
+    entrypoint: 'bash'
+    args: ['-c', 'CI_HARNESS=gemini_cli uv run --no-sync evalbench/evalbench.py --experiment_config=.ci/run_config.yaml']
     env: *harness_env
     volumes: *results_volume
 
