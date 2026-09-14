@@ -81,8 +81,9 @@ def _fmt_score(score):
 
 
 def _fmt_time(run_time):
-    # run_time carries microseconds; seconds are already more precision than a
-    # weekly job warrants.
+    """Format ISO timestamp to minute precision ('YYYY-MM-DD HH:MM')."""
+    if not run_time:
+        return "—"
     return (run_time or "")[:16]
 
 
@@ -252,7 +253,7 @@ def dataset_quality_component():
                 _header_cell("Grade", "8ch")
                 for category in categories:
                     _header_cell(category_label(category), "14ch")
-                _header_cell("Last run", "18ch")
+                _header_cell("Last Run (UTC)", "20ch")
 
             for entry in entries:
                 _product_row(entry, categories)
@@ -281,7 +282,7 @@ def _product_row(entry, categories):
             with me.box(style=_cell("14ch")):
                 me.text(_fmt_score(value), style=me.Style(color=score_color(value)))
 
-        with me.box(style=_cell("18ch")):
+        with me.box(style=_cell("20ch")):
             me.text(
                 _fmt_time(entry.get("run_time")),
                 style=me.Style(color="#334155", font_family="monospace"),
