@@ -785,12 +785,8 @@ class CodexCliGenerator(AgentCliGenerator):
             proc.wait()
             stdout_thread.join(timeout=5)
             stderr_thread.join(timeout=5)
-            stderr_str = (
-                f"TimeoutError: Command timed out after {timeout_seconds} seconds")
-            if stderr_chunks:
-                stderr_str = f"{stderr_str}\n{''.join(stderr_chunks)}"
             return subprocess.CompletedProcess(
-                command, 124, "".join(stdout_lines), stderr_str,
+                command, 124, "".join(stdout_lines), f"TimeoutError: Command timed out after {timeout_seconds} seconds"
             ), tool_durations
 
         stdout_thread.join(timeout=5)
