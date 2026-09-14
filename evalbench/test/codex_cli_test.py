@@ -94,7 +94,9 @@ def test_streaming_timeout_keeps_stderr_diagnostics():
 
     result, _ = CodexCliGenerator._execute_cli_command(
         generator,
-        ["sh", "-c", "echo 'rate limit reached' >&2; sleep 30"],
+        # `exec` so the kill lands on sleep itself; a forked child would hold
+        # the stderr pipe open and stall the reader thread's join.
+        ["sh", "-c", "echo 'rate limit reached' >&2; exec sleep 30"],
         timeout_seconds=1,
     )
 
