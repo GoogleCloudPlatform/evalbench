@@ -82,9 +82,7 @@ def _fmt_score(score):
 
 def _fmt_time(run_time):
     """Format ISO timestamp to minute precision ('YYYY-MM-DD HH:MM')."""
-    if not run_time:
-        return "—"
-    return (run_time or "")[:16]
+    return run_time[:16] if run_time else "—"
 
 
 def load_cache(results_dir):
