@@ -1,6 +1,6 @@
-claude_code_version: "@anthropic-ai/claude-code@2.1.85"
+claude_code_version: "@anthropic-ai/claude-code@latest"
 generator: claude_code
-model: "claude-opus-4-6"
+model: "claude-opus-5"
 
 use_vertex: true
 vertex_project_id: !ENV ${EVAL_GCP_PROJECT_ID}

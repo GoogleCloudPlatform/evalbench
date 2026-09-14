@@ -12,7 +12,7 @@
         "GOOGLE_CLOUD_PROJECT": "${EVAL_GCP_PROJECT_ID}"
       },
       "kind": "tools",
-      "max_turns": 3
+      "max_turns": 2
     },
     {
       "id": "ci-csql-get-instance-not-found",
