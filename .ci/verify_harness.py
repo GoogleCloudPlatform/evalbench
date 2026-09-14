@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
 """Gates the harness smoke build on two tiers of check.
 
-evalbench.eval() exits 0 whenever a run completes, including when the agent
-made no tool calls at all, so the exit code alone cannot gate CI.
+evalbench.eval() exits 0 whenever a run completes, so the exit code alone
+cannot gate CI.
 
-Tier 1 (non-zero): telemetry scorers must report more than 0. They swallow
-parse failures and return 0.0 with an explanation rather than raising, so a
-plain liveness check passes even when a CLI renames a token field -- the exact
-drift this build exists to catch. Every scenario makes at least one MCP call,
-so 0 tokens or 0 latency can only mean the scorer failed to read the output.
+Tier 1 (non-zero): telemetry scorers and trajectory_matcher must report more
+than 0. They swallow parse failures and return 0.0 with an explanation rather
+than raising, so a plain liveness check passes even when a CLI renames a token
+field -- the exact drift this build exists to catch. Every scenario requires at
+least one tool call, so these can never legitimately be 0.
 
-Tier 2 (liveness): every remaining scorer must emit a row per scenario, with no
-comparison_error and a numeric score. This covers the LLM judges without ever
-gating on their verdict, which would make the build flaky.
+Tier 2 (liveness) covers the LLM judges without ever gating on their verdict,
+which would make the build flaky.
 
-trajectory_matcher is deliberately liveness-only, not thresholded: which tools
-an agent reaches for varies run to run, and a harness may shell out instead of
-calling the MCP tool. tool_call_latency > 0 is what proves tools were used.
+trajectory_matcher scores Jaccard overlap, so > 0 means at least one expected
+tool was called -- which is what catches a harness that silently shells out
+instead of reaching for MCP.
 """
 import csv
 import json
+import math
 import os
 import sys
 
@@ -29,6 +29,7 @@ HARNESSES = ["agy_cli", "claude_code", "codex_cli", "gemini_cli"]
 RUN_CONFIG_DIR = ".ci/run_configs"
 EVALSET = ".ci/harness_smoke.evalset.json"
 POSITIVE = {
+    "trajectory_matcher",
     "turn_count",
     "agent_steps",
     "end_to_end_latency",
@@ -67,6 +68,10 @@ def load_rows(job_dir):
         for row in csv.DictReader(f):
             try:
                 score = float(row["score"])
+                # nan <= 0 is False, so an unguarded nan would clear the
+                # Tier 1 gate.
+                if not math.isfinite(score):
+                    score = None
             except (KeyError, TypeError, ValueError):
                 score = None
             rows[(row.get("comparator"), row.get("id"))] = (
@@ -103,10 +108,13 @@ def check(harness, scenario_ids):
             elif score is None:
                 problems.append(f"{scorer}: non-numeric score for {sid}")
             elif scorer in POSITIVE and score <= 0:
-                problems.append(
-                    f"{scorer}: {sid} reported 0 -- scorer could not read "
-                    f"the harness output"
+                reason = (
+                    "none of the expected tools were called"
+                    if scorer == "trajectory_matcher"
+                    else "the agent called no tools, or the scorer could not "
+                         "read the harness output"
                 )
+                problems.append(f"{scorer}: {sid} reported 0 -- {reason}")
     return problems, checked, scorers
 
 
