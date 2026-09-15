@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 from unittest.mock import patch
+from unittest import mock
 
 import pytest
 
@@ -22,8 +23,11 @@ def _ds(rel):
 from evaluator.mcp_readability import exceptions as exc_mod
 from evaluator.mcp_readability.orchestrator import (
     ALLOWED_ENDPOINT_TYPES,
+    ALLOWED_RUN_TAGS,
     BASE_COLUMNS,
+    DEFAULT_RUN_TAG,
     McpReadabilityOrchestrator,
+    _run_tag,
     _validate_endpoint_type,
 )
 from mcp import types as mcp_types
@@ -48,6 +52,33 @@ def test_endpoint_type_validation():
         _validate_endpoint_type("bogus")
     with pytest.raises(ValueError):
         _validate_endpoint_type(None)
+
+
+# --------------------------------------------------------------------------
+# run tag (EVALBENCH_RUN_TAG; scheduled vs ad-hoc)
+# --------------------------------------------------------------------------
+def test_run_tag_defaults_to_adhoc():
+    """An unset or blank env var means nobody claimed this was a daily run."""
+    assert set(ALLOWED_RUN_TAGS) == {"daily", "adhoc"}
+    assert DEFAULT_RUN_TAG == "adhoc"
+    with mock.patch.dict(os.environ, {}, clear=True):
+        assert _run_tag() == "adhoc"
+    with mock.patch.dict(os.environ, {"EVALBENCH_RUN_TAG": "   "}):
+        assert _run_tag() == "adhoc"
+
+
+def test_run_tag_from_env_is_normalized():
+    with mock.patch.dict(os.environ, {"EVALBENCH_RUN_TAG": "daily"}):
+        assert _run_tag() == "daily"
+    with mock.patch.dict(os.environ, {"EVALBENCH_RUN_TAG": " DAILY "}):
+        assert _run_tag() == "daily"
+
+
+def test_run_tag_unknown_value_raises():
+    """Fail fast: a typo'd tag would silently produce unfilterable rows."""
+    with mock.patch.dict(os.environ, {"EVALBENCH_RUN_TAG": "nightly"}):
+        with pytest.raises(ValueError):
+            _run_tag()
 
 
 # --------------------------------------------------------------------------
@@ -357,7 +388,7 @@ def _base_config(ep_path, output_dir, token_budget=25000):
 def test_orchestrator_end_to_end():
     with patch(
         "scorers.mcp_style_readability.get_generator", return_value=_FakeLLM()
-    ):
+    ), mock.patch.dict(os.environ, {"EVALBENCH_RUN_TAG": ""}):
         from evaluator import get_orchestrator
 
         # Use the offline file source so the test stays deterministic and
@@ -398,6 +429,9 @@ def test_orchestrator_end_to_end():
             assert "readability_score" not in feedback_json
             assert feedback_json["waived"][0]["rule_id"] == "use-enums"
             assert row["job_id"] == job_id
+            # Nothing set EVALBENCH_RUN_TAG, so the row says so rather than
+            # leaving the reader to infer it from a blank.
+            assert row["mcp_readability_run_tag"] == "adhoc"
 
             # scores_tf: one row per (endpoint, scorer).
             with open(scores_tf) as f:
@@ -482,6 +516,34 @@ def test_endpoint_type_filter():
     ]
     kept = orch._filtered_endpoints()
     assert [e["product_name"] for e in kept] == ["A"]
+
+
+def test_scheduled_run_tag_reaches_the_row():
+    """A daily run is marked as such on every row it writes."""
+    with patch(
+        "scorers.mcp_style_readability.get_generator", return_value=_FakeLLM()
+    ), mock.patch.dict(os.environ, {"EVALBENCH_RUN_TAG": "daily"}):
+        from evaluator import get_orchestrator
+
+        with tempfile.TemporaryDirectory() as d:
+            ep_path = os.path.join(d, "endpoints.yaml")
+            _write_endpoints(
+                ep_path,
+                "Sample",
+                {
+                    "type": "file",
+                    "path": _ds("datasets/mcp_readability/sample_tools.json"),
+                },
+            )
+            orch = get_orchestrator(_base_config(ep_path, d), [], {})
+            orch.evaluate([])
+            _, _, results_tf, _, _ = orch.process()
+            with open(results_tf) as f:
+                rows = json.load(f)
+            assert rows
+            assert all(
+                r["mcp_readability_run_tag"] == "daily" for r in rows
+            )
 
 
 # --------------------------------------------------------------------------

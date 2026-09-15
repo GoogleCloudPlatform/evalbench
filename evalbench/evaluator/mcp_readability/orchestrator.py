@@ -30,6 +30,7 @@ import concurrent.futures
 import datetime
 import json
 import logging
+import os
 import tempfile
 import threading
 
@@ -58,6 +59,12 @@ SCORER_REGISTRY = {
 ALLOWED_ENDPOINT_TYPES = ("PROD", "AUTOPUSH", "STAGING", "DEV")
 
 
+# Which kind of run produced a row. Set from the environment only -- see
+# _run_tag. A run that does not say otherwise is ad-hoc.
+ALLOWED_RUN_TAGS = ("daily", "adhoc")
+DEFAULT_RUN_TAG = "adhoc"
+
+
 # Base identity columns present on every result row (``job_id`` is the shared
 # framework column). Each configured scorer appends its own COLUMNS; the full,
 # canonical schema for a run is ``self.columns``. Columns are prefixed
@@ -70,6 +77,7 @@ BASE_COLUMNS = [
     "mcp_readability_source_url",
     "mcp_readability_endpoint_type",
     "mcp_readability_check_timestamp",
+    "mcp_readability_run_tag",
     "job_id",
 ]
 
@@ -85,6 +93,28 @@ def _validate_endpoint_type(value) -> str:
             f"allowed: {', '.join(ALLOWED_ENDPOINT_TYPES)}"
         )
     return name
+
+
+def _run_tag() -> str:
+    """Which kind of run this is, read from EVALBENCH_RUN_TAG.
+
+    Deliberately not a run-config key. run_config.yaml is mirrored into google3
+    and is the same file engineers run locally, so a run_tag key there would
+    make every local run claim to be the scheduled one. Only the environment
+    can say, and only the scheduled job sets it.
+
+    An unknown value raises because the mistake is invisible at write time and
+    would surface much later as rows that no filter matches.
+    """
+    value = os.environ.get("EVALBENCH_RUN_TAG", "").strip().lower()
+    if not value:
+        return DEFAULT_RUN_TAG
+    if value not in ALLOWED_RUN_TAGS:
+        raise ValueError(
+            f"mcp_readability: unknown EVALBENCH_RUN_TAG {value!r}; "
+            f"allowed: {', '.join(ALLOWED_RUN_TAGS)}"
+        )
+    return value
 
 
 class McpReadabilityOrchestrator(Orchestrator):
@@ -111,6 +141,8 @@ class McpReadabilityOrchestrator(Orchestrator):
         self.all_exceptions = exceptions_mod.load_exceptions(
             config.get("exceptions_config")
         )
+
+        self.run_tag = _run_tag()
 
         # Optional endpoint_type filter (validated against the allowed set).
         type_filter = config.get("endpoint_types") or []
@@ -230,6 +262,7 @@ class McpReadabilityOrchestrator(Orchestrator):
         endpoint_url = self._endpoint_ref(endpoint)
 
         row = self._base_row(product_name, endpoint_url, endpoint_type)
+        row["mcp_readability_run_tag"] = self.run_tag
         row["job_id"] = self.job_id
 
         try:
@@ -314,5 +347,7 @@ class McpReadabilityOrchestrator(Orchestrator):
             "mcp_readability_check_timestamp": (
                 datetime.datetime.now().isoformat()
             ),
+            # Run-level, like job_id: filled in by the caller.
+            "mcp_readability_run_tag": "",
             "job_id": "",
         }
