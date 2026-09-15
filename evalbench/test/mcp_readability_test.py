@@ -268,6 +268,9 @@ def test_readability_scorer_run():
     scorer = McpStyleReadabilityScorer.__new__(McpStyleReadabilityScorer)
     scorer.name = "mcp_style_readability"
     scorer.style_guide = "guide"
+    scorer.style_guide_sha = "sha"
+    scorer.style_guide_path = "guide.md"
+    scorer.judge_model = "fake-model"
     scorer.model = _FakeLLM()  # one P1 finding, no P0
     ctx = EndpointContext(
         product_name="p", endpoint={}, tools=[], man_page="mp", exceptions=[]
@@ -276,6 +279,9 @@ def test_readability_scorer_run():
     assert contrib.row_fields["mcp_readability_p1_issues"] == 1
     assert contrib.row_fields["mcp_readability_score"] == 80
     assert contrib.score == 100  # no P0 -> pass
+    # With no baseline configured the endpoint is judged in full, as before.
+    assert contrib.row_fields["mcp_readability_feedback_mode"] == "full_judge"
+    assert contrib.row_fields["mcp_readability_change_reason"] == "no_baseline"
 
 
 def test_readability_scorer_requires_style_guide():
@@ -413,6 +419,248 @@ def test_orchestrator_end_to_end():
                 == row["mcp_readability_product_name"]
             )
             assert by_comp["mcp_style_readability"]["comparison_error"] is None
+
+
+class _CountingLLM(_FakeLLM):
+    """_FakeLLM that records how many times the judge was actually called."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def generate(self, prompt):
+        self.calls += 1
+        return super().generate(prompt)
+
+
+def _persist_evals(rows, output_dir, job_id):
+    """Write evals.csv exactly as the CSV reporter does.
+
+    Going through ``report.get_dataframe`` matters: it builds the frame with
+    ``dtype="string"``, so every value the baseline store reads back is a
+    string. A round trip that skipped it would not catch a column the store
+    parses wrongly.
+    """
+    from reporting import report
+
+    directory = os.path.join(output_dir, job_id)
+    os.makedirs(directory, exist_ok=True)
+    path = os.path.join(directory, "evals.csv")
+    report.get_dataframe(rows).to_csv(path, index=False)
+    return path
+
+
+def _feedback_without_provenance(row):
+    feedback = json.loads(row["mcp_readability_llm_feedback_json"])
+    feedback.pop("provenance", None)
+    return json.dumps(feedback, sort_keys=True)
+
+
+def _run_once(config, output_dir):
+    """One full orchestrator run; returns ``(row, judge_call_count)``."""
+    from evaluator import get_orchestrator
+
+    llm = _CountingLLM()
+    with patch(
+        "scorers.mcp_style_readability.get_generator", return_value=llm
+    ):
+        orch = get_orchestrator(config, [], {})
+        orch.evaluate([])
+        job_id, _, results_tf, _, _ = orch.process()
+    with open(results_tf) as f:
+        rows = json.load(f)
+    _persist_evals(rows, output_dir, job_id)
+    return rows[0], llm.calls
+
+
+def test_carry_forward_round_trip_through_evals_csv():
+    """The invariant, end to end: unchanged endpoint => no model call, same bytes.
+
+    This is the only test that exercises the full persistence round trip, so it
+    is what catches a result column the baseline store reads under the wrong
+    name -- a failure that would otherwise look like "the baseline never
+    matches" and silently re-judge forever.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        results_dir = os.path.join(d, "results")
+        ep_path = os.path.join(d, "endpoints.yaml")
+        _write_endpoints(
+            ep_path,
+            "Sample",
+            {
+                "type": "file",
+                "path": _ds("datasets/mcp_readability/sample_tools.json"),
+            },
+        )
+        config = _base_config(ep_path, results_dir)
+        config["baseline"] = {"store": "local", "results_dir": results_dir}
+
+        first, first_calls = _run_once(config, results_dir)
+        assert first_calls == 1
+        assert first["mcp_readability_feedback_mode"] == "full_judge"
+        assert first["mcp_readability_change_reason"] == "no_baseline"
+
+        second, second_calls = _run_once(config, results_dir)
+        assert second_calls == 0  # the judge was never invoked
+        assert second["mcp_readability_feedback_mode"] == "carried"
+        assert second["mcp_readability_change_reason"] == "unchanged"
+        # Byte-identical findings. The provenance block is excluded because it
+        # describes *this* run's sourcing, so it necessarily differs -- that is
+        # the explanation, not the feedback.
+        assert _feedback_without_provenance(second) == (
+            _feedback_without_provenance(first)
+        )
+        for column in (
+            "mcp_readability_p0_issues",
+            "mcp_readability_p1_issues",
+            "mcp_readability_p2_issues",
+            "mcp_readability_score",
+            "mcp_readability_toolset_fingerprint",
+            "mcp_readability_endpoint_key",
+        ):
+            assert second[column] == first[column], column
+        assert "identical to the previous run" in (
+            second["mcp_readability_llm_feedback_html"]
+        )
+
+
+def test_carry_forward_style_guide_change_forces_a_full_rejudge():
+    with tempfile.TemporaryDirectory() as d:
+        results_dir = os.path.join(d, "results")
+        ep_path = os.path.join(d, "endpoints.yaml")
+        _write_endpoints(
+            ep_path,
+            "Sample",
+            {
+                "type": "file",
+                "path": _ds("datasets/mcp_readability/sample_tools.json"),
+            },
+        )
+        guide_path = os.path.join(d, "style_guide.md")
+        with open(guide_path, "w") as f:
+            f.write("# guide\nRule one.\n")
+
+        config = _base_config(ep_path, results_dir)
+        config["scorers"]["mcp_style_readability"]["style_guide"] = guide_path
+        config["baseline"] = {"store": "local", "results_dir": results_dir}
+
+        _run_once(config, results_dir)
+        with open(guide_path, "w") as f:
+            f.write("# guide\nRule one.\nRule two.\n")
+
+        second, calls = _run_once(config, results_dir)
+        assert calls == 1
+        assert second["mcp_readability_feedback_mode"] == "full_judge"
+        assert second["mcp_readability_change_reason"] == "style_guide_changed"
+        assert "Style guide changed" in (
+            second["mcp_readability_llm_feedback_html"]
+        )
+
+
+def test_carry_forward_rejudges_only_the_edited_tool():
+    """Editing one tool must move that tool's findings and nothing else."""
+    with tempfile.TemporaryDirectory() as d:
+        results_dir = os.path.join(d, "results")
+        tools_path = os.path.join(d, "tools.json")
+        with open(_ds("datasets/mcp_readability/sample_tools.json")) as f:
+            tools = json.load(f)
+        with open(tools_path, "w") as f:
+            json.dump(tools, f)
+
+        ep_path = os.path.join(d, "endpoints.yaml")
+        _write_endpoints(ep_path, "Sample", {"type": "file", "path": tools_path})
+        config = _base_config(ep_path, results_dir)
+        config["baseline"] = {"store": "local", "results_dir": results_dir}
+
+        first, _ = _run_once(config, results_dir)
+
+        edited = tools["tools"][1]["name"]
+        tools["tools"][1]["description"] = "A rewritten description."
+        with open(tools_path, "w") as f:
+            json.dump(tools, f)
+
+        second, calls = _run_once(config, results_dir)
+        assert calls == 1
+        assert second["mcp_readability_feedback_mode"] == "partial"
+        assert second["mcp_readability_change_reason"] == "tools_changed"
+
+        provenance = json.loads(
+            second["mcp_readability_feedback_provenance_json"]
+        )
+        assert provenance["rejudged_tools"] == [edited]
+        assert edited not in provenance["carried_tools"]
+
+        # Every untouched tool keeps exactly the findings it had in run 1.
+        before = _findings_by_tool(first)
+        after = _findings_by_tool(second)
+        for tool in provenance["carried_tools"]:
+            assert after.get(tool) == before.get(tool), tool
+
+
+def _findings_by_tool(row):
+    feedback = json.loads(row["mcp_readability_llm_feedback_json"])
+    return {e["tool"]: e["findings"] for e in feedback["findings_by_tool"]}
+
+
+def test_baseline_failure_does_not_abort_the_run():
+    """A store that raises must cost a re-judge, not the whole job.
+
+    Exercised through the real ThreadPoolExecutor rather than by calling the
+    helper directly: the orchestrator is otherwise strictly fail-fast, and an
+    exception escaping a worker would abort every endpoint.
+    """
+    from evaluator import get_orchestrator
+
+    class _ExplodingStore:
+        def prime(self, endpoint_keys):
+            raise RuntimeError("no read permission on the dataset")
+
+        def load(self, endpoint_key):
+            raise RuntimeError("no read permission on the dataset")
+
+    with tempfile.TemporaryDirectory() as d:
+        ep_path = os.path.join(d, "endpoints.yaml")
+        _write_endpoints(
+            ep_path,
+            "Sample",
+            {
+                "type": "file",
+                "path": _ds("datasets/mcp_readability/sample_tools.json"),
+            },
+        )
+        config = _base_config(ep_path, d)
+        config["baseline"] = {"store": "local", "results_dir": d}
+        with patch(
+            "scorers.mcp_style_readability.get_generator",
+            return_value=_CountingLLM(),
+        ):
+            orch = get_orchestrator(config, [], {})
+            orch.baseline_store = _ExplodingStore()
+            orch.evaluate([])  # must not raise
+            _, _, results_tf, _, _ = orch.process()
+        with open(results_tf) as f:
+            row = json.load(f)[0]
+        assert row["mcp_readability_feedback_mode"] == "full_judge"
+        assert row["mcp_readability_change_reason"] == "baseline_unavailable"
+
+
+def test_carry_forward_is_off_unless_configured():
+    """No baseline block => every run is a full judge, exactly as before."""
+    with tempfile.TemporaryDirectory() as d:
+        results_dir = os.path.join(d, "results")
+        ep_path = os.path.join(d, "endpoints.yaml")
+        _write_endpoints(
+            ep_path,
+            "Sample",
+            {
+                "type": "file",
+                "path": _ds("datasets/mcp_readability/sample_tools.json"),
+            },
+        )
+        config = _base_config(ep_path, results_dir)
+        _run_once(config, results_dir)
+        second, calls = _run_once(config, results_dir)
+        assert calls == 1
+        assert second["mcp_readability_feedback_mode"] == "full_judge"
 
 
 def test_orchestrator_fetch_error_aborts_run():

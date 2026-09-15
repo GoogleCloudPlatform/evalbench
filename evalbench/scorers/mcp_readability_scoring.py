@@ -35,6 +35,11 @@ class EndpointContext:
     tools: list  # list[mcp.types.Tool]
     man_page: str
     exceptions: list  # applicable waivers for this endpoint
+    # scorers.mcp_carry_forward.BaselineContext, or None when carry-forward is
+    # not configured. Typed loosely and defaulted last so existing positional
+    # construction keeps working, and so this module stays free of scorer
+    # imports.
+    baseline: Any = None
 
 
 @dataclass
