@@ -4,8 +4,7 @@ model: "claude-opus-5"
 
 use_vertex: true
 vertex_project_id: !ENV ${EVAL_GCP_PROJECT_ID}
-# Not us-central1: Vertex serves Claude from only a few regions.
-vertex_region: "us-east5"
+vertex_region: "global"
 
 env:
   GOOGLE_CLOUD_PROJECT: !ENV ${EVAL_GCP_PROJECT_ID}
