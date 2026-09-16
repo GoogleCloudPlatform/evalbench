@@ -9,11 +9,31 @@ spec:
     kind: Deployment
     name: evalbench-eval-server-deploy
   minReplicas: 1
-  maxReplicas: 10
+  # Cap at 1 replica. The evalbench-ssd-pvc volume uses ReadWriteOnce access.
+  maxReplicas: 1
   metrics:
   - type: Resource
     resource:
       name: cpu
       target:
         type: Utilization
-        averageUtilization: 50
+        averageUtilization: 70
+  # Configure stabilization windows for scale-up and scale-down.
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 120
+      selectPolicy: Max
+      policies:
+      - type: Pods
+        value: 4
+        periodSeconds: 15
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 900
+      selectPolicy: Max
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 300
