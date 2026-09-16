@@ -1,0 +1,59 @@
+name: verify-package
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions: read-all
+
+jobs:
+  wheel:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      with:
+        enable-cache: true
+        cache-dependency-glob: "uv.lock"
+
+    - name: Build distribution packages (wheel + sdist)
+      run: uv build --out-dir dist
+
+    - name: Validate PyPI package metadata
+      run: uvx twine check --strict dist/*
+
+    - name: Install wheel into a clean environment
+      run: |
+        uv venv /tmp/wheelcheck
+        VIRTUAL_ENV=/tmp/wheelcheck uv pip install dist/*.whl
+
+    # /tmp so the source tree cannot satisfy an import the distribution is missing.
+    - name: Import every module from the wheel
+      working-directory: /tmp
+      run: /tmp/wheelcheck/bin/python "$GITHUB_WORKSPACE/.ci/verify_package.py"
+
+    - name: Install sdist into a clean environment
+      run: |
+        uv venv /tmp/sdistcheck
+        VIRTUAL_ENV=/tmp/sdistcheck uv pip install dist/*.tar.gz
+
+    - name: Import every module from the sdist
+      working-directory: /tmp
+      run: /tmp/sdistcheck/bin/python "$GITHUB_WORKSPACE/.ci/verify_package.py"
+
+    - name: Verify CLI entrypoint via uvx
+      working-directory: /tmp
+      run: |
+        # absl exits 1 after printing --help, so the grep is the real assertion.
+        HELP_OUTPUT=$(uvx --from "$GITHUB_WORKSPACE/dist/"*.whl google-evalbench --help 2>&1 || true)
+        printf '%s\n' "$HELP_OUTPUT"
+        echo "$HELP_OUTPUT" | grep -q "experiment_config"

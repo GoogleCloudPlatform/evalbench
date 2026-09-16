@@ -35,6 +35,22 @@ DEFAULT_CUJ_FIELDS = [
 ]
 
 
+def expected_trajectory(scenario: dict) -> list:
+    """A scenario's ``expected_trajectory``, or empty when it isn't a list.
+
+    A bare string would otherwise iterate per character into the tool sets, which
+    scores silently wrong rather than failing.
+    """
+    trajectory = scenario.get("expected_trajectory")
+    return trajectory if isinstance(trajectory, list) else []
+
+
+def expected_skills(scenario: dict) -> list:
+    """A scenario's expected_skills, or empty when it isn't a list."""
+    skills = scenario.get("expected_skills")
+    return skills if isinstance(skills, list) else []
+
+
 @dataclass
 class DatasetQualityContext:
     """Everything a scorer needs to grade one product's CUJ dataset."""
@@ -42,6 +58,9 @@ class DatasetQualityContext:
     product_name: str
     scenarios: list[dict]
     tools: list  # list[mcp.types.Tool]
+    skills: list = field(default_factory=list)  # list[skills_catalog.Skill]
+    # Why the declared skills could not be resolved, when they couldn't.
+    skills_error: str | None = None
 
     @property
     def n(self) -> int:
@@ -55,6 +74,18 @@ class DatasetQualityContext:
     def tool_names(self) -> list[str]:
         names = (self._tool_field(tool, "name") for tool in self.tools)
         return [name for name in names if name]
+
+    @property
+    def skill_names(self) -> list[str]:
+        return list(dict.fromkeys(skill.name for skill in self.skills if skill.name))
+
+    @property
+    def script_names(self) -> list[str]:
+        """Every script shipped by a catalog skill, de-duplicated across skills."""
+        scripts = []
+        for skill in self.skills:
+            scripts.extend(skill.scripts)
+        return list(dict.fromkeys(scripts))
 
     @property
     def tool_names_str(self) -> str:
@@ -75,7 +106,7 @@ class DatasetQualityContext:
         """
         named = set()
         for scenario in self.scenarios:
-            named.update(scenario.get("expected_trajectory") or [])
+            named.update(expected_trajectory(scenario))
         return [
             tool for tool in self.tools
             if self._tool_field(tool, "name") in named

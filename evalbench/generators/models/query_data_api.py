@@ -19,7 +19,10 @@ _REQUEST_TIMEOUT_SECONDS = 300.0
 # Default Production API Endpoint for Gemini Data Analytics
 _DEFAULT_API_ENDPOINT = "geminidataanalytics.googleapis.com"
 
-# Shared default generation options settings
+# Shared default generation options settings. generate_debug_info is added
+# only on the REST path: it is an unreleased field, absent from the SDK proto,
+# so the typed client would reject it. It returns pipeline_debug_info, which we
+# surface in the eval report.
 _DEFAULT_GENERATION_OPTIONS = {
     "generate_query_result": True,
     "generate_natural_language_answer": False,
@@ -54,6 +57,7 @@ def _format_result(
     generated_sql: Any,
     intent_explanation: Any,
     disambiguation_questions: Any,
+    pipeline_debug_info: Any = None,
 ) -> Dict[str, Any]:
     """Formats raw API response fields into standard result format."""
     return {
@@ -65,6 +69,7 @@ def _format_result(
             "disambiguation_question": list(
                 disambiguation_questions or []
             ),
+            "pipeline_debug_info": pipeline_debug_info or {},
         },
     }
 
@@ -175,7 +180,7 @@ class QueryDataAPIGenerator(QueryGenerator):
             "prompt": prompt,
             "context": _to_camel_case_dict(self.context),
             "generationOptions": _to_camel_case_dict(
-                _DEFAULT_GENERATION_OPTIONS
+                {**_DEFAULT_GENERATION_OPTIONS, "generate_debug_info": True}
             ),
         }
 
@@ -204,4 +209,5 @@ class QueryDataAPIGenerator(QueryGenerator):
             data.get("generatedQuery"),
             data.get("intentExplanation"),
             data.get("disambiguationQuestion"),
+            data.get("pipelineDebugInfo"),
         )

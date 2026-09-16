@@ -77,8 +77,8 @@ class CujDiversityScorer(JudgeSubScorer):
         return SubScoreContribution(
             score=score,
             metrics={
-                "dq_paths_covered": len(covered),
-                "dq_paths_total": len(CUJ_PATHS),
+                "paths_covered": len(covered),
+                "paths_total": len(CUJ_PATHS),
             },
             suggestions=suggestions,
             example_prompts=(

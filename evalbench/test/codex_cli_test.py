@@ -86,6 +86,25 @@ def test_register_codex_plugin_uses_merged_env(mock_run, monkeypatch):
     assert passed_env.get("HOME") == generator.fake_home
 
 
+def test_streaming_timeout_keeps_stderr_diagnostics():
+    """A timeout discarded the drained stderr, losing the CLI's own reason for
+    hanging just when it is needed."""
+    generator = object.__new__(CodexCliGenerator)
+    generator.fake_home = os.getcwd()
+
+    result, _ = CodexCliGenerator._execute_cli_command(
+        generator,
+        # `exec` so the kill lands on sleep itself; a forked child would hold
+        # the stderr pipe open and stall the reader thread's join.
+        ["sh", "-c", "echo 'rate limit reached' >&2; exec sleep 30"],
+        timeout_seconds=1,
+    )
+
+    assert result.returncode == 124
+    assert "TimeoutError: Command timed out after 1 seconds" in result.stderr
+    assert "rate limit reached" in result.stderr
+
+
 def test_write_config_toml_escapes_plugin_id(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", "/fake/real_home")
 

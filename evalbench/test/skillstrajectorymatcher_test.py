@@ -98,6 +98,33 @@ class SkillsTrajectoryMatcherTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             SkillsTrajectoryMatcher({"enforce_order": True, "allow_extra_skills": True})
 
+    def test_namespace_normalization_default_jaccard(self):
+        matcher = SkillsTrajectoryMatcher({"ignore_prefix": "dak:"})
+        expected = ["dataform_bigquery"]
+        actual = ["dak:dataform_bigquery", "gcp_pipeline_orchestration"]
+
+        score, explanation = _compare(matcher, expected, actual)
+        self.assertEqual(score, 50.0)
+        self.assertIn("Jaccard Similarity", explanation)
+
+    def test_namespace_normalization_allow_extra_skills(self):
+        matcher = SkillsTrajectoryMatcher({"allow_extra_skills": True, "ignore_prefix": "dak:"})
+        expected = ["dataform_bigquery"]
+        actual = ["dak:dataform_bigquery", "gcp_pipeline_orchestration"]
+
+        score, explanation = _compare(matcher, expected, actual)
+        self.assertEqual(score, 100.0)
+        self.assertIn("allow_extra_skills=True", explanation)
+
+    def test_namespace_normalization_enforce_order(self):
+        matcher = SkillsTrajectoryMatcher({"enforce_order": True, "ignore_prefix": "dak:"})
+        expected = ["skill_a", "skill_b"]
+        actual = ["dak:skill_a", "dak:skill_b"]
+
+        score, explanation = _compare(matcher, expected, actual)
+        self.assertEqual(score, 100.0)
+        self.assertIn("Sequence Alignment", explanation)
+
 
 if __name__ == "__main__":
     unittest.main()

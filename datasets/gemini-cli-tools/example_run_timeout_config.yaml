@@ -1,0 +1,30 @@
+############################################################
+### Dataset / Eval Items
+############################################################
+dataset_config: datasets/gemini-cli-tools/gemini-cli-fake.evalset.json
+dataset_format: gemini-cli-format
+
+# Orchestrator Configuration
+orchestrator: geminicli
+model_config: datasets/model_configs/gemini_cli_fake_model.yaml
+simulated_user_model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+
+# Per-scenario evaluation timeout duration (e.g., '300s', '5m', '1h30m')
+eval_case_timeout: 5m
+
+############################################################
+### Scorer Related Configs
+############################################################
+scorers:
+  trajectory_matcher: {}
+  turn_count: {}
+  end_to_end_latency: {}
+  tool_call_latency: {}
+  token_consumption: {}
+
+############################################################
+### Reporting Related Configs
+############################################################
+reporting:
+  csv:
+    output_directory: 'results'

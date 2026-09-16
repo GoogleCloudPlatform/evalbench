@@ -1,0 +1,38 @@
+{
+  "scenarios": [
+    {
+      "id": "create-greeting-file-01",
+      "starting_prompt": "Create a file named greeting.txt in the workspace containing today's date, current time, and a friendly greeting in English.",
+      "conversation_plan": "The user wants to generate a new greeting file. The agent should write a file named greeting.txt containing a friendly English greeting along with the current date and time. Once created, the agent should report that the file was created successfully.",
+      "expected_trajectory": [
+        "write_file"
+      ],
+      "expected_skills": [],
+      "binary_rubric": [
+        "greeting.txt was created with current date, time, and an English greeting",
+        "Agent used the write_file tool to create the file"
+      ],
+      "env": {},
+      "kind": "tools",
+      "max_turns": 2
+    },
+    {
+      "id": "read-and-review-greeting-file-01",
+      "starting_prompt": "Read greeting.txt from the workspace and append a 'Reviewed: Verified by QA' message at the bottom.",
+      "conversation_plan": "The user wants to inspect and edit an existing file. The agent should first read greeting.txt to check its contents, and then edit or write to the file to append 'Reviewed: Verified by QA' at the end.",
+      "expected_trajectory": [
+        "read_file",
+        "write_file"
+      ],
+      "expected_skills": [],
+      "binary_rubric": [
+        "greeting.txt was read and updated to include the reviewed message at the bottom",
+        "Agent invoked read_file and write_file to inspect and modify the file"
+      ],
+      "env": {},
+      "kind": "tools",
+      "max_turns": 3
+    }
+  ]
+}
+

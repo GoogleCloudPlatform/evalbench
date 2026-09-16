@@ -4,6 +4,57 @@ import logging
 import pandas as pd
 
 
+def _is_sub_comparator(comp: str, metric_name: str) -> bool:
+    if comp == metric_name:
+        return True
+    if comp.startswith(f"{metric_name}_"):
+        suffix = comp[len(metric_name) + 1:]
+        return suffix.isdigit()
+    return False
+
+
+def _extract_base_metric_name(comp: str) -> str:
+    """Extract base metric name from sub-comparator (e.g. 'rubric_0')."""
+    if "_" in comp and comp.rsplit("_", 1)[1].isdigit():
+        return comp.rsplit("_", 1)[0]
+    return comp
+
+
+def _resolve_metric_names_to_analyze(
+    scorers: dict, df: pd.DataFrame
+) -> list[str]:
+    """Determine top-level metric names to analyze."""
+    configured_scorers = [
+        k.strip()
+        for k in (scorers.keys() if isinstance(scorers, dict) else [])
+        if k and k.strip() != "executable"
+    ]
+
+    metric_names = []
+
+    # 1. Always include configured scorers so zero-result scorers are kept
+    for key in configured_scorers:
+        if key not in metric_names:
+            metric_names.append(key)
+
+    # 2. Add unconfigured comparators present in the DataFrame
+    if "comparator" in df.columns:
+        raw_comparators = [
+            str(comp).strip() for comp in df["comparator"].dropna().unique()
+            if comp and str(comp).strip() != "executable"
+        ]
+        for comp in raw_comparators:
+            has_sub = any(
+                _is_sub_comparator(comp, metric) for metric in metric_names
+            )
+            if not has_sub:
+                base_name = _extract_base_metric_name(comp)
+                if base_name not in metric_names:
+                    metric_names.append(base_name)
+
+    return metric_names
+
+
 def analyze_one_metric(
     df: pd.DataFrame,
     metric_name: str,
@@ -31,7 +82,11 @@ def analyze_one_metric(
         df_exec = df[df["generated_sql"].notna()]
 
         # Use prompt_id to count unique successful prompts if available
-        if "prompt_id" in df_exec.columns and not df_exec["prompt_id"].isna().all():
+        has_prompt_id = (
+            "prompt_id" in df_exec.columns
+            and not df_exec["prompt_id"].isna().all()
+        )
+        if has_prompt_id:
             id_col = "prompt_id"
         else:
             id_col = "id"
@@ -53,10 +108,11 @@ def analyze_one_metric(
                 .drop_duplicates()
             )
     else:
-        if metric_name == "binary_rubric_scorer":
-            df_metric = df[df["comparator"].astype(str).str.startswith("binary_rubric_scorer")]
-        else:
-            df_metric = df[df["comparator"] == metric_name]
+        df_metric = df[
+            df["comparator"].astype(str).apply(
+                lambda c: _is_sub_comparator(c, metric_name)
+            )
+        ]
 
         if (
             "prompt_id" in df_metric.columns
@@ -150,13 +206,18 @@ def analyze_result(
     df = pd.DataFrame.from_dict(scores)
 
     # Ensure expected columns exist to avoid KeyErrors
-    for col in ["generated_sql", "generated_error", "comparator", "score", "id"]:
+    cols = ["generated_sql", "generated_error", "comparator", "score", "id"]
+    for col in cols:
         if col not in df.columns:
             df[col] = None
 
-    # Adjust num_prompts to the count of unique evaluated items ONLY for agent/geminicli orchestrators where multiple scenarios are packed into one prompt.
-    orchestrator = experiment_config.get("orchestrator", "") if isinstance(experiment_config, dict) else ""
-    if orchestrator in ("agent", "geminicli"):
+    # Adjust num_prompts for agent/geminicli orchestrators
+    orch = (
+        experiment_config.get("orchestrator", "")
+        if isinstance(experiment_config, dict)
+        else ""
+    )
+    if orch in ("agent", "geminicli"):
         if "id" in df.columns and not df["id"].isna().all():
             unique_ids = len(df["id"].dropna().unique())
             if num_prompts is None or unique_ids > num_prompts:
@@ -171,7 +232,9 @@ def analyze_result(
         "skills_best_practices",
     ]
 
-    for metric_name in scorers:
+    metric_names_to_analyze = _resolve_metric_names_to_analyze(scorers, df)
+
+    for metric_name in metric_names_to_analyze:
         metric_name = metric_name.strip()
         metric_score = 100
 

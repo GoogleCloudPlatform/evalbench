@@ -220,6 +220,42 @@ class TestQueryDataAPIGenerator(unittest.TestCase):
         }
         self.assertEqual(call_kwargs["json"]["context"], expected_camel_context)
 
+    @patch('generators.models.query_data_api.requests')
+    @patch('generators.models.query_data_api.google.auth.default')
+    @patch('generators.models.query_data_api.gda')
+    def test_rest_sends_debug_flag_and_surfaces_pipeline_debug_info(
+        self, mock_gda, mock_auth_default, mock_requests
+    ):
+        mock_credentials = MagicMock()
+        mock_auth_default.return_value = (mock_credentials, "project-id")
+
+        debug_info = {"steps": [{"name": "plan", "duration_ms": 12}]}
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "generatedQuery": "SELECT 1",
+            "intentExplanation": "trivial",
+            "disambiguationQuestion": [],
+            "pipelineDebugInfo": debug_info,
+        }
+        mock_requests.post.return_value = mock_resp
+
+        config = {
+            "project_id": "test-project",
+            "location": "us-east1",
+            "use_rest_api": True,
+        }
+        generator = QueryDataAPIGenerator(config)
+        result = generator.generate_internal("Anything")
+
+        # The request opts the API into debug output.
+        gen_opts = mock_requests.post.call_args[1]["json"]["generationOptions"]
+        self.assertTrue(gen_opts["generateDebugInfo"])
+
+        # The response's pipeline debug info flows into the report's `other`.
+        self.assertEqual(
+            result["other"]["pipeline_debug_info"], debug_info
+        )
+
     def test_to_camel_case_dict_coverage(self):
         from generators.models.query_data_api import _to_camel_case_dict
 

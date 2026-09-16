@@ -1,0 +1,13 @@
+# ==============================================================================
+# Agent gRPC Proxy Model Configuration
+# ==============================================================================
+# Connects EvalBench to remote or sandboxed autonomous agents via bidirectional
+# gRPC streaming (AgentInteract). Instead of launching a local CLI process,
+# turns are dispatched as TurnRequest protobuf messages over gRPC.
+
+generator: agent_grpc_proxy
+timeout_seconds: 300.0
+
+# Optional default environment variables passed to remote agent turns
+env: {}
+

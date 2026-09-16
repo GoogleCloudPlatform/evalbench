@@ -1,0 +1,172 @@
+{
+  "scenarios": [
+    {
+      "id": "csql-easy-list-instances",
+      "category": "instance-admin/read-only",
+      "starting_prompt": "List the Cloud SQL instances in project astana-evaluation and confirm that 'nl2code-bbf9a3' and 'my-pg-app-bbf9a3' are present.",
+      "conversation_plan": "Ask the agent to list Cloud SQL instances in astana-evaluation. The project has many instances; Success = the agent returns the instance inventory and confirms BOTH 'nl2code-bbf9a3' and 'my-pg-app-bbf9a3' appear in it.",
+      "expected_trajectory": [
+        "cloud-sql__list_instances"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 2
+    },
+    {
+      "id": "csql-easy-get-instance-state",
+      "category": "instance-admin/read-only",
+      "starting_prompt": "Is the Cloud SQL instance 'nl2code-bbf9a3' in astana-evaluation up and running?",
+      "conversation_plan": "Ask for the running state of nl2code-bbf9a3. Success = the agent fetches the instance and reports its state (expected RUNNABLE).",
+      "expected_trajectory": [
+        "cloud-sql__get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 2
+    },
+    {
+      "id": "csql-easy-describe-tier",
+      "category": "instance-admin/read-only",
+      "starting_prompt": "What machine tier is 'my-pg-app-bbf9a3' in astana-evaluation running on?",
+      "conversation_plan": "Ask for the machine tier of my-pg-app-bbf9a3. Success = the agent fetches the instance settings and reports the tier (e.g. db-f1-micro).",
+      "expected_trajectory": [
+        "cloud-sql__get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 2
+    },
+    {
+      "id": "csql-easy-get-version-region",
+      "category": "instance-admin/read-only",
+      "starting_prompt": "What database engine version and region is 'nl2code-bbf9a3' in astana-evaluation?",
+      "conversation_plan": "Ask for the databaseVersion and region/location of nl2code-bbf9a3. Success = the agent fetches the instance and reports both.",
+      "expected_trajectory": [
+        "cloud-sql__get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 2
+    },
+    {
+      "id": "csql-easy-get-connection-name",
+      "category": "instance-admin/read-only",
+      "starting_prompt": "Give me the connection name for 'my-pg-app-bbf9a3' in astana-evaluation.",
+      "conversation_plan": "Ask for the instance connection name (project:region:instance) of my-pg-app-bbf9a3. Success = the agent fetches the instance and returns its connectionName.",
+      "expected_trajectory": [
+        "cloud-sql__get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 2
+    },
+    {
+      "id": "csql-easy-list-database-flags",
+      "category": "instance-admin/read-only",
+      "starting_prompt": "What database flags are currently set on 'my-pg-app-bbf9a3' in astana-evaluation?",
+      "conversation_plan": "Ask which database flags are configured on my-pg-app-bbf9a3. Success = the agent fetches the instance settings and reports databaseFlags (expected none/empty after reset).",
+      "expected_trajectory": [
+        "cloud-sql__get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 2
+    },
+    {
+      "id": "csql-easy-list-databases",
+      "category": "databases-users/read-only",
+      "starting_prompt": "List the databases on the Cloud SQL instance 'my-pg-app-bbf9a3' in astana-evaluation.",
+      "conversation_plan": "Ask the agent to list databases on my-pg-app-bbf9a3. There is no control-plane list-databases tool, so the agent must query the data plane (execute_sql_readonly against pg_database, or `gcloud sql databases list`). Success = the agent returns the list of databases on that instance.",
+      "expected_trajectory": [
+        "cloud-sql__execute_sql_readonly"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 3
+    },
+    {
+      "id": "csql-easy-list-users",
+      "category": "databases-users/read-only",
+      "starting_prompt": "Show me the database users on 'my-pg-app-bbf9a3' in astana-evaluation.",
+      "conversation_plan": "Ask the agent to list the users on my-pg-app-bbf9a3. Success = the agent returns the list of database users on that instance.",
+      "expected_trajectory": [
+        "cloud-sql__list_users"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 2
+    },
+    {
+      "id": "csql-easy-backup-config",
+      "category": "backups-operations/read-only",
+      "starting_prompt": "Are automated backups enabled on 'my-pg-app-bbf9a3' in astana-evaluation, and at what time?",
+      "conversation_plan": "Ask whether automated backups are enabled for my-pg-app-bbf9a3 and the backup start time. Success = the agent fetches the instance and reports backupConfiguration (enabled flag and startTime).",
+      "expected_trajectory": [
+        "cloud-sql__get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 2
+    },
+    {
+      "id": "csql-easy-pitr-enabled",
+      "category": "backups-operations/read-only",
+      "starting_prompt": "Is point-in-time recovery (PITR) enabled on 'my-pg-app-bbf9a3' in astana-evaluation?",
+      "conversation_plan": "Ask whether PITR is enabled on my-pg-app-bbf9a3. Success = the agent fetches the instance and reports the backupConfiguration.pointInTimeRecoveryEnabled value (true/false).",
+      "expected_trajectory": [
+        "cloud-sql__get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 2
+    },
+    {
+      "id": "csql-easy-availability-type",
+      "category": "diagnostics/read-only",
+      "starting_prompt": "Is 'nl2code-bbf9a3' in astana-evaluation a high-availability (regional) instance or zonal, and which region/zone is it in?",
+      "conversation_plan": "Ask whether nl2code-bbf9a3 is REGIONAL (HA) or ZONAL and its location. Success = the agent fetches the instance and reports availabilityType and region/zone.",
+      "expected_trajectory": [
+        "cloud-sql__get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 2
+    },
+    {
+      "id": "csql-easy-maintenance-window",
+      "category": "diagnostics/read-only",
+      "starting_prompt": "What is the maintenance window configured for 'my-pg-app-bbf9a3' in astana-evaluation?",
+      "conversation_plan": "Ask for the maintenance window (day/hour) of my-pg-app-bbf9a3. Success = the agent fetches the instance and reports the maintenanceWindow settings (or states none is configured).",
+      "expected_trajectory": [
+        "cloud-sql__get_instance"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "astana-evaluation"
+      },
+      "kind": "tools",
+      "max_turns": 2
+    }
+  ]
+}

@@ -1,5 +1,90 @@
 # Changelog
 
+## [1.18.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.17.0...v1.18.0) (2026-09-08)
+
+
+### Features
+
+* **reporting:** align delegated reporter protocol with ReportingContext and multi-type dispatch ([7d973b9](https://github.com/GoogleCloudPlatform/evalbench/commit/7d973b9c2d1ec39f74fee2ade836d205996ccd83))
+* **scorers:** align remote delegated scorer signatures with native comparators ([fde9cbe](https://github.com/GoogleCloudPlatform/evalbench/commit/fde9cbe1ba74e2ee6f2579a38c3b5dcdbac55e81))
+
+
+### Bug Fixes
+
+* **mp:** release stage thread pools so evaluate() stops leaking workers ([55b9c7e](https://github.com/GoogleCloudPlatform/evalbench/commit/55b9c7e0f45b502fa1dd9de74080d13651b61cde))
+
+## [1.17.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.16.0...v1.17.0) (2026-09-04)
+
+
+### Features
+
+* **agentic_reverse_proxy:** canonicalize MCP tools and enhance skill extraction ([e8721c6](https://github.com/GoogleCloudPlatform/evalbench/commit/e8721c699e93c248619cbea267683ab6666e5cb8))
+* **agent:** introduce generalized reverse proxy bidirectional streaming evaluation ([d623c85](https://github.com/GoogleCloudPlatform/evalbench/commit/d623c85dc4a0ad05367a905190ed25ae786531a9))
+
+
+### Bug Fixes
+
+* **agentic_reverse_proxy:** accept timeout_seconds in safe_generate ([0f504b4](https://github.com/GoogleCloudPlatform/evalbench/commit/0f504b4bac3cb9ec790e355e60f425e15cef61a3))
+* **eval_service:** ensure evalproto directory is in sys.path for proto imports ([ed1d249](https://github.com/GoogleCloudPlatform/evalbench/commit/ed1d249a8f14ce18b97f42b671746f40fc1d265e))
+* **packaging:** track evalproto stubs and lazily import gRPC generators ([#589](https://github.com/GoogleCloudPlatform/evalbench/issues/589)) ([3f4b1eb](https://github.com/GoogleCloudPlatform/evalbench/commit/3f4b1eb8f24b4035efea03ec1957d0eb47d84305))
+* **service:** add generator and stream guards with error propagation to AgentInteract ([2c6a0f3](https://github.com/GoogleCloudPlatform/evalbench/commit/2c6a0f37e55ac649ba55dec36c8e787e9adeecde))
+* **test:** clean up SessionManager sessions in asyncTearDown ([653cf9b](https://github.com/GoogleCloudPlatform/evalbench/commit/653cf9b7b9520b54e508aad6b5f1d7c58c1b0478))
+* **test:** consume sender task via asyncio.gather in integration test ([dc73810](https://github.com/GoogleCloudPlatform/evalbench/commit/dc73810779725c88ed6eb77b5ce5fe71f2c2c921))
+
+## [1.16.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.15.0...v1.16.0) (2026-09-01)
+
+
+### Features
+
+* Add support for eval case level timeouts ([7d11688](https://github.com/GoogleCloudPlatform/evalbench/commit/7d11688c8bfa49e98e62e096a1d7ad73b6157bc0))
+* Add support for eval case level timeouts ([d04e130](https://github.com/GoogleCloudPlatform/evalbench/commit/d04e130b4815daa1de354d21ee1cbbd61abe5664))
+* **analytics-scorer:** add AnalyticsScorer implementation and update… ([#578](https://github.com/GoogleCloudPlatform/evalbench/issues/578)) ([249191c](https://github.com/GoogleCloudPlatform/evalbench/commit/249191cf542a45c554bd4492f8fe0a2d931e16a1))
+* **dataset-quality:** count skills in trajectory coverage ([#568](https://github.com/GoogleCloudPlatform/evalbench/issues/568)) ([2768d7c](https://github.com/GoogleCloudPlatform/evalbench/commit/2768d7c41f3d7634ada08b56d218a7bc88c26e89))
+* **evalbench:** add native Agent Runtime generator support and deployment guide ([f022fea](https://github.com/GoogleCloudPlatform/evalbench/commit/f022fea5a930d3c8f5d7592e612e25e296d5cfe1))
+* normalize namespaced skill names in SkillsTrajectoryMatcher ([1480f53](https://github.com/GoogleCloudPlatform/evalbench/commit/1480f5334a6f84b654927c5a2d5d9673bc552655))
+* normalize namespaced skill names in SkillsTrajectoryMatcher ([1e4d549](https://github.com/GoogleCloudPlatform/evalbench/commit/1e4d549f673e02c7468b033c4bc7d08203967d88))
+* **query_data_api:** capture pipeline_debug_info in eval reports via REST ([7135ce0](https://github.com/GoogleCloudPlatform/evalbench/commit/7135ce09d1e5053b11a2f80f9d228737c69768c8))
+* **query_data_api:** capture pipeline_debug_info in eval reports via REST ([beeae53](https://github.com/GoogleCloudPlatform/evalbench/commit/beeae53c2dee653e65fc7788b3b3faf4abe4146d))
+* **scorers:** pass config dictionary and runtime kwargs to pythonscorer script input ([ba0136e](https://github.com/GoogleCloudPlatform/evalbench/commit/ba0136ea24bf21d8e916b4f809e6bd1872964635))
+* support generated and default columns in Spanner database driver ([cc70805](https://github.com/GoogleCloudPlatform/evalbench/commit/cc708051392d0c803681a0861e0f28f44ca19ff9))
+
+
+### Bug Fixes
+
+* **agy:** register work_dir as an agy workspace via --add-dir ([#585](https://github.com/GoogleCloudPlatform/evalbench/issues/585)) ([ac855ee](https://github.com/GoogleCloudPlatform/evalbench/commit/ac855ee327fc29f4647b08d80e492120a83d0f25))
+* attache session id header so to address unstable caching ([9fe2010](https://github.com/GoogleCloudPlatform/evalbench/commit/9fe20102e794e66498eac41fc18632411f5f6bff))
+* attache session id header so to address unstable caching ([827e004](https://github.com/GoogleCloudPlatform/evalbench/commit/827e004c4d2112670faa9db668c54972232db30b))
+* **examples:** fix Jupyter Notebook JSON schema validation errors and update title ([5e6d03d](https://github.com/GoogleCloudPlatform/evalbench/commit/5e6d03d49762c21d5fa6e200f4b0c2afc7ac68ed))
+* **examples:** update notebook title and repair schema validation errors ([0f962c1](https://github.com/GoogleCloudPlatform/evalbench/commit/0f962c1ba35a32767f101ccf1f64a8bb8b575f93))
+* **mcp:** trust configured MCP server URL directly and unwrap taskgroup errors ([#583](https://github.com/GoogleCloudPlatform/evalbench/issues/583)) ([f38b38a](https://github.com/GoogleCloudPlatform/evalbench/commit/f38b38a385181930a860a0c441c121bc301f8898))
+* Replace Spanner column slicing with explicit synthetic column exclusion ([abe01c9](https://github.com/GoogleCloudPlatform/evalbench/commit/abe01c9d25187550eeef77e15c118e6c934137b5))
+
+## [1.15.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.14.0...v1.15.0) (2026-08-11)
+
+
+### Features
+
+* add Dataset Quality tab with automated precompute caching & UI support ([#531](https://github.com/GoogleCloudPlatform/evalbench/issues/531)) ([0e1d2d4](https://github.com/GoogleCloudPlatform/evalbench/commit/0e1d2d47b6c6897b8b31a507e48a0d2993a6d54e))
+* add dataset-quality scoring framework for CUJ datasets ([#508](https://github.com/GoogleCloudPlatform/evalbench/issues/508)) ([6a81e49](https://github.com/GoogleCloudPlatform/evalbench/commit/6a81e491d2cf3361ef55ece81768f811a9dad76b))
+* **scorers:** add NamedScorer wrapper to support custom scorer names ([2ef0201](https://github.com/GoogleCloudPlatform/evalbench/commit/2ef02019cb823a07df42d3ad46fcecb5baec2232))
+* **scorers:** add NamedScorer wrapper to support custom scorer names ([dfeff2d](https://github.com/GoogleCloudPlatform/evalbench/commit/dfeff2d39042ab872e351ba285c944f45f345f2a))
+
+
+### Bug Fixes
+
+* **analyzer:** aggregate binary_rubric_scorer results by matching comparator prefix ([3ba7800](https://github.com/GoogleCloudPlatform/evalbench/commit/3ba7800de023998bc2722bac121f4f01a9144665))
+* **analyzer:** aggregate binary_rubric_scorer results by matching comparator prefix ([10c3e45](https://github.com/GoogleCloudPlatform/evalbench/commit/10c3e45edc8fcd35474a1954d06eacf6150c81be))
+* **codex_cli:** resolve rpc_id_var for per-session fake_home isolation in eval_server ([605255a](https://github.com/GoogleCloudPlatform/evalbench/commit/605255adc10a8e788f4e0870d663b5a6bb9e3028))
+* **codex_cli:** resolve rpc_id_var for session isolation in eval_server ([42ebc73](https://github.com/GoogleCloudPlatform/evalbench/commit/42ebc73e6e7e1379032cbc9de965b2b7d4944236))
+* **deps:** pin mcp&gt;=1.8,&lt;2 ([b1ecd5b](https://github.com/GoogleCloudPlatform/evalbench/commit/b1ecd5b68a7c851641cc31f6681e12c813a0df8a))
+* **deps:** pin mcp&gt;=1.8,&lt;2 ([4d93311](https://github.com/GoogleCloudPlatform/evalbench/commit/4d93311d0d3990007834ebc428074d6274f07f4b))
+* **evaluator:** return 5-tuple in CortadoOrchestrator.process() to match Orchestrator contract ([438597e](https://github.com/GoogleCloudPlatform/evalbench/commit/438597e27f852424f5b71f2e6d1a0d4250f6fbdd))
+* **evaluator:** return 5-tuple in CortadoOrchestrator.process() to match Orchestrator contract ([9f6971f](https://github.com/GoogleCloudPlatform/evalbench/commit/9f6971ff7e34b15d5295bfb999e23c6d43160b57))
+* **mcp:** correct skip warning to name both httpUrl and url ([c36dfb4](https://github.com/GoogleCloudPlatform/evalbench/commit/c36dfb4da3f5e6c5388926a342e7540311b6bd05))
+* reorder precompute tasks to ensure dataset quality runs before trends to prevent execution starvation ([#548](https://github.com/GoogleCloudPlatform/evalbench/issues/548)) ([ee86597](https://github.com/GoogleCloudPlatform/evalbench/commit/ee86597f586822d519b05ff6ba0423ba3550838c))
+* **viewer:** bound the scores.csv render in the summarizer prompt ([7beeaed](https://github.com/GoogleCloudPlatform/evalbench/commit/7beeaed00dde498c121e2b2b8d1970b5f8a729d8))
+* **viewer:** checkpoint trends precompute so a killed pass keeps its work ([6b1f4cb](https://github.com/GoogleCloudPlatform/evalbench/commit/6b1f4cbd1d772801794a4b746e4f758fdbccfde2))
+
 ## [1.14.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.13.0...v1.14.0) (2026-07-25)
 
 

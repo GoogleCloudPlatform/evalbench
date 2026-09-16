@@ -7,6 +7,7 @@ import logging
 import re
 import shutil
 import sys
+from typing import Optional, Union, Dict, List
 from util.context import rpc_id_var
 
 
@@ -784,16 +785,16 @@ class GeminiCliGenerator(AgentCliGenerator):
         except Exception as e:
             logging.error(f"Failed to patch manifest at {manifest_path}: {e}")
 
-    def generate_internal(self, cli_cmd: CLICommand | str):
+    def generate_internal(self, cli_cmd: CLICommand | str, timeout_seconds: float | int | None = None):
         if not isinstance(cli_cmd, CLICommand):
             cli_cmd = CLICommand(self.gemini_cli_version, str(cli_cmd))
-        return self._run_gemini_cli(cli_cmd)
+        return self._run_gemini_cli(cli_cmd, timeout_seconds=timeout_seconds)
 
     def _execute_cli_command(
-        self, command: list[str], env: dict[str, str] | None = None, cwd: str | None = None
+        self, command: list[str], env: dict[str, str] | None = None, cwd: str | None = None, timeout_seconds: float | int | None = None
     ) -> subprocess.CompletedProcess:
         try:
-            result = subprocess.run(command, capture_output=True, text=True, check=False, env=env, cwd=cwd if cwd else self.fake_home)
+            result = subprocess.run(command, capture_output=True, text=True, check=False, env=env, cwd=cwd if cwd else self.fake_home, timeout=timeout_seconds)
             # Filter out benign schema warnings from json decoder from stderr to reduce noise
             if result.stderr:
                 result.stderr = "\n".join(
@@ -804,6 +805,15 @@ class GeminiCliGenerator(AgentCliGenerator):
                     ]
                 )
             return result
+        except subprocess.TimeoutExpired as e:
+            stdout_str = e.stdout if isinstance(e.stdout, str) else (e.stdout.decode() if e.stdout else "")
+            stderr_str = f"TimeoutError: Command timed out after {timeout_seconds} seconds"
+            if e.stderr:
+                err_text = e.stderr if isinstance(e.stderr, str) else e.stderr.decode()
+                stderr_str = f"{stderr_str}\n{err_text}"
+            return subprocess.CompletedProcess(
+                command, 124, stdout_str, stderr_str
+            )
         except FileNotFoundError:
             return subprocess.CompletedProcess(
                 command, 127, "", f"Error: Command not found: {command[0]}"
@@ -813,7 +823,7 @@ class GeminiCliGenerator(AgentCliGenerator):
                 command, 1, "", f"An unexpected error occurred: {e}"
             )
 
-    def _run_gemini_cli(self, cli_cmd: CLICommand):
+    def _run_gemini_cli(self, cli_cmd: CLICommand, timeout_seconds: float | int | None = None):
         gemini_settings_path = os.path.join(self.gemini_home, "settings.json")
 
         if not os.path.exists(gemini_settings_path):
@@ -847,7 +857,9 @@ class GeminiCliGenerator(AgentCliGenerator):
             ]
         )
 
-        result = self._execute_cli_command(command, env=env, cwd=cli_cmd.cwd)
+        result = self._execute_cli_command(
+            command, env=env, cwd=cli_cmd.cwd, timeout_seconds=timeout_seconds
+        )
         if result.returncode == 0 and result.stdout:
             result.stdout = self._parse_stream_json(result.stdout)
 
@@ -1072,8 +1084,10 @@ class GeminiCliGenerator(AgentCliGenerator):
         except (KeyError, TypeError):
             return []
 
-    def safe_generate(self, cli_cmd: CLICommand) -> subprocess.CompletedProcess:
-        result = self.generate_internal(cli_cmd)
+    def safe_generate(
+        self, cli_cmd: CLICommand, timeout_seconds: Optional[float] = None
+    ) -> subprocess.CompletedProcess:
+        result = self.generate_internal(cli_cmd, timeout_seconds=timeout_seconds)
         if isinstance(result, str):
             return subprocess.CompletedProcess(args=[], returncode=0, stdout=result)
 

@@ -87,6 +87,33 @@ class TestPythonScorer(unittest.TestCase):
         self.assertEqual(score, 0.0)
         self.assertIn("FAIL: 'uv' command not found", reason)
 
+    @patch('scorers.pythonscorer.subprocess.run')
+    def test_python_scorer_kwargs_and_config_passing(self, mock_run):
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = '{"score": 100.0, "reason": "OK"}'
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+
+        config = {"script_path": "dummy_script.py", "custom_param": "value123"}
+        scorer = PythonScorer(config)
+
+        scorer.compare(
+            nl_prompt="p", golden_query="g", query_type="DQL",
+            golden_execution_result="", golden_eval_result="", golden_error="",
+            generated_query="gen", generated_execution_result="",
+            generated_eval_result="", generated_error="",
+            extra_runtime_arg="arg456"
+        )
+
+        args, kwargs = mock_run.call_args
+        sent_input = json.loads(kwargs["input"])
+        self.assertIn("kwargs", sent_input)
+        self.assertEqual(sent_input["kwargs"].get("extra_runtime_arg"), "arg456")
+        self.assertEqual(sent_input.get("extra_runtime_arg"), "arg456")
+        self.assertEqual(sent_input.get("custom_param"), "value123")
+        self.assertIn("config", sent_input)
+
 
 if __name__ == '__main__':
     unittest.main()

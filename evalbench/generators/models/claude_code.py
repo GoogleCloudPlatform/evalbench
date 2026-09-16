@@ -8,6 +8,10 @@ import shlex
 import sys
 import re
 import shutil
+import threading
+import time
+from typing import Optional, Union, Dict, List
+import uuid
 from util.context import rpc_id_var
 
 
@@ -597,21 +601,31 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         else:
             logging.info(f"Successfully installed plugin '{plugin_id}'")
 
-    def generate_internal(self, cli_cmd):
+    def generate_internal(self, cli_cmd, timeout_seconds=None):
         if not isinstance(cli_cmd, CLICommand):
             cli_cmd = CLICommand(self.claude_code_version, str(cli_cmd))
-        return self._run_claude_code(cli_cmd)
+        return self._run_claude_code(cli_cmd, timeout_seconds=timeout_seconds)
 
     def _execute_cli_command(
         self, command: list[str], env: dict[str, str] | None = None,
-        cwd: str | None = None,
+        cwd: str | None = None, timeout_seconds: float | int | None = None,
     ) -> subprocess.CompletedProcess:
         try:
             result = subprocess.run(
                 command, capture_output=True, text=True, check=False, env=env,
-                cwd=cwd if cwd else self.fake_home, stdin=subprocess.DEVNULL
+                cwd=cwd if cwd else self.fake_home, stdin=subprocess.DEVNULL,
+                timeout=timeout_seconds,
             )
             return result
+        except subprocess.TimeoutExpired as e:
+            stdout_str = e.stdout if isinstance(e.stdout, str) else (e.stdout.decode() if e.stdout else "")
+            stderr_str = f"TimeoutError: Command timed out after {timeout_seconds} seconds"
+            if e.stderr:
+                err_text = e.stderr if isinstance(e.stderr, str) else e.stderr.decode()
+                stderr_str = f"{stderr_str}\n{err_text}"
+            return subprocess.CompletedProcess(
+                command, 124, stdout_str, stderr_str
+            )
         except FileNotFoundError:
             return subprocess.CompletedProcess(
                 command, 127, "", f"Error: Command not found: {command[0]}"
@@ -621,10 +635,168 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                 command, 1, "", f"An unexpected error occurred: {e}"
             )
 
-    def _run_claude_code(self, cli_cmd: CLICommand):
+    def _execute_cli_streaming(
+        self, command: list[str], env: dict[str, str] | None = None,
+        cwd: str | None = None, timeout_seconds: float | int | None = None,
+    ) -> tuple[subprocess.CompletedProcess, dict[str, int]]:
+        """Runs the CLI with line-streamed stdout, returning the usual
+        CompletedProcess plus a `{tool_use_id: duration_ms}` map.
+
+        Claude's stream-json carries no timestamps, so stamping arrival times
+        here is the only path to per-tool latency.
+        """
+        try:
+            proc = subprocess.Popen(
+                command, env=env, cwd=cwd or self.fake_home, text=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=1,  # line-buffered so events arrive as Claude flushes them
+            )
+        except FileNotFoundError:
+            return subprocess.CompletedProcess(
+                command, 127, "", f"Error: Command not found: {command[0]}"
+            ), {}
+        except Exception as e:
+            return subprocess.CompletedProcess(
+                command, 1, "", f"An unexpected error occurred: {e}"
+            ), {}
+
+        stderr_chunks: list[str] = []
+
+        def _drain_stderr():
+            try:
+                for line in proc.stderr:
+                    stderr_chunks.append(line)
+            except Exception as e:
+                logging.debug(f"stderr drain failed: {e}")
+
+        stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+        stderr_thread.start()
+
+        stdout_lines: list[str] = []
+        started_at_ms: dict[str, float] = {}
+        tool_durations: dict[str, int] = {}
+
+        def _drain_stdout():
+            try:
+                for line in proc.stdout:
+                    arrival_ms = time.monotonic() * 1000
+                    stdout_lines.append(line)
+                    # Timing is a side channel; a bad line must not cost us
+                    # the rest of stdout.
+                    try:
+                        self._stamp_tool_event(
+                            line, arrival_ms, started_at_ms, tool_durations,
+                        )
+                    except Exception as e:
+                        logging.debug(f"tool timing skipped for a line: {e}")
+            except Exception as e:
+                logging.warning(f"stdout stream read failed: {e}")
+
+        stdout_thread = threading.Thread(target=_drain_stdout, daemon=True)
+        stdout_thread.start()
+
+        try:
+            proc.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            stdout_thread.join(timeout=5)
+            stderr_thread.join(timeout=5)
+            stderr_str = (
+                f"TimeoutError: Command timed out after {timeout_seconds} seconds")
+            if stderr_chunks:
+                stderr_str = f"{stderr_str}\n{''.join(stderr_chunks)}"
+            return subprocess.CompletedProcess(
+                command, 124, "".join(stdout_lines), stderr_str,
+            ), tool_durations
+
+        stdout_thread.join(timeout=5)
+        stderr_thread.join(timeout=5)
+
+        completed = subprocess.CompletedProcess(
+            command, proc.returncode,
+            "".join(stdout_lines), "".join(stderr_chunks),
+        )
+        return completed, tool_durations
+
+    @staticmethod
+    def _stamp_tool_event(
+        line: str, arrival_ms: float,
+        started_at_ms: dict[str, float], tool_durations: dict[str, int],
+    ) -> None:
+        """Stamps a `tool_use` block's arrival and closes it on the matching
+        `tool_result`, which arrives either as its own event or nested in a
+        `user` message.
+        """
+        line = line.strip()
+        if not line:
+            return
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            return
+        if not isinstance(event, dict):
+            return
+
+        event_type = event.get("type")
+        message = event.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            content = []
+
+        if event_type == "assistant":
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "tool_use" and block.get("id"):
+                    started_at_ms.setdefault(block["id"], arrival_ms)
+            return
+
+        if event_type == "tool_result":
+            result_ids = [event.get("tool_use_id") or event.get("id", "")]
+        elif event_type == "user":
+            result_ids = [
+                block.get("tool_use_id") or block.get("id", "")
+                for block in content
+                if isinstance(block, dict)
+                and block.get("type") == "tool_result"
+            ]
+        else:
+            return
+
+        for tool_id in result_ids:
+            t0 = started_at_ms.pop(tool_id, None) if tool_id else None
+            if t0 is not None:
+                tool_durations[tool_id] = max(0, int(arrival_ms - t0))
+
+    @staticmethod
+    def _session_id_headers() -> str:
+        """Builds a dynamic per-run ``ANTHROPIC_CUSTOM_HEADERS`` value carrying a unique session id.
+
+        A short uuid suffix is appended to the epoch seconds so concurrent runs
+        landing in the same second still get distinct session ids.
+        """
+        session_id = f"sess-{int(time.time())}-{uuid.uuid4().hex[:8]}"
+        return f"X-Vertex-Ai-Session-Id: {session_id}"
+
+    def _run_claude_code(self, cli_cmd: CLICommand, timeout_seconds=None):
         env = os.environ.copy()
         env.update(self.env)
         env.update(cli_cmd.env)
+
+        # Attach a fresh session-id header per run. If one is already set (from
+        # the inherited process env or model config), warn and override so every
+        # run gets a distinct, non-stale session id.
+        session_headers = self._session_id_headers()
+        existing = env.get("ANTHROPIC_CUSTOM_HEADERS")
+        if existing:
+            logging.warning(
+                "Overriding existing ANTHROPIC_CUSTOM_HEADERS "
+                f"({existing!r}) with per-run session header {session_headers!r}."
+            )
+        env["ANTHROPIC_CUSTOM_HEADERS"] = session_headers
 
         # If the version looks like an npm package spec (contains "/" or starts
         # with "@"), use `npm exec` to pin that version (like Gemini CLI does).
@@ -673,9 +845,11 @@ class ClaudeCodeGenerator(AgentCliGenerator):
 
         logging.info(f"Running Claude Code CLI: {' '.join(command)}")
 
-        result = self._execute_cli_command(command, env=env, cwd=cli_cmd.cwd)
+        result, tool_durations = self._execute_cli_streaming(
+            command, env=env, cwd=cli_cmd.cwd, timeout_seconds=timeout_seconds)
         if result.stdout:
-            result.stdout = self._parse_stream_json(result.stdout)
+            result.stdout = self._parse_stream_json(
+                result.stdout, tool_durations=tool_durations)
 
         return result
 
@@ -704,9 +878,16 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         tool_calls_dict[tool_id]["response"] = self._stringify_tool_result(
             content)
 
-    def _parse_stream_json(self, stream_output: str) -> str:
+    def _parse_stream_json(
+        self, stream_output: str,
+        tool_durations: dict[str, int] | None = None,
+    ) -> str:
         """Parses Claude Code stream-json output into a normalized format
-        compatible with the eval pipeline."""
+        compatible with the eval pipeline.
+
+        ``tool_durations`` maps tool_use ids to milliseconds.
+        """
+        tool_durations = tool_durations or {}
 
         from collections import OrderedDict
 
@@ -929,6 +1110,10 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                         tstat["decisions"]["accept"] += 1
                         tstat["decisions"]["auto_accept"] += 1
 
+                        duration = tool_durations.get(tc.get("tool_id"), 0)
+                        tstat["durationMs"] += duration
+                        tools_stats["totalDurationMs"] += duration
+
                         if tc.get("status") == "success":
                             tstat["success"] += 1
                         elif tc.get("status") == "error":
@@ -1054,8 +1239,10 @@ class ClaudeCodeGenerator(AgentCliGenerator):
             return []
         return self._extract_script_names(by_name)
 
-    def safe_generate(self, cli_cmd: CLICommand) -> subprocess.CompletedProcess:
-        result = self.generate_internal(cli_cmd)
+    def safe_generate(
+        self, cli_cmd: CLICommand, timeout_seconds: Optional[float] = None
+    ) -> subprocess.CompletedProcess:
+        result = self.generate_internal(cli_cmd, timeout_seconds=timeout_seconds)
         if isinstance(result, str):
             return subprocess.CompletedProcess(args=[], returncode=0, stdout=result)
 

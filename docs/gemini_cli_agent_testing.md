@@ -244,15 +244,17 @@ The evalset JSON file defines the test scenarios. Each scenario represents an ag
 
 #### Scenario Fields
 
+**See the [agentic dataset format](/docs/configs/agentic-dataset-config.md) for the full field reference**, including optional fields like `work_dir`, `binary_rubric`, and `expected_skills`, plus `${VAR}` environment expansion and scenario filtering. The required fields are:
+
 | Field | Required | Description |
 |-------|----------|-------------|
 | `id` | Yes | Unique identifier for the scenario |
 | `starting_prompt` | Yes | The first user message sent to Gemini CLI |
-| `conversation_plan` | Yes | Natural language instructions that guide the simulated user's behavior across turns. This defines the goals, expected information to provide, and how to react to agent responses. |
+| `conversation_plan` | Yes | Natural language instructions that guide the simulated user's behavior across turns. See [writing good conversation plans](/docs/configs/agentic-dataset-config.md#writing-good-conversation-plans). |
 | `expected_trajectory` | Yes | Ordered list of tool names the agent is expected to call. Used by `trajectory_matcher` scorer. See [Tool name format](#tool-name-format) below. |
+| `max_turns` | Yes | Maximum number of conversation turns before the evaluation stops |
 | `env` | Optional | Per-scenario environment variables (merged with model config env) |
 | `kind` | Optional | Category label (e.g., `"tools"`) |
-| `max_turns` | Yes | Maximum number of conversation turns before the evaluation stops |
 
 #### Tool name format
 
@@ -262,13 +264,7 @@ By default the `trajectory_matcher` scorer drops native/harness-internal tools (
 
 #### Writing Good Conversation Plans
 
-The `conversation_plan` is a critical part of each scenario. It instructs the simulated user LLM how to behave. Best practices:
-
-1. **Be specific about the goal**: Clearly state what the user wants to accomplish.
-2. **Provide concrete values**: Include specific names, values, and parameters the simulated user should provide when asked.
-3. **Handle ambiguity intentionally**: Some scenarios test the agent's ability to handle vague requests (e.g., `"I need a database."`).
-4. **Include decision points**: Tell the simulated user how to respond to agent confirmations or questions.
-5. **Define the project context**: Always specify the GCP project and relevant details.
+The `conversation_plan` instructs the simulated user LLM how to behave, and shapes the evaluation as much as the starting prompt does. See [writing good conversation plans](/docs/configs/agentic-dataset-config.md#writing-good-conversation-plans) for the guidance.
 
 **Example — Ambiguous Multi-turn Scenario:**
 ```json
@@ -598,32 +594,21 @@ fake_mcp_tools:
 
 ## Scorers
 
-EvalBench provides **8 scorers** for Gemini CLI evaluations. Scorers are configured in the `scorers` section of the run config.
+Scorers are configured in the `scorers` section of the run config. **See the [scorer reference](/docs/scorers.md#agentic-scorers) for the complete catalog and every configuration option** — including cost scorers (`tokens_processed`, `effective_billed_tokens`), skills scorers, and [custom Python scorers](/docs/scorers.md#custom-scorers).
 
-### LLM-Based Scorers
+The set most commonly used with Gemini CLI:
 
-These require a `model_config` pointing to an LLM for evaluation:
-
-| Scorer | Score Range | Description |
-|--------|------------|-------------|
-| `goal_completion` | 0–100 | Uses an LLM to evaluate whether the agent accomplished the conversation plan's intent. Returns `100` for PASS, `0` for FAIL. |
-| `behavioral_metrics` | 0–100 | Evaluates hallucination rate and clarification rate in a single LLM pass. Starts at 100 and penalizes: **-50 per hallucination**, **-20 per unnecessary clarification**. |
-| `parameter_analysis` | 100 (qualitative) | Uses an LLM to provide qualitative feedback on tool parameters used. Always scores 100; the value is in the textual explanation. |
-| `binary_rubric_scorer` | 0–100 | Uses an LLM to evaluate performance based on concrete user-supplied rubric criteria. |
-
-
-### Deterministic Scorers
-
-These require no additional model:
-
-| Scorer | Score Range | Description |
-|--------|------------|-------------|
-| `trajectory_matcher` | 0–100 | Compares expected vs. actual tool usage. Uses **Jaccard Similarity** by default (set-based, order-insensitive). Set `enforce_order: true` for **Levenshtein distance** (order-sensitive). Native/harness-internal tools are dropped from both sides before scoring by default; set `filter_native_tools: false` to keep them. See [Tool name format](#tool-name-format) for the canonical-name rule the filter uses. |
-| `turn_count` | Count | Reports the number of conversation turns the agent took. Lower is generally better. |
-| `end_to_end_latency` | Milliseconds | Total latency = model API latency + tool execution latency. |
-| `tool_call_latency` | Milliseconds | Sum of all tool execution durations across all turns. |
-| `token_consumption` | Count | Total tokens consumed (input + output) across all turns. |
-| `python_scorer` | 0–100 | Delegates evaluation to an external Python script executed via `uv run`. |
+| Scorer | Type | Score Range | Description |
+|--------|------|------------|-------------|
+| `trajectory_matcher` | Deterministic | 0–100 | Expected vs. actual tool usage. Jaccard similarity by default; `enforce_order: true` switches to Levenshtein. Native tools (`run_shell_command`, ...) are dropped from both sides by default — see [Tool name format](#tool-name-format). |
+| `turn_count` | Deterministic | Count | Number of conversation turns the agent took. Lower is generally better. |
+| `end_to_end_latency` | Deterministic | Milliseconds | Model API latency plus tool execution latency. |
+| `tool_call_latency` | Deterministic | Milliseconds | Sum of all tool execution durations. |
+| `token_consumption` | Deterministic | Count | Total input + output tokens across all turns. |
+| `goal_completion` | LLM | 0–100 | Whether the agent accomplished the conversation plan's intent. 100 for PASS, 0 for FAIL. |
+| `behavioral_metrics` | LLM | 0–100 | Hallucination and clarification rates. Starts at 100, penalizing 50 per hallucination and 20 per unnecessary clarification. |
+| `parameter_analysis` | LLM | 100 (qualitative) | Feedback on tool parameters. Always scores 100 — the value is in the explanation. |
+| `binary_rubric_scorer` | LLM | 0–100 | Pass/fail against user-supplied rubric criteria. |
 
 ### Scorer Configuration Example
 
@@ -651,53 +636,7 @@ scorers:
     model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
   binary_rubric_scorer:
     model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
-
-### Custom Scorers
-
-#### PythonScorer
-
-The `python_scorer` allows you to run arbitrary Python scripts to evaluate agent performance without checking the scorer into the EvalBench repository.
-
-**Configuration:**
-
-```yaml
-scorers:
-  python_scorer:
-    script_path: "path/to/your_script.py"
 ```
-
-**How it works:**
-
-1.  EvalBench calls `uv run <script_path>` as a subprocess.
-2.  It passes the complete evaluation context as a JSON object via **standard input** (stdin).
-3.  The script must process this JSON and output its result as a JSON object to **standard output** (stdout) containing `score` (float) and `reason` (string).
-
-**Dependency Management:**
-
-User scripts can use **PEP 723** inline metadata to declare dependencies. `uv run` will automatically create an isolated environment and install them before running the script.
-
-Example script with dependencies:
-
-```python
-# /// script
-# dependencies = ["requests"]
-# ///
-
-import sys
-import json
-import requests
-
-def main():
-    input_data = json.load(sys.stdin)
-    # ... custom logic ...
-    result = {"score": 100.0, "reason": "PASS"}
-    print(json.dumps(result))
-
-if __name__ == "__main__":
-    main()
-```
-
-A sample validator is available at `evalbench/scorers/examples/sample_python_validator.py`.
 
 ### Example Rubric Scenario (`quick_dbt_test.json`)
 
@@ -735,9 +674,7 @@ scorers:
   binary_rubric_scorer:
     model_config: gemini_2.5_pro_test_model.yaml
   turn_count: {}
-  executable: {}
-```
-
+  executable_sql: {}
 ```
 
 ---

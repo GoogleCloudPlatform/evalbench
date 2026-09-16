@@ -1,12 +1,13 @@
-"""
-Utility script to setup databases (schema and data) for an EvalBench experiment natively.
+"""Utility script to setup databases (schema and data) natively.
 
-This script parses a standard EvalBench experiment_config YAML file (the same file
-you would pass to evalbench.py), extracts the database requirements and setup paths,
-and automatically creates and sets up the schemas in the target engines.
+This script parses a standard EvalBench experiment_config YAML file
+(the same file you would pass to evalbench.py), extracts the database
+requirements and setup paths, and automatically creates and sets up
+the schemas in the target engines.
 
 Example usage:
-  python3 evalbench/util/setup_databases.py --experiment_config datasets/bird/example_run_config.yaml
+  python3 evalbench/util/setup_databases.py \
+    --experiment_config datasets/bird/example_run_config.yaml
 """
 
 
@@ -14,6 +15,7 @@ from evalbench.evaluator.db_manager import _get_setup_values
 from evalbench.databases import get_database
 from evalbench.dataset.dataset import load_dataset_from_json, flatten_dataset
 from evalbench.util.config import load_yaml_config
+from evalbench.util.flags import EXPERIMENT_CONFIG
 import sys
 import os
 from absl import app
@@ -42,20 +44,23 @@ def setup_databases(config_path: str):
         dialect = db_config.get("dialect", db_type)
 
         for db_name_from_dataset in unique_db_names:
-            db_name = db_name_mappings.get(dialect, "{db_id}").format(db_id=db_name_from_dataset)
+            db_name = db_name_mappings.get(
+                dialect, "{db_id}"
+            ).format(db_id=db_name_from_dataset)
             print(f"Processing {db_name} for engine {db_type}...")
 
             # Get connection wrapper to the specific database
             core_db = get_database(db_config, db_name)
 
-            # Ensure the permanent database exists BEFORE running resetup_database
+            # Ensure the permanent database exists BEFORE running
+            # resetup_database
             core_db.ensure_database_exists(db_name)
 
             # Load setup scripts natively from SQL directory
             setup_config = config
             try:
                 setup_scripts, data = _get_setup_values(
-                    setup_config, db_name, db_type)
+                    setup_config, db_name, db_type, dialect)
             except Exception as e:
                 print(f"  Failed to load setup values: {e}")
                 continue
@@ -68,9 +73,6 @@ def setup_databases(config_path: str):
                 print(f"  Successfully instantiated {db_name} on {db_type}")
             except Exception as e:
                 print(f"  Failed to setup {db_name} on {db_type}: {e}")
-
-
-from util.flags import EXPERIMENT_CONFIG
 
 
 def main(argv):

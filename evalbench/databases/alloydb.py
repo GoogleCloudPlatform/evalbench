@@ -6,7 +6,16 @@ from sqlalchemy.pool import NullPool
 from google.cloud.alloydb.connector import Connector as AlloyDBConnector
 from google.cloud.alloydb.connector import IPTypes as AlloyDBIPTypes
 
-CONNECTOR = AlloyDBConnector()
+_CONNECTOR = None
+
+
+def get_connector():
+    # Built on first use: the constructor resolves ADC, which would make
+    # importing evalbench fail on machines without credentials.
+    global _CONNECTOR
+    if _CONNECTOR is None:
+        _CONNECTOR = AlloyDBConnector()
+    return _CONNECTOR
 
 
 class AlloyDB(PGDB):
@@ -19,10 +28,10 @@ class AlloyDB(PGDB):
         self.nl_config = db_config['nl_config']
 
         if 'api_endpoint' in db_config:
-            CONNECTOR._alloydb_api_endpoint = db_config['api_endpoint']
+            get_connector()._alloydb_api_endpoint = db_config['api_endpoint']
 
         def get_conn_alloydb():
-            return CONNECTOR.connect(
+            return get_connector().connect(
                 self.db_path,
                 "pg8000",
                 user=self.username,

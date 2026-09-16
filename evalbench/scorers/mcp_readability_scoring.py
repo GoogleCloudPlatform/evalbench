@@ -51,3 +51,24 @@ class ScoreContribution:
     row_fields: dict[str, Any] = field(default_factory=dict)
     score: int = 100
     logs: str = ""
+
+
+# Severity display order, and the badge each finding bullet is prefixed with now
+# that the judge groups its findings by tool rather than by severity.
+SEVERITY_BADGES = {"P0": "🚫 P0", "P1": "⚠️ P1", "P2": "💡 P2"}
+
+
+def severity_tally(findings: list[dict]) -> str:
+    """Summarize a tool's findings as e.g. ``"1 P0, 2 P2"`` (zeros omitted)."""
+    counts = {sev: 0 for sev in SEVERITY_BADGES}
+    other = 0
+    for finding in findings:
+        sev = str(finding.get("severity", "")).upper()
+        if sev in counts:
+            counts[sev] += 1
+        else:
+            other += 1
+    parts = [f"{n} {sev}" for sev, n in counts.items() if n]
+    if other:
+        parts.append(f"{other} unclassified")
+    return ", ".join(parts) or "no findings"

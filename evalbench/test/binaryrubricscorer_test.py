@@ -140,12 +140,73 @@ class TestBinaryRubricScorer(unittest.TestCase):
         }
 
         _, summary_df = analyze_result(scores, experiment_config)
-        summary_dict = summary_df.set_index("metric_name").to_dict(orient="index")
+        summary_dict = summary_df.set_index(
+            "metric_name"
+        ).to_dict(orient="index")
 
         self.assertIn("binary_rubric_scorer", summary_dict)
         # Total scores = 4 rows, 3 scored 100 -> 3/4 = 75%
-        self.assertEqual(summary_dict["binary_rubric_scorer"]["correct_results_count"], 3)
-        self.assertEqual(summary_dict["binary_rubric_scorer"]["total_results_count"], 4)
+        self.assertEqual(
+            summary_dict["binary_rubric_scorer"]["correct_results_count"], 3
+        )
+        self.assertEqual(
+            summary_dict["binary_rubric_scorer"]["total_results_count"], 4
+        )
+
+    def test_custom_named_binary_rubric_scorer_aggregation(self):
+        from reporting.analyzer import analyze_result
+
+        scores = [
+            {
+                "id": "1",
+                "comparator": "my_rubric_0",
+                "score": 100,
+                "generated_sql": "SELECT 1",
+                "generated_error": None,
+            },
+            {
+                "id": "1",
+                "comparator": "my_rubric_1",
+                "score": 100,
+                "generated_sql": "SELECT 1",
+                "generated_error": None,
+            },
+            {
+                "id": "2",
+                "comparator": "my_rubric_0",
+                "score": 0,
+                "generated_sql": "SELECT 1",
+                "generated_error": None,
+            },
+            {
+                "id": "2",
+                "comparator": "my_rubric_1",
+                "score": 100,
+                "generated_sql": "SELECT 1",
+                "generated_error": None,
+            },
+        ]
+        experiment_config = {
+            "scorers": {
+                "my_rubric": {
+                    "type": "binary_rubric_scorer",
+                    "model_config": "fake_config"
+                }
+            }
+        }
+
+        _, summary_df = analyze_result(scores, experiment_config)
+        summary_dict = summary_df.set_index(
+            "metric_name"
+        ).to_dict(orient="index")
+
+        self.assertIn("my_rubric", summary_dict)
+        self.assertEqual(
+            summary_dict["my_rubric"]["correct_results_count"], 3
+        )
+        self.assertEqual(
+            summary_dict["my_rubric"]["total_results_count"], 4
+        )
 
 
 if __name__ == '__main__':

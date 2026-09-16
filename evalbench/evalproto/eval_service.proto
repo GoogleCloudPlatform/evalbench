@@ -6,6 +6,7 @@ import "eval_config.proto";
 import "eval_connect.proto";
 import "eval_request.proto";
 import "eval_response.proto";
+import "eval_agent.proto";
 
 option java_multiple_files = true;
 
@@ -37,6 +38,11 @@ service EvalService {
 
   // MultiTurnEval. Bidirectional stream.
   rpc Interact(stream EvalInputRequest) returns (stream EvalInputRequest) {
+    // option deadline = 1800;
+  }
+
+  // Autonomous Agent Bidirectional stream.
+  rpc AgentInteract(stream AgentStreamMessage) returns (stream AgentStreamMessage) {
     // option deadline = 1800;
   }
 

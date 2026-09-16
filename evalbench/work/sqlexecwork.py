@@ -162,7 +162,7 @@ class SQLExecWork(Work):
     def _sanitize_sql(self):
         if (
             self.experiment_config["prompt_generator"] == "NOOPGenerator"
-            and self.experiment_config["dialect"] != "googlesql"
+            and self.experiment_config.get("dialect") != "googlesql"
         ):
             self.eval_result["sanitized_sql"] = self.eval_result[
                 "generated_sql"

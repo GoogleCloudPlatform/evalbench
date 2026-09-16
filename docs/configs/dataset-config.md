@@ -1,5 +1,7 @@
 # NL2SQL Evaluation Items Configuration
 
+> For multi-turn agent evaluations, see the [agentic dataset format](/docs/configs/agentic-dataset-config.md) instead.
+
 This JSON dataset / prompts file contains a list of evaluation items to run. Each item represents a test case that defines a natural language prompt, the corresponding expected SQL modifications (golden SQL), and the SQL queries for setting up, evaluating, and cleaning up the database. These evaluation items are used to validate that the system correctly generates SQL statements based on natural language inputs.
 
 ## File Structure

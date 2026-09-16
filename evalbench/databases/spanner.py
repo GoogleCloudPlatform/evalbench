@@ -465,7 +465,14 @@ class SpannerDB(DB):
             schema_name = 'public' if self.expected_dialect_str == "POSTGRESQL" else ''
             with self.database.snapshot() as snapshot:
                 type_col = "spanner_type" if self.expected_dialect_str == "GOOGLESQL" else "data_type"
-                query = f"SELECT table_name, column_name, {type_col} FROM information_schema.columns WHERE table_schema = '{schema_name}' ORDER BY table_name, ordinal_position"
+                query = (
+                    f"SELECT table_name, column_name, {type_col} "
+                    f"FROM information_schema.columns "
+                    f"WHERE table_schema = '{schema_name}' "
+                    f"AND (UPPER(is_generated) != 'ALWAYS' OR is_generated IS NULL) "
+                    f"AND LOWER(column_name) NOT IN ('_row_id', 'surrogate_id') "
+                    f"ORDER BY table_name, ordinal_position"
+                )
                 res = snapshot.execute_sql(query, timeout=self.query_timeout)
                 for row in res:
                     t_name, c_name, d_type = row[0], row[1], row[2]

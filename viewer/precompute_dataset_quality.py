@@ -13,6 +13,8 @@ import json
 import logging
 import os
 
+from run_index import list_run_directories
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 CACHE_FILENAME = "dataset_quality_cache.json"
@@ -146,8 +148,8 @@ def precompute():
             logging.warning("Could not read %s, rebuilding: %s", processed_dirs_file, e)
 
     directories = [
-        d for d in os.listdir(results_dir)
-        if os.path.isdir(os.path.join(results_dir, d)) and d not in processed
+        d for d in list_run_directories(results_dir, force=True)
+        if d not in processed
     ]
     logging.info("Dataset quality: %d new directories to scan", len(directories))
 
