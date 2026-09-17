@@ -10,6 +10,7 @@ raises, so an HTTP probe cannot tell a working page from a broken one.
 import logging
 import sys
 import traceback
+from functools import partial
 from pathlib import Path
 
 VIEWER_DIR = Path(__file__).resolve().parents[1] / "viewer"
@@ -28,9 +29,8 @@ EXPECTED_TABS = ["Status", "List", "Charts", "Dataset Quality", "Compare"]
 class ErrorLogCapture(logging.Handler):
     """Collects ERROR records.
 
-    render_app_content wraps its whole body in a try/except that logs and
-    renders a message, so a broken page never raises. Without watching the log
-    the render check would pass on an app that failed to draw anything.
+    The app catches its own render failures and logs them, so a broken page
+    never raises and exceptions alone are not enough to detect one.
     """
 
     def __init__(self):
@@ -77,7 +77,6 @@ def main():
             failures.append(f"{label} logged an error: {record.getMessage()}")
 
     def render_tab(tab):
-        rt.run_path(ROOT_PAGE)
         me.state(viewer_app.State).selected_main_tab = tab
         rt.run_path(ROOT_PAGE)
 
@@ -99,12 +98,12 @@ def main():
                         f"expected {sorted(EXPECTED_PAGES)}")
 
     for path in sorted(registered):
-        attempt(f"rendering {path}", lambda p=path: rt.run_path(p))
+        attempt(f"rendering {path}", partial(rt.run_path, path))
 
     attempt("on_load", fire_on_load)
 
     for tab in EXPECTED_TABS:
-        attempt(f"rendering tab {tab!r}", lambda t=tab: render_tab(t))
+        attempt(f"rendering tab {tab!r}", partial(render_tab, tab))
 
     print(f"Checked {len(registered)} page(s) {sorted(registered)}, "
           f"on_load, and {len(EXPECTED_TABS)} tab(s)")

@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - 'viewer/**'
+      # Dependency bumps land here only, and mesop is the likeliest way to break the UI.
+      - 'uv.lock'
       - '.ci/verify_viewer.py'
       - '.github/workflows/viewer.yml'
 
