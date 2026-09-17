@@ -2331,11 +2331,22 @@ def render_app_content():
                         s = me.state(State)
                         s.conversation_index += 1
 
+                    def make_select_conversation(target_idx: int):
+                        def handler(e: me.ClickEvent):
+                            s = me.state(State)
+                            s.conversation_index = target_idx
+
+                        handler_name = f"select_conversation_{target_idx}"
+                        handler.__name__ = handler_name
+                        globals()[handler_name] = handler
+                        return handler
+
                     conversations.conversations_component(
                         os.path.join(results_dir, state.selected_directory),
                         conversation_index=state.conversation_index,
                         on_prev=on_prev_conversation,
                         on_next=on_next_conversation,
+                        on_select=make_select_conversation,
                     )
                 elif state.selected_tab == "Configs":
                     config_path = os.path.join(

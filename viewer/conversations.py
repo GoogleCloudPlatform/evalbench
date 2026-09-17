@@ -5,11 +5,77 @@ from typing import Callable
 import logging
 
 
+PERCENTAGE_METRICS = {
+    "goal_completion",
+    "trajectory_matcher",
+    "parameter_analysis",
+    "behavioral_metrics",
+    "exact_match",
+    "executable",
+    "llmrater",
+}
+
+
+def _get_conversation_status(
+    scores_df: pd.DataFrame | None, eval_id: str
+) -> tuple[str, list[str]]:
+    """Classifies conversation status based on scores.csv metrics.
+
+    Returns:
+        tuple[str, list[str]]: (status, list_of_failed_metric_strings)
+        status is one of:
+        - "red": goal_completion < 100%
+        - "yellow": goal_completion == 100% (or N/A), but another percentage metric < 100%
+        - "green": all evaluated percentage metrics == 100%
+        - "neutral": no scores available
+    """
+    if scores_df is None or scores_df.empty or "id" not in scores_df.columns:
+        return "neutral", []
+
+    row_scores = scores_df[scores_df["id"].astype(str) == str(eval_id)]
+    if row_scores.empty:
+        return "neutral", []
+
+    has_goal_completion_fail = False
+    has_other_fail = False
+    failed_details = []
+
+    for _, s_row in row_scores.iterrows():
+        comp = str(s_row.get("comparator", "")).strip()
+        raw_score = s_row.get("score", None)
+        unit = str(s_row.get("unit", "")).strip()
+
+        if pd.isna(raw_score):
+            continue
+        try:
+            val = float(raw_score)
+        except (ValueError, TypeError):
+            continue
+
+        is_pct = comp in PERCENTAGE_METRICS or unit == "%"
+        if not is_pct:
+            continue
+
+        if val < 100.0:
+            failed_details.append(f"{comp}: {val:.0f}%")
+            if comp == "goal_completion":
+                has_goal_completion_fail = True
+            else:
+                has_other_fail = True
+
+    if has_goal_completion_fail:
+        return "red", failed_details
+    if has_other_fail:
+        return "yellow", failed_details
+    return "green", []
+
+
 def conversations_component(
     results_dir: str,
     conversation_index: int = 0,
     on_prev: Callable | None = None,
     on_next: Callable | None = None,
+    on_select: Callable[[int], Callable] | None = None,
 ):
     me.text(
         "Conversations",
@@ -19,6 +85,14 @@ def conversations_component(
     )
 
     evals_path = os.path.join(results_dir, "evals.csv")
+    scores_path = os.path.join(results_dir, "scores.csv")
+
+    scores_df = None
+    if os.path.exists(scores_path):
+        try:
+            scores_df = pd.read_csv(scores_path)
+        except Exception as e:
+            logging.warning(f"Failed to read scores.csv in conversations_component: {e}")
 
     if os.path.exists(evals_path):
         import json
@@ -26,7 +100,8 @@ def conversations_component(
         try:
             df = pd.read_csv(evals_path)
             if "conversation_history" in df.columns:
-                histories = df["conversation_history"].dropna().tolist()
+                valid_df = df[df["conversation_history"].notna()].reset_index(drop=True)
+                histories = valid_df["conversation_history"].tolist()
 
                 if not histories:
                     me.text(
@@ -36,9 +111,215 @@ def conversations_component(
                     total = len(histories)
                     idx = max(0, min(conversation_index, total - 1))
 
-                    eval_id = (
-                        df["eval_id"].iloc[idx] if "eval_id" in df.columns else str(idx)
-                    )
+                    def _get_eval_id(row_idx: int) -> str:
+                        if "eval_id" in valid_df.columns:
+                            return str(valid_df["eval_id"].iloc[row_idx])
+                        if "id" in valid_df.columns:
+                            return str(valid_df["id"].iloc[row_idx])
+                        return str(row_idx)
+
+                    eval_id = _get_eval_id(idx)
+
+                    # Precompute status for all conversations in this run
+                    statuses = []
+                    counts = {"red": 0, "yellow": 0, "green": 0, "neutral": 0}
+                    for i in range(total):
+                        e_id = _get_eval_id(i)
+                        st_color, st_details = _get_conversation_status(scores_df, e_id)
+                        statuses.append((st_color, st_details, e_id))
+                        counts[st_color] = counts.get(st_color, 0) + 1
+
+                    cur_status, cur_failed_details, _ = statuses[idx]
+
+                    # Legend and Page Selector Bar
+                    with me.box(
+                        style=me.Style(
+                            display="flex",
+                            flex_direction="column",
+                            gap="10px",
+                            padding=me.Padding.all("16px"),
+                            background="#f8fafc",
+                            border_radius="10px",
+                            border=me.Border.all(
+                                me.BorderSide(width="1px", color="#e2e8f0", style="solid")
+                            ),
+                            margin=me.Margin(bottom="16px"),
+                        )
+                    ):
+                        # Top row: Legend & summary counts
+                        with me.box(
+                            style=me.Style(
+                                display="flex",
+                                flex_direction="row",
+                                justify_content="space-between",
+                                align_items="center",
+                                flex_wrap="wrap",
+                                gap="12px",
+                            )
+                        ):
+                            me.text(
+                                "Select Conversation Page:",
+                                style=me.Style(
+                                    font_weight="600",
+                                    font_size="14px",
+                                    color="#334155",
+                                ),
+                            )
+                            with me.box(
+                                style=me.Style(
+                                    display="flex",
+                                    flex_direction="row",
+                                    gap="16px",
+                                    align_items="center",
+                                    flex_wrap="wrap",
+                                )
+                            ):
+                                # Red Legend
+                                with me.box(
+                                    style=me.Style(
+                                        display="flex",
+                                        align_items="center",
+                                        gap="6px",
+                                    )
+                                ):
+                                    me.box(
+                                        style=me.Style(
+                                            width="12px",
+                                            height="12px",
+                                            border_radius="3px",
+                                            background="#fee2e2",
+                                            border=me.Border.all(
+                                                me.BorderSide(
+                                                    width="1px",
+                                                    color="#dc2626",
+                                                    style="solid",
+                                                )
+                                            ),
+                                        )
+                                    )
+                                    me.text(
+                                        f"<100% Goal Completion ({counts['red']})",
+                                        style=me.Style(font_size="12px", color="#475569"),
+                                    )
+                                # Yellow Legend
+                                with me.box(
+                                    style=me.Style(
+                                        display="flex",
+                                        align_items="center",
+                                        gap="6px",
+                                    )
+                                ):
+                                    me.box(
+                                        style=me.Style(
+                                            width="12px",
+                                            height="12px",
+                                            border_radius="3px",
+                                            background="#fef3c7",
+                                            border=me.Border.all(
+                                                me.BorderSide(
+                                                    width="1px",
+                                                    color="#d97706",
+                                                    style="solid",
+                                                )
+                                            ),
+                                        )
+                                    )
+                                    me.text(
+                                        f"Other Metric Issue ({counts['yellow']})",
+                                        style=me.Style(font_size="12px", color="#475569"),
+                                    )
+                                # Green Legend
+                                with me.box(
+                                    style=me.Style(
+                                        display="flex",
+                                        align_items="center",
+                                        gap="6px",
+                                    )
+                                ):
+                                    me.box(
+                                        style=me.Style(
+                                            width="12px",
+                                            height="12px",
+                                            border_radius="3px",
+                                            background="#dcfce7",
+                                            border=me.Border.all(
+                                                me.BorderSide(
+                                                    width="1px",
+                                                    color="#16a34a",
+                                                    style="solid",
+                                                )
+                                            ),
+                                        )
+                                    )
+                                    me.text(
+                                        f"Passed ({counts['green']})",
+                                        style=me.Style(font_size="12px", color="#475569"),
+                                    )
+
+                        # Pill buttons row
+                        with me.box(
+                            style=me.Style(
+                                display="flex",
+                                flex_direction="row",
+                                flex_wrap="wrap",
+                                gap="6px",
+                            )
+                        ):
+                            for i in range(total):
+                                st_color, _, _ = statuses[i]
+                                is_active = i == idx
+
+                                if st_color == "red":
+                                    bg = "#dc2626" if is_active else "#fee2e2"
+                                    fg = "#ffffff" if is_active else "#991b1b"
+                                    bdr_col = "#7f1d1d" if is_active else "#f87171"
+                                elif st_color == "yellow":
+                                    bg = "#d97706" if is_active else "#fef3c7"
+                                    fg = "#ffffff" if is_active else "#92400e"
+                                    bdr_col = "#78350f" if is_active else "#fbbf24"
+                                elif st_color == "green":
+                                    bg = "#16a34a" if is_active else "#dcfce7"
+                                    fg = "#ffffff" if is_active else "#166534"
+                                    bdr_col = "#14532d" if is_active else "#4ade80"
+                                else:
+                                    bg = "#374151" if is_active else "#f3f4f6"
+                                    fg = "#ffffff" if is_active else "#374151"
+                                    bdr_col = "#111827" if is_active else "#d1d5db"
+
+                                bdr_width = "2px" if is_active else "1px"
+                                shadow = (
+                                    "0 2px 4px rgba(0,0,0,0.18)"
+                                    if is_active
+                                    else "none"
+                                )
+
+                                click_fn = on_select(i) if on_select else None
+                                me.button(
+                                    str(i + 1),
+                                    on_click=click_fn,
+                                    disabled=(click_fn is None),
+                                    style=me.Style(
+                                        min_width="36px",
+                                        height="32px",
+                                        padding=me.Padding.symmetric(
+                                            vertical="4px", horizontal="8px"
+                                        ),
+                                        background=bg,
+                                        color=fg,
+                                        font_weight="700" if is_active else "600",
+                                        font_size="13px",
+                                        border_radius="6px",
+                                        border=me.Border.all(
+                                            me.BorderSide(
+                                                width=bdr_width,
+                                                color=bdr_col,
+                                                style="solid",
+                                            )
+                                        ),
+                                        box_shadow=shadow,
+                                        cursor="pointer",
+                                    ),
+                                )
 
                     # Navigation header
                     with me.box(
@@ -47,6 +328,7 @@ def conversations_component(
                             flex_direction="row",
                             align_items="center",
                             gap="12px",
+                            flex_wrap="wrap",
                             margin=me.Margin(bottom="16px"),
                         )
                     ):
@@ -66,6 +348,55 @@ def conversations_component(
                             disabled=(idx == total - 1 or on_next is None),
                             style=me.Style(font_size="20px"),
                         )
+
+                        # Status badge for the active conversation
+                        if cur_status == "red":
+                            badge_bg = "#fee2e2"
+                            badge_fg = "#991b1b"
+                            badge_bdr = "#f87171"
+                            badge_txt = (
+                                f"Goal Completion Issue ({', '.join(cur_failed_details)})"
+                                if cur_failed_details
+                                else "Goal Completion < 100%"
+                            )
+                        elif cur_status == "yellow":
+                            badge_bg = "#fef3c7"
+                            badge_fg = "#92400e"
+                            badge_bdr = "#fbbf24"
+                            badge_txt = (
+                                f"Metric Issue ({', '.join(cur_failed_details)})"
+                                if cur_failed_details
+                                else "Other Metric < 100%"
+                            )
+                        elif cur_status == "green":
+                            badge_bg = "#dcfce7"
+                            badge_fg = "#166534"
+                            badge_bdr = "#4ade80"
+                            badge_txt = "Passed (All Metrics 100%)"
+                        else:
+                            badge_bg = "#f3f4f6"
+                            badge_fg = "#4b5563"
+                            badge_bdr = "#d1d5db"
+                            badge_txt = "No Scores Recorded"
+
+                        with me.box(
+                            style=me.Style(
+                                background=badge_bg,
+                                color=badge_fg,
+                                padding=me.Padding.symmetric(
+                                    vertical="4px", horizontal="10px"
+                                ),
+                                border_radius="9999px",
+                                border=me.Border.all(
+                                    me.BorderSide(
+                                        width="1px", color=badge_bdr, style="solid"
+                                    )
+                                ),
+                                font_size="12px",
+                                font_weight="600",
+                            )
+                        ):
+                            me.text(badge_txt)
 
                     history_str = histories[idx]
 
@@ -208,7 +539,11 @@ def conversations_component(
                             )
                         ):
                             # Conversation Plan
-                            scenario_str = df["scenario"].iloc[idx] if "scenario" in df.columns else ""
+                            scenario_str = (
+                                valid_df["scenario"].iloc[idx]
+                                if "scenario" in valid_df.columns
+                                else ""
+                            )
                             conversation_plan = ""
                             if scenario_str and pd.notna(scenario_str):
                                 try:
@@ -228,74 +563,71 @@ def conversations_component(
                                         conversation_plan = "\n".join([str(x) for x in conversation_plan])
                                     me.markdown(str(conversation_plan))
 
-                            scores_path = os.path.join(results_dir, "scores.csv")
-                            if os.path.exists(scores_path):
+                            if scores_df is not None and "id" in scores_df.columns:
                                 try:
-                                    scores_df = pd.read_csv(scores_path)
-                                    if "id" in scores_df.columns:
-                                        row_scores = scores_df[
-                                            scores_df["id"] == eval_id
-                                        ]
-                                        if not row_scores.empty:
-                                            with me.expansion_panel(title="Scores", expanded=True):
-                                                with me.box(
-                                                    style=me.Style(
-                                                        display="flex",
-                                                        flex_direction="column",
-                                                        gap="8px",
+                                    row_scores = scores_df[
+                                        scores_df["id"].astype(str) == str(eval_id)
+                                    ]
+                                    if not row_scores.empty:
+                                        with me.expansion_panel(title="Scores", expanded=True):
+                                            with me.box(
+                                                style=me.Style(
+                                                    display="flex",
+                                                    flex_direction="column",
+                                                    gap="8px",
+                                                )
+                                            ):
+                                                for (
+                                                    _,
+                                                    score_row,
+                                                ) in row_scores.iterrows():
+                                                    comparator = score_row.get(
+                                                        "comparator", "metric"
                                                     )
-                                                ):
-                                                    for (
-                                                        _,
-                                                        score_row,
-                                                    ) in row_scores.iterrows():
-                                                        comparator = score_row.get(
-                                                            "comparator", "metric"
-                                                        )
-                                                        score = score_row.get("score", None)
-                                                        unit = score_row.get("unit", "")
-                                                        if not unit or str(unit) == "nan":
-                                                            if comparator in ("end_to_end_latency", "tool_call_latency"):
-                                                                unit = "ms"
-                                                            elif comparator == "token_consumption":
-                                                                unit = "tokens"
-                                                            elif comparator == "turn_count":
-                                                                unit = "turns"
-                                                            elif comparator in ("trajectory_matcher", "goal_completion", "parameter_analysis", "behavioral_metrics"):
-                                                                unit = "%"
-                                                        logs = score_row.get(
-                                                            "comparison_logs", ""
-                                                        )
-                                                        score_val = (
-                                                            float(score)
-                                                            if pd.notna(score)
-                                                            else None
-                                                        )
-                                                        unit_str = f" {unit}" if unit and str(unit) != "nan" else ""
-                                                        score_str = f"{score_val:.0f}{unit_str}" if score_val is not None else ""
+                                                    score = score_row.get("score", None)
+                                                    unit = score_row.get("unit", "")
+                                                    if not unit or str(unit) == "nan":
+                                                        if comparator in ("end_to_end_latency", "tool_call_latency"):
+                                                            unit = "ms"
+                                                        elif comparator == "token_consumption":
+                                                            unit = "tokens"
+                                                        elif comparator == "turn_count":
+                                                            unit = "turns"
+                                                        elif comparator in PERCENTAGE_METRICS:
+                                                            unit = "%"
+                                                    logs = score_row.get(
+                                                        "comparison_logs", ""
+                                                    )
+                                                    score_val = (
+                                                        float(score)
+                                                        if pd.notna(score)
+                                                        else None
+                                                    )
+                                                    unit_str = f" {unit}" if unit and str(unit) != "nan" else ""
+                                                    score_str = f"{score_val:.0f}{unit_str}" if score_val is not None else ""
 
-                                                        # Full width for each score, now collapsible
-                                                        with me.expansion_panel(
-                                                            title=comparator,
-                                                            description=score_str,
-                                                            style=me.Style(
-                                                                width="100%",
-                                                                background="#ffffff",
-                                                                border_radius="10px",
-                                                                border=me.Border.all(
-                                                                    me.BorderSide(
-                                                                        width="1px",
-                                                                        color="#e5e7eb",
-                                                                        style="solid",
-                                                                    )
-                                                                ),
-                                                                box_shadow="0 1px 3px rgba(0,0,0,0.06)",
-                                                            )
-                                                        ):
-                                                            if logs and str(logs) != "nan":
-                                                                with me.box(style=me.Style(padding=me.Padding.all("12px"))):
-                                                                    # Render logs inside the expansion panel when opened
-                                                                    me.markdown(logs)
+                                                    # Full width for each score, now collapsible
+                                                    with me.expansion_panel(
+                                                        title=comparator,
+                                                        description=score_str,
+                                                        style=me.Style(
+                                                            width="100%",
+                                                            background="#ffffff",
+                                                            border_radius="10px",
+                                                            border=me.Border.all(
+                                                                me.BorderSide(
+                                                                    width="1px",
+                                                                    color="#e5e7eb",
+                                                                    style="solid",
+                                                                )
+                                                            ),
+                                                            box_shadow="0 1px 3px rgba(0,0,0,0.06)",
+                                                        )
+                                                    ):
+                                                        if logs and str(logs) != "nan":
+                                                            with me.box(style=me.Style(padding=me.Padding.all("12px"))):
+                                                                # Render logs inside the expansion panel when opened
+                                                                me.markdown(logs)
                                 except Exception as scores_e:
                                     me.text(f"Error reading scores: {scores_e}")
 
