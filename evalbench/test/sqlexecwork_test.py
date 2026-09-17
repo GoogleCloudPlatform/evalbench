@@ -8,6 +8,7 @@ from work.sqlexecwork import SQLExecWork
 def make_work(eval_result):
     db = MagicMock()
     db.dialect = "sqlite"
+
     def execute(query, *args, **kwargs):
         # The real db.execute starts with query.strip(), so a list raises.
         query.strip()
@@ -15,8 +16,7 @@ def make_work(eval_result):
 
     db.execute.side_effect = execute
     db.get_metadata.return_value = {}
-    return SQLExecWork(db, {"prompt_generator": "NOOPGenerator"},
-                       eval_result, Queue()), db
+    return SQLExecWork(db, {}, eval_result, Queue()), db
 
 
 def executed(db):
@@ -26,9 +26,7 @@ def executed(db):
 class TestResolveSQL(unittest.TestCase):
 
     def test_dml_setup_and_cleanup_lists_are_unwrapped(self):
-        """copy_for_dialect leaves these as lists, and db.execute needs a
-        string. Passing the list through raised AttributeError, which killed
-        golden_result and made every scorer fail with KeyError."""
+        """copy_for_dialect leaves these as lists; db.execute needs a str."""
         work, db = make_work({
             "query_type": "dml",
             "setup_sql": ["UPDATE t SET a = 1;"],

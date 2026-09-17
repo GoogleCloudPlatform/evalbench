@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
-"""Gates the NL2SQL smoke build on two tiers of check.
+"""Gates the NL2SQL smoke build.
 
-evalbench.eval() exits 0 whenever a run completes, and the orchestrator
-turns a whole failed query type into a log line rather than an exception,
-so the exit code alone cannot gate CI.
+eval() exits 0 whenever a run completes, and a whole failed query type
+becomes a log line rather than an exception, so the exit code cannot gate CI.
 
-Tier 1 (structural): returned_sql and executable_sql must report more than
-0 for dql, dml and ddl separately. A single aggregate would be carried by
-the dql rows and stay green while dml and ddl failed outright.
+Tier 1: returned_sql and executable_sql must score above 0 for dql, dml and
+ddl separately, since one aggregate would be carried by the dql rows.
 
-Tier 2 (liveness) covers every other scorer, including the LLM judges,
-without gating on their verdict, which would make the build flaky on
-ordinary model variance.
+Tier 2: every other scorer, judges included, must have run and produced a
+numeric score. Their verdict is not gated, which would make the build flaky
+on ordinary model variance.
 
-generated_error is deliberately not checked. A model writing invalid SQL
-is a scored outcome, and executable_sql already maps it to 0.
+generated_error is not checked. Invalid SQL is a scored outcome that
+executable_sql already maps to 0.
 """
 import csv
 import json
@@ -25,7 +23,6 @@ import sys
 from pyaml_env import parse_config
 
 RUN_CONFIG = ".ci/nl2sql_run_config.yaml"
-EVALSET = ".ci/nl2sql_smoke.evalset.json"
 QUERY_TYPES = ["dql", "dml", "ddl"]
 STRUCTURAL = {"returned_sql", "executable_sql"}
 # Scored per prompt across trials, so these rows carry prompt_id instead of
@@ -92,8 +89,8 @@ def load_scores(job_dir):
     return per_eval, multi
 
 
-def check_dataset_coverage(evals_by_type):
-    with open(EVALSET) as f:
+def check_dataset_coverage(evalset, evals_by_type):
+    with open(evalset) as f:
         expected = {str(item["id"]) for item in json.load(f)}
     seen = set()
     for query_type in QUERY_TYPES:
@@ -199,7 +196,7 @@ def main():
     print("All other scorers are liveness-checked (ran, no error, numeric "
           "score)\n")
 
-    problems = check_dataset_coverage(evals_by_type)
+    problems = check_dataset_coverage(config["dataset_config"], evals_by_type)
     problems += check_tier1(evals_by_type, per_eval)
     tier2_problems, checked = check_tier2(
         scorers, evals_by_type, per_eval, multi)
