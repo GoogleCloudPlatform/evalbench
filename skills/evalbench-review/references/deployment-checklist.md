@@ -170,12 +170,17 @@ Under `evalbench_service/k8s/`: `namespace.yaml`, `pvc.yaml`, `ksa.yaml`,
    `spanner_test.py` — so those get *less* coverage here, not more).
 2. `docker build -f evalbench_service/Dockerfile`.
 3. A **real eval run** inside the built image:
-   `EVAL_CONFIG=datasets/bat/example_run_config.yaml`, `evalbench/run.sh`.
-4. `verifier/verify.py` against the shared `eval_results` volume.
+   `EVAL_CONFIG=.ci/nl2sql_run_config.yaml`, `evalbench/run.sh`. Eight prompts
+   across DQL, DML and DDL against a local SQLite `db_blog`.
+4. `.ci/verify_nl2sql.py` against the shared `eval_results` volume. Tier 1
+   requires `returned_sql` and `executable_sql` above 0 for each query type
+   separately; Tier 2 liveness-checks every other scorer named in the run
+   config, judges included, without gating on their verdict.
 
-So breaking `datasets/bat/example_run_config.yaml` or the thresholds in
-`verifier/verify.py` breaks the pipeline even with a green unit suite. Renaming
-or removing a scorer key that config depends on is exactly this failure.
+So breaking `.ci/nl2sql_run_config.yaml` or `.ci/nl2sql_smoke.evalset.json`
+breaks the pipeline even with a green unit suite. Renaming or removing a scorer
+key that config depends on is exactly this failure: the verifier reads its
+scorer list from the config, so a renamed key becomes a missing row.
 
 ## What to run during a review
 
