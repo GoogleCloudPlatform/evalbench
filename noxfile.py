@@ -2,6 +2,7 @@ from __future__ import absolute_import
 
 import nox
 
+
 @nox.session
 def unittests(session):
     session.run("uv", "pip", "install", ".")

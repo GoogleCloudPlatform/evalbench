@@ -19,4 +19,4 @@ jobs:
         sudo apt install pycodestyle -y
     - name: Run pycodestyle
       run: |
-        pycodestyle  evalbench --config=.pycodestyle
+        pycodestyle . --config=.pycodestyle
