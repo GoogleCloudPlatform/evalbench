@@ -26,12 +26,14 @@ from evaluator.mcp_readability.orchestrator import (
     DEFAULT_RUN_TAG,
     RUN_TAGS,
     McpReadabilityOrchestrator,
+    _endpoint_key,
     _run_tag,
     _validate_endpoint_type,
 )
 from mcp import types as mcp_types
 from generators.models.mcp_tools import McpToolsGenerator, McpToolsError
 from generators.models.mcp_tool_formatter import format_tools_to_man_page
+from scorers.mcp_fingerprint import toolset_fingerprint
 from scorers.mcp_readability_scoring import EndpointContext
 from scorers.mcp_style_readability import McpStyleReadabilityScorer
 from scorers.mcp_tool_metrics import McpToolMetricsScorer
@@ -428,6 +430,19 @@ def test_orchestrator_end_to_end():
             # This config declares no run_tag, so the row says ad-hoc rather
             # than leaving the reader to infer it from a blank.
             assert row["mcp_readability_run_tag"] == "adhoc"
+            # Identity columns are populated on every row, not only once
+            # something downstream reads them.
+            assert row["mcp_readability_endpoint_key"]
+            assert row["mcp_readability_check_timestamp_utc"].endswith("Z")
+            # The per-tool map covers exactly the tools the judge was shown,
+            # and the toolset hash is derived from it rather than separately.
+            fingerprints = json.loads(
+                row["mcp_readability_tool_fingerprints_json"]
+            )
+            assert set(fingerprints) == {"list_datasets", "get_job_state"}
+            assert row["mcp_readability_toolset_fingerprint"] == (
+                toolset_fingerprint(fingerprints)
+            )
 
             # scores_tf: one row per (endpoint, scorer).
             with open(scores_tf) as f:
@@ -606,3 +621,36 @@ def test_scores_flow_through_shared_analyzer():
     metrics = summary_df[summary_df["metric_name"] == "mcp_tool_metrics"].iloc[0]
     assert int(metrics["correct_results_count"]) == 2  # both within budget
     assert int(metrics["total_results_count"]) == 2
+
+
+# --------------------------------------------------------------------------
+# endpoint_key (the stable identity an endpoint's history hangs off)
+# --------------------------------------------------------------------------
+def test_endpoint_key_explicit_id_wins():
+    assert _endpoint_key(
+        {"id": "alloydb-prod"}, "AlloyDB", "http://x", "PROD"
+    ) == "alloydb-prod"
+
+
+def test_endpoint_key_is_derived_and_stable():
+    args = ({}, "AlloyDB", "http://x", "PROD")
+    assert _endpoint_key(*args) == _endpoint_key(*args)
+
+
+def test_endpoint_key_changes_with_each_identity_field():
+    base = _endpoint_key({}, "AlloyDB", "http://x", "PROD")
+    for variant in (
+        ({}, "Cloud SQL", "http://x", "PROD"),
+        ({}, "AlloyDB", "http://y", "PROD"),
+        ({}, "AlloyDB", "http://x", "STAGING"),
+    ):
+        assert _endpoint_key(*variant) != base
+
+
+def test_endpoint_key_explicit_id_survives_a_product_rename():
+    """The documented escape hatch: a rename must not orphan the history."""
+    assert _endpoint_key(
+        {"id": "pinned"}, "AlloyDB", "http://x", "PROD"
+    ) == _endpoint_key(
+        {"id": "pinned"}, "AlloyDB Omni", "http://x", "PROD"
+    )

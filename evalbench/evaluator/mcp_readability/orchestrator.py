@@ -28,6 +28,7 @@ CSV or BigQuery writes itself.
 
 import concurrent.futures
 import datetime
+import hashlib
 import json
 import logging
 import tempfile
@@ -35,6 +36,7 @@ import threading
 
 from evaluator.orchestrator import Orchestrator
 from generators.models import get_generator
+from scorers.mcp_fingerprint import tool_fingerprints, toolset_fingerprint
 from scorers.mcp_readability_scoring import EndpointContext
 from scorers.mcp_style_readability import McpStyleReadabilityScorer
 from scorers.mcp_tool_metrics import McpToolMetricsScorer
@@ -77,7 +79,15 @@ BASE_COLUMNS = [
     "mcp_readability_source_url",
     "mcp_readability_endpoint_type",
     "mcp_readability_check_timestamp",
+    # Unambiguous run ordering. The column above is naive local time, so rows
+    # written from different timezones interleave wrongly when sorted.
+    "mcp_readability_check_timestamp_utc",
     "mcp_readability_run_tag",
+    # Which endpoint this row is about, and the exact tool surface it was
+    # judged against.
+    "mcp_readability_endpoint_key",
+    "mcp_readability_toolset_fingerprint",
+    "mcp_readability_tool_fingerprints_json",
     "job_id",
 ]
 
@@ -255,17 +265,29 @@ class McpReadabilityOrchestrator(Orchestrator):
         row = self._base_row(product_name, endpoint_url, endpoint_type)
         row["mcp_readability_run_tag"] = self.run_tag
         row["job_id"] = self.job_id
+        row["mcp_readability_endpoint_key"] = _endpoint_key(
+            endpoint, product_name, endpoint_url, endpoint_type
+        )
 
         try:
             # 1. Fetch tools + render man-page markup.
             tools, man_page = self.tools_generator.fetch_tools(endpoint)
 
-            # 2. Exceptions (waivers) for this endpoint.
+            # 2. Fingerprint the tool surface this run was judged against.
+            fingerprints = tool_fingerprints(tools)
+            row["mcp_readability_toolset_fingerprint"] = toolset_fingerprint(
+                fingerprints
+            )
+            row["mcp_readability_tool_fingerprints_json"] = json.dumps(
+                fingerprints, sort_keys=True
+            )
+
+            # 3. Exceptions (waivers) for this endpoint.
             applicable = exceptions_mod.applicable_exceptions(
                 endpoint, self.all_exceptions
             )
 
-            # 3. Run every configured scorer against the shared context.
+            # 4. Run every configured scorer against the shared context.
             context = EndpointContext(
                 product_name=product_name,
                 endpoint=endpoint,
@@ -338,7 +360,37 @@ class McpReadabilityOrchestrator(Orchestrator):
             "mcp_readability_check_timestamp": (
                 datetime.datetime.now().isoformat()
             ),
+            "mcp_readability_check_timestamp_utc": (
+                datetime.datetime.now(datetime.timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z")
+            ),
             # Run-level, like job_id: filled in by the caller.
             "mcp_readability_run_tag": "",
+            # Per-endpoint, filled in once the tools have been fetched.
+            "mcp_readability_endpoint_key": "",
+            "mcp_readability_toolset_fingerprint": "",
+            "mcp_readability_tool_fingerprints_json": "",
             "job_id": "",
         }
+
+
+def _endpoint_key(
+    endpoint: dict,
+    product_name: str,
+    endpoint_url: str,
+    endpoint_type: str,
+) -> str:
+    """Return the stable identity for an endpoint's history.
+
+    Derived from the same identity fields the row already reports, so no config
+    change is needed. The cost is that renaming a product orphans its history.
+    Set an explicit id: on the endpoint to survive renames.
+    """
+    explicit = endpoint.get("id")
+    if explicit:
+        return str(explicit).strip()
+    raw = "|".join(
+        [product_name or "", endpoint_url or "", endpoint_type or ""]
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
