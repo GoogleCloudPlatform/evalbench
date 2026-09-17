@@ -41,6 +41,7 @@ def render_scores_for_prompt(scores_df):
         body = body[:SCORES_MAX_CHARS] + "\n... truncated ..."
     return body
 
+
 def get_summarizer(results_dir: str = None, dataset_name: str = None, model_config_path: str = None):
     """Loads the generator based on explicit parameter, run_config.yaml, dataset_models mapping, or viewer/config/summarizer_config.yaml fallback."""
     selected_config_path = model_config_path
@@ -88,6 +89,7 @@ def get_summarizer(results_dir: str = None, dataset_name: str = None, model_conf
     generator = get_generator(global_models, selected_config_path)
     return generator
 
+
 def summarize_eval_scoring(results_dir, dataset_name=None, model_config_path=None):
     """Reads evals.csv and scores.csv from results_dir and generates a summary using Gemini."""
     evals_path = os.path.join(results_dir, "evals.csv")
@@ -131,16 +133,16 @@ def summarize_eval_scoring(results_dir, dataset_name=None, model_config_path=Non
             generator = get_summarizer(results_dir=results_dir, dataset_name=dataset_name, model_config_path=model_config_path)
             client = generator.client
             model_name = generator.vertex_model
-        
+
         # Call Gemini directly to bypass sanitize_sql in generate_internal
         logger.info("Calling Gemini for summarization...")
-        
+
         import time
         from google.genai.errors import ClientError
-        
+
         max_retries = 5
         base_delay = 2
-        
+
         for attempt in range(max_retries):
             try:
                 response = client.models.generate_content(
@@ -162,11 +164,12 @@ def summarize_eval_scoring(results_dir, dataset_name=None, model_config_path=Non
         return f"Error during summarization: {e}"
     return "Error: Unable to generate summary."
 
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python summarizer.py <results_dir>")
         sys.exit(1)
-        
+
     results_dir = sys.argv[1]
     summary = summarize_eval_scoring(results_dir)
     print("\n=== Summary ===\n")
