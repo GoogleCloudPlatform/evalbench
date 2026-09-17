@@ -1,0 +1,132 @@
+# Weekly release pipeline -- Stages 0 to 5.
+#
+# Resolves the tested image from the Build trigger, runs the gRPC smoke gate
+# inside that image, and tags the immutable release.
+#
+# Shell variables use $$NAME and command substitutions use $$(...) so Cloud
+# Build passes them to bash unexpanded.
+
+steps:
+
+  # Stage 0: Verify that the Build trigger published the commit image.
+  - id: resolve-release
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -uo pipefail
+
+        if [[ -z "$COMMIT_SHA" || -z "$SHORT_SHA" ]]; then
+          echo "FAIL: COMMIT_SHA or SHORT_SHA is empty."
+          exit 1
+        fi
+
+        IMAGE="${_IMAGE_REPO}:$COMMIT_SHA"
+        echo "Resolving $$IMAGE"
+
+        DIGEST=$$(gcloud artifacts docker images describe "$$IMAGE" \
+          --format='value(image_summary.digest)' 2>/dev/null)
+        if [[ -z "$$DIGEST" ]]; then
+          echo "FAIL: no image at $$IMAGE"
+          exit 1
+        fi
+
+        # Use ISO week-year (%G) and ISO week (%V) to avoid year-boundary drift.
+        TAG="v$$(date -u +%G.%V).$SHORT_SHA"
+
+        echo "$$DIGEST" > /workspace/image_digest.txt
+        echo "$$TAG"    > /workspace/release_tag.txt
+        echo "digest = $$DIGEST"
+        echo "tag    = $$TAG"
+
+  # Stages 1-4: Start eval_server, run gRPC smoke eval, and verify scores.csv.
+  - id: smoke-gate
+    name: '${_IMAGE_REPO}:$COMMIT_SHA'
+    dir: '/evalbench'
+    waitFor: ['resolve-release']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -uo pipefail
+
+        # Add both module roots so eval_client and proto imports resolve.
+        export PYTHONPATH=/evalbench/evalbench:/evalbench/evalbench/evalproto
+
+        echo "===== start eval_server ====="
+        python evalbench/eval_server.py --localhost > /tmp/server.log 2>&1 &
+        SERVER_PID=$$!
+        trap 'kill $$SERVER_PID 2>/dev/null || true' EXIT
+
+        dump_log() {
+          echo "----- eval_server log, last 40 lines -----"
+          tail -40 /tmp/server.log
+        }
+
+        echo "===== wait for gRPC ====="
+        if ! python .ci/release/wait_for_grpc.py --timeout 300 --insecure; then
+          dump_log
+          exit 1
+        fi
+
+        echo "===== run the smoke eval over gRPC ====="
+        if ! EVALBENCH_HOST=localhost PORT=50051 EVALBENCH_INSECURE=true \
+          python evalbench/client/eval_client.py \
+            --endpoint=local \
+            --experiment=.ci/release/release_smoke_config.yaml; then
+          dump_log
+          exit 1
+        fi
+
+        # CsvReporter forces /tmp_session_files/results on the gRPC path.
+        echo "===== audit scores.csv ====="
+        if ! python .ci/release/verify_nl2sql_smoke.py \
+          --results-dir /tmp_session_files/results; then
+          dump_log
+          exit 1
+        fi
+
+        echo "===== smoke gate passed ====="
+    env:
+      - 'EVAL_GCP_PROJECT_ID=${_EVAL_PROJECT}'
+      - 'EVAL_GCP_PROJECT_REGION=${_EVAL_REGION}'
+      - 'GOOGLE_CLOUD_PROJECT=${_EVAL_PROJECT}'
+      - 'UV_CACHE_DIR=/tmp/uv-cache'
+
+  # Stage 5: Create the immutable release tag and promote test tag.
+  - id: tag-release
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    waitFor: ['smoke-gate']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        DIGEST=$$(cat /workspace/image_digest.txt)
+        TAG=$$(cat /workspace/release_tag.txt)
+        echo "Tagging ${_IMAGE_REPO}@$$DIGEST as :$$TAG"
+        gcloud artifacts docker tags add \
+          "${_IMAGE_REPO}@$$DIGEST" \
+          "${_IMAGE_REPO}:$$TAG"
+        echo "Release tag created: ${_IMAGE_REPO}:$$TAG"
+
+        if [[ -n "${_PROMOTE_TAG}" ]]; then
+          echo "Tagging ${_IMAGE_REPO}@$$DIGEST as :${_PROMOTE_TAG}"
+          gcloud artifacts docker tags add \
+            "${_IMAGE_REPO}@$$DIGEST" \
+            "${_IMAGE_REPO}:${_PROMOTE_TAG}"
+          echo "Promotion tag created: ${_IMAGE_REPO}:${_PROMOTE_TAG}"
+        fi
+
+substitutions:
+  _IMAGE_REPO: 'us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server'
+  _EVAL_PROJECT: 'cloud-db-nl2sql'
+  _EVAL_REGION: 'global'
+  _PROMOTE_TAG: 'latest-test'
+
+timeout: '1800s'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'

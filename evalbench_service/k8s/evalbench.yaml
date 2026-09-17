@@ -7,6 +7,10 @@ metadata:
     app: evalbench-eval-server
 spec:
   replicas: 1
+  # Use Recreate strategy because evalbench-ssd-pvc is ReadWriteOnce.
+  # RollingUpdate deadlocks when the new pod waits for the volume mount.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: evalbench-eval-server

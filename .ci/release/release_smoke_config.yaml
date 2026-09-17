@@ -1,0 +1,29 @@
+# Release smoke gate -- one-shot NL2SQL leg.
+# Uses sqlite only to avoid external database dependencies.
+# Paths are relative to /evalbench, the container WORKDIR.
+dataset_config: .ci/release/release_smoke.evalset.json
+
+database_configs:
+  - datasets/bat/db_configs/sqlite.yaml
+dialects:
+  - sqlite
+query_types:
+  - dql
+
+# Build db_blog from datasets/bat/setup/db_blog/sqlite/*.sql on every run.
+setup_directory: datasets/bat/setup
+
+model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+prompt_generator: 'SQLGenBasePromptGenerator'
+
+# verify_nl2sql_smoke.py enforces score > 0 for returned_sql and executable_sql.
+# exact_match and set_match check liveness only.
+scorers:
+  returned_sql: null
+  executable_sql: null
+  exact_match: null
+  set_match: null
+
+reporting:
+  csv:
+    output_directory: 'results/release/oneshot'
