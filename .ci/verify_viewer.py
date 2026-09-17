@@ -25,6 +25,16 @@ EXPECTED_MODULES = {"dashboard", "conversations"}
 # Tabs are state, not routes, so rendering the page once only covers the default.
 EXPECTED_TABS = ["Status", "List", "Charts", "Dataset Quality", "Compare"]
 
+# Compare is hidden until two evals are selected, and without them it draws an
+# error message rather than the comparison itself.
+TAB_STATE = {
+    "Compare": {
+        "compare_tab_visible": True,
+        "compare_evals": '["eval_a", "eval_b"]',
+        "ai_comparison": "comparison placeholder",
+    },
+}
+
 
 class ErrorLogCapture(logging.Handler):
     """Collects ERROR records.
@@ -77,7 +87,10 @@ def main():
             failures.append(f"{label} logged an error: {record.getMessage()}")
 
     def render_tab(tab):
-        me.state(viewer_app.State).selected_main_tab = tab
+        state = me.state(viewer_app.State)
+        state.selected_main_tab = tab
+        for field, value in TAB_STATE.get(tab, {}).items():
+            setattr(state, field, value)
         rt.run_path(ROOT_PAGE)
 
     def fire_on_load():
