@@ -1078,11 +1078,7 @@ class AgyCliGenerator(AgentCliGenerator):
         for call in tool_calls:
             raw_name = call["name"] or "unknown"
             raw_args = call["args"] or {}
-            # agy wraps every MCP invocation in the native ``call_mcp_tool``
-            # tool; the real server/tool identity and arguments live in the
-            # wrapper's args. Canonicalize to ``<server>__<tool>`` and surface
-            # the unwrapped arguments so trajectory/parameter scorers compare
-            # against the actual MCP call, not the wrapper envelope.
+            # Unwrap call_mcp_tool so scorers see <server>__<tool> and MCP args.
             is_mcp = parse_agy_mcp_tool_call(raw_name, raw_args) is not None
             tname = canonicalize_agy_tool_name(raw_name, raw_args)
             call_args = self._unwrap_agy_mcp_args(raw_args, is_mcp)

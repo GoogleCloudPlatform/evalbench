@@ -129,18 +129,9 @@ def canonicalize_gemini_tool_name(name: str) -> str:
     return canonical_tool_name(server, tool)
 
 
-# Antigravity (agy) does NOT expose MCP tools as ``mcp_<server>_<tool>``
-# top-level functions. Confirmed from the v1.0.5 binary: it has a single
-# native tool ``call_mcp_tool`` whose jsonschema is
-# ``{ServerName, ToolName, Arguments}`` -- the real server/tool identity
-# lives in the call *arguments*, not the tool name. So canonicalization
-# must unwrap those args rather than pattern-match the name.
+# Antigravity (agy) invokes MCP tools through the native ``call_mcp_tool``
+# wrapper with schema ``{ServerName, ToolName, Arguments}``.
 _AGY_MCP_WRAPPER = "call_mcp_tool"
-
-# The v1.0.5 schema is ``{ServerName, ToolName, Arguments}``. The Go struct
-# (confirmed in the agy binary) carries no ``json:`` tags -- only
-# ``jsonschema:"required"`` / ``jsonschema_description`` -- so the JSON property
-# names are exactly the Go field names. There are no casing variants to handle.
 _AGY_SERVER_KEY = "ServerName"
 _AGY_TOOL_KEY = "ToolName"
 
@@ -184,12 +175,8 @@ def parse_agy_mcp_tool_call(name: str, args: Optional[dict]):
 def canonicalize_agy_tool_name(name: str, args: Optional[dict] = None) -> str:
     """Convert an agy tool name to canonical form.
 
-    MCP calls arrive as the ``call_mcp_tool`` wrapper with the real
-    server/tool in ``args``; those are unwrapped to ``<server>__<tool>``.
-    Native agy tools (``run_command``, ``view_file``, ``write_to_file``,
-    ``grep_search``, ...) pass through unchanged. A ``call_mcp_tool``
-    whose args lack a usable server/tool pair is returned as-is so the
-    raw value stays visible for debugging.
+    Unwraps ``call_mcp_tool`` invocations to ``<server>__<tool>``. Native
+    tools and malformed ``call_mcp_tool`` calls return ``name`` unchanged.
     """
     parsed = parse_agy_mcp_tool_call(name, args)
     if parsed is None:
