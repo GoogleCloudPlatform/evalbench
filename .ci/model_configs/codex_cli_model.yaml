@@ -1,0 +1,23 @@
+codex_cli_version: "@openai/codex@latest"
+generator: codex_cli
+model: "gpt-5.5"
+
+openai_api_key_secret: !ENV projects/${EVAL_GCP_PROJECT_ID}/secrets/openai-api-key/versions/2
+
+# Codex reports token counts but no cost; these rates turn them into cost_usd.
+pricing:
+  input_per_million_usd:        1.25
+  cached_input_per_million_usd: 0.125
+  output_per_million_usd:       10.0
+
+env:
+  GOOGLE_CLOUD_PROJECT: !ENV ${EVAL_GCP_PROJECT_ID}
+  GOOGLE_CLOUD_LOCATION: "us-central1"
+
+setup:
+  mcp_servers:
+    "cloud-sql":
+      httpUrl: "https://sqladmin.googleapis.com/mcp"
+      authProviderType: google_credentials
+      headers:
+        X-Goog-User-Project: !ENV ${EVAL_GCP_PROJECT_ID}
