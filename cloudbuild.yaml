@@ -1,4 +1,5 @@
-# Building deployer image
+# Pre-merge gate: unit tests, image build, a real NL2SQL eval, then the
+# verifier that grades it.
 steps:
 - name: 'python:3.11'
   entrypoint: 'bash'
@@ -13,7 +14,6 @@ steps:
   - 'PYTHONPATH=evalbench:.'
   - 'SKIP_CLOUD_TESTS=true'
 - name: 'gcr.io/cloud-builders/docker'
-
   args: ['build', '-t', 'us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:$COMMIT_SHA', '-f', 'evalbench_service/Dockerfile', '.']
 - name: 'us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:$COMMIT_SHA'
   dir: '/evalbench'
@@ -28,7 +28,7 @@ steps:
     path: '/evalbench/results'
 - name: 'us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:$COMMIT_SHA'
   dir: '/evalbench'
-  args: ['uv', 'run', 'python', 'verifier/verify.py']
+  args: ['uv', 'run', 'python', '.ci/verify_nl2sql.py']
   volumes:
   - name: 'eval_results'
     path: '/evalbench/results'
@@ -37,6 +37,8 @@ images:
 substitutions:
   _VAR_PROJECT: "cloud-db-nl2sql"
   _VAR_REGION: "us-central1"
-  _VAR_EVAL_CONFIG: "datasets/bat/example_run_config.yaml"
+  _VAR_EVAL_CONFIG: ".ci/nl2sql_run_config.yaml"
 options:
   defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
+# The eval step alone runs for minutes, well past the 10 minute default.
+timeout: 1800s

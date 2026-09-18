@@ -1,0 +1,257 @@
+[
+  {
+    "id": 9,
+    "nl_prompt": "Can you find all the users who have not made any posts?",
+    "query_type": "dql",
+    "database": "db_blog",
+    "dialects": [
+      "sqlite"
+    ],
+    "golden_sql": {
+      "sqlite": [
+        "SELECT u.user_id FROM tbl_users u LEFT JOIN tbl_posts p ON u.user_id = p.user_id WHERE p.post_id IS NULL;"
+      ]
+    },
+    "eval_query": {
+      "sqlite": [
+        null
+      ]
+    },
+    "setup_sql": {},
+    "cleanup_sql": {},
+    "tags": [
+      "DQL",
+      "difficulty: simple",
+      "SELECT",
+      "LEFT_JOIN"
+    ]
+  },
+  {
+    "id": 16,
+    "nl_prompt": "How many followers does each user have?",
+    "query_type": "dql",
+    "database": "db_blog",
+    "dialects": [
+      "sqlite"
+    ],
+    "golden_sql": {
+      "sqlite": [
+        "SELECT tbl_users.user_id, COUNT(tbl_followers.follower_id) AS follower_count FROM tbl_users LEFT JOIN tbl_followers ON tbl_users.user_id = tbl_followers.following_id GROUP BY tbl_users.user_id;"
+      ]
+    },
+    "eval_query": {
+      "sqlite": [
+        null
+      ]
+    },
+    "setup_sql": {},
+    "cleanup_sql": {},
+    "tags": [
+      "DQL",
+      "difficulty: simple",
+      "SELECT",
+      "JOIN",
+      "AGGREGATE",
+      "LEFT_JOIN"
+    ]
+  },
+  {
+    "id": 100,
+    "nl_prompt": "Identify which is the most active hour of the day across all users",
+    "query_type": "dql",
+    "database": "db_blog",
+    "dialects": [
+      "sqlite"
+    ],
+    "golden_sql": {
+      "sqlite": [
+        "SELECT strftime('%H', activity_timestamp) AS active_hour, COUNT(*) AS activity_count FROM tbl_user_activity GROUP BY active_hour ORDER BY activity_count DESC LIMIT 1;"
+      ]
+    },
+    "eval_query": {
+      "sqlite": [
+        null
+      ]
+    },
+    "setup_sql": {},
+    "cleanup_sql": {},
+    "tags": [
+      "DQL",
+      "difficulty: moderate",
+      "SELECT",
+      "EXTRACT",
+      "AGGREGATE",
+      "SORT",
+      "LIMIT",
+      "HOUR",
+      "time"
+    ]
+  },
+  {
+    "id": 180,
+    "nl_prompt": "Which posts have tags related to both 'programming' and 'database' ?",
+    "query_type": "dql",
+    "database": "db_blog",
+    "dialects": [
+      "sqlite"
+    ],
+    "golden_sql": {
+      "sqlite": [
+        "SELECT * FROM tbl_posts WHERE EXISTS (SELECT 1 FROM json_each(tags) WHERE value IN ('programming', 'database'));"
+      ]
+    },
+    "eval_query": {
+      "sqlite": [
+        null
+      ]
+    },
+    "setup_sql": {},
+    "cleanup_sql": {},
+    "tags": [
+      "DQL",
+      "difficulty: simple",
+      "SELECT",
+      "JSON",
+      "difficulty: moderate",
+      "JSON_CONTAINS"
+    ]
+  },
+  {
+    "id": 42,
+    "nl_prompt": "Can you update my username to 'magic_one' -- user_id = 9;",
+    "query_type": "dml",
+    "database": "db_blog",
+    "dialects": [
+      "sqlite"
+    ],
+    "golden_sql": {
+      "sqlite": [
+        "UPDATE tbl_users SET username = 'magic_one', updated_at = CURRENT_TIMESTAMP WHERE user_id = 9;"
+      ]
+    },
+    "eval_query": {
+      "sqlite": [
+        "SELECT username, updated_at, updated_at > '2024-02-27 07:27:14' AS is_updated FROM tbl_users WHERE user_id = 9;"
+      ]
+    },
+    "setup_sql": {
+      "sqlite": []
+    },
+    "cleanup_sql": {
+      "sqlite": [
+        "UPDATE tbl_users SET username = 'sophia.anderson', updated_at = '2024-02-27 07:26:14' WHERE user_id = 9;"
+      ]
+    },
+    "tags": [
+      "DML",
+      "difficulty: moderate",
+      "UPDATE"
+    ]
+  },
+  {
+    "id": 184,
+    "nl_prompt": "Update the post content in tbl_posts -- post_id = 3, new content should be 'Updated content'",
+    "query_type": "dml",
+    "database": "db_blog",
+    "dialects": [
+      "sqlite"
+    ],
+    "golden_sql": {
+      "sqlite": [
+        "UPDATE tbl_posts SET content = 'Updated content' WHERE post_id = 3;"
+      ]
+    },
+    "eval_query": {
+      "sqlite": [
+        "SELECT content FROM tbl_posts WHERE post_id = 3;"
+      ]
+    },
+    "setup_sql": {
+      "sqlite": [
+        "UPDATE tbl_posts SET content = 'Tips and tricks for efficient web development.' WHERE post_id = 3;"
+      ]
+    },
+    "cleanup_sql": {
+      "sqlite": [
+        "UPDATE tbl_posts SET content = 'Tips and tricks for efficient web development.' WHERE post_id = 3;"
+      ]
+    },
+    "tags": [
+      "DML",
+      "difficulty: simple",
+      "UPDATE"
+    ]
+  },
+  {
+    "id": 185,
+    "nl_prompt": "Rename the content column in the tbl_posts table to post_content",
+    "query_type": "ddl",
+    "database": "db_blog",
+    "dialects": [
+      "sqlite"
+    ],
+    "golden_sql": {
+      "sqlite": [
+        "ALTER TABLE tbl_posts RENAME COLUMN content TO post_content;"
+      ]
+    },
+    "eval_query": {
+      "sqlite": [
+        "SELECT post_content FROM tbl_posts;"
+      ]
+    },
+    "setup_sql": {
+      "sqlite": [
+        "ALTER TABLE tbl_posts RENAME COLUMN post_content TO content;"
+      ]
+    },
+    "cleanup_sql": {
+      "sqlite": [
+        "ALTER TABLE tbl_posts RENAME COLUMN post_content TO content;"
+      ]
+    },
+    "tags": [
+      "DDL",
+      "difficulty: simple",
+      "ALTER",
+      "RENAME"
+    ]
+  },
+  {
+    "id": 256,
+    "nl_prompt": "Add a Generated Column full_name to tbl_users. -- Store first name and last name concatenated",
+    "query_type": "ddl",
+    "database": "db_blog",
+    "dialects": [
+      "sqlite"
+    ],
+    "golden_sql": {
+      "sqlite": [
+        "ALTER TABLE tbl_users ADD COLUMN full_name TEXT GENERATED ALWAYS AS (first_name || ' ' || last_name) VIRTUAL;"
+      ]
+    },
+    "eval_query": {
+      "sqlite": [
+        "SELECT COUNT(*) FROM pragma_table_info('tbl_users') WHERE name = 'full_name';"
+      ]
+    },
+    "setup_sql": {
+      "sqlite": [
+        "BEGIN TRANSACTION; CREATE TABLE tbl_users_new (user_id INTEGER PRIMARY KEY, first_name TEXT, last_name TEXT, username TEXT, password_hash TEXT, social_media_links TEXT, contact_info TEXT, avatar_url TEXT, bio TEXT, website TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, notification_preferences TEXT, role_id INTEGER, last_login TIMESTAMP, active INTEGER); INSERT INTO tbl_users_new (user_id, first_name, last_name, username, password_hash, social_media_links, contact_info, avatar_url, bio, website, created_at, updated_at, notification_preferences, role_id, last_login, active) SELECT user_id, first_name, last_name, username, password_hash, social_media_links, contact_info, avatar_url, bio, website, created_at, updated_at, notification_preferences, role_id, last_login, active FROM tbl_users; DROP TABLE tbl_users; ALTER TABLE tbl_users_new RENAME TO tbl_users; COMMIT;"
+      ]
+    },
+    "cleanup_sql": {
+      "sqlite": [
+        "BEGIN TRANSACTION; CREATE TABLE tbl_users_new (user_id INTEGER PRIMARY KEY, first_name TEXT, last_name TEXT, username TEXT, password_hash TEXT, social_media_links TEXT, contact_info TEXT, avatar_url TEXT, bio TEXT, website TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, notification_preferences TEXT, role_id INTEGER, last_login TIMESTAMP, active INTEGER); INSERT INTO tbl_users_new (user_id, first_name, last_name, username, password_hash, social_media_links, contact_info, avatar_url, bio, website, created_at, updated_at, notification_preferences, role_id, last_login, active) SELECT user_id, first_name, last_name, username, password_hash, social_media_links, contact_info, avatar_url, bio, website, created_at, updated_at, notification_preferences, role_id, last_login, active FROM tbl_users; DROP TABLE tbl_users; ALTER TABLE tbl_users_new RENAME TO tbl_users; COMMIT;"
+      ]
+    },
+    "tags": [
+      "DDL",
+      "difficulty: moderate",
+      "ALTER",
+      "ADD_COLUMN",
+      "CONCAT",
+      "SORT"
+    ]
+  }
+]

@@ -184,7 +184,7 @@ Then, if the diff touches anything in the table below:
 | Concurrency, memory, caching | Fits 20 CPU / 80Gi on GKE *and* 4 CPU / 8Gi on Cloud Run? |
 | `k8s/*.yaml` | Was the parallel `*-test.yaml` updated too? `kubectl apply --dry-run=client` clean? |
 | A new GCP API call | Needs an IAM grant on `evalbench@cloud-db-nl2sql.iam.gserviceaccount.com` — not inferable from the diff, so say it. |
-| A scorer key or dataset used by `datasets/bat/example_run_config.yaml` | Cloud Build runs a real eval with that config and gates on `verifier/verify.py`. |
+| A scorer key or dataset used by `.ci/nl2sql_run_config.yaml` | Cloud Build runs a real eval with that config and gates on `.ci/verify_nl2sql.py`, which reads its scorer list from the config. |
 | `.git` access at runtime | `.dockerignore` excludes `.git`; `GitPython` code works locally and raises in the image. |
 
 Two standing traps worth checking on any infra-adjacent change: the HPA scales
