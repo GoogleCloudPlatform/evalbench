@@ -1,0 +1,38 @@
+{
+  "scenarios": [
+    {
+      "id": "agy-csql-admin-debug-instance",
+      "starting_prompt": "Check on my databases in project ${EVAL_GCP_PROJECT_ID}.",
+      "conversation_plan": "Ask the agent to list all Cloud SQL instances in the project. Once all instances are listed, pick one and ask the agent to get its details. Acceptance criteria: the agent names the instances it found, and for the one picked reports its state verbatim (for example RUNNABLE) rather than describing it in general terms.",
+      "expected_trajectory": [
+        "list_instances",
+        "get_instance"
+      ],
+      "expected_skills": [
+        "cloud-sql-postgres-admin"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "${EVAL_GCP_PROJECT_ID}"
+      },
+      "kind": "tools",
+      "max_turns": 3
+    },
+    {
+      "id": "agy-csql-data-schema-explore",
+      "starting_prompt": "I want to understand the structure of my database.",
+      "conversation_plan": "First, ask the agent to list the schemas in the configured database. After the agent provides the schemas, ask it to list the tables specifically for the 'public' schema. The instance and database are pre-configured via environment variables, so do not supply them. Acceptance criteria: the agent lists the schemas it found including 'public', and then either names the tables in 'public' or states plainly that it has none. Asking for an instance or database name is a failure.",
+      "expected_trajectory": [
+        "list_schemas",
+        "list_tables"
+      ],
+      "expected_skills": [
+        "cloud-sql-postgres-data"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "${EVAL_GCP_PROJECT_ID}"
+      },
+      "kind": "tools",
+      "max_turns": 3
+    }
+  ]
+}

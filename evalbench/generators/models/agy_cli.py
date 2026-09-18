@@ -2,6 +2,7 @@ from .agent_cli import AgentCliGenerator
 from .tool_naming import canonicalize_agy_tool_name, parse_agy_mcp_tool_call
 import subprocess
 import os
+import glob
 import json
 import logging
 import re
@@ -25,6 +26,10 @@ ADC_AUTH_ENV_VAR = "AGY_ADC_AUTH"
 
 # Read-only secret mount in the GKE pod; the only ADC a pod carries on disk.
 GKE_SA_KEY_PATH = "/etc/evalbench-sa-key/key.json"
+
+# `<...>/skills/<name>/<file>`. The trailing segment is required so that
+# listing the skills root is not read as activation.
+_SKILL_PATH_PATTERN = re.compile(r"/skills/([^/\s\"']+)/[^\s\"']")
 
 
 def _shred_credential(path: str) -> None:
@@ -1199,25 +1204,35 @@ class AgyCliGenerator(AgentCliGenerator):
             return []
 
     def extract_skills(self, stdout: str) -> list:
-        """Extracts activated skill names from the activate_skill tool."""
+        """Extracts activated skill names from paths in the turn's tool calls.
+
+        agy has no skill tool. A skill is activated by reading its SKILL.md and
+        re-used by running its scripts, so both show up only as a path.
+        """
         output_json = self.parse_response(stdout)
         try:
             by_name = output_json["stats"]["tools"]["byName"]
-            activate_calls = by_name.get("activate_skill", {})
-            parameters_list = activate_calls.get("parameters", [])
-            skills = []
-            for params in parameters_list:
-                skill_name = (
-                    params.get("skill_name")
-                    or params.get("skillName")
-                    or params.get("skill")
-                    or params.get("name")
-                )
-                if skill_name and skill_name not in skills:
-                    skills.append(skill_name)
-            return skills
         except (KeyError, TypeError):
             return []
+
+        installed = self._installed_skills()
+        skills = []
+        for tool_stats in by_name.values():
+            for params in tool_stats.get("parameters") or []:
+                for value in params.values():
+                    if not isinstance(value, str):
+                        continue
+                    for name in _SKILL_PATH_PATTERN.findall(value):
+                        if name in installed and name not in skills:
+                            skills.append(name)
+        return skills
+
+    def _installed_skills(self) -> set:
+        """Skill directory names carried by the sandbox's installed plugins."""
+        pattern = os.path.join(
+            self.config_dir, "plugins", "*", "skills", "*", "SKILL.md")
+        return {os.path.basename(os.path.dirname(p))
+                for p in glob.glob(pattern)}
 
     def safe_generate(
         self, cli_cmd: CLICommand, timeout_seconds: Optional[float] = None

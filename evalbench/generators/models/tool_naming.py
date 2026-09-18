@@ -186,8 +186,8 @@ def canonicalize_agy_tool_name(name: str, args: Optional[dict] = None) -> str:
 
     MCP calls arrive as the ``call_mcp_tool`` wrapper with the real
     server/tool in ``args``; those are unwrapped to ``<server>__<tool>``.
-    Native agy tools (``run_command``, ``read_file``, ``write_to_file``,
-    ``activate_skill``, ...) pass through unchanged. A ``call_mcp_tool``
+    Native agy tools (``run_command``, ``view_file``, ``write_to_file``,
+    ``grep_search``, ...) pass through unchanged. A ``call_mcp_tool``
     whose args lack a usable server/tool pair is returned as-is so the
     raw value stays visible for debugging.
     """
