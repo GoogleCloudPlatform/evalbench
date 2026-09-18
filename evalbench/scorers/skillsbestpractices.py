@@ -22,7 +22,6 @@ _SKILL_ROOT_PATTERNS = (
     os.path.join(".codex", "skills"),
     os.path.join(".gemini", "skills"),
     os.path.join(".claude", "skills"),
-    os.path.join(".codex", "plugins", "*", "skills"),
     os.path.join(".gemini", "config", "plugins", "*", "skills"),
     os.path.join(".claude", "plugins", "marketplaces", "*", "skills"),
 )

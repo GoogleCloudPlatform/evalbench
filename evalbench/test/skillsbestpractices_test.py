@@ -14,7 +14,6 @@ SKILL = "cloud-sql-postgres-admin"
 # Where each harness installs skills, relative to its own fake_home.
 HARNESS_LAYOUTS = {
     "codex": os.path.join(".codex", "skills"),
-    "codex-plugin": os.path.join(".codex", "plugins", "cloud-sql", "skills"),
     "gemini": os.path.join(".gemini", "skills"),
     "agy": os.path.join(".gemini", "config", "plugins", "cloud-sql", "skills"),
     "claude": os.path.join(
