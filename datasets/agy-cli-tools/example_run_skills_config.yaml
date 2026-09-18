@@ -16,7 +16,10 @@ scorers:
   # trajectory_matcher and parameter_analysis are omitted: the agent activates
   # high-level skills rather than invoking granular tools directly.
   skills_trajectory:
-    enforce_order: false
+    # Score recall only. A skill counts as activated once the agent reads its
+    # SKILL.md, so an extra skill means the agent browsed it, not that it
+    # answered wrongly.
+    allow_extra_skills: true
   skills_best_practices:
     model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
   goal_completion:
