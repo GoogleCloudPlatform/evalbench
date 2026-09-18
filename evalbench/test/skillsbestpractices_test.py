@@ -62,6 +62,19 @@ class SkillsBestPracticesRootsTest(unittest.TestCase):
 
         self.assertIsNone(found)
 
+    def test_resolves_claude_marketplace_skills(self):
+        claude_home = os.path.join(self.tmp.name, "fake_home_claude")
+        root = os.path.join(claude_home, ".claude", "plugins", "marketplaces",
+                            "cloud-sql", "skills")
+        expected = _write_skill(root, "cloud-sql-postgres-admin")
+        scorer = _make_scorer()
+
+        roots = scorer._resolve_skill_roots(claude_home)
+
+        self.assertEqual(roots, [root])
+        self.assertEqual(
+            scorer._find_skill_md("cloud-sql-postgres-admin", roots), expected)
+
     def test_explicit_skills_dir_wins(self):
         scorer = _make_scorer(skills_dir=self.codex_root)
         self.assertEqual(scorer._resolve_skill_roots(self.agy_home),
