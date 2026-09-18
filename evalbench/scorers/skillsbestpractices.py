@@ -15,12 +15,14 @@ from scorers import comparator
 from generators.models import get_generator
 from .prompt.skillsbestpractices import SKILLS_BEST_PRACTICES_PROMPT
 
-# Skill roots relative to a generator's fake_home. agy and claude install
-# skills one directory per plugin/marketplace, hence the globs.
+# Skill roots relative to a generator's fake_home, one entry per layout a
+# generator installs into. The globs cover the harnesses that keep one
+# directory per plugin or marketplace.
 _SKILL_ROOT_PATTERNS = (
     os.path.join(".codex", "skills"),
     os.path.join(".gemini", "skills"),
     os.path.join(".claude", "skills"),
+    os.path.join(".codex", "plugins", "*", "skills"),
     os.path.join(".gemini", "config", "plugins", "*", "skills"),
     os.path.join(".claude", "plugins", "marketplaces", "*", "skills"),
 )
