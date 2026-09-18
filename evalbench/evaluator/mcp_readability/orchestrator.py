@@ -35,6 +35,7 @@ import threading
 
 from evaluator.orchestrator import Orchestrator
 from generators.models import get_generator
+from scorers.mcp_fingerprint import tool_fingerprints
 from scorers.mcp_readability_scoring import EndpointContext
 from scorers.mcp_style_readability import McpStyleReadabilityScorer
 from scorers.mcp_tool_metrics import McpToolMetricsScorer
@@ -78,6 +79,8 @@ BASE_COLUMNS = [
     "mcp_readability_endpoint_type",
     "mcp_readability_check_timestamp",
     "mcp_readability_run_tag",
+    # The exact tool surface this row was judged against, as a sha256 per tool.
+    "mcp_readability_tool_fingerprints_json",
     "job_id",
 ]
 
@@ -260,12 +263,17 @@ class McpReadabilityOrchestrator(Orchestrator):
             # 1. Fetch tools + render man-page markup.
             tools, man_page = self.tools_generator.fetch_tools(endpoint)
 
-            # 2. Exceptions (waivers) for this endpoint.
+            # 2. Fingerprint the tool surface this run was judged against.
+            row["mcp_readability_tool_fingerprints_json"] = json.dumps(
+                tool_fingerprints(tools), sort_keys=True
+            )
+
+            # 3. Exceptions (waivers) for this endpoint.
             applicable = exceptions_mod.applicable_exceptions(
                 endpoint, self.all_exceptions
             )
 
-            # 3. Run every configured scorer against the shared context.
+            # 4. Run every configured scorer against the shared context.
             context = EndpointContext(
                 product_name=product_name,
                 endpoint=endpoint,
@@ -340,5 +348,7 @@ class McpReadabilityOrchestrator(Orchestrator):
             ),
             # Run-level, like job_id: filled in by the caller.
             "mcp_readability_run_tag": "",
+            # Filled in once the tools have been fetched.
+            "mcp_readability_tool_fingerprints_json": "",
             "job_id": "",
         }
