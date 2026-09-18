@@ -195,7 +195,10 @@ class SkillsBestPractices(comparator.Comparator):
         except (json.JSONDecodeError, TypeError):
             return 0.0, "Invalid or missing eval result context."
 
-        accumulated_skills = context.get("accumulated_skills", []) or []
+        # A skill appears in accumulated_skills once per turn it was used in.
+        # Every entry names the same SKILL.md, so grade it once.
+        accumulated_skills = list(
+            dict.fromkeys(context.get("accumulated_skills", []) or []))
 
         if not accumulated_skills:
             return 100.0, "No skills were activated; best practices check skipped."

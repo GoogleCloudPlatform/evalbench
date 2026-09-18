@@ -1,5 +1,6 @@
 """Unit tests for SkillsBestPractices skill-root resolution."""
 
+import json
 import os
 import sys
 import tempfile
@@ -81,6 +82,32 @@ class SkillsBestPracticesRootsTest(unittest.TestCase):
 
     def test_missing_fake_home_yields_no_roots(self):
         self.assertEqual(_make_scorer()._resolve_skill_roots(None), [])
+
+
+class SkillsBestPracticesDedupeTest(unittest.TestCase):
+
+    def test_repeated_skill_is_graded_once(self):
+        """A skill lands in accumulated_skills once per turn it was used in.
+        Grading each entry would spend an extra LLM call and weight that skill
+        twice in the mean."""
+        scorer = _make_scorer(skills_dir="/unused")
+        graded = []
+        scores = {"admin": 60.0, "lifecycle": 90.0}
+
+        def fake_score(skill_name, skills_roots):
+            graded.append(skill_name)
+            return scores[skill_name], "stub"
+
+        scorer._score_skill = fake_score
+        context = json.dumps(
+            {"accumulated_skills": ["admin", "lifecycle", "admin"]})
+
+        score, _ = scorer.compare(
+            None, None, None, None, None, None, None, None, context, None)
+
+        self.assertEqual(graded, ["admin", "lifecycle"])
+        # Mean of the two distinct skills, not (60 + 90 + 60) / 3.
+        self.assertEqual(score, 75.0)
 
 
 if __name__ == "__main__":
