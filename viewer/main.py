@@ -2336,9 +2336,7 @@ def render_app_content():
                             s = me.state(State)
                             s.conversation_index = target_idx
 
-                        handler_name = f"select_conversation_{target_idx}"
-                        handler.__name__ = handler_name
-                        globals()[handler_name] = handler
+                        handler.__name__ = f"select_conversation_{target_idx}"
                         return handler
 
                     conversations.conversations_component(

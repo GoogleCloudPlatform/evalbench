@@ -5,15 +5,33 @@ from typing import Callable
 import logging
 
 
-PERCENTAGE_METRICS = {
-    "goal_completion",
-    "trajectory_matcher",
-    "parameter_analysis",
-    "behavioral_metrics",
-    "exact_match",
-    "executable",
-    "llmrater",
+COUNTER_METRICS = {
+    "turn_count",
+    "agent_steps",
+    "end_to_end_latency",
+    "tool_call_latency",
+    "token_consumption",
+    "tokens_processed",
+    "effective_billed_tokens",
 }
+
+COUNTER_UNITS = {
+    "ms",
+    "s",
+    "tokens",
+    "turns",
+    "steps",
+    "count",
+    "bytes",
+}
+
+
+def _is_percentage_metric(comp: str, unit: str) -> bool:
+    if unit == "%":
+        return True
+    if comp in COUNTER_METRICS or unit in COUNTER_UNITS:
+        return False
+    return bool(comp)
 
 
 def _get_conversation_status(
@@ -25,9 +43,9 @@ def _get_conversation_status(
         tuple[str, list[str]]: (status, list_of_failed_metric_strings)
         status is one of:
         - "red": goal_completion < 100%
-        - "yellow": goal_completion == 100% (or N/A), but another percentage metric < 100%
+        - "yellow": goal_completion == 100% (or N/A), but another evaluative metric < 100%
         - "green": all evaluated percentage metrics == 100%
-        - "neutral": no scores available
+        - "neutral": no evaluative scores available
     """
     if scores_df is None or scores_df.empty or "id" not in scores_df.columns:
         return "neutral", []
@@ -38,12 +56,15 @@ def _get_conversation_status(
 
     has_goal_completion_fail = False
     has_other_fail = False
+    has_any_eval_metric = False
     failed_details = []
 
     for _, s_row in row_scores.iterrows():
         comp = str(s_row.get("comparator", "")).strip()
         raw_score = s_row.get("score", None)
         unit = str(s_row.get("unit", "")).strip()
+        if unit == "nan":
+            unit = ""
 
         if pd.isna(raw_score):
             continue
@@ -52,10 +73,10 @@ def _get_conversation_status(
         except (ValueError, TypeError):
             continue
 
-        is_pct = comp in PERCENTAGE_METRICS or unit == "%"
-        if not is_pct:
+        if not _is_percentage_metric(comp, unit):
             continue
 
+        has_any_eval_metric = True
         if val < 100.0:
             failed_details.append(f"{comp}: {val:.0f}%")
             if comp == "goal_completion":
@@ -67,7 +88,9 @@ def _get_conversation_status(
         return "red", failed_details
     if has_other_fail:
         return "yellow", failed_details
-    return "green", []
+    if has_any_eval_metric:
+        return "green", []
+    return "neutral", []
 
 
 def conversations_component(
@@ -256,17 +279,20 @@ def conversations_component(
                                         style=me.Style(font_size="12px", color="#475569"),
                                     )
 
-                        # Pill buttons row
+                        # Pill buttons row (wraps ~32 pills per row; scrolls cleanly if >120 conversations)
                         with me.box(
                             style=me.Style(
                                 display="flex",
                                 flex_direction="row",
                                 flex_wrap="wrap",
                                 gap="6px",
+                                max_height="160px",
+                                overflow_y="auto",
+                                padding=me.Padding.symmetric(vertical="2px"),
                             )
                         ):
                             for i in range(total):
-                                st_color, _, _ = statuses[i]
+                                st_color, st_details, st_eval_id = statuses[i]
                                 is_active = i == idx
 
                                 if st_color == "red":
@@ -293,33 +319,43 @@ def conversations_component(
                                     else "none"
                                 )
 
-                                click_fn = on_select(i) if on_select else None
-                                me.button(
-                                    str(i + 1),
-                                    on_click=click_fn,
-                                    disabled=(click_fn is None),
-                                    style=me.Style(
-                                        min_width="36px",
-                                        height="32px",
-                                        padding=me.Padding.symmetric(
-                                            vertical="4px", horizontal="8px"
-                                        ),
-                                        background=bg,
-                                        color=fg,
-                                        font_weight="700" if is_active else "600",
-                                        font_size="13px",
-                                        border_radius="6px",
-                                        border=me.Border.all(
-                                            me.BorderSide(
-                                                width=bdr_width,
-                                                color=bdr_col,
-                                                style="solid",
-                                            )
-                                        ),
-                                        box_shadow=shadow,
-                                        cursor="pointer",
-                                    ),
+                                tooltip_msg = (
+                                    f"ID: {st_eval_id} ({', '.join(st_details)})"
+                                    if st_details
+                                    else f"ID: {st_eval_id}"
                                 )
+                                click_fn = on_select(i) if on_select else None
+                                with me.tooltip(
+                                    message=tooltip_msg, position="above"
+                                ):
+                                    me.button(
+                                        str(i + 1),
+                                        on_click=click_fn,
+                                        disabled=(click_fn is None),
+                                        style=me.Style(
+                                            min_width="36px",
+                                            height="32px",
+                                            padding=me.Padding.symmetric(
+                                                vertical="4px", horizontal="8px"
+                                            ),
+                                            background=bg,
+                                            color=fg,
+                                            font_weight=(
+                                                "700" if is_active else "600"
+                                            ),
+                                            font_size="13px",
+                                            border_radius="6px",
+                                            border=me.Border.all(
+                                                me.BorderSide(
+                                                    width=bdr_width,
+                                                    color=bdr_col,
+                                                    style="solid",
+                                                )
+                                            ),
+                                            box_shadow=shadow,
+                                            cursor="pointer",
+                                        ),
+                                    )
 
                     # Navigation header
                     with me.box(
@@ -589,11 +625,13 @@ def conversations_component(
                                                     if not unit or str(unit) == "nan":
                                                         if comparator in ("end_to_end_latency", "tool_call_latency"):
                                                             unit = "ms"
-                                                        elif comparator == "token_consumption":
+                                                        elif comparator in ("token_consumption", "tokens_processed", "effective_billed_tokens"):
                                                             unit = "tokens"
                                                         elif comparator == "turn_count":
                                                             unit = "turns"
-                                                        elif comparator in PERCENTAGE_METRICS:
+                                                        elif comparator == "agent_steps":
+                                                            unit = "steps"
+                                                        elif _is_percentage_metric(str(comparator), ""):
                                                             unit = "%"
                                                     logs = score_row.get(
                                                         "comparison_logs", ""
