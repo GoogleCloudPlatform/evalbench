@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Imports every module in the installed evalbench wheel.
+"""Imports every module in the installed evalbench distribution.
 
-Run from outside the repo, against a virtualenv holding only the wheel:
+Run from outside the repo, against a virtualenv holding only the built
+wheel or sdist:
 
-    /tmp/pkgcheck/bin/python /path/to/repo/.ci/verify_package.py
+    /tmp/wheelcheck/bin/python /path/to/repo/.ci/verify_package.py
 """
 import importlib
 import pkgutil
@@ -18,14 +19,14 @@ def main():
     try:
         import evalbench
     except Exception as e:
-        print(f"FAIL: the wheel cannot be imported at all -- "
+        print(f"FAIL: the package cannot be imported at all -- "
               f"{type(e).__name__}: {e}")
         return 1
 
     origin = evalbench.__file__ or ""
     if "site-packages" not in origin:
         print(f"FAIL: evalbench resolved to {origin}, which is not an "
-              f"installed wheel. Run this from outside the repo.")
+              f"installed package. Run this from outside the repo.")
         return 1
 
     failures = []
@@ -57,12 +58,12 @@ def main():
         failures.append((name, "ImportError", "failed while listing submodules"))
 
     if failures:
-        print(f"\n{len(failures)} module(s) failed to import from the wheel:")
+        print(f"\n{len(failures)} module(s) failed to import from the package:")
         for name, exc, detail in sorted(failures):
             print(f"  {name}: {exc}: {detail}")
         return 1
 
-    print("Wheel is importable.")
+    print("Package is importable.")
     return 0
 
 

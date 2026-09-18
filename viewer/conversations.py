@@ -188,7 +188,7 @@ def conversations_component(
                                                             font_size="14px",
                                                         ),
                                                     )
-                                                
+
                                                 if stats_str:
                                                     with me.expansion_panel(title="Stats", expanded=False):
                                                         me.code(stats_str)
@@ -221,7 +221,7 @@ def conversations_component(
                                         conversation_plan = scenario_data.get("conversation_plan", "")
                                     except Exception as e:
                                         logging.warning(f"Failed to parse scenario: {e}")
-                                        
+
                             if conversation_plan:
                                 with me.expansion_panel(title="Conversation Plan", expanded=True):
                                     if isinstance(conversation_plan, list):

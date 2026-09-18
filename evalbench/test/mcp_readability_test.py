@@ -23,7 +23,10 @@ from evaluator.mcp_readability import exceptions as exc_mod
 from evaluator.mcp_readability.orchestrator import (
     ALLOWED_ENDPOINT_TYPES,
     BASE_COLUMNS,
+    DEFAULT_RUN_TAG,
+    RUN_TAGS,
     McpReadabilityOrchestrator,
+    _run_tag,
     _validate_endpoint_type,
 )
 from mcp import types as mcp_types
@@ -48,6 +51,30 @@ def test_endpoint_type_validation():
         _validate_endpoint_type("bogus")
     with pytest.raises(ValueError):
         _validate_endpoint_type(None)
+
+
+# --------------------------------------------------------------------------
+# run tag (daily vs ad-hoc, declared by the pipeline's run config)
+# --------------------------------------------------------------------------
+def test_run_tag_defaults_to_adhoc():
+    """A run config that declares nothing is a run nobody scheduled."""
+    assert set(RUN_TAGS) == {"daily", "adhoc"}
+    assert DEFAULT_RUN_TAG == "adhoc"
+    assert _run_tag({}) == "adhoc"
+    assert _run_tag({"run_tag": None}) == "adhoc"
+    assert _run_tag({"run_tag": "   "}) == "adhoc"
+
+
+def test_run_tag_is_normalized():
+    assert _run_tag({"run_tag": "daily"}) == "daily"
+    assert _run_tag({"run_tag": " DAILY "}) == "daily"
+    assert _run_tag({"run_tag": "adhoc"}) == "adhoc"
+
+
+def test_run_tag_unknown_value_raises():
+    """Fail fast: a typo'd tag would silently produce unfilterable rows."""
+    with pytest.raises(ValueError):
+        _run_tag({"run_tag": "nightly"})
 
 
 # --------------------------------------------------------------------------
@@ -398,6 +425,9 @@ def test_orchestrator_end_to_end():
             assert "readability_score" not in feedback_json
             assert feedback_json["waived"][0]["rule_id"] == "use-enums"
             assert row["job_id"] == job_id
+            # This config declares no run_tag, so the row says ad-hoc rather
+            # than leaving the reader to infer it from a blank.
+            assert row["mcp_readability_run_tag"] == "adhoc"
 
             # scores_tf: one row per (endpoint, scorer).
             with open(scores_tf) as f:
@@ -482,6 +512,37 @@ def test_endpoint_type_filter():
     ]
     kept = orch._filtered_endpoints()
     assert [e["product_name"] for e in kept] == ["A"]
+
+
+def test_daily_run_tag_reaches_the_row():
+    """A run the pipeline declares as daily is marked on every row it writes."""
+    with patch(
+        "scorers.mcp_style_readability.get_generator", return_value=_FakeLLM()
+    ):
+        from evaluator import get_orchestrator
+
+        with tempfile.TemporaryDirectory() as d:
+            ep_path = os.path.join(d, "endpoints.yaml")
+            _write_endpoints(
+                ep_path,
+                "Sample",
+                {
+                    "type": "file",
+                    "path": _ds("datasets/mcp_readability/sample_tools.json"),
+                },
+            )
+            config = _base_config(ep_path, d)
+            # What the scheduled pipeline's copy of the run config declares.
+            config["run_tag"] = "daily"
+            orch = get_orchestrator(config, [], {})
+            orch.evaluate([])
+            _, _, results_tf, _, _ = orch.process()
+            with open(results_tf) as f:
+                rows = json.load(f)
+            assert rows
+            assert all(
+                r["mcp_readability_run_tag"] == "daily" for r in rows
+            )
 
 
 # --------------------------------------------------------------------------
