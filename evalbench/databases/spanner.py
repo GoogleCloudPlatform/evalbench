@@ -500,7 +500,7 @@ class SpannerDB(DB):
                             table_info[t_name]["int_indices"].append(idx)
                         elif "numeric" in dt:
                             table_info[t_name]["numeric_indices"].append(idx)
-                        elif "float" in dt or "double" in dt:
+                        elif "float" in dt or "double" in dt or "real" in dt:
                             table_info[t_name]["float_indices"].append(idx)
                         elif "bool" in dt:
                             table_info[t_name]["bool_indices"].append(idx)
