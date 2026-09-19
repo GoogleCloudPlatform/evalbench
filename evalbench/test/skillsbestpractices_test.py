@@ -83,6 +83,16 @@ class SkillsBestPracticesRootsTest(unittest.TestCase):
     def test_missing_fake_home_yields_no_roots(self):
         self.assertEqual(_make_scorer()._resolve_skill_roots(None), [])
 
+    def test_configured_skills_dir_that_does_not_exist(self):
+        """A misconfigured skills_dir scores the skill 0, rather than raising
+        out of compare() and failing the whole eval."""
+        scorer = _make_scorer(
+            skills_dir=os.path.join(self.tmp.name, "absent"))
+
+        roots = scorer._resolve_skill_roots(self.tmp.name)
+
+        self.assertIsNone(scorer._find_skill_md(SKILL, roots))
+
 
 class SkillsBestPracticesDedupeTest(unittest.TestCase):
 

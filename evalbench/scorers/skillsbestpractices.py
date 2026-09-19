@@ -21,7 +21,6 @@ from .prompt.skillsbestpractices import SKILLS_BEST_PRACTICES_PROMPT
 _SKILL_ROOT_PATTERNS = (
     os.path.join(".codex", "skills"),
     os.path.join(".gemini", "skills"),
-    os.path.join(".claude", "skills"),
     os.path.join(".gemini", "config", "plugins", "*", "skills"),
     os.path.join(".claude", "plugins", "marketplaces", "*", "skills"),
 )
@@ -79,6 +78,8 @@ class SkillsBestPractices(comparator.Comparator):
             candidate = os.path.join(skills_dir, skill_name, "SKILL.md")
             if os.path.exists(candidate):
                 return candidate
+            if not os.path.isdir(skills_dir):
+                continue
             # Case-insensitive fallback
             for entry in os.listdir(skills_dir):
                 if entry.lower() == skill_name.lower():
