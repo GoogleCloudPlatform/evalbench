@@ -673,6 +673,58 @@ def test_parse_stream_json_multiple_tools_aggregate(sandbox):
     assert tools["totalDurationMs"] == 700
 
 
+def _install_skills(generator, plugin, *names):
+    """Lays out what a plugin install leaves in the sandbox."""
+    root = os.path.join(generator.config_dir, "plugins", plugin, "skills")
+    for name in names:
+        skill_dir = os.path.join(root, name)
+        os.makedirs(skill_dir, exist_ok=True)
+        with open(os.path.join(skill_dir, "SKILL.md"), "w") as f:
+            f.write("---\nname: %s\n---\n" % name)
+    return root
+
+
+def test_extract_skills_counts_skill_md_read_and_script_run(sandbox):
+    """agy activates a skill by reading its SKILL.md, and later turns re-run
+    its scripts without reading it again. Both count."""
+    generator = AgyCliGenerator({})
+    root = _install_skills(generator, "cloud-sql-postgresql",
+                           "postgres-admin", "postgres-data")
+    script = os.path.join(root, "postgres-data", "scripts", "list_tables.js")
+
+    stdout = generator._parse_stream_json(_stream(
+        _init_event(),
+        *_tool_events(1, "view_file", {
+            "AbsolutePath": os.path.join(root, "postgres-admin", "SKILL.md"),
+        }),
+        *_tool_events(2, "run_command", {
+            "CommandLine": "node %s '{}'" % script,
+        }),
+        _result_event(),
+    ))
+
+    assert sorted(generator.extract_skills(stdout)) == [
+        "postgres-admin", "postgres-data",
+    ]
+
+
+def test_extract_skills_ignores_non_skill_paths(sandbox):
+    """An uninstalled skill, and a listing of the skills root, are not
+    activations."""
+    generator = AgyCliGenerator({})
+    root = _install_skills(generator, "cloud-sql-postgresql", "postgres-admin")
+
+    stdout = generator._parse_stream_json(_stream(
+        _init_event(),
+        *_tool_events(1, "view_file",
+                      {"AbsolutePath": "/repo/skills/some-dir/README.md"}),
+        *_tool_events(2, "list_dir", {"DirectoryPath": root}),
+        _result_event(),
+    ))
+
+    assert generator.extract_skills(stdout) == []
+
+
 def _write_probe_log(app_data_dir, log_name, content):
     log_dir = os.path.join(app_data_dir, "log")
     os.makedirs(log_dir, exist_ok=True)
