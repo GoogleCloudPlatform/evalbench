@@ -428,6 +428,12 @@ def test_orchestrator_end_to_end():
             # This config declares no run_tag, so the row says ad-hoc rather
             # than leaving the reader to infer it from a blank.
             assert row["mcp_readability_run_tag"] == "adhoc"
+            # Written on every row, not only once something reads them: the
+            # per-tool map covers exactly the tools the judge was shown.
+            fingerprints = json.loads(
+                row["mcp_readability_tool_fingerprints_json"]
+            )
+            assert set(fingerprints) == {"list_datasets", "get_job_state"}
 
             # scores_tf: one row per (endpoint, scorer).
             with open(scores_tf) as f:
