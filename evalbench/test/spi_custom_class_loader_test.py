@@ -21,6 +21,26 @@ class DummyCustomGenerator:
         self.config = config
 
 
+class BareMinimumConnector:
+    """Bare-bones connector implementing only the minimum contract (execute)."""
+
+    def __init__(self, db_config):
+        self.config = db_config
+
+    def execute(self, query: str, eval_query: str = None, **kwargs):
+        return [{"col": 1}], None, None
+
+
+class BareMinimumGenerator:
+    """Bare-bones generator implementing only the minimum contract (generate)."""
+
+    def __init__(self, config):
+        self.config = config
+
+    def generate(self, prompt: str, **kwargs):
+        return "SELECT 1"
+
+
 class TestSPICustomClassLoader(unittest.TestCase):
 
     def test_load_custom_class_colon_syntax(self):
@@ -132,6 +152,33 @@ class TestSPICustomClassLoader(unittest.TestCase):
             model = get_generator(global_models, "dummy_path.yaml")
             self.assertIsInstance(model, DummyCustomGenerator)
             self.assertTrue(any("overriding generator" in msg for msg in cm.output))
+
+    def test_bare_minimum_connector_contract(self):
+        """Verifies that a bare-bones custom connector with only execute works via get_database."""
+        config = {
+            "db_type": "custom",
+            "database_name": "test_db",
+            "connector_class": "test.spi_custom_class_loader_test:BareMinimumConnector",
+        }
+        db = get_database(config, "test_db")
+        self.assertIsInstance(db, BareMinimumConnector)
+        result, eval_result, error = db.execute("SELECT 1")
+        self.assertEqual(result, [{"col": 1}])
+        self.assertIsNone(eval_result)
+        self.assertIsNone(error)
+
+    @patch("generators.models.load_yaml_config")
+    def test_bare_minimum_generator_contract(self, mock_load_yaml):
+        """Verifies that a bare-bones custom generator with only generate works via get_generator."""
+        mock_load_yaml.return_value = {
+            "generator": "custom",
+            "generator_class": "test.spi_custom_class_loader_test:BareMinimumGenerator",
+        }
+        global_models = {"registered_models": {}, "lock": threading.Lock()}
+        model = get_generator(global_models, "dummy_bare_generator.yaml")
+        self.assertIsInstance(model, BareMinimumGenerator)
+        output = model.generate("write a query")
+        self.assertEqual(output, "SELECT 1")
 
 
 if __name__ == "__main__":
