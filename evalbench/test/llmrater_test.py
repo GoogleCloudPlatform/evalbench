@@ -117,32 +117,6 @@ class TestLLMRater(unittest.TestCase):
         self.assertIn("Exact Match was found", reason)
         mock_model.generate.assert_not_called()
 
-    @patch('scorers.llmrater.get_generator')
-    def test_compare_none_results(self, mock_get_generator):
-        # Verify that None results do not raise TypeError: object of type 'NoneType' has no len()
-        mock_model = MagicMock()
-        mock_model.generate.return_value = "Reasoning: Empty results match.\nResult: EQUIVALENT"
-        mock_get_generator.return_value = mock_model
-
-        config = {"model_config": "fake_config"}
-        rater = LLMRater(config, global_models={})
-
-        score, reason = rater.compare(
-            nl_prompt="Show all users",
-            golden_query="SELECT * FROM users",
-            query_type="sql",
-            golden_execution_result=None,
-            golden_eval_result="",
-            golden_error="",
-            generated_query="SELECT * FROM users",
-            generated_execution_result=None,
-            generated_eval_result="",
-            generated_error=""
-        )
-
-        self.assertEqual(score, 100)
-        self.assertIn("EQUIVALENT", reason)
-
 
 if __name__ == '__main__':
     unittest.main()

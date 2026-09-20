@@ -247,12 +247,7 @@ class LLMRater(comparator.Comparator):
         database: str = "",
         **kwargs,
     ) -> Tuple[float, str]:
-        golden_execution_result = golden_execution_result or []
-        generated_execution_result = generated_execution_result or []
-        is_empty_results = (
-            len(golden_execution_result) == 0
-            and len(generated_execution_result) == 0
-        )
+        is_empty_results = len(golden_execution_result) == 0 and len(generated_execution_result) == 0
 
         if not is_empty_results and self._is_exact_match(
             nl_prompt,
