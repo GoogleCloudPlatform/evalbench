@@ -1,3 +1,4 @@
+import logging
 from util.class_loader import load_custom_class
 from .postgres import PGDB
 from .mysql import MySQLDB
@@ -16,6 +17,14 @@ _load_custom_class = load_custom_class
 
 
 def get_database(db_config, db_name) -> DB:
+    """Initializes and returns a database connector instance.
+
+    If 'connector_class' is specified in db_config, the custom class is
+    dynamically loaded and instantiated with db_config. Custom connector
+    classes do not need to inherit from DB, but must implement the duck-typed
+    interface expected by EvalBench (notably execute, clean_tmp_creations,
+    and close_connections).
+    """
     # if db_name is provided:
     #   - It will override the provided default database_name
     #   - This is useful as the default db may be "postgres" or a default only used for setup
@@ -24,6 +33,11 @@ def get_database(db_config, db_name) -> DB:
         db_config["database_name"] = f"{db_name}{suffix}"
 
     if db_config.get("connector_class"):
+        if db_config.get("db_type") and db_config.get("db_type") != "custom":
+            logging.info(
+                f"Using custom connector class '{db_config['connector_class']}' "
+                f"(overriding db_type '{db_config['db_type']}')."
+            )
         cls = _load_custom_class(db_config["connector_class"])
         return cls(db_config)
     if db_config.get("db_type") == "custom":

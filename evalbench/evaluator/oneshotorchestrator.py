@@ -181,7 +181,7 @@ class OneShotOrchestrator(Orchestrator):
                 f"Could not connect to database {actual_db_name} (from {database}) on"
                 f" {dialect}; due to {e}"
             )
-            return [], []
+            return [], [], []
 
         prompt_generator = prompts.get_generator(core_db, self.config)
         model_generator = models.get_generator(

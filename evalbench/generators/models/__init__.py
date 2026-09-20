@@ -1,3 +1,4 @@
+import logging
 from .alloydb_ai_nl import AlloyDBGenerator
 from databases import DB
 from generators.models.generator import QueryGenerator
@@ -32,6 +33,13 @@ def _get_agent_grpc_proxy(config):
 
 
 def get_generator(global_models, model_config_path: str, db: DB = None):
+    """Initializes and returns a model generator instance.
+
+    If 'generator_class' is specified in config, the custom class is
+    dynamically loaded and instantiated with config. Custom generator
+    classes do not need to inherit from QueryGenerator, but must implement
+    the duck-typed interface expected by EvalBench (notably generate).
+    """
     with global_models.get("lock"):
         global_model_configs = global_models.get("registered_models")
         if model_config_path in global_model_configs:
@@ -59,6 +67,11 @@ def get_generator(global_models, model_config_path: str, db: DB = None):
         }
         generator = config.get("generator")
         if config.get("generator_class"):
+            if generator and generator != "custom":
+                logging.info(
+                    f"Using custom generator class '{config['generator_class']}' "
+                    f"(overriding generator '{generator}')."
+                )
             gen_cls = _load_custom_class(config["generator_class"])
             model = gen_cls(config)
         elif generator == "custom":

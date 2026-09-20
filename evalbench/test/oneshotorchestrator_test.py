@@ -152,6 +152,30 @@ class TestOneShotOrchestrator(unittest.TestCase):
 
         mock_setup_progress.assert_called_once_with(mock_manager, 1, 1, 3)
 
+    @patch("evaluator.oneshotorchestrator.skip_database")
+    @patch("evaluator.oneshotorchestrator.databases.get_database")
+    def test_evaluate_sub_dataset_db_connection_error(
+        self, mock_get_database, mock_skip_database
+    ):
+        mock_get_database.side_effect = Exception("Connection failed")
+        orchestrator = OneShotOrchestrator(
+            {"runners": {"eval_runners": 1}, "model_config": "fake_config"},
+            db_configs={"sql": [{"database": "fake", "db_type": "spanner"}]},
+            setup_config={},
+        )
+        sub_datasets = {"sql": {"fake": {"dql": []}}}
+        result = orchestrator.evaluate_sub_dataset(
+            sub_datasets,
+            {"database": "fake", "db_type": "spanner"},
+            "sql",
+            "fake",
+            None,
+            {"lock": None},
+        )
+        # Verify 3-tuple is returned
+        self.assertEqual(result, ([], [], []))
+        mock_skip_database.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

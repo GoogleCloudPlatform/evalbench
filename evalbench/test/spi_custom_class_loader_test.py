@@ -110,6 +110,29 @@ class TestSPICustomClassLoader(unittest.TestCase):
         from generators.models.passthrough import NOOPGenerator
         self.assertIsInstance(model, NOOPGenerator)
 
+    def test_get_database_precedence_logging(self):
+        config = {
+            "db_type": "sqlite",
+            "database_name": "test_db",
+            "connector_class": "test.spi_custom_class_loader_test:DummyCustomConnector",
+        }
+        with self.assertLogs("root", level="INFO") as cm:
+            db = get_database(config, "test_db")
+            self.assertIsInstance(db, DummyCustomConnector)
+            self.assertTrue(any("overriding db_type" in msg for msg in cm.output))
+
+    @patch("generators.models.load_yaml_config")
+    def test_get_generator_precedence_logging(self, mock_load_yaml):
+        mock_load_yaml.return_value = {
+            "generator": "noop",
+            "generator_class": "test.spi_custom_class_loader_test:DummyCustomGenerator",
+        }
+        global_models = {"registered_models": {}, "lock": threading.Lock()}
+        with self.assertLogs("root", level="INFO") as cm:
+            model = get_generator(global_models, "dummy_path.yaml")
+            self.assertIsInstance(model, DummyCustomGenerator)
+            self.assertTrue(any("overriding generator" in msg for msg in cm.output))
+
 
 if __name__ == "__main__":
     unittest.main()

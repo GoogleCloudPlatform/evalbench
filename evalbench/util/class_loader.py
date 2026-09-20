@@ -18,6 +18,10 @@ def load_custom_class(class_path: str):
         ValueError: If class_path format is invalid.
         ImportError: If the module cannot be imported.
         AttributeError: If the class does not exist in the module.
+
+    Note:
+        Loaded classes are not enforced via strict inheritance (issubclass),
+        enabling duck-typed implementations of connectors and generators.
     """
     if ":" in class_path:
         mod_name, cls_name = class_path.split(":", 1)
