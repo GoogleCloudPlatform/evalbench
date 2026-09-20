@@ -58,7 +58,7 @@ def get_generator(global_models, model_config_path: str, db: DB = None):
             "agent_runtime": lambda: AgentRuntimeGenerator(config),
         }
         generator = config.get("generator")
-        if "generator_class" in config:
+        if config.get("generator_class"):
             gen_cls = _load_custom_class(config["generator_class"])
             model = gen_cls(config)
         elif generator == "custom":

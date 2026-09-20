@@ -23,7 +23,7 @@ def get_database(db_config, db_name) -> DB:
         suffix = db_config.get("db_name_suffix", "")
         db_config["database_name"] = f"{db_name}{suffix}"
 
-    if "connector_class" in db_config:
+    if db_config.get("connector_class"):
         cls = _load_custom_class(db_config["connector_class"])
         return cls(db_config)
     if db_config.get("db_type") == "custom":

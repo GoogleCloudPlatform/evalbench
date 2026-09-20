@@ -87,6 +87,29 @@ class TestSPICustomClassLoader(unittest.TestCase):
             get_generator(global_models, "dummy_path.yaml")
         self.assertIn("generator_class", str(ctx.exception))
 
+    def test_get_database_standard_type_backward_compatibility(self):
+        # Existing configs with standard db_type and no connector_class
+        config = {
+            "db_type": "sqlite",
+            "database_name": "test_db",
+            "connector_class": None,
+        }
+        db = get_database(config, "test_db")
+        from databases.sqlite import SQLiteDB
+        self.assertIsInstance(db, SQLiteDB)
+
+    @patch("generators.models.load_yaml_config")
+    def test_get_generator_standard_generator_backward_compatibility(self, mock_load_yaml):
+        # Existing configs with standard generator and null generator_class
+        mock_load_yaml.return_value = {
+            "generator": "noop",
+            "generator_class": None,
+        }
+        global_models = {"registered_models": {}, "lock": threading.Lock()}
+        model = get_generator(global_models, "dummy_path.yaml")
+        from generators.models.passthrough import NOOPGenerator
+        self.assertIsInstance(model, NOOPGenerator)
+
 
 if __name__ == "__main__":
     unittest.main()
