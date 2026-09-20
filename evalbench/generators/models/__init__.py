@@ -1,3 +1,5 @@
+import importlib
+
 from .alloydb_ai_nl import AlloyDBGenerator
 from databases import DB
 from generators.models.generator import QueryGenerator
@@ -15,6 +17,33 @@ from .mcp_tools import McpToolsGenerator
 from .noop_agent import NoopAgentGenerator
 from .agent_runtime import AgentRuntimeGenerator
 from util.config import load_yaml_config
+
+
+def _load_custom_class(class_path: str):
+    """Dynamically imports and returns a class from a module path."""
+    if ":" in class_path:
+        mod_name, cls_name = class_path.split(":", 1)
+    elif "." in class_path:
+        mod_name, cls_name = class_path.rsplit(".", 1)
+    else:
+        raise ValueError(
+            f"Invalid class_path '{class_path}'. Expected format"
+            " 'module.submodule.ClassName' or 'module:ClassName'."
+        )
+
+    try:
+        mod = importlib.import_module(mod_name)
+    except ImportError as e:
+        raise ImportError(
+            f"Failed to import module '{mod_name}' for custom class: {e}"
+        ) from e
+
+    if not hasattr(mod, cls_name):
+        raise AttributeError(
+            f"Module '{mod_name}' has no attribute or class '{cls_name}'."
+        )
+
+    return getattr(mod, cls_name)
 
 
 def _get_grpc_proxy(config):
@@ -53,10 +82,19 @@ def get_generator(global_models, model_config_path: str, db: DB = None):
             "noop_agent": lambda: NoopAgentGenerator(config),
             "agent_runtime": lambda: AgentRuntimeGenerator(config),
         }
-        generator = config["generator"]
-        if generator not in generators:
+        generator = config.get("generator")
+        if "generator_class" in config:
+            gen_cls = _load_custom_class(config["generator_class"])
+            model = gen_cls(config)
+        elif generator == "custom":
+            raise ValueError(
+                "generator 'custom' specified, but 'generator_class' is missing from"
+                " model config."
+            )
+        elif generator not in generators:
             raise ValueError(f"Unknown Generator {generator}")
-        model = generators[generator]()
+        else:
+            model = generators[generator]()
 
         global_model_configs[model_config_path] = model
     return model
