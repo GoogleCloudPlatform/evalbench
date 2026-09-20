@@ -32,15 +32,18 @@ def get_database(db_config, db_name) -> DB:
         suffix = db_config.get("db_name_suffix", "")
         db_config["database_name"] = f"{db_name}{suffix}"
 
-    if db_config.get("connector_class"):
-        if db_config.get("db_type") and db_config.get("db_type") != "custom":
-            logging.info(
-                f"Using custom connector class '{db_config['connector_class']}' "
-                f"(overriding db_type '{db_config['db_type']}')."
+    db_type = db_config.get("db_type")
+    connector_class = db_config.get("connector_class")
+
+    if connector_class:
+        if db_type and db_type != "custom":
+            logging.warning(
+                f"Using custom connector class '{connector_class}' "
+                f"(overriding db_type '{db_type}')."
             )
-        cls = _load_custom_class(db_config["connector_class"])
-        return cls(db_config)
-    if db_config.get("db_type") == "custom":
+        return _load_custom_class(connector_class)(db_config)
+
+    if db_type == "custom":
         raise ValueError(
             "db_type 'custom' specified, but 'connector_class' is missing from"
             " db_config."

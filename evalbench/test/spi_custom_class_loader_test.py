@@ -116,7 +116,7 @@ class TestSPICustomClassLoader(unittest.TestCase):
             "database_name": "test_db",
             "connector_class": "test.spi_custom_class_loader_test:DummyCustomConnector",
         }
-        with self.assertLogs("root", level="INFO") as cm:
+        with self.assertLogs("root", level="WARNING") as cm:
             db = get_database(config, "test_db")
             self.assertIsInstance(db, DummyCustomConnector)
             self.assertTrue(any("overriding db_type" in msg for msg in cm.output))
@@ -128,7 +128,7 @@ class TestSPICustomClassLoader(unittest.TestCase):
             "generator_class": "test.spi_custom_class_loader_test:DummyCustomGenerator",
         }
         global_models = {"registered_models": {}, "lock": threading.Lock()}
-        with self.assertLogs("root", level="INFO") as cm:
+        with self.assertLogs("root", level="WARNING") as cm:
             model = get_generator(global_models, "dummy_path.yaml")
             self.assertIsInstance(model, DummyCustomGenerator)
             self.assertTrue(any("overriding generator" in msg for msg in cm.output))

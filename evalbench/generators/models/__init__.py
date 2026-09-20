@@ -66,14 +66,15 @@ def get_generator(global_models, model_config_path: str, db: DB = None):
             "agent_runtime": lambda: AgentRuntimeGenerator(config),
         }
         generator = config.get("generator")
-        if config.get("generator_class"):
+        generator_class = config.get("generator_class")
+
+        if generator_class:
             if generator and generator != "custom":
-                logging.info(
-                    f"Using custom generator class '{config['generator_class']}' "
+                logging.warning(
+                    f"Using custom generator class '{generator_class}' "
                     f"(overriding generator '{generator}')."
                 )
-            gen_cls = _load_custom_class(config["generator_class"])
-            model = gen_cls(config)
+            model = _load_custom_class(generator_class)(config)
         elif generator == "custom":
             raise ValueError(
                 "generator 'custom' specified, but 'generator_class' is missing from"
