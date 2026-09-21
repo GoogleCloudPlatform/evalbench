@@ -48,6 +48,9 @@ class Baseline:
     # is stripped from that column, so it is carried separately.
     feedback: dict = field(default_factory=dict)
     readability_score: int = 0
+    # Absent until a run writes the provenance column; carry-forward reads it
+    # to find the oldest generation still represented in the findings.
+    provenance: dict = field(default_factory=dict)
 
 
 # Result columns a baseline is reconstructed from.
@@ -59,6 +62,7 @@ _JUDGE_FINGERPRINT = "mcp_readability_judge_fingerprint"
 _JUDGE_COMPONENTS = "mcp_readability_judge_components_json"
 _FEEDBACK = "mcp_readability_llm_feedback_json"
 _SCORE = "mcp_readability_score"
+_PROVENANCE = "mcp_readability_feedback_provenance_json"
 _TIMESTAMP_UTC = "mcp_readability_check_timestamp_utc"
 _TIMESTAMP = "mcp_readability_check_timestamp"
 _RUN_TAG = "mcp_readability_run_tag"
@@ -162,6 +166,7 @@ class _RowBaselineStore(BaselineStore):
             tool_fingerprints=_load_json(row.get(_TOOL_FINGERPRINTS), {}),
             feedback=_load_json(row.get(_FEEDBACK), {}),
             readability_score=_safe_int(row.get(_SCORE)),
+            provenance=_load_json(row.get(_PROVENANCE), {}),
         )
 
 
