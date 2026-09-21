@@ -1,7 +1,7 @@
 """Canonical naming for MCP tool calls across harness adapters.
 
-Each harness (Codex, Claude Code, Gemini CLI) reports MCP tool calls in a
-different format:
+Each harness (Codex, Claude Code, Gemini CLI, Antigravity) reports MCP tool
+calls in a different format:
 
 - Codex emits the server name and tool name as separate fields on the
   ``mcp_tool_call`` payload.
@@ -11,6 +11,8 @@ different format:
   Upstream forbids underscores in the server name -- see
   ``packages/core/src/tools/mcp-tool.ts`` in google-gemini/gemini-cli, where
   the parser uses ``^([^_]+)_(.+)$`` -- so the format is unambiguous.
+- Antigravity (``agy``) emits a native ``call_mcp_tool`` call whose arguments
+  follow the schema ``{ServerName, ToolName, Arguments}``.
 
 This module converts each format into a single canonical string:
 
@@ -36,23 +38,15 @@ from typing import Optional, Tuple
 CANONICAL_SEPARATOR = "__"
 
 _CLAUDE_MCP_PREFIX = "mcp__"
-
-# Matches ``mcp_<server>_<tool>`` where the server segment contains no
-# underscores. Mirrors the contract enforced by gemini-cli upstream so we
-# parse the same way it formats.
 _GEMINI_MCP_PATTERN = re.compile(r"^mcp_([^_]+)_(.+)$")
+
+_AGY_MCP_WRAPPER = "call_mcp_tool"
+_AGY_SERVER_KEY = "ServerName"
+_AGY_TOOL_KEY = "ToolName"
 
 
 def canonical_tool_name(server: Optional[str], tool: str) -> str:
-    """Return the canonical name for a tool call.
-
-    Args:
-        server: MCP server name, or an empty string / None for native tools.
-        tool: Bare tool name as exposed by the server (or the native tool).
-
-    Returns:
-        ``<server>__<tool>`` when ``server`` is non-empty, otherwise ``tool``.
-    """
+    """Return ``<server>__<tool>`` when ``server`` is non-empty, else ``tool``."""
     if not tool:
         return tool
     if server:
@@ -61,17 +55,9 @@ def canonical_tool_name(server: Optional[str], tool: str) -> str:
 
 
 def parse_claude_mcp_tool_name(name: str) -> Optional[Tuple[str, str]]:
-    """Parse a Claude Code MCP tool name into ``(server, tool)``.
+    """Parse ``mcp__<server>__<tool>`` into ``(server, tool)``, or ``None``.
 
-    Claude Code's SDK reports MCP tools as ``mcp__<server>__<tool>``. Both
-    the server and tool segments may contain single underscores; only the
-    double-underscore acts as a separator. The first ``__`` after the
-    ``mcp__`` prefix is treated as the server/tool boundary so the tool
-    segment may itself contain ``__``.
-
-    Returns:
-        ``(server, tool)`` if ``name`` matches the expected format,
-        otherwise ``None``.
+    Splits on the first ``__`` after ``mcp__`` so ``tool`` may contain ``__``.
     """
     if not name.startswith(_CLAUDE_MCP_PREFIX):
         return None
@@ -83,17 +69,7 @@ def parse_claude_mcp_tool_name(name: str) -> Optional[Tuple[str, str]]:
 
 
 def parse_gemini_mcp_tool_name(name: str) -> Optional[Tuple[str, str]]:
-    """Parse a Gemini CLI MCP tool name into ``(server, tool)``.
-
-    Gemini CLI reports MCP tools as ``mcp_<server>_<tool>`` using a single
-    underscore separator. The upstream parser requires the server segment
-    to contain no underscores, which makes the split unambiguous even when
-    the tool name itself contains underscores.
-
-    Returns:
-        ``(server, tool)`` if ``name`` matches the expected format,
-        otherwise ``None``.
-    """
+    """Parse ``mcp_<server>_<tool>`` into ``(server, tool)``, or ``None``."""
     match = _GEMINI_MCP_PATTERN.match(name)
     if not match:
         return None
@@ -101,13 +77,7 @@ def parse_gemini_mcp_tool_name(name: str) -> Optional[Tuple[str, str]]:
 
 
 def canonicalize_claude_tool_name(name: str) -> str:
-    """Convert a Claude Code tool name to canonical form.
-
-    MCP tools are reformatted; native tools (e.g. ``Read``, ``Bash``) pass
-    through unchanged. If a name starts with ``mcp__`` but does not match
-    the expected structure, it is returned as-is so the caller can still see
-    and debug the raw value.
-    """
+    """Return ``<server>__<tool>`` for Claude MCP calls, or ``name`` unchanged."""
     parsed = parse_claude_mcp_tool_name(name)
     if parsed is None:
         return name
@@ -116,12 +86,7 @@ def canonicalize_claude_tool_name(name: str) -> str:
 
 
 def canonicalize_gemini_tool_name(name: str) -> str:
-    """Convert a Gemini CLI tool name to canonical form.
-
-    MCP tools are reformatted; native tools pass through unchanged. If a
-    name starts with ``mcp_`` but does not match the expected structure, it
-    is returned as-is.
-    """
+    """Return ``<server>__<tool>`` for Gemini MCP calls, or ``name`` unchanged."""
     parsed = parse_gemini_mcp_tool_name(name)
     if parsed is None:
         return name
@@ -129,30 +94,13 @@ def canonicalize_gemini_tool_name(name: str) -> str:
     return canonical_tool_name(server, tool)
 
 
-# Antigravity (agy) does NOT expose MCP tools as ``mcp_<server>_<tool>``
-# top-level functions. Confirmed from the v1.0.5 binary: it has a single
-# native tool ``call_mcp_tool`` whose jsonschema is
-# ``{ServerName, ToolName, Arguments}`` -- the real server/tool identity
-# lives in the call *arguments*, not the tool name. So canonicalization
-# must unwrap those args rather than pattern-match the name.
-_AGY_MCP_WRAPPER = "call_mcp_tool"
-
-# The v1.0.5 schema is ``{ServerName, ToolName, Arguments}``. The Go struct
-# (confirmed in the agy binary) carries no ``json:`` tags -- only
-# ``jsonschema:"required"`` / ``jsonschema_description`` -- so the JSON property
-# names are exactly the Go field names. There are no casing variants to handle.
-_AGY_SERVER_KEY = "ServerName"
-_AGY_TOOL_KEY = "ToolName"
-
-
 def _agy_decode_scalar(value) -> str:
     """Decode an agy tool-call arg value to a plain string.
 
     agy stores each ``call_mcp_tool`` arg value as a raw JSON token, so a
-    string value arrives JSON-encoded *with* its surrounding quotes, e.g.
-    ``args["ServerName"]`` is the 11-char string ``"cloud-sql"`` (quotes
-    included). Round-tripping through ``json.loads`` strips the quoting;
-    if the value isn't valid JSON we fall back to the raw string.
+    string value arrives JSON-encoded with surrounding quotes (e.g.
+    ``"\"cloud-sql\""``). ``json.loads`` strips the quotes. Invalid JSON falls
+    back to the raw string.
     """
     if isinstance(value, str):
         try:
@@ -166,12 +114,7 @@ def _agy_decode_scalar(value) -> str:
 
 
 def parse_agy_mcp_tool_call(name: str, args: Optional[dict]):
-    """Parse an agy MCP wrapper call into ``(server, tool)``.
-
-    Returns ``(server, tool)`` if ``name`` is the ``call_mcp_tool`` wrapper
-    and both server and tool names are present in ``args``; otherwise
-    ``None``. Server/tool values are JSON-decoded (agy quotes them).
-    """
+    """Return ``(server, tool)`` for a valid ``call_mcp_tool`` call, or ``None``."""
     if name != _AGY_MCP_WRAPPER or not isinstance(args, dict):
         return None
     server = args.get(_AGY_SERVER_KEY)
@@ -182,15 +125,7 @@ def parse_agy_mcp_tool_call(name: str, args: Optional[dict]):
 
 
 def canonicalize_agy_tool_name(name: str, args: Optional[dict] = None) -> str:
-    """Convert an agy tool name to canonical form.
-
-    MCP calls arrive as the ``call_mcp_tool`` wrapper with the real
-    server/tool in ``args``; those are unwrapped to ``<server>__<tool>``.
-    Native agy tools (``run_command``, ``read_file``, ``write_to_file``,
-    ``activate_skill``, ...) pass through unchanged. A ``call_mcp_tool``
-    whose args lack a usable server/tool pair is returned as-is so the
-    raw value stays visible for debugging.
-    """
+    """Return ``<server>__<tool>`` for agy MCP calls, or ``name`` unchanged."""
     parsed = parse_agy_mcp_tool_call(name, args)
     if parsed is None:
         return name
