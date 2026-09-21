@@ -1,6 +1,4 @@
 generator: agy_cli
-# ADC does not authorize the Pro (High) tier.
-model: "Gemini 3.1 Pro (Low)"
 timeout: "20m"
 
 # No mcp_servers: the skill scripts shell out to @toolbox-sdk/server directly,

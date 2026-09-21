@@ -157,6 +157,5 @@ timeout: '3600s'
 
 options:
   logging: CLOUD_LOGGING_ONLY
-  # Sized for the seven concurrent harness steps, not for the build. The enum
-  # has no 16-CPU option, and 8 CPUs means 8 GB -- roughly 1 GB per step.
-  machineType: 'E2_HIGHCPU_32'
+  # Sized for the seven concurrent harness steps, not for the build.
+  machineType: 'E2_HIGHCPU_8'
