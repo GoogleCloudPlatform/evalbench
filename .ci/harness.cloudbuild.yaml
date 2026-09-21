@@ -153,16 +153,10 @@ availableSecrets:
     - versionName: projects/${_EVAL_PROJECT}/secrets/ci-smoke-postgres-password/versions/latest
       env: 'CLOUD_SQL_POSTGRES_PASSWORD'
 
-substitutions:
-  _CLOUD_SQL_POSTGRES_REGION: 'us-central1'
-  _CLOUD_SQL_POSTGRES_INSTANCE: 'ci-smoke-postgres'
-  _CLOUD_SQL_POSTGRES_DATABASE: 'postgres'
-  _CLOUD_SQL_POSTGRES_USER: 'ci-smoke'
-  _CLOUD_SQL_POSTGRES_IP_TYPE: 'PUBLIC'
-
 timeout: '3600s'
 
 options:
   logging: CLOUD_LOGGING_ONLY
-  # Sized for the seven concurrent harness steps, not for the build.
-  machineType: 'E2_HIGHCPU_16'
+  # Sized for the seven concurrent harness steps, not for the build. The enum
+  # has no 16-CPU option, and 8 CPUs means 8 GB -- roughly 1 GB per step.
+  machineType: 'E2_HIGHCPU_32'
