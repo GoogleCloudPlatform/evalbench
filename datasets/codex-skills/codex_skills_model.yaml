@@ -4,19 +4,22 @@ model: "gpt-5.5"
 openai_api_key_secret: "projects/393137573/secrets/OPENAI_API_KEY/versions/1"
 
 env:
-  GOOGLE_CLOUD_PROJECT: "astana-evaluation"
+  # Set to your project, or export EVAL_GCP_PROJECT_ID and keep the !ENV form.
+  GOOGLE_CLOUD_PROJECT: !ENV ${EVAL_GCP_PROJECT_ID}
   GOOGLE_CLOUD_LOCATION: "us-central1"
-    # Cloud SQL PostgreSQL skills configuration.
-    # Substitute the placeholders below with real values per scenario before running.
-  CLOUD_SQL_POSTGRES_PROJECT: "astana-evaluation"
-  CLOUD_SQL_POSTGRES_REGION: "us-central1"
-  CLOUD_SQL_POSTGRES_INSTANCE: <instance>
-  CLOUD_SQL_POSTGRES_DATABASE: <database>
-  CLOUD_SQL_POSTGRES_USER: <user>
-  CLOUD_SQL_POSTGRES_PASSWORD: <password>
-  CLOUD_SQL_POSTGRES_IP_TYPE: "PUBLIC"
+
+  # Export these before running; the skill scripts read them directly.
+  CLOUD_SQL_POSTGRES_PROJECT: !ENV ${CLOUD_SQL_POSTGRES_PROJECT}
+  CLOUD_SQL_POSTGRES_REGION: !ENV ${CLOUD_SQL_POSTGRES_REGION}
+  CLOUD_SQL_POSTGRES_INSTANCE: !ENV ${CLOUD_SQL_POSTGRES_INSTANCE}
+  CLOUD_SQL_POSTGRES_DATABASE: !ENV ${CLOUD_SQL_POSTGRES_DATABASE}
+  CLOUD_SQL_POSTGRES_USER: !ENV ${CLOUD_SQL_POSTGRES_USER}
+  CLOUD_SQL_POSTGRES_PASSWORD: !ENV ${CLOUD_SQL_POSTGRES_PASSWORD}
+  CLOUD_SQL_POSTGRES_IP_TYPE: !ENV ${CLOUD_SQL_POSTGRES_IP_TYPE}
 
 setup:
   skills:
+    # Pinned to a release tag: the default branch ships no `skills/` directory,
+    # they are generated per release.
     - action: install_from_repo
-      url: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git"
+      url: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git#0.4.0"
