@@ -1,0 +1,30 @@
+claude_code_version: "@anthropic-ai/claude-code@latest"
+generator: claude_code
+model: "claude-opus-5"
+
+use_vertex: true
+vertex_project_id: !ENV ${EVAL_GCP_PROJECT_ID}
+vertex_region: "global"
+
+# No mcp_servers: the skill scripts shell out to @toolbox-sdk/server directly,
+# so the two channels never meet.
+env:
+  GOOGLE_CLOUD_PROJECT: !ENV ${EVAL_GCP_PROJECT_ID}
+  GOOGLE_CLOUD_LOCATION: "us-central1"
+
+  # The skill scripts read these directly. The toolbox server initializes every
+  # source at startup, so even control-plane skills need a reachable Postgres.
+  CLOUD_SQL_POSTGRES_PROJECT: !ENV ${EVAL_GCP_PROJECT_ID}
+  CLOUD_SQL_POSTGRES_REGION: !ENV ${CLOUD_SQL_POSTGRES_REGION}
+  CLOUD_SQL_POSTGRES_INSTANCE: !ENV ${CLOUD_SQL_POSTGRES_INSTANCE}
+  CLOUD_SQL_POSTGRES_DATABASE: !ENV ${CLOUD_SQL_POSTGRES_DATABASE}
+  CLOUD_SQL_POSTGRES_USER: !ENV ${CLOUD_SQL_POSTGRES_USER}
+  CLOUD_SQL_POSTGRES_PASSWORD: !ENV ${CLOUD_SQL_POSTGRES_PASSWORD}
+  CLOUD_SQL_POSTGRES_IP_TYPE: !ENV ${CLOUD_SQL_POSTGRES_IP_TYPE}
+
+setup:
+  skills:
+    # Pinned to a release tag: the default branch ships no `skills/` directory,
+    # they are generated per release.
+    - action: install_from_repo
+      url: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git#0.4.0"

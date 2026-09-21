@@ -1,0 +1,34 @@
+codex_cli_version: "@openai/codex@latest"
+generator: codex_cli
+model: "gpt-5.5"
+
+openai_api_key_secret: !ENV projects/${EVAL_GCP_PROJECT_ID}/secrets/ci-smoke-openai-api-key/versions/1
+
+# Codex reports token counts but no cost; these rates turn them into cost_usd.
+pricing:
+  input_per_million_usd:        1.25
+  cached_input_per_million_usd: 0.125
+  output_per_million_usd:       10.0
+
+# No mcp_servers: the skill scripts shell out to @toolbox-sdk/server directly,
+# so the two channels never meet.
+env:
+  GOOGLE_CLOUD_PROJECT: !ENV ${EVAL_GCP_PROJECT_ID}
+  GOOGLE_CLOUD_LOCATION: "us-central1"
+
+  # The skill scripts read these directly. The toolbox server initializes every
+  # source at startup, so even control-plane skills need a reachable Postgres.
+  CLOUD_SQL_POSTGRES_PROJECT: !ENV ${EVAL_GCP_PROJECT_ID}
+  CLOUD_SQL_POSTGRES_REGION: !ENV ${CLOUD_SQL_POSTGRES_REGION}
+  CLOUD_SQL_POSTGRES_INSTANCE: !ENV ${CLOUD_SQL_POSTGRES_INSTANCE}
+  CLOUD_SQL_POSTGRES_DATABASE: !ENV ${CLOUD_SQL_POSTGRES_DATABASE}
+  CLOUD_SQL_POSTGRES_USER: !ENV ${CLOUD_SQL_POSTGRES_USER}
+  CLOUD_SQL_POSTGRES_PASSWORD: !ENV ${CLOUD_SQL_POSTGRES_PASSWORD}
+  CLOUD_SQL_POSTGRES_IP_TYPE: !ENV ${CLOUD_SQL_POSTGRES_IP_TYPE}
+
+setup:
+  skills:
+    # Pinned to a release tag: the default branch ships no `skills/` directory,
+    # they are generated per release.
+    - action: install_from_repo
+      url: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git#0.4.0"

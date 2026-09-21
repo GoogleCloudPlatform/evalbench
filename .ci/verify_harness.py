@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Gates the harness smoke build.
+"""Gates a harness smoke build.
 
 evalbench.eval() exits 0 whenever a run completes, so the exit code alone
-cannot gate CI.
+cannot gate CI. The defaults target the MCP-tools build; --run-config and
+--evalset aim the same checks at the skills build.
 
 Scorers in POSITIVE must report greater than zero. They swallow parse
 failures and return 0.0 with an explanation rather than raising, so a
 liveness check alone stays green when a CLI renames a token field. A
 trajectory_matcher of 0 means none of the expected tools were called,
-which catches a harness that shells out instead of reaching for MCP.
+which catches a harness that shells out instead of reaching for MCP;
+skills_trajectory of 0 is the same signal for the skills channel.
 
 This assumes every scenario requires at least one tool call; a purely
 conversational scenario would fail here spuriously.
@@ -16,6 +18,7 @@ conversational scenario would fail here spuriously.
 Every other scorer is liveness-checked only -- it ran, did not error, and
 returned a number. Gating on a judge's verdict would make the build flaky.
 """
+import argparse
 import csv
 import json
 import math
@@ -24,11 +27,12 @@ import sys
 
 from pyaml_env import parse_config
 
-HARNESSES = ["agy_cli", "claude_code", "codex_cli", "gemini_cli"]
-RUN_CONFIG = ".ci/run_config.yaml"
-EVALSET = ".ci/harness_smoke.evalset.json"
+DEFAULT_HARNESSES = ["agy_cli", "claude_code", "codex_cli", "gemini_cli"]
+DEFAULT_RUN_CONFIG = ".ci/run_config.yaml"
+DEFAULT_EVALSET = ".ci/harness_smoke.evalset.json"
 POSITIVE = {
     "trajectory_matcher",
+    "skills_trajectory",
     "turn_count",
     "agent_steps",
     "end_to_end_latency",
@@ -37,18 +41,22 @@ POSITIVE = {
     "tokens_processed",
     "effective_billed_tokens",
 }
+ZERO_REASONS = {
+    "trajectory_matcher": "none of the expected tools were called",
+    "skills_trajectory": "none of the expected skills were activated",
+}
 
 
-def expected_scenario_ids():
-    with open(EVALSET) as f:
+def expected_scenario_ids(evalset):
+    with open(evalset) as f:
         return sorted(s["id"] for s in json.load(f)["scenarios"])
 
 
-def run_config(harness):
+def run_config(harness, path):
     # The run config resolves ${CI_HARNESS} into the model config and output
     # paths, so it has to be re-parsed per harness.
     os.environ["CI_HARNESS"] = harness
-    return parse_config(RUN_CONFIG)
+    return parse_config(path)
 
 
 def latest_job_dir(output_dir):
@@ -81,8 +89,8 @@ def load_rows(job_dir):
     return rows
 
 
-def check(harness, scenario_ids):
-    config = run_config(harness)
+def check(harness, scenario_ids, config_path):
+    config = run_config(harness, config_path)
     scorers = sorted(config.get("scorers") or {})
     output_dir = config["reporting"]["csv"]["output_directory"]
 
@@ -109,26 +117,33 @@ def check(harness, scenario_ids):
             elif score is None:
                 problems.append(f"{scorer}: non-numeric score for {sid}")
             elif scorer in POSITIVE and score <= 0:
-                reason = (
-                    "none of the expected tools were called"
-                    if scorer == "trajectory_matcher"
-                    else "the agent called no tools, or the scorer could not "
-                         "read the harness output"
+                reason = ZERO_REASONS.get(
+                    scorer,
+                    "the agent called no tools, or the scorer could not "
+                    "read the harness output",
                 )
                 problems.append(f"{scorer}: {sid} reported 0 -- {reason}")
     return problems, checked, scorers
 
 
 def main():
-    scenario_ids = expected_scenario_ids()
-    print(f"Scenarios: {len(scenario_ids)} | Harnesses: {len(HARNESSES)}")
-    print(f"Must be > 0: {', '.join(sorted(POSITIVE))}")
+    parser = argparse.ArgumentParser(description="Gates a harness build.")
+    parser.add_argument("--run-config", default=DEFAULT_RUN_CONFIG)
+    parser.add_argument("--evalset", default=DEFAULT_EVALSET)
+    parser.add_argument("--harnesses", nargs="+", default=DEFAULT_HARNESSES)
+    args = parser.parse_args()
+
+    scenario_ids = expected_scenario_ids(args.evalset)
+    print(f"Scenarios: {len(scenario_ids)} | "
+          f"Harnesses: {len(args.harnesses)}")
+    print(f"Must be > 0 where configured: {', '.join(sorted(POSITIVE))}")
     print("All other scorers are liveness-checked (ran, no error, "
           "numeric score)\n")
 
     failed = []
-    for harness in HARNESSES:
-        problems, checked, scorers = check(harness, scenario_ids)
+    for harness in args.harnesses:
+        problems, checked, scorers = check(
+            harness, scenario_ids, args.run_config)
         if problems:
             failed.append(harness)
             print(f"  [FAIL] {harness}")
