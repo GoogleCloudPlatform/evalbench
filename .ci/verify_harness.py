@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
-"""Gates the harness smoke build on two tiers of check.
+"""Gates the harness smoke build.
 
 evalbench.eval() exits 0 whenever a run completes, so the exit code alone
 cannot gate CI.
 
-Tier 1 (non-zero): telemetry scorers and trajectory_matcher must report more
-than 0. They swallow parse failures and return 0.0 with an explanation rather
-than raising, so a plain liveness check passes even when a CLI renames a token
-field -- the exact drift this build exists to catch. Every scenario requires at
-least one tool call, so these can never legitimately be 0.
+Scorers in POSITIVE must report greater than zero. They swallow parse
+failures and return 0.0 with an explanation rather than raising, so a
+liveness check alone stays green when a CLI renames a token field. A
+trajectory_matcher of 0 means none of the expected tools were called,
+which catches a harness that shells out instead of reaching for MCP.
 
-Tier 2 (liveness) covers the LLM judges without ever gating on their verdict,
-which would make the build flaky.
+This assumes every scenario requires at least one tool call; a purely
+conversational scenario would fail here spuriously.
 
-trajectory_matcher scores Jaccard overlap, so > 0 means at least one expected
-tool was called -- which is what catches a harness that silently shells out
-instead of reaching for MCP.
+Every other scorer is liveness-checked only -- it ran, did not error, and
+returned a number. Gating on a judge's verdict would make the build flaky.
 """
 import csv
 import json
