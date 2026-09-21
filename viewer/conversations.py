@@ -1,4 +1,7 @@
-import mesop as me
+try:
+    import mesop as me
+except ImportError:
+    me = None
 import os
 import pandas as pd
 from typing import Callable

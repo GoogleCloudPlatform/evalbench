@@ -1,7 +1,11 @@
 import os
 import sys
 import unittest
+from unittest.mock import MagicMock
 import pandas as pd
+
+# Allow running unit tests in core test environments where mesop is not installed
+sys.modules.setdefault("mesop", MagicMock())
 
 # Add viewer directory and root to sys.path
 sys.path.append(
