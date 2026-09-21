@@ -10,22 +10,22 @@ model: "claude-opus-4-7"
 
 use_vertex: true
 env:
-  ANTHROPIC_VERTEX_PROJECT_ID: "astana-evaluation"
+  # Set to your project, or export EVAL_GCP_PROJECT_ID and keep the !ENV form.
+  ANTHROPIC_VERTEX_PROJECT_ID: !ENV ${EVAL_GCP_PROJECT_ID}
   CLOUD_ML_REGION: "global"
-  # Cloud SQL PostgreSQL extension configuration
-  CLOUD_SQL_POSTGRES_PROJECT: "astana-evaluation"
-  CLOUD_SQL_POSTGRES_REGION: "us-central1"
-  CLOUD_SQL_POSTGRES_INSTANCE: <instance>
-  CLOUD_SQL_POSTGRES_DATABASE: <database>
-  CLOUD_SQL_POSTGRES_USER: <user>
-  CLOUD_SQL_POSTGRES_PASSWORD: <password>
-  CLOUD_SQL_POSTGRES_IP_TYPE: "PUBLIC"
+
+  # Export these before running; the skill scripts read them directly.
+  CLOUD_SQL_POSTGRES_PROJECT: !ENV ${CLOUD_SQL_POSTGRES_PROJECT}
+  CLOUD_SQL_POSTGRES_REGION: !ENV ${CLOUD_SQL_POSTGRES_REGION}
+  CLOUD_SQL_POSTGRES_INSTANCE: !ENV ${CLOUD_SQL_POSTGRES_INSTANCE}
+  CLOUD_SQL_POSTGRES_DATABASE: !ENV ${CLOUD_SQL_POSTGRES_DATABASE}
+  CLOUD_SQL_POSTGRES_USER: !ENV ${CLOUD_SQL_POSTGRES_USER}
+  CLOUD_SQL_POSTGRES_PASSWORD: !ENV ${CLOUD_SQL_POSTGRES_PASSWORD}
+  CLOUD_SQL_POSTGRES_IP_TYPE: !ENV ${CLOUD_SQL_POSTGRES_IP_TYPE}
 
 setup:
-  # Install skills from main branch (uses npx toolbox-sdk, no local binary needed)
-  # For full plugin marketplace setup (interactive), manually run in Claude Code:
-  #   /plugin marketplace add https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git
-  #   /plugin install cloud-sql-postgresql@cloud-sql-postgresql-marketplace
   skills:
+    # Pinned to a release tag: the default branch ships no `skills/` directory,
+    # they are generated per release.
     - action: install_from_repo
-      url: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git"
+      url: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git#0.4.0"
