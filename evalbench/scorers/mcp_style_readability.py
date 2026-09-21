@@ -18,12 +18,18 @@ import logging
 import re
 
 from generators.models import get_generator
+from scorers.mcp_fingerprint import (
+    canonical_exceptions,
+    judge_fingerprint,
+    sha256_text,
+)
 from scorers.mcp_readability_scoring import (
     EndpointContext,
     SEVERITY_BADGES,
     ScoreContribution,
     severity_tally,
 )
+from util.config import load_yaml_config
 
 
 # Output-token ceiling for the JSON-mode judge call. Gemini 3.x is a *thinking*
@@ -143,10 +149,19 @@ rule would otherwise have been violated, note that in the waived entry.
 )
 
 
+# Bumped by hand whenever a prompt edit should count as a judge change. The sha
+# of PROMPT_TEMPLATE is fingerprinted alongside it as a backstop, so forgetting
+# to bump this is safe. The constant exists to let a semantic change be declared
+# even when the text is untouched.
+PROMPT_VERSION = "1"
+
+
 class McpStyleReadabilityScorer:
     """Scores a tools spec against the MCP style guide using an LLM."""
 
-    # Result-row columns this scorer contributes.
+    # Result-row columns this scorer contributes. The trailing block records
+    # what the judge was given, so a count change can be attributed to a changed
+    # input rather than to the model's non-determinism.
     COLUMNS = [
         "mcp_readability_p0_issues",
         "mcp_readability_p1_issues",
@@ -154,6 +169,12 @@ class McpStyleReadabilityScorer:
         "mcp_readability_score",
         "mcp_readability_llm_feedback_json",
         "mcp_readability_llm_feedback_html",
+        "mcp_readability_judge_fingerprint",
+        "mcp_readability_judge_components_json",
+        "mcp_readability_style_guide_sha",
+        "mcp_readability_style_guide_path",
+        "mcp_readability_prompt_version",
+        "mcp_readability_judge_model",
     ]
 
     def __init__(self, config: dict, global_models):
@@ -171,13 +192,33 @@ class McpStyleReadabilityScorer:
                 "style_guide is required for the mcp_style_readability scorer"
             )
         self.style_guide = _read_text(style_guide_path)
+        self.style_guide_path = style_guide_path
+        # Only the hash is persisted, never the guide text: detection is a hash
+        # comparison, and the text would be duplicated into every endpoint row
+        # on every run. The path travels with it because the
+        # style_guide.*.local.md overrides mean two runs can legitimately use
+        # different guides, which a hash change alone cannot tell apart from an
+        # edit to the same guide.
+        self.style_guide_sha = sha256_text(self.style_guide)
         self.max_output_tokens = int(
             config.get("max_output_tokens", _MAX_OUTPUT_TOKENS)
         )
         self.model = get_generator(global_models, self.model_config)
+        # Read the model name from the config rather than the generator object:
+        # GeminiGenerator exposes vertex_model but ClaudeGenerator exposes
+        # model_id, and reading the config is uniform. It also keeps the
+        # google3-vs-OSS model split from letting one environment reuse the
+        # other's fingerprints.
+        self.judge_model = _judge_model_name(self.model_config)
 
     def run(self, context: EndpointContext) -> ScoreContribution:
-        """Evaluate one endpoint: judge the man page, pass iff no P0 findings."""
+        """Evaluate one endpoint: judge the man page, pass iff no P0 findings.
+
+        The judge fingerprint is recorded but not acted on: nothing compares it
+        to a previous run yet.
+        """
+        components = self._judge_components(context)
+        fingerprint, components = judge_fingerprint(components)
         feedback = self.evaluate(
             tools_markup=context.man_page,
             style_guide=self.style_guide,
@@ -199,6 +240,14 @@ class McpStyleReadabilityScorer:
                 "mcp_readability_llm_feedback_html": self.to_html(
                     feedback, context.product_name
                 ),
+                "mcp_readability_judge_fingerprint": fingerprint,
+                "mcp_readability_judge_components_json": json.dumps(
+                    components, sort_keys=True
+                ),
+                "mcp_readability_style_guide_sha": self.style_guide_sha,
+                "mcp_readability_style_guide_path": self.style_guide_path,
+                "mcp_readability_prompt_version": PROMPT_VERSION,
+                "mcp_readability_judge_model": self.judge_model,
             },
             score=100 if p0 == 0 else 0,
             logs=(
@@ -206,6 +255,25 @@ class McpStyleReadabilityScorer:
                 f"readability_score={feedback.get('readability_score', 0)}"
             ),
         )
+
+    def _judge_components(self, context: EndpointContext) -> dict:
+        """Every judge input other than the tools themselves.
+
+        Kept as a dict rather than a bare hash so a mismatch can name the
+        component that changed, which is what turns an unexplained count swing
+        into "the style guide changed".
+        """
+        return {
+            "scorer_name": self.name,
+            "prompt_version": PROMPT_VERSION,
+            "prompt_sha": sha256_text(PROMPT_TEMPLATE),
+            "style_guide_sha": self.style_guide_sha,
+            "style_guide_path": self.style_guide_path,
+            "judge_model": self.judge_model,
+            # Interpolated into the prompt, so it is a judge input.
+            "product_name": context.product_name or "",
+            "exceptions": canonical_exceptions(context.exceptions),
+        }
 
     def evaluate(
         self,
@@ -386,6 +454,20 @@ class McpStyleReadabilityScorer:
 
         parts.append("</div>")
         return "".join(parts)
+
+
+def _judge_model_name(model_config_path: str) -> str:
+    """The judge's model id, read from its model config.
+
+    Falls back to the config path when the file cannot be read: a stable string
+    is all the fingerprint needs, and an unreadable model config would already
+    have failed at generator construction.
+    """
+    try:
+        config = load_yaml_config(model_config_path) or {}
+    except Exception:
+        return str(model_config_path)
+    return str(config.get("vertex_model") or model_config_path)
 
 
 def _clean_findings_by_tool(by_tool) -> list[dict]:

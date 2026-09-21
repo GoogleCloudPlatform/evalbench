@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 import sys
@@ -32,6 +33,11 @@ from evaluator.mcp_readability.orchestrator import (
 from mcp import types as mcp_types
 from generators.models.mcp_tools import McpToolsGenerator, McpToolsError
 from generators.models.mcp_tool_formatter import format_tools_to_man_page
+from scorers.mcp_fingerprint import (
+    judge_fingerprint,
+    sha256_text,
+    toolset_fingerprint,
+)
 from scorers.mcp_readability_scoring import EndpointContext
 from scorers.mcp_style_readability import McpStyleReadabilityScorer
 from scorers.mcp_tool_metrics import McpToolMetricsScorer
@@ -295,6 +301,9 @@ def test_readability_scorer_run():
     scorer = McpStyleReadabilityScorer.__new__(McpStyleReadabilityScorer)
     scorer.name = "mcp_style_readability"
     scorer.style_guide = "guide"
+    scorer.style_guide_path = "guide.md"
+    scorer.style_guide_sha = sha256_text("guide")
+    scorer.judge_model = "fake-model"
     scorer.model = _FakeLLM()  # one P1 finding, no P0
     ctx = EndpointContext(
         product_name="p", endpoint={}, tools=[], man_page="mp", exceptions=[]
@@ -434,6 +443,31 @@ def test_orchestrator_end_to_end():
                 row["mcp_readability_tool_fingerprints_json"]
             )
             assert set(fingerprints) == {"list_datasets", "get_job_state"}
+            # The whole-surface hash is a pure function of that map, so it is
+            # only useful if the two are written from the same fetch.
+            assert row["mcp_readability_toolset_fingerprint"] == (
+                toolset_fingerprint(fingerprints)
+            )
+            # Ordering column: UTC and offset-aware, unlike the naive
+            # check_timestamp beside it.
+            stamp = datetime.datetime.fromisoformat(
+                row["mcp_readability_check_timestamp_utc"]
+            )
+            assert stamp.tzinfo is not None
+            # The judge's inputs, recorded so a later run can tell a changed
+            # style guide from a changed tool.
+            components = json.loads(
+                row["mcp_readability_judge_components_json"]
+            )
+            assert components["style_guide_sha"] == (
+                row["mcp_readability_style_guide_sha"]
+            )
+            assert components["prompt_version"] == (
+                row["mcp_readability_prompt_version"]
+            )
+            assert judge_fingerprint(components)[0] == (
+                row["mcp_readability_judge_fingerprint"]
+            )
 
             # scores_tf: one row per (endpoint, scorer).
             with open(scores_tf) as f:
