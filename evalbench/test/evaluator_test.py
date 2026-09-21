@@ -206,6 +206,268 @@ class TestEvaluator(unittest.TestCase):
         self.assertEqual(mock_record_sql_exec.call_count, 1)
         self.assertEqual(mock_record_scoring.call_count, 1)
 
+    def _setup_mock_runner(self, mock_mprunner_class):
+        def create_mock_runner(*args, **kwargs):
+            runner = MagicMock()
+            runner.futures = []
+
+            def mock_execute_work(work):
+                runner.futures.append(MagicMock())
+
+            runner.execute_work.side_effect = mock_execute_work
+            return runner
+
+        mock_mprunner_class.side_effect = create_mock_runner
+
+    @patch("evaluator.evaluator.mprunner.MPRunner")
+    @patch("evaluator.evaluator._process_futures_with_timeout")
+    def test_db_queue_timeout_custom_configured(
+        self,
+        mock_process_futures,
+        mock_mprunner_class,
+    ):
+        self._setup_mock_runner(mock_mprunner_class)
+
+        def side_effect(futures, future_to_eval_map, timeout):
+            for f in futures:
+                yield f, future_to_eval_map[f], False
+
+        mock_process_futures.side_effect = side_effect
+
+        config = {
+            "runners": {
+                "db_queue_timeout_seconds": 250,
+                "task_timeout_seconds": 120,
+            }
+        }
+        evaluator = Evaluator(config)
+        self.assertEqual(evaluator.db_queue_timeout_seconds, 250)
+
+        class DummyInput:
+            def __init__(self, id="p1"):
+                self.id = id
+                self.nl_prompt = "test"
+                self.query_type = "dql"
+                self.database = "test_db"
+
+        db_queue = MagicMock()
+        evaluator.evaluate(
+            dataset=[DummyInput("p1")],
+            db_queue=db_queue,
+            prompt_generator=MagicMock(),
+            model_generator=MagicMock(),
+            job_id="job1",
+            run_time=datetime.datetime.now(),
+            progress_reporting=MagicMock(),
+            global_models={},
+            close_connections=False,
+        )
+
+        db_queue.get.assert_called_with(timeout=250.0)
+
+    @patch("evaluator.evaluator.mprunner.MPRunner")
+    @patch("evaluator.evaluator._process_futures_with_timeout")
+    def test_db_queue_timeout_unbounded_blocking(
+        self,
+        mock_process_futures,
+        mock_mprunner_class,
+    ):
+        self._setup_mock_runner(mock_mprunner_class)
+
+        def side_effect(futures, future_to_eval_map, timeout):
+            for f in futures:
+                yield f, future_to_eval_map[f], False
+
+        mock_process_futures.side_effect = side_effect
+
+        config = {"runners": {"db_queue_timeout_seconds": 0}}
+        evaluator = Evaluator(config)
+
+        class DummyInput:
+            def __init__(self, id="p1"):
+                self.id = id
+                self.nl_prompt = "test"
+                self.query_type = "dql"
+                self.database = "test_db"
+
+        db_queue = MagicMock()
+        evaluator.evaluate(
+            dataset=[DummyInput("p1")],
+            db_queue=db_queue,
+            prompt_generator=MagicMock(),
+            model_generator=MagicMock(),
+            job_id="job1",
+            run_time=datetime.datetime.now(),
+            progress_reporting=MagicMock(),
+            global_models={},
+            close_connections=False,
+        )
+
+        db_queue.get.assert_called_with(block=True)
+
+    @patch("evaluator.evaluator.mprunner.MPRunner")
+    @patch("evaluator.evaluator._process_futures_with_timeout")
+    def test_db_queue_timeout_dynamic_scaling_default(
+        self,
+        mock_process_futures,
+        mock_mprunner_class,
+    ):
+        self._setup_mock_runner(mock_mprunner_class)
+
+        def side_effect(futures, future_to_eval_map, timeout):
+            for f in futures:
+                yield f, future_to_eval_map[f], False
+
+        mock_process_futures.side_effect = side_effect
+
+        # 600s task timeout -> 1.5 * 600 = 900s (between 300s floor and 1800s ceiling)
+        config = {"runners": {"task_timeout_seconds": 600}}
+        evaluator = Evaluator(config)
+
+        class DummyInput:
+            def __init__(self, id="p1"):
+                self.id = id
+                self.nl_prompt = "test"
+                self.query_type = "dql"
+                self.database = "test_db"
+
+        dataset = [DummyInput(f"p{i}") for i in range(10)]
+
+        db_queue = MagicMock()
+        evaluator.evaluate(
+            dataset=dataset,
+            db_queue=db_queue,
+            prompt_generator=MagicMock(),
+            model_generator=MagicMock(),
+            job_id="job1",
+            run_time=datetime.datetime.now(),
+            progress_reporting=MagicMock(),
+            global_models={},
+            close_connections=False,
+        )
+
+        db_queue.get.assert_called_with(timeout=900.0)
+
+    @patch("evaluator.evaluator.mprunner.MPRunner")
+    @patch("evaluator.evaluator._process_futures_with_timeout")
+    def test_db_queue_timeout_floor_and_ceiling(
+        self,
+        mock_process_futures,
+        mock_mprunner_class,
+    ):
+        self._setup_mock_runner(mock_mprunner_class)
+
+        def side_effect(futures, future_to_eval_map, timeout):
+            for f in futures:
+                yield f, future_to_eval_map[f], False
+
+        mock_process_futures.side_effect = side_effect
+
+        class DummyInput:
+            def __init__(self, id="p1"):
+                self.id = id
+                self.nl_prompt = "test"
+                self.query_type = "dql"
+                self.database = "test_db"
+
+        # Case 1: Short task (100s) -> 1.5 * 100 = 150s, clamped to 300s floor
+        evaluator_short = Evaluator({"runners": {"task_timeout_seconds": 100}})
+        db_queue_1 = MagicMock()
+        evaluator_short.evaluate(
+            dataset=[DummyInput("p1")],
+            db_queue=db_queue_1,
+            prompt_generator=MagicMock(),
+            model_generator=MagicMock(),
+            job_id="job1",
+            run_time=datetime.datetime.now(),
+            progress_reporting=MagicMock(),
+            global_models={},
+            close_connections=False,
+        )
+        db_queue_1.get.assert_called_with(timeout=300.0)
+
+        # Case 2: Very long task (2000s) -> 1.5 * 2000 = 3000s, clamped to 1800s ceiling
+        evaluator_long = Evaluator({"runners": {"task_timeout_seconds": 2000}})
+        db_queue_2 = MagicMock()
+        evaluator_long.evaluate(
+            dataset=[DummyInput("p1")],
+            db_queue=db_queue_2,
+            prompt_generator=MagicMock(),
+            model_generator=MagicMock(),
+            job_id="job2",
+            run_time=datetime.datetime.now(),
+            progress_reporting=MagicMock(),
+            global_models={},
+            close_connections=False,
+        )
+        db_queue_2.get.assert_called_with(timeout=1800.0)
+
+    @patch("evaluator.evaluator.sqlexecwork.SQLExecWork")
+    @patch("evaluator.evaluator.mprunner.MPRunner")
+    @patch("evaluator.evaluator._process_futures_with_timeout")
+    def test_head_of_line_blocking_queue_timeout_regression(
+        self,
+        mock_process_futures,
+        mock_mprunner_class,
+        mock_sqlexecwork_class,
+    ):
+        """Regression test for head-of-line blocking on db_queue.
+
+        Prior to the fix, db_queue.get was hardcoded to timeout=180s. When a batch
+        of items arrived, items queued past 180s timed out with queue.Empty.
+        With the fix, dynamic queue_timeout defaults to 1.5x task_timeout (e.g. 900s),
+        allowing healthy queued items to acquire a connection and succeed.
+        """
+        import queue
+
+        self._setup_mock_runner(mock_mprunner_class)
+
+        def side_effect(futures, future_to_eval_map, timeout):
+            for f in futures:
+                yield f, future_to_eval_map[f], False
+
+        mock_process_futures.side_effect = side_effect
+
+        # 600s task timeout -> 1.5 * 600 = 900s (> 180s)
+        config = {"runners": {"task_timeout_seconds": 600}}
+        evaluator = Evaluator(config)
+
+        class DummyInput:
+            def __init__(self, id="p1"):
+                self.id = id
+                self.nl_prompt = "test"
+                self.query_type = "dql"
+                self.database = "test_db"
+
+        dataset = [DummyInput(f"p{i}") for i in range(10)]
+
+        # Simulate a queue wait where connection acquisition takes >180s (e.g. 300s):
+        # - Old code (timeout=180) fails with queue.Empty.
+        # - Fixed code (timeout=900.0) succeeds.
+        def fake_db_get(timeout=None, block=True):
+            if timeout is not None and timeout <= 180:
+                raise queue.Empty("Queue wait exceeded 180s limit")
+            return MagicMock()
+
+        db_queue = MagicMock()
+        db_queue.get.side_effect = fake_db_get
+
+        eval_outputs, _, _ = evaluator.evaluate(
+            dataset=dataset,
+            db_queue=db_queue,
+            prompt_generator=MagicMock(),
+            model_generator=MagicMock(),
+            job_id="job1",
+            run_time=datetime.datetime.now(),
+            progress_reporting=MagicMock(),
+            global_models={},
+            close_connections=False,
+        )
+
+        # Verify that all items successfully acquired DB connection without timing out
+        for eval_output in eval_outputs:
+            self.assertIsNone(eval_output.get("generated_error"))
+
 
 if __name__ == "__main__":
     unittest.main()
