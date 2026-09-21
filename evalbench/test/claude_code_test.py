@@ -229,3 +229,14 @@ def test_parse_stream_json_accumulates_tool_durations(
     tools = parsed["stats"]["tools"]
     assert tools["totalDurationMs"] == 250
     assert tools["byName"]["cloud-sql__list_instances"]["durationMs"] == 250
+
+
+def test_extract_skills_strips_plugin_namespace():
+    """The `Skill` tool names plugin skills `<plugin>:<skill>`, which matches no
+    skill directory, so both skills scorers graded an activated skill as 0."""
+    generator = object.__new__(ClaudeCodeGenerator)
+    stdout = json.dumps({"stats": {"tools": {"byName": {"Skill": {"parameters": [
+        {"skill": "cloud-sql-postgresql:cloud-sql-postgres-admin"}]}}}}})
+
+    with patch.object(ClaudeCodeGenerator, '_get_installed_skills', return_value=set()):
+        assert generator.extract_skills(stdout) == ["cloud-sql-postgres-admin"]
