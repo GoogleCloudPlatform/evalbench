@@ -26,6 +26,7 @@ from abc import ABC, abstractmethod
 import csv
 from dataclasses import dataclass, field
 import datetime
+import hashlib
 import glob
 import json
 import logging
@@ -227,6 +228,7 @@ class BigQueryBaselineStore(_RowBaselineStore):
                 _TOOL_FINGERPRINTS,
                 _FEEDBACK,
                 _SCORE,
+                _PROVENANCE,
                 _JOB_ID,
             ]
         )
@@ -299,6 +301,41 @@ def build_store(config: dict) -> BaselineStore:
     )
 
 
+def is_expired(baseline: Baseline, max_age_days: int, now=None) -> bool:
+    """Whether a baseline is too old to reuse.
+
+    Expiry is staggered by the endpoint key so a fleet of endpoints primed on
+    the same day does not all re-judge on the same later day. This does break
+    the strict invariant, which is acceptable only because the resulting run
+    reports baseline_expired, making it an announced re-judge rather than an
+    unexplained count change.
+
+    max_age_days of 0 disables expiry entirely. now defaults to wall-clock UTC
+    and is injected by tests.
+    """
+    if max_age_days <= 0:
+        return False
+    stamp = _parse_timestamp(baseline.check_timestamp)
+    if stamp is None:
+        # An unparseable timestamp cannot prove freshness.
+        return True
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    offset = _stagger(baseline.endpoint_key, max_age_days)
+    return (now - stamp).days >= max_age_days + offset
+
+
+def _stagger(endpoint_key: str, max_age_days: int) -> int:
+    """Return a deterministic per-endpoint offset in [0, max_age_days).
+
+    Hashed rather than read as hex, because an endpoint may carry an explicit
+    id: from endpoints.yaml, which is arbitrary text.
+    """
+    if not endpoint_key:
+        return 0
+    digest = hashlib.sha256(endpoint_key.encode("utf-8")).hexdigest()
+    return int(digest[:8], 16) % max_age_days
+
+
 def _row_timestamp(row: dict) -> str:
     """The run's time, preferring the offset-aware column.
 
@@ -312,6 +349,20 @@ def _row_timestamp(row: dict) -> str:
         (row.get(_TIMESTAMP_UTC) or "").strip()
         or (row.get(_TIMESTAMP) or "").strip()
     )
+
+
+def _parse_timestamp(value: str) -> datetime.datetime | None:
+    if not value:
+        return None
+    try:
+        stamp = datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if stamp.tzinfo is None:
+        # Pre-existing rows recorded naive local time; assume UTC rather than
+        # discard them, since the only use is a coarse age comparison.
+        stamp = stamp.replace(tzinfo=datetime.timezone.utc)
+    return stamp
 
 
 def _load_json(value, default):
