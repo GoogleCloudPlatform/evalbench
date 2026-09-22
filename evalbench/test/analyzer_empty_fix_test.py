@@ -172,11 +172,11 @@ class TestBoundaryContractEnforcement(unittest.TestCase):
 
     def test_sqlexecwork_cleanup_failure_is_logged_without_masking_result(self):
         db = MagicMock()
-        def side_effect(sql, *args, **kwargs):
-            if "DROP TABLE" in sql:
-                raise RuntimeError("Cleanup drop failed")
-            return ([{"count": 1}], None, None)
-        db.execute.side_effect = side_effect
+        db.execute.side_effect = [
+            None,
+            ([{"count": 1}], None, None),
+            RuntimeError("Cleanup drop failed"),
+        ]
         db_queue = Queue()
         eval_result = {
             "id": "item_cleanup_fail",
