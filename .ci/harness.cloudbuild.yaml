@@ -74,11 +74,15 @@ steps:
     env: *harness_env
     volumes: *results_volume
 
+  # Neither gate covers agy_cli yet: agy cannot authenticate from the
+  # service-account key, so it attaches no tools and activates no skills. Its
+  # steps still run, so the logs keep accruing evidence for the fix.
   - id: verify-harnesses
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
     waitFor: ['agy-cli', 'claude-code', 'codex-cli']
-    args: ['uv', 'run', '--no-sync', 'python3', '.ci/verify_harness.py']
+    args: ['uv', 'run', '--no-sync', 'python3', '.ci/verify_harness.py',
+           '--harnesses', 'claude_code', 'codex_cli']
     volumes: *results_volume
 
   - id: agy-cli-skills
@@ -132,7 +136,8 @@ steps:
     waitFor: ['agy-cli-skills', 'claude-code-skills', 'codex-cli-skills']
     args: ['uv', 'run', '--no-sync', 'python3', '.ci/verify_harness.py',
            '--run-config', '.ci/skills_run_config.yaml',
-           '--evalset', '.ci/harness_skills.evalset.json']
+           '--evalset', '.ci/harness_skills.evalset.json',
+           '--harnesses', 'claude_code', 'codex_cli']
     volumes: *results_volume
 
 availableSecrets:
