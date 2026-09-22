@@ -103,6 +103,26 @@ class TestBoundaryContractEnforcement(unittest.TestCase):
         self.assertIsNone(res.get("generated_error"))
         self.assertIsNone(res.get("golden_error"))
 
+    def test_sqlexecwork_ddl_setup_failure_preserves_context(self):
+        db = MagicMock()
+        db.execute.side_effect = RuntimeError("DDL setup connection dropped")
+        db_queue = Queue()
+        eval_result = {
+            "sql_generator_error": None,
+            "generated_sql": "CREATE TABLE t (id INT)",
+            "query_type": "ddl",
+            "eval_query": [],
+            "golden_sql": "",
+            "setup_sql": ["CREATE TABLE base (id INT)"],
+            "preprocess_sql": [],
+        }
+        config = {"prompt_generator": "NOOPGenerator", "dialect": "sqlite"}
+        work = SQLExecWork(db, config, eval_result, db_queue)
+        res = work.run()
+        self.assertIsNone(res.get("generated_result"))
+        self.assertIn("Was not able to run DDL due to setup_error", res.get("generated_error", ""))
+        self.assertIn("DDL setup connection dropped", res.get("generated_error", ""))
+
 
 class TestScorersContractCompliance(unittest.TestCase):
 
