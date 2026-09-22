@@ -172,15 +172,15 @@ def analyze_one_metric(
                 "token_consumption",
                 "tokens_processed",
                 "effective_billed_tokens",
-                # dataset_quality and its five category rollups are 0-100
-                # grades, so a binary match against the pass threshold would
-                # report every grade below 100 as a flat 0%.
+                # 0-100 grades: matching against 100 would report every
+                # grade below it as a flat 0%.
                 "dataset_quality",
                 "tool_activation_faithfulness",
                 "discoverability_coverage",
                 "error_recovery_coverage",
                 "composition_coverage",
                 "cuj_diversity",
+                "skills_best_practices",
             ]
             if metric_name in non_binary_metrics:
                 avg_val = (

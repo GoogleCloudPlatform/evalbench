@@ -7,17 +7,19 @@ env:
   GOOGLE_CLOUD_LOCATION: "global"
   GOOGLE_GENAI_USE_VERTEXAI: "true"
 
-  # Set the following environment variables for sql skills
+  # Export these before running; the skill scripts read them directly.
   CLOUD_SQL_POSTGRES_PROJECT: !ENV ${EVAL_GCP_PROJECT_ID}
-  CLOUD_SQL_POSTGRES_REGION: "us-central1"
-  CLOUD_SQL_POSTGRES_INSTANCE: <instance>
-  CLOUD_SQL_POSTGRES_DATABASE: <database>
-  CLOUD_SQL_POSTGRES_USER: <user>
-  CLOUD_SQL_POSTGRES_PASSWORD: <password>
-  CLOUD_SQL_POSTGRES_IP_TYPE: "PUBLIC"
+  CLOUD_SQL_POSTGRES_REGION: !ENV ${CLOUD_SQL_POSTGRES_REGION}
+  CLOUD_SQL_POSTGRES_INSTANCE: !ENV ${CLOUD_SQL_POSTGRES_INSTANCE}
+  CLOUD_SQL_POSTGRES_DATABASE: !ENV ${CLOUD_SQL_POSTGRES_DATABASE}
+  CLOUD_SQL_POSTGRES_USER: !ENV ${CLOUD_SQL_POSTGRES_USER}
+  CLOUD_SQL_POSTGRES_PASSWORD: !ENV ${CLOUD_SQL_POSTGRES_PASSWORD}
+  CLOUD_SQL_POSTGRES_IP_TYPE: !ENV ${CLOUD_SQL_POSTGRES_IP_TYPE}
 setup:
   # Each entry installs a plugin (`agy plugin install`), which may bundle
   # skills and its own MCP servers.
   skills:
+    # Pinned to a release tag: the default branch ships no `skills/` directory,
+    # they are generated per release.
     - action: install_from_repo
-      path: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git"
+      path: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git#0.4.0"
