@@ -693,6 +693,13 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             )
 
 
+def _summary_count(value) -> float | int:
+    """Keeps a result count whole where it is whole; partial-credit and
+    averaged metrics report a fraction that int() would truncate away."""
+    count = float(value)
+    return int(count) if count.is_integer() else round(count, 2)
+
+
 def _process_results(
     reporters, job_id, run_time, results_tf, scores_tf, multi_trial_scores_tf, config, model_config, db_configs
 ):
@@ -744,9 +751,9 @@ def _process_results(
     for _, row in summary_scores_df.iterrows():
         name = row.get("metric_name", "")
         total = int(row.get("total_results_count", 0))
-        correct = int(row.get("correct_results_count", 0))
         summary["total"] = total
-        summary["scores"][name] = correct
+        summary["scores"][name] = _summary_count(
+            row.get("correct_results_count", 0))
 
     # Add generation latency percentiles
     if "sql_generator_time" in results_df.columns:

@@ -605,7 +605,7 @@ The set most commonly used with Gemini CLI:
 | `end_to_end_latency` | Deterministic | Milliseconds | Model API latency plus tool execution latency. |
 | `tool_call_latency` | Deterministic | Milliseconds | Sum of all tool execution durations. |
 | `token_consumption` | Deterministic | Count | Total input + output tokens across all turns. |
-| `goal_completion` | LLM | 0–100 | Whether the agent accomplished the conversation plan's intent. 100 for PASS, 0 for FAIL. |
+| `goal_completion` | LLM | 0–100 | Whether the agent accomplished the conversation plan's intent. Scores the share of the plan's sub-goals the agent met. |
 | `behavioral_metrics` | LLM | 0–100 | Hallucination and clarification rates. Starts at 100, penalizing 50 per hallucination and 20 per unnecessary clarification. |
 | `parameter_analysis` | LLM | 100 (qualitative) | Feedback on tool parameters. Always scores 100 — the value is in the explanation. |
 | `binary_rubric_scorer` | LLM | 0–100 | Pass/fail against user-supplied rubric criteria. |
