@@ -6,9 +6,9 @@ single-page shell for every URL and returns 200 even when the page function
 raises, so an HTTP probe cannot tell a working page from a broken one.
 
 Rendering alone is not enough either. With no results to show, every tab draws
-its empty state without erroring, so a broken data path looks exactly like a
-working one. The run below therefore precomputes a fixture and asserts the
-rendered page carries it.
+its empty state without erroring, so a broken data path looks like a working
+one. This script therefore precomputes a fixture and asserts the rendered page
+carries it.
 
     python .ci/verify_viewer.py
 """
@@ -23,8 +23,8 @@ from functools import partial
 from pathlib import Path
 
 VIEWER_DIR = Path(__file__).resolve().parents[1] / "viewer"
-# Carries no evals.csv, which is what keeps the summariser from reaching for a
-# model while precomputing: without one it returns before it builds a prompt.
+# Holds no evals.csv, which is what keeps precompute offline: without one the
+# summariser returns before it builds a prompt.
 FIXTURE_RESULTS = Path(__file__).resolve().parent / "fixtures" / "viewer_results"
 
 ROOT_PAGE = "/"
@@ -35,6 +35,7 @@ EXPECTED_PAGES = {ROOT_PAGE}
 EXPECTED_MODULES = {"dashboard", "conversations"}
 
 # Tabs are state, not routes, so rendering the page once only covers the default.
+# Compare is the fifth: the toggle omits it until the user compares two evals.
 EXPECTED_TABS = ["Status", "List", "Charts", "Dataset Quality", "Compare"]
 
 
@@ -51,21 +52,20 @@ def fixture_runs():
 
 FIXTURE_RUN_IDS, FIXTURE_PRODUCTS = fixture_runs()
 
-# Run ids and product names reach a tab only by way of the precomputed cache, so
-# drawing one proves the cache was read. The counts beside them come from the
-# directory listing instead and survive a cache that loads nothing, which is why
-# neither kind of marker stands alone.
+# Run ids and product names reach the page only through the precomputed cache,
+# so drawing one proves the cache was read. The counts beside them come from the
+# directory listing and still render when the cache loads nothing.
 TAB_DATA_MARKERS = {
     "Status": [f"Total Evaluation Jobs: {len(FIXTURE_RUN_IDS)}", *FIXTURE_PRODUCTS],
     "List": [f"Found {len(FIXTURE_RUN_IDS)} evaluation runs", *FIXTURE_RUN_IDS],
 }
 
-# Charts reports emptiness rather than drawing data of its own, and any tab can
-# draw a marker above and still fall back to an empty state below it.
+# A tab can draw a marker above and still fall back to an empty state below it.
+# Charts has no data marker of its own, so this is all that covers it.
 EMPTY_MARKERS = ("Found 0 evaluation runs", "No data found in any run directory")
 
-# Compare is hidden until two evals are selected, and without them it draws an
-# error message rather than the comparison itself.
+# What Compare needs to draw a comparison: the tab itself, exactly two evals,
+# and a finished summary. Short of that it draws a placeholder or an error.
 TAB_STATE = {
     "Compare": {
         "compare_tab_visible": True,
@@ -79,7 +79,7 @@ class ErrorLogCapture(logging.Handler):
     """Collects ERROR records.
 
     The app catches its own render failures and logs them, so a broken page
-    never raises and exceptions alone are not enough to detect one.
+    may never raise and exceptions alone are not enough to detect one.
     """
 
     def __init__(self):
@@ -123,9 +123,9 @@ def verify(results_dir):
     logging.getLogger().addHandler(captured)
 
     def attempt(label, fn):
-        # A fresh request context per attempt, so state does not leak between them.
         captured.records.clear()
         try:
+            # A fresh request context per attempt, so state does not leak.
             with app.test_request_context():
                 fn(label)
         except Exception as e:
@@ -140,8 +140,8 @@ def verify(results_dir):
     def check_data(label):
         """Assert the fixture reached the page that was just rendered.
 
-        Reads the component tree over the wire bytes, since the strings a
-        component draws live in its serialised payload.
+        Reads the serialised component tree, since the strings a component
+        draws live in its payload.
         """
         drawn = rt.context().current_node().SerializeToString()
         tab = me.state(viewer_app.State).selected_main_tab
@@ -175,8 +175,6 @@ def verify(results_dir):
             print(f"  {failure}")
         return 1
 
-    # The fixture carries no evals.csv, so this stays offline: the summariser
-    # returns before it builds a prompt.
     import precompute_trends
     attempt("precomputing the fixture", lambda _: precompute_trends.precompute())
 
@@ -186,7 +184,7 @@ def verify(results_dir):
                         f"so there is nothing for the pages to render")
 
     if failures:
-        # Rendering against a cache that is not there would only cascade.
+        # Rendering on top of a failed precompute would only cascade.
         return report()
 
     loading_errors = rt.get_loading_errors()
