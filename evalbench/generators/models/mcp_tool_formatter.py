@@ -234,6 +234,37 @@ def _format_props(
     return lines
 
 
+def format_tool_section(tool: mcp_types.Tool) -> str:
+    """Formats a single tool as its man-page section.
+
+    Exposed separately from format_tools_to_man_page so callers can fingerprint
+    the exact bytes the judge sees for one tool. Fingerprinting the rendered
+    section rather than the Tool fields makes "fingerprints are equal" and "the
+    judge saw identical text" the same statement, instead of relying on a
+    hand-maintained field list staying in sync with this renderer.
+
+    The returned section is not stripped: the man page is the sections joined
+    with newlines, so leading/trailing blank lines are the join's concern.
+    """
+    lines = [
+        "=" * 80,
+        f"TOOL: {tool.name}",
+        "=" * 80,
+        "DESCRIPTION:",
+    ]
+
+    desc = tool.description or "No description provided."
+    lines.extend(_wrap_text(desc, "  "))
+
+    lines.append("\nPARAMETERS:")
+    if tool.inputSchema and tool.inputSchema.get("properties"):
+        lines.extend(_format_props(tool.inputSchema))
+    else:
+        lines.append("  None\n")
+
+    return "\n".join(lines)
+
+
 def format_tools_to_man_page(tools: Sequence[mcp_types.Tool]) -> str:
     """Formats a sequence of MCP tools into a man-page style string.
 
@@ -247,21 +278,4 @@ def format_tools_to_man_page(tools: Sequence[mcp_types.Tool]) -> str:
     if not tools:
         return "No tools available."
 
-    lines = []
-    for tool in tools:
-        lines.append("=" * 80)
-        lines.append(f"TOOL: {tool.name}")
-        lines.append("=" * 80)
-        lines.append("DESCRIPTION:")
-
-        desc = tool.description or "No description provided."
-        lines.extend(_wrap_text(desc, "  "))
-
-        lines.append("\nPARAMETERS:")
-        if tool.inputSchema and tool.inputSchema.get("properties"):
-            schema_lines = _format_props(tool.inputSchema)
-            lines.extend(schema_lines)
-        else:
-            lines.append("  None\n")
-
-    return "\n".join(lines).strip()
+    return "\n".join(format_tool_section(tool) for tool in tools).strip()
