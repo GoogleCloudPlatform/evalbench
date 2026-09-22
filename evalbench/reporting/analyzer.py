@@ -79,7 +79,11 @@ def analyze_one_metric(
         original_df_size = int(len(df) / num_scorers)
 
     if execution:
-        df_exec = df[df["generated_sql"].notna()]
+        df_exec = (
+            df[df["generated_sql"].notna()]
+            if "generated_sql" in df.columns
+            else pd.DataFrame()
+        )
 
         # Use prompt_id to count unique successful prompts if available
         has_prompt_id = (
@@ -91,30 +95,57 @@ def analyze_one_metric(
         else:
             id_col = "id"
 
-        if "returned_sql" in df_exec["comparator"].values:
+        if df_exec.empty or id_col not in df_exec.columns:
+            correct_results_count = 0
+        elif (
+            "comparator" in df_exec.columns
+            and "returned_sql" in df_exec["comparator"].values
+        ):
+            has_score = "score" in df_exec.columns
+            score_filter = (df_exec["score"] == 100) if has_score else False
+            has_error = "generated_error" in df_exec.columns
+            error_filter = (
+                (df_exec["generated_error"].isna())
+                | (df_exec["generated_error"] == "")
+            ) if has_error else True
             correct_results_count = len(
                 df_exec[
-                    (df_exec["generated_error"].isna())
+                    error_filter
                     & (df_exec["comparator"] == "returned_sql")
-                    & (df_exec["score"] == 100)
+                    & score_filter
                 ][id_col]
                 .dropna()
                 .drop_duplicates()
             )
         else:
+            has_error = "generated_error" in df_exec.columns
+            error_filter = (
+                (df_exec["generated_error"].isna())
+                | (df_exec["generated_error"] == "")
+            ) if has_error else True
             correct_results_count = len(
-                df_exec[(df_exec["generated_error"].isna())][id_col]
+                df_exec[error_filter][id_col]
                 .dropna()
                 .drop_duplicates()
             )
     else:
-        df_metric = df[
-            df["comparator"].astype(str).apply(
-                lambda c: _is_sub_comparator(c, metric_name)
-            )
-        ]
+        df_metric = (
+            df[
+                df["comparator"].astype(str).apply(
+                    lambda c: _is_sub_comparator(c, metric_name)
+                )
+            ]
+            if "comparator" in df.columns
+            else pd.DataFrame()
+        )
 
-        if (
+        if df_metric.empty or "score" not in df_metric.columns:
+            correct_results_count = 0
+            if original_df_size == 0 and num_prompts is not None:
+                original_df_size = num_prompts
+            elif original_df_size == 0:
+                original_df_size = len(df_metric)
+        elif (
             "prompt_id" in df_metric.columns
             and not df_metric["prompt_id"].isna().all()
         ):
@@ -152,10 +183,16 @@ def analyze_one_metric(
                 "cuj_diversity",
             ]
             if metric_name in non_binary_metrics:
-                avg_val = df_metric["score"].mean(
-                ) if not df_metric.empty else 0.0
-                total_sum = df_metric["score"].sum(
-                ) if not df_metric.empty else 0.0
+                avg_val = (
+                    df_metric["score"].mean()
+                    if (not df_metric.empty and "score" in df_metric.columns)
+                    else 0.0
+                )
+                total_sum = (
+                    df_metric["score"].sum()
+                    if (not df_metric.empty and "score" in df_metric.columns)
+                    else 0.0
+                )
 
                 unit = ""
                 if "latency" in metric_name:
