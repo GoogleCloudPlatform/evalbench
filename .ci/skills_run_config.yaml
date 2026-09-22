@@ -1,5 +1,5 @@
-# Shared by all four harnesses. CI_HARNESS selects which one runs, so every
-# harness is scored identically and stays comparable.
+# Shared by every harness. CI_HARNESS selects which one runs, so all of them
+# are scored identically and stay comparable.
 dataset_config: .ci/harness_skills.evalset.json
 dataset_format: agent-format
 
@@ -9,8 +9,8 @@ simulated_user_model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
 
 scorers:
   # trajectory_matcher and parameter_analysis are omitted: a skill runs as
-  # `run_command` on a node script, so neither scorer sees the skill's identity
-  # or its arguments. skills_trajectory is the equivalent signal here.
+  # `run_command` on a node script, so neither scorer sees the skill's
+  # identity or its arguments.
   skills_trajectory:
     # Score recall only. A skill counts as activated once the agent reads its
     # SKILL.md, so an extra skill means the agent browsed it, not that it

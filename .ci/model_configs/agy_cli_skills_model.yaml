@@ -1,15 +1,13 @@
 generator: agy_cli
 timeout: "20m"
 
-# No mcp_servers: the skill scripts shell out to @toolbox-sdk/server directly,
-# so the two channels never meet.
 env:
   GOOGLE_CLOUD_PROJECT: !ENV ${EVAL_GCP_PROJECT_ID}
   GOOGLE_CLOUD_LOCATION: "global"
   GOOGLE_GENAI_USE_VERTEXAI: "true"
 
-  # The skill scripts read these directly. The toolbox server initializes every
-  # source at startup, so even control-plane skills need a reachable Postgres.
+  # The toolbox server initializes every source at startup, so even the
+  # control-plane skill needs a reachable Postgres.
   CLOUD_SQL_POSTGRES_PROJECT: !ENV ${EVAL_GCP_PROJECT_ID}
   CLOUD_SQL_POSTGRES_REGION: !ENV ${CLOUD_SQL_POSTGRES_REGION}
   CLOUD_SQL_POSTGRES_INSTANCE: !ENV ${CLOUD_SQL_POSTGRES_INSTANCE}
@@ -18,9 +16,11 @@ env:
   CLOUD_SQL_POSTGRES_PASSWORD: !ENV ${CLOUD_SQL_POSTGRES_PASSWORD}
   CLOUD_SQL_POSTGRES_IP_TYPE: !ENV ${CLOUD_SQL_POSTGRES_IP_TYPE}
 
+# No mcp_servers: the skill scripts reach the database through their own
+# @toolbox-sdk/server process, never through MCP.
 setup:
   skills:
-    # Pinned to a release tag: the default branch ships no `skills/` directory,
-    # they are generated per release.
+    # Pinned to a release tag: the default branch ships no `skills/`
+    # directory -- it is generated per release.
     - action: install_from_repo
       url: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git#0.4.0"

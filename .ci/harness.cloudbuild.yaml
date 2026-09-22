@@ -14,7 +14,7 @@ steps:
            '-f', 'evalbench_service/Dockerfile', '.']
 
   # Pushed here rather than via top-level `images:`, which only runs when the
-  # whole build succeeds -- the failing builds would never warm the cache.
+  # whole build succeeds -- a failing build would never warm the cache.
   - id: push-cache
     name: 'gcr.io/cloud-builders/docker'
     waitFor: ['build-image']
@@ -74,9 +74,9 @@ steps:
     env: *harness_env
     volumes: *results_volume
 
-  # Neither gate covers agy_cli yet: agy cannot authenticate from the
-  # service-account key, so it attaches no tools and activates no skills. Its
-  # steps still run, so the logs keep accruing evidence for the fix.
+  # Neither gate covers agy_cli yet: it intermittently fails to authenticate
+  # from the service-account key, and then attaches no tools and activates no
+  # skills. Its steps still run so the logs keep accruing evidence.
   - id: verify-harnesses
     name: 'evalbench-harness-ci'
     dir: '/evalbench'

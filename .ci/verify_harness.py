@@ -8,9 +8,8 @@ cannot gate CI. The defaults target the MCP-tools build; --run-config and
 Scorers in POSITIVE must report greater than zero. They swallow parse
 failures and return 0.0 with an explanation rather than raising, so a
 liveness check alone stays green when a CLI renames a token field. A
-trajectory_matcher of 0 means none of the expected tools were called,
-which catches a harness that shells out instead of reaching for MCP;
-skills_trajectory of 0 is the same signal for the skills channel.
+zero there means the harness shelled out instead of reaching for the
+tools or skills it was given (see ZERO_REASONS).
 
 This assumes every scenario requires at least one tool call; a purely
 conversational scenario would fail here spuriously.
@@ -78,7 +77,7 @@ def load_rows(job_dir):
             try:
                 score = float(row["score"])
                 # nan <= 0 is False, so an unguarded nan would clear the
-                # Tier 1 gate.
+                # POSITIVE gate.
                 if not math.isfinite(score):
                     score = None
             except (KeyError, TypeError, ValueError):

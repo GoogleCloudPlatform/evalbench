@@ -604,8 +604,7 @@ class AgyCliGenerator(AgentCliGenerator):
                 msg += "\nProbe log fatal markers:\n" + "\n".join(
                     f"  {h}" for h in marker_hits
                 )
-            # The probe's own output is the only evidence when it exits
-            # before writing any log agy_cli knows how to scan.
+            # The only evidence left when the probe exits before writing a log.
             msg += f"\nProbe exit code: {probe.returncode}"
             msg += f"\nProbe STDOUT:\n{_tail(probe.stdout)}"
             msg += f"\nProbe STDERR:\n{_tail(probe.stderr)}"
