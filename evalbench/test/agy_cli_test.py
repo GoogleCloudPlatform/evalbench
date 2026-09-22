@@ -817,6 +817,31 @@ def test_verify_runtime_includes_fatal_markers_in_error(mock_run, sandbox):
         AgyCliGenerator(config)
 
 
+def test_verify_runtime_includes_probe_output_in_error(mock_run, sandbox):
+    """A probe that dies before writing a scannable log leaves its exit code
+    and stderr as the only evidence, so both must reach the error."""
+    config = {
+        "setup": {
+            "mcp_servers": {
+                "cloud-sql": {"serverUrl": "https://example.com/mcp"},
+            }
+        }
+    }
+
+    def fake_run(cmd, *args, **kwargs):
+        return MagicMock(
+            returncode=7, stdout="", stderr="no CLI auth token source",
+        )
+
+    mock_run.side_effect = fake_run
+    with pytest.raises(RuntimeError) as excinfo:
+        AgyCliGenerator(config)
+    msg = str(excinfo.value)
+    assert "Probe exit code: 7" in msg
+    assert "no CLI auth token source" in msg
+    assert "Probe STDOUT:\n  (empty)" in msg
+
+
 def test_verify_runtime_raises_on_invalid_model(mock_run, sandbox):
     """agy populates the tool-schema cache before it resolves ``--model``, so
     an unrecognized model attaches tools normally and only then fails every

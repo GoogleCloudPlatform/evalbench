@@ -1,0 +1,30 @@
+{
+  "scenarios": [
+    {
+      "id": "ci-skill-csql-lifecycle-list-and-get",
+      "starting_prompt": "Using the cloud-sql-postgres-lifecycle skill, list all Cloud SQL instances in project ${EVAL_GCP_PROJECT_ID}.",
+      "conversation_plan": "The user wants to see every Cloud SQL instance in project ${EVAL_GCP_PROJECT_ID} via the cloud-sql-postgres-lifecycle skill, then check on one of them. Once the agent has listed the instances, the user asks for the current state of ${CLOUD_SQL_POSTGRES_INSTANCE}. The user is satisfied only when the agent has named ${CLOUD_SQL_POSTGRES_INSTANCE} in the listing and reported its state as RUNNABLE based on live data it actually retrieved. The user then ends the conversation. The user may name the skill but never names a tool, a script, or a shell command, and never suggests how to fetch the data.",
+      "expected_skills": [
+        "cloud-sql-postgres-lifecycle"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "${EVAL_GCP_PROJECT_ID}"
+      },
+      "kind": "tools",
+      "max_turns": 2
+    },
+    {
+      "id": "ci-skill-csql-data-list-schemas",
+      "starting_prompt": "Using the cloud-sql-postgres-data skill, list the schemas in my configured database.",
+      "conversation_plan": "The user wants to understand the structure of the database that is already configured for the agent, using the cloud-sql-postgres-data skill. After the agent reports the schemas, the user asks which tables live in the 'public' schema. The user is satisfied only when the agent names the schemas it found including 'public', and then either names the tables in 'public' or states plainly that it has none. The instance and database are supplied to the agent through its environment, so the user does not know them and will not provide them; being asked for an instance or database name is a failure. The user may name the skill but never names a tool, a script, or a shell command.",
+      "expected_skills": [
+        "cloud-sql-postgres-data"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "${EVAL_GCP_PROJECT_ID}"
+      },
+      "kind": "tools",
+      "max_turns": 2
+    }
+  ]
+}
