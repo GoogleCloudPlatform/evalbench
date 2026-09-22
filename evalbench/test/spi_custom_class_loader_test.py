@@ -112,6 +112,8 @@ class TestSPICustomClassLoader(unittest.TestCase):
         config = {
             "db_type": "sqlite",
             "database_name": "test_db",
+            "database_path": "/tmp",
+            "max_executions_per_minute": 60,
             "connector_class": None,
         }
         db = get_database(config, "test_db")
@@ -134,7 +136,7 @@ class TestSPICustomClassLoader(unittest.TestCase):
         config = {
             "db_type": "sqlite",
             "database_name": "test_db",
-            "connector_class": "test.spi_custom_class_loader_test:DummyCustomConnector",
+            "connector_class": f"{__name__}:DummyCustomConnector",
         }
         with self.assertLogs("root", level="WARNING") as cm:
             db = get_database(config, "test_db")
@@ -145,7 +147,7 @@ class TestSPICustomClassLoader(unittest.TestCase):
     def test_get_generator_precedence_logging(self, mock_load_yaml):
         mock_load_yaml.return_value = {
             "generator": "noop",
-            "generator_class": "test.spi_custom_class_loader_test:DummyCustomGenerator",
+            "generator_class": f"{__name__}:DummyCustomGenerator",
         }
         global_models = {"registered_models": {}, "lock": threading.Lock()}
         with self.assertLogs("root", level="WARNING") as cm:
@@ -158,7 +160,7 @@ class TestSPICustomClassLoader(unittest.TestCase):
         config = {
             "db_type": "custom",
             "database_name": "test_db",
-            "connector_class": "test.spi_custom_class_loader_test:BareMinimumConnector",
+            "connector_class": f"{__name__}:BareMinimumConnector",
         }
         db = get_database(config, "test_db")
         self.assertIsInstance(db, BareMinimumConnector)
@@ -172,7 +174,7 @@ class TestSPICustomClassLoader(unittest.TestCase):
         """Verifies that a bare-bones custom generator with only generate works via get_generator."""
         mock_load_yaml.return_value = {
             "generator": "custom",
-            "generator_class": "test.spi_custom_class_loader_test:BareMinimumGenerator",
+            "generator_class": f"{__name__}:BareMinimumGenerator",
         }
         global_models = {"registered_models": {}, "lock": threading.Lock()}
         model = get_generator(global_models, "dummy_bare_generator.yaml")
