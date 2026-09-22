@@ -197,6 +197,52 @@ class TestBoundaryContractEnforcement(unittest.TestCase):
         self.assertIsNone(res.get("generated_error"))
         self.assertTrue(any("cleanup_sql failed" in log and "item_cleanup_fail" in log for log in cm.output))
 
+    def test_sqlexecwork_empty_setup_with_cleanup_still_runs_cleanup(self):
+        db = MagicMock()
+        db.execute.return_value = ([{"count": 1}], None, None)
+        db_queue = Queue()
+        eval_result = {
+            "id": "item_empty_setup_dml",
+            "sql_generator_error": None,
+            "generated_sql": "INSERT INTO t VALUES (1)",
+            "query_type": "dml",
+            "eval_query": ["SELECT count(*) FROM t"],
+            "golden_sql": "",
+            "setup_sql": [],
+            "cleanup_sql": ["DROP TABLE t"],
+            "preprocess_sql": [],
+        }
+        config = {"prompt_generator": "NOOPGenerator", "dialect": "sqlite"}
+        work = SQLExecWork(db, config, eval_result, db_queue)
+        res = work.run()
+        self.assertEqual(res.get("generated_result"), [{"count": 1}])
+        self.assertIsNone(res.get("generated_error"))
+        cleanup_called = any("DROP TABLE t" in str(c) for c in db.execute.call_args_list)
+        self.assertTrue(cleanup_called)
+
+    def test_sqlexecwork_none_setup_ddl_still_runs_cleanup(self):
+        db = MagicMock()
+        db.execute.return_value = ([], None, None)
+        db.get_metadata.return_value = {"tables": []}
+        db_queue = Queue()
+        eval_result = {
+            "id": "item_empty_setup_ddl",
+            "sql_generator_error": None,
+            "generated_sql": "CREATE TABLE t (id INT)",
+            "query_type": "ddl",
+            "eval_query": [],
+            "golden_sql": "",
+            "setup_sql": None,
+            "cleanup_sql": ["DROP TABLE t"],
+            "preprocess_sql": [],
+        }
+        config = {"prompt_generator": "NOOPGenerator", "dialect": "sqlite"}
+        work = SQLExecWork(db, config, eval_result, db_queue)
+        res = work.run()
+        self.assertIsNone(res.get("generated_error"))
+        cleanup_called = any("DROP TABLE t" in str(c) for c in db.execute.call_args_list)
+        self.assertTrue(cleanup_called)
+
 
 class TestScorersContractCompliance(unittest.TestCase):
 

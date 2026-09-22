@@ -160,13 +160,13 @@ class SQLExecWork(Work):
                         setup_sql = setup_sql[0]
                     if setup_sql:
                         self.db.execute(setup_sql)
-                    setup_succeeded = True
                 except Exception as setup_error:
                     return (
                         None,
                         None,
                         f"DML setup_sql failed: {setup_error}",
                     )
+                setup_succeeded = True
                 result, eval_result, error = self.db.execute(
                     query, eval_query, use_cache=False, rollback=True
                 )
@@ -180,13 +180,13 @@ class SQLExecWork(Work):
                         setup_sql = setup_sql[0]
                     if setup_sql:
                         self.db.execute(setup_sql)
-                    setup_succeeded = True
                 except Exception as setup_error:
                     return (
                         None,
                         None,
                         f"Was not able to run DDL due to setup_error {setup_error}",
                     )
+                setup_succeeded = True
                 result, _, error = self.db.execute(query, use_cache=False)
                 eval_result = self.db.get_metadata()
 
