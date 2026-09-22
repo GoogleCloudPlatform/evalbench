@@ -112,6 +112,7 @@ def verify(results_dir):
         return 1
 
     import mesop as me
+    import precompute_trends
     from flask import Flask
     from mesop.runtime import runtime
 
@@ -175,7 +176,6 @@ def verify(results_dir):
             print(f"  {failure}")
         return 1
 
-    import precompute_trends
     attempt("precomputing the fixture", lambda _: precompute_trends.precompute())
 
     trends_cache = results_dir / "trends_cache.csv"
