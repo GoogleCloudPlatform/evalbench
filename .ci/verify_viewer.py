@@ -30,8 +30,8 @@ FIXTURE_RESULTS = Path(__file__).resolve().parent / "fixtures" / "viewer_results
 ROOT_PAGE = "/"
 EXPECTED_PAGES = {ROOT_PAGE}
 
-# main.py imports these under a try/except that only logs, so without an
-# explicit check a broken import here would pass silently.
+# main.py imports these under a try/except that logs a warning, which is below
+# the level ErrorLogCapture collects, so a broken import needs its own check.
 EXPECTED_MODULES = {"dashboard", "conversations"}
 
 # Tabs are state, not routes, so rendering the page once only covers the default.
@@ -51,6 +51,10 @@ def fixture_runs():
 
 
 FIXTURE_RUN_IDS, FIXTURE_PRODUCTS = fixture_runs()
+
+# The run on_load is asked to select. Every write in on_load is guarded on a
+# query param, so without one it leaves the page the plain render already covered.
+FIXTURE_JOB_ID = FIXTURE_RUN_IDS[0]
 
 # Run ids and product names reach the page only through the precomputed cache,
 # so drawing one proves the cache was read. The counts beside them come from the
@@ -138,20 +142,23 @@ def verify(results_dir):
                 detail += "\n" + "".join(traceback.format_exception(*record.exc_info))
             failures.append(f"{label} logged an error: {detail}")
 
-    def check_data(label):
-        """Assert the fixture reached the page that was just rendered.
+    def check_drawn(label, markers):
+        """Assert the rendered page carries every marker and no empty state.
 
         Reads the serialised component tree, since the strings a component
         draws live in its payload.
         """
         drawn = rt.context().current_node().SerializeToString()
-        tab = me.state(viewer_app.State).selected_main_tab
-        for marker in TAB_DATA_MARKERS.get(tab, []):
+        for marker in markers:
             if marker.encode() not in drawn:
                 failures.append(f"{label} drew no {marker!r}")
         for empty in EMPTY_MARKERS:
             if empty.encode() in drawn:
                 failures.append(f"{label} drew the empty state {empty!r}")
+
+    def check_data(label):
+        tab = me.state(viewer_app.State).selected_main_tab
+        check_drawn(label, TAB_DATA_MARKERS.get(tab, []))
 
     def render_page(path, label):
         rt.run_path(path)
@@ -166,9 +173,16 @@ def verify(results_dir):
         check_data(label)
 
     def fire_on_load(label):
-        rt.run_path(ROOT_PAGE)
+        # Mesop's order: query params, then on_load, then the render that sees it.
+        rt.context().set_query_param("job_id", FIXTURE_JOB_ID)
         viewer_app.on_load(me.LoadEvent(path=ROOT_PAGE))
-        check_data(label)
+        selected = me.state(viewer_app.State).selected_directory
+        if selected != FIXTURE_JOB_ID:
+            failures.append(f"{label} selected {selected!r}, not {FIXTURE_JOB_ID!r}")
+        rt.run_path(ROOT_PAGE)
+        # A selected run swaps the tabs out for its detail view, so the tab
+        # markers no longer apply and the run's own name is what proves it drew.
+        check_drawn(label, [FIXTURE_JOB_ID])
 
     def report():
         print(f"\n{len(failures)} check(s) failed:")
