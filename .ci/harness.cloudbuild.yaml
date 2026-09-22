@@ -74,25 +74,13 @@ steps:
     env: *harness_env
     volumes: *results_volume
 
-  - id: gemini-cli
-    name: 'evalbench-harness-ci'
-    dir: '/evalbench'
-    waitFor: ['build-image']
-    allowFailure: true
-    entrypoint: 'bash'
-    args: ['-c', 'CI_HARNESS=gemini_cli uv run --no-sync evalbench/evalbench.py --experiment_config=.ci/run_config.yaml']
-    env: *harness_env
-    volumes: *results_volume
-
   - id: verify-harnesses
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
-    waitFor: ['agy-cli', 'claude-code', 'codex-cli', 'gemini-cli']
+    waitFor: ['agy-cli', 'claude-code', 'codex-cli']
     args: ['uv', 'run', '--no-sync', 'python3', '.ci/verify_harness.py']
     volumes: *results_volume
 
-  # The skills channel. gemini-cli is absent because it cannot install a skill
-  # repo at a pinned ref, and the release tag is the only place skills exist.
   - id: agy-cli-skills
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
@@ -144,8 +132,7 @@ steps:
     waitFor: ['agy-cli-skills', 'claude-code-skills', 'codex-cli-skills']
     args: ['uv', 'run', '--no-sync', 'python3', '.ci/verify_harness.py',
            '--run-config', '.ci/skills_run_config.yaml',
-           '--evalset', '.ci/harness_skills.evalset.json',
-           '--harnesses', 'agy_cli', 'claude_code', 'codex_cli']
+           '--evalset', '.ci/harness_skills.evalset.json']
     volumes: *results_volume
 
 availableSecrets:
@@ -157,5 +144,5 @@ timeout: '3600s'
 
 options:
   logging: CLOUD_LOGGING_ONLY
-  # Sized for the seven concurrent harness steps, not for the build.
+  # Sized for the six concurrent harness steps, not for the build.
   machineType: 'E2_HIGHCPU_8'

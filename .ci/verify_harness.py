@@ -27,7 +27,7 @@ import sys
 
 from pyaml_env import parse_config
 
-DEFAULT_HARNESSES = ["agy_cli", "claude_code", "codex_cli", "gemini_cli"]
+DEFAULT_HARNESSES = ["agy_cli", "claude_code", "codex_cli"]
 DEFAULT_RUN_CONFIG = ".ci/run_config.yaml"
 DEFAULT_EVALSET = ".ci/harness_smoke.evalset.json"
 POSITIVE = {
