@@ -26,20 +26,25 @@ to the shared reporters (CSV / BigQuery). The orchestrator performs no direct
 CSV or BigQuery writes itself.
 """
 
+from collections.abc import Mapping
 import concurrent.futures
 import datetime
 import json
 import logging
+import os
 import tempfile
 import threading
+from typing import Any
 
 from evaluator.orchestrator import Orchestrator
 from generators.models import get_generator
+from scorers.mcp_readability import carry_forward as cf
 from scorers.mcp_readability.fingerprint import tool_fingerprints
 from scorers.mcp_readability.registry import SCORER_REGISTRY
 from scorers.mcp_readability.scoring import EndpointContext
 from util.config import load_yaml_config
 
+from evaluator.mcp_readability import baseline as baseline_mod
 from evaluator.mcp_readability import exceptions as exceptions_mod
 
 
@@ -90,6 +95,21 @@ def _validate_endpoint_type(value) -> str:
     return name
 
 
+def _force_refresh(baseline_config: Mapping[str, Any]) -> bool:
+    """Return whether every endpoint must be re-judged this run.
+
+    The environment variable exists for Guitar one-offs, where editing the
+    mirrored run config is not practical.
+    """
+    if os.environ.get("EVALBENCH_MCP_FORCE_REFRESH", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
+        return True
+    return bool(baseline_config.get("force_refresh"))
+
+
 def _run_tag(config) -> str:
     """Normalize + validate the run config's ``run_tag``; default to ad-hoc."""
     value = str(config.get("run_tag") or "").strip().lower()
@@ -129,6 +149,22 @@ class McpReadabilityOrchestrator(Orchestrator):
         )
 
         self.run_tag = _run_tag(config)
+
+        # An absent baseline block yields the null store, so a config that
+        # has not opted in behaves exactly as before.
+        baseline_config = config.get("baseline") or {}
+        self.baseline_store = baseline_mod.build_store(baseline_config)
+        self.baseline_max_age_days = int(
+            baseline_config.get("max_age_days", 90)
+        )
+        self.force_refresh = _force_refresh(baseline_config)
+        self.force_refresh_products = {
+            str(p).strip().lower()
+            for p in (baseline_config.get("force_refresh_products") or [])
+        }
+        # Set when priming the store fails, so every endpoint reports
+        # baseline_unavailable rather than silently looking like a first run.
+        self.baseline_unavailable = False
 
         # Optional endpoint_type filter (validated against the allowed set).
         type_filter = config.get("endpoint_types") or []
@@ -194,6 +230,10 @@ class McpReadabilityOrchestrator(Orchestrator):
             self.score_rows = []
             return
 
+        # Prefetch every baseline on one thread before the pool starts: the
+        # per-endpoint alternative is N round trips racing each other.
+        self._prime_baselines(endpoints)
+
         workers = max(1, int(self.endpoint_runners))
         results = []  # list[(row, score_rows)]
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
@@ -250,14 +290,19 @@ class McpReadabilityOrchestrator(Orchestrator):
         row = self._base_row(product_name, endpoint_url, endpoint_type)
         row["mcp_readability_run_tag"] = self.run_tag
         row["job_id"] = self.job_id
+        endpoint_key = baseline_mod.endpoint_key(
+            product_name, endpoint_url, endpoint_type
+        )
 
         try:
             # 1. Fetch tools + render man-page markup.
             tools, man_page = self.tools_generator.fetch_tools(endpoint)
 
-            # 2. Fingerprint the tool surface this run was judged against.
+            # 2. Fingerprint the tool surface. Kept in a local so the row and
+            # the baseline decision cannot drift apart.
+            fingerprints = tool_fingerprints(tools)
             row["mcp_readability_tool_fingerprints_json"] = json.dumps(
-                tool_fingerprints(tools), sort_keys=True
+                fingerprints, sort_keys=True
             )
 
             # 3. Exceptions (waivers) for this endpoint.
@@ -272,6 +317,9 @@ class McpReadabilityOrchestrator(Orchestrator):
                 tools=tools,
                 man_page=man_page,
                 exceptions=applicable,
+                baseline=self._baseline_context(
+                    endpoint, endpoint_key, fingerprints
+                ),
             )
             score_rows = []
             for scorer in self.scorers:
@@ -295,6 +343,83 @@ class McpReadabilityOrchestrator(Orchestrator):
             raise
 
         return row, score_rows
+
+    # ------------------------------------------------------------------
+    # Carry-forward baselines
+    # ------------------------------------------------------------------
+    def _prime_baselines(self, endpoints: list[dict[str, Any]]) -> None:
+        """Prefetch the previous judgement for every endpoint in this run.
+
+        A store failure is logged and downgraded to "no baselines", which costs
+        a full re-judge and nothing else. That is a deliberate exception to this
+        orchestrator's fail-fast ethos: a baseline is an optimisation, not a
+        measurement, and the identity writing results may lack read permission.
+        """
+        keys = [
+            baseline_mod.endpoint_key(
+                ep.get("product_name", ""),
+                self._endpoint_ref(ep),
+                _validate_endpoint_type(ep.get("endpoint_type")),
+            )
+            for ep in endpoints
+        ]
+        try:
+            self.baseline_store.prime(keys)
+        except Exception:
+            self.baseline_unavailable = True
+            logging.exception(
+                "mcp_readability: could not load baselines; re-judging every "
+                "endpoint in full."
+            )
+
+    def _baseline_context(
+        self,
+        endpoint: Mapping[str, Any],
+        endpoint_key: str,
+        fingerprints: dict[str, str],
+    ) -> "cf.BaselineContext | None":
+        """Build the baseline the scorer compares this endpoint against."""
+        context = cf.BaselineContext(
+            endpoint_key=endpoint_key,
+            job_id=self.job_id,
+            tool_fingerprints=fingerprints,
+        )
+        if self.baseline_unavailable:
+            context.override_reason = cf.BASELINE_UNAVAILABLE
+            return context
+        try:
+            found = self.baseline_store.load(endpoint_key)
+        except Exception:
+            logging.exception(
+                "mcp_readability: could not load the baseline for %s; "
+                "re-judging in full.",
+                endpoint_key,
+            )
+            context.override_reason = cf.BASELINE_UNAVAILABLE
+            return context
+        # Attached even when it must not be reused: it is still what "since
+        # the previous review" is measured against. The override reason is
+        # what stops its findings being carried.
+        context.baseline = found
+        if self._forced(endpoint):
+            context.override_reason = cf.FORCED_REFRESH
+        elif found is not None and baseline_mod.is_expired(
+            found, self.baseline_max_age_days
+        ):
+            context.override_reason = cf.BASELINE_EXPIRED
+        return context
+
+    def _forced(self, endpoint: Mapping[str, Any]) -> bool:
+        """Return whether this endpoint must be re-judged regardless of
+        its baseline.
+
+        Carry-forward otherwise entrenches the first run's draw: a hallucinated
+        P0 could only be cleared by editing the tool. This is the escape hatch.
+        """
+        if self.force_refresh:
+            return True
+        product = str(endpoint.get("product_name", "")).strip().lower()
+        return bool(product) and product in self.force_refresh_products
 
     # ------------------------------------------------------------------
     # Helpers
