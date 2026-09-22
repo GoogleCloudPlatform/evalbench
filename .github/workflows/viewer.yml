@@ -9,6 +9,7 @@ on:
       # Dependency bumps land here only, and mesop is the likeliest way to break the UI.
       - 'uv.lock'
       - '.ci/verify_viewer.py'
+      - '.ci/fixtures/viewer_results/**'
       - '.github/workflows/viewer.yml'
 
 permissions: read-all

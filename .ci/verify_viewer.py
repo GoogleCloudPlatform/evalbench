@@ -5,15 +5,27 @@ Rendering is driven in-process rather than over HTTP: Mesop serves the same
 single-page shell for every URL and returns 200 even when the page function
 raises, so an HTTP probe cannot tell a working page from a broken one.
 
+Rendering alone is not enough either. With no results to show, every tab draws
+its empty state without erroring, so a broken data path looks exactly like a
+working one. The run below therefore precomputes a fixture and asserts the
+rendered page carries it.
+
     python .ci/verify_viewer.py
 """
+import csv
 import logging
+import os
+import shutil
 import sys
+import tempfile
 import traceback
 from functools import partial
 from pathlib import Path
 
 VIEWER_DIR = Path(__file__).resolve().parents[1] / "viewer"
+# Carries no evals.csv, which is what keeps the summariser from reaching for a
+# model while precomputing: without one it returns before it builds a prompt.
+FIXTURE_RESULTS = Path(__file__).resolve().parent / "fixtures" / "viewer_results"
 
 ROOT_PAGE = "/"
 EXPECTED_PAGES = {ROOT_PAGE}
@@ -24,6 +36,33 @@ EXPECTED_MODULES = {"dashboard", "conversations"}
 
 # Tabs are state, not routes, so rendering the page once only covers the default.
 EXPECTED_TABS = ["Status", "List", "Charts", "Dataset Quality", "Compare"]
+
+
+def fixture_runs():
+    """The run ids and product names a working data path puts on the page."""
+    ids, products = [], []
+    for run in sorted(p for p in FIXTURE_RESULTS.iterdir() if p.is_dir()):
+        ids.append(run.name)
+        with open(run / "configs.csv", newline="") as f:
+            products += [row["value"] for row in csv.DictReader(f)
+                         if row["config"] == "experiment_config.product_name"]
+    return ids, products
+
+
+FIXTURE_RUN_IDS, FIXTURE_PRODUCTS = fixture_runs()
+
+# Run ids and product names reach a tab only by way of the precomputed cache, so
+# drawing one proves the cache was read. The counts beside them come from the
+# directory listing instead and survive a cache that loads nothing, which is why
+# neither kind of marker stands alone.
+TAB_DATA_MARKERS = {
+    "Status": [f"Total Evaluation Jobs: {len(FIXTURE_RUN_IDS)}", *FIXTURE_PRODUCTS],
+    "List": [f"Found {len(FIXTURE_RUN_IDS)} evaluation runs", *FIXTURE_RUN_IDS],
+}
+
+# Charts reports emptiness rather than drawing data of its own, and any tab can
+# draw a marker above and still fall back to an empty state below it.
+EMPTY_MARKERS = ("Found 0 evaluation runs", "No data found in any run directory")
 
 # Compare is hidden until two evals are selected, and without them it draws an
 # error message rather than the comparison itself.
@@ -52,6 +91,15 @@ class ErrorLogCapture(logging.Handler):
 
 
 def main():
+    # A copy, because precomputing writes its caches into the results directory.
+    with tempfile.TemporaryDirectory() as tmp:
+        results_dir = Path(tmp) / "results"
+        shutil.copytree(FIXTURE_RESULTS, results_dir)
+        os.environ["RESULTS_DIR"] = str(results_dir)
+        return verify(results_dir)
+
+
+def verify(results_dir):
     # main.py imports its neighbours by bare name.
     sys.path.insert(0, str(VIEWER_DIR))
 
@@ -79,7 +127,7 @@ def main():
         captured.records.clear()
         try:
             with app.test_request_context():
-                fn()
+                fn(label)
         except Exception as e:
             failures.append(f"{label} raised {type(e).__name__}: {e}")
             traceback.print_exc()
@@ -89,16 +137,57 @@ def main():
                 detail += "\n" + "".join(traceback.format_exception(*record.exc_info))
             failures.append(f"{label} logged an error: {detail}")
 
-    def render_tab(tab):
+    def check_data(label):
+        """Assert the fixture reached the page that was just rendered.
+
+        Reads the component tree over the wire bytes, since the strings a
+        component draws live in its serialised payload.
+        """
+        drawn = rt.context().current_node().SerializeToString()
+        tab = me.state(viewer_app.State).selected_main_tab
+        for marker in TAB_DATA_MARKERS.get(tab, []):
+            if marker.encode() not in drawn:
+                failures.append(f"{label} drew no {marker!r}")
+        for empty in EMPTY_MARKERS:
+            if empty.encode() in drawn:
+                failures.append(f"{label} drew the empty state {empty!r}")
+
+    def render_page(path, label):
+        rt.run_path(path)
+        check_data(label)
+
+    def render_tab(tab, label):
         state = me.state(viewer_app.State)
         state.selected_main_tab = tab
         for field, value in TAB_STATE.get(tab, {}).items():
             setattr(state, field, value)
         rt.run_path(ROOT_PAGE)
+        check_data(label)
 
-    def fire_on_load():
+    def fire_on_load(label):
         rt.run_path(ROOT_PAGE)
         viewer_app.on_load(me.LoadEvent(path=ROOT_PAGE))
+        check_data(label)
+
+    def report():
+        print(f"\n{len(failures)} check(s) failed:")
+        for failure in failures:
+            print(f"  {failure}")
+        return 1
+
+    # The fixture carries no evals.csv, so this stays offline: the summariser
+    # returns before it builds a prompt.
+    import precompute_trends
+    attempt("precomputing the fixture", lambda _: precompute_trends.precompute())
+
+    trends_cache = results_dir / "trends_cache.csv"
+    if not trends_cache.exists():
+        failures.append(f"precomputing the fixture wrote no {trends_cache.name}, "
+                        f"so there is nothing for the pages to render")
+
+    if failures:
+        # Rendering against a cache that is not there would only cascade.
+        return report()
 
     loading_errors = rt.get_loading_errors()
     if loading_errors:
@@ -114,7 +203,7 @@ def main():
                         f"expected {sorted(EXPECTED_PAGES)}")
 
     for path in sorted(registered):
-        attempt(f"rendering {path}", partial(rt.run_path, path))
+        attempt(f"rendering {path}", partial(render_page, path))
 
     attempt("on_load", fire_on_load)
 
@@ -122,15 +211,13 @@ def main():
         attempt(f"rendering tab {tab!r}", partial(render_tab, tab))
 
     print(f"Checked {len(registered)} page(s) {sorted(registered)}, "
-          f"on_load, and {len(EXPECTED_TABS)} tab(s)")
+          f"on_load, and {len(EXPECTED_TABS)} tab(s) "
+          f"against {len(FIXTURE_RUN_IDS)} precomputed run(s)")
 
     if failures:
-        print(f"\n{len(failures)} check(s) failed:")
-        for failure in failures:
-            print(f"  {failure}")
-        return 1
+        return report()
 
-    print("Viewer loads and renders.")
+    print("Viewer loads, renders, and shows its data.")
     return 0
 
 
