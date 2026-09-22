@@ -22,8 +22,12 @@ def get_database(db_config, db_name) -> DB:
     If 'connector_class' is specified in db_config, the custom class is
     dynamically loaded and instantiated with db_config. Custom connector
     classes do not need to inherit from DB, but must implement the duck-typed
-    interface expected by EvalBench (notably execute, clean_tmp_creations,
-    and close_connections).
+    interface expected by EvalBench:
+      - execute(query, eval_query=None, **kwargs) -> (result, eval_result, error)
+        where result must be list[dict[str, Any]] (mapping column names to values)
+        or None/[] for 0 rows. Non-dict rows raise TypeError at the boundary.
+      - clean_tmp_creations() (optional)
+      - close_connections() (optional)
     """
     # if db_name is provided:
     #   - It will override the provided default database_name

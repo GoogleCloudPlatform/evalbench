@@ -83,7 +83,7 @@ class InteractSQLExecWork(Work):
         result = None
         eval_result = None
         error = None
-        connector_name = getattr(self.db, "__class__", type(self.db)).__name__
+        connector_name = type(self.db).__name__
         try:
             if query_type == "dql":
                 result, _, error = self.db.execute(

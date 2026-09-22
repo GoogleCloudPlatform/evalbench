@@ -131,7 +131,7 @@ class SQLExecWork(Work):
         result = None
         eval_result = None
         error = None
-        connector_name = getattr(self.db, "__class__", type(self.db)).__name__
+        connector_name = type(self.db).__name__
         if preprocess_sql and not is_golden:
             try:
                 self.db.execute(preprocess_sql)
@@ -141,51 +141,20 @@ class SQLExecWork(Work):
         if not query or not query.strip():
             return None, None, "list index out of range (empty query)"
 
-        if query_type == "dql":
-            try:
+        try:
+            if query_type == "dql":
                 stmts = sqlparse.split(query)
                 if not stmts:
                     return None, None, "list index out of range (empty query)"
                 result, _, error = self.db.execute(
                     stmts[0], use_cache=True, rollback=True
                 )
-                if error is None:
-                    result = validate_and_normalize_execution_result(
-                        result, connector_name
-                    )
-            except Exception as e:
-                error = str(e)
-                result = None
-            if is_golden and error:
-                logging.warning(
-                    "Golden SQL exec failed (id=%s db=%s): %s\nSQL: %s",
-                    self.eval_result.get("id"),
-                    getattr(self.db, "database", None),
-                    error,
-                    query,
-                )
-        elif query_type == "dml":
-            try:
+            elif query_type == "dml":
                 self.db.execute(self.eval_result["setup_sql"])
                 result, eval_result, error = self.db.execute(
                     query, eval_query, use_cache=False, rollback=True
                 )
-                if error is None:
-                    result = validate_and_normalize_execution_result(
-                        result, connector_name
-                    )
-            except Exception as e:
-                error = str(e)
-                result = None
-            finally:
-                cleanup_sql = self.eval_result.get("cleanup_sql")
-                if cleanup_sql:
-                    try:
-                        self.db.execute(cleanup_sql)
-                    except Exception:
-                        pass
-        elif query_type == "ddl":
-            try:
+            elif query_type == "ddl":
                 # self.db.resetup_database(force=True)
                 setup_sql = self.eval_result.get("setup_sql")
                 if isinstance(setup_sql, dict):
@@ -194,33 +163,37 @@ class SQLExecWork(Work):
                     setup_sql = setup_sql[0]
                 if setup_sql:
                     self.db.execute(setup_sql)
-            except Exception as setup_error:
-                return (
-                    None,
-                    None,
-                    "Was not able to run DDL "
-                    f"due to setup_error {setup_error}",
-                )
-            try:
                 result, _, error = self.db.execute(query, use_cache=False)
-                if error is None:
-                    result = validate_and_normalize_execution_result(
-                        result, connector_name
-                    )
-            except Exception as e:
-                error = str(e)
-                result = None
-            eval_result = self.db.get_metadata()
-            cleanup_sql = self.eval_result.get("cleanup_sql")
-            if isinstance(cleanup_sql, dict):
-                cleanup_sql = cleanup_sql.get(self.db.dialect)
-            elif isinstance(cleanup_sql, list) and len(cleanup_sql) > 0:
-                cleanup_sql = cleanup_sql[0]
-            if cleanup_sql:
-                try:
-                    self.db.execute(cleanup_sql)
-                except Exception:
-                    pass
+                eval_result = self.db.get_metadata()
+
+            if error is None:
+                result = validate_and_normalize_execution_result(
+                    result, connector_name
+                )
+        except Exception as e:
+            error = str(e)
+            result = None
+        finally:
+            if query_type in ("dml", "ddl"):
+                cleanup_sql = self.eval_result.get("cleanup_sql")
+                if isinstance(cleanup_sql, dict):
+                    cleanup_sql = cleanup_sql.get(self.db.dialect)
+                elif isinstance(cleanup_sql, list) and len(cleanup_sql) > 0:
+                    cleanup_sql = cleanup_sql[0]
+                if cleanup_sql:
+                    try:
+                        self.db.execute(cleanup_sql)
+                    except Exception:
+                        pass
+
+        if is_golden and error:
+            logging.warning(
+                "Golden SQL exec failed (id=%s db=%s): %s\nSQL: %s",
+                self.eval_result.get("id"),
+                getattr(self.db, "database", None),
+                error,
+                query,
+            )
         return result, eval_result, error
 
     def _sanitize_sql(self):
