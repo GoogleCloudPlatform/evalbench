@@ -123,6 +123,80 @@ class TestBoundaryContractEnforcement(unittest.TestCase):
         self.assertIn("Was not able to run DDL due to setup_error", res.get("generated_error", ""))
         self.assertIn("DDL setup connection dropped", res.get("generated_error", ""))
 
+    def test_sqlexecwork_dml_setup_failure_preserves_context_and_skips_cleanup(self):
+        db = MagicMock()
+        db.execute.side_effect = RuntimeError("DML setup connection dropped")
+        db_queue = Queue()
+        eval_result = {
+            "id": "item_dml_fail",
+            "sql_generator_error": None,
+            "generated_sql": "INSERT INTO t VALUES (1)",
+            "query_type": "dml",
+            "eval_query": ["SELECT * FROM t"],
+            "golden_sql": "",
+            "setup_sql": ["CREATE TABLE t (id INT)"],
+            "cleanup_sql": ["DROP TABLE t"],
+            "preprocess_sql": [],
+        }
+        config = {"prompt_generator": "NOOPGenerator", "dialect": "sqlite"}
+        work = SQLExecWork(db, config, eval_result, db_queue)
+        res = work.run()
+        self.assertIsNone(res.get("generated_result"))
+        self.assertIn("DML setup_sql failed", res.get("generated_error", ""))
+        self.assertIn("DML setup connection dropped", res.get("generated_error", ""))
+        self.assertEqual(db.execute.call_count, 1)
+        db.execute.assert_called_once_with("CREATE TABLE t (id INT)")
+
+    def test_sqlexecwork_ddl_setup_failure_skips_cleanup(self):
+        db = MagicMock()
+        db.execute.side_effect = RuntimeError("DDL setup connection dropped")
+        db_queue = Queue()
+        eval_result = {
+            "id": "item_ddl_fail",
+            "sql_generator_error": None,
+            "generated_sql": "CREATE TABLE t (id INT)",
+            "query_type": "ddl",
+            "eval_query": [],
+            "golden_sql": "",
+            "setup_sql": ["CREATE TABLE base (id INT)"],
+            "cleanup_sql": ["DROP TABLE base"],
+            "preprocess_sql": [],
+        }
+        config = {"prompt_generator": "NOOPGenerator", "dialect": "sqlite"}
+        work = SQLExecWork(db, config, eval_result, db_queue)
+        res = work.run()
+        self.assertIsNone(res.get("generated_result"))
+        self.assertIn("Was not able to run DDL due to setup_error", res.get("generated_error", ""))
+        self.assertEqual(db.execute.call_count, 1)
+        db.execute.assert_called_once_with("CREATE TABLE base (id INT)")
+
+    def test_sqlexecwork_cleanup_failure_is_logged_without_masking_result(self):
+        db = MagicMock()
+        def side_effect(sql, *args, **kwargs):
+            if "DROP TABLE" in sql:
+                raise RuntimeError("Cleanup drop failed")
+            return ([{"count": 1}], None, None)
+        db.execute.side_effect = side_effect
+        db_queue = Queue()
+        eval_result = {
+            "id": "item_cleanup_fail",
+            "sql_generator_error": None,
+            "generated_sql": "INSERT INTO t VALUES (1)",
+            "query_type": "dml",
+            "eval_query": ["SELECT count(*) FROM t"],
+            "golden_sql": "",
+            "setup_sql": ["CREATE TABLE t (id INT)"],
+            "cleanup_sql": ["DROP TABLE t"],
+            "preprocess_sql": [],
+        }
+        config = {"prompt_generator": "NOOPGenerator", "dialect": "sqlite"}
+        work = SQLExecWork(db, config, eval_result, db_queue)
+        with self.assertLogs("root", level="WARNING") as cm:
+            res = work.run()
+        self.assertEqual(res.get("generated_result"), [{"count": 1}])
+        self.assertIsNone(res.get("generated_error"))
+        self.assertTrue(any("cleanup_sql failed" in log and "item_cleanup_fail" in log for log in cm.output))
+
 
 class TestScorersContractCompliance(unittest.TestCase):
 

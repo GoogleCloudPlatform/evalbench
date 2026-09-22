@@ -141,8 +141,10 @@ class SQLExecWork(Work):
         if not query or not query.strip():
             return None, None, "list index out of range (empty query)"
 
+        setup_succeeded = False
         try:
             if query_type == "dql":
+                setup_succeeded = True
                 stmts = sqlparse.split(query)
                 if not stmts:
                     return None, None, "list index out of range (empty query)"
@@ -150,7 +152,21 @@ class SQLExecWork(Work):
                     stmts[0], use_cache=True, rollback=True
                 )
             elif query_type == "dml":
-                self.db.execute(self.eval_result["setup_sql"])
+                try:
+                    setup_sql = self.eval_result.get("setup_sql")
+                    if isinstance(setup_sql, dict):
+                        setup_sql = setup_sql.get(getattr(self.db, "dialect", None))
+                    elif isinstance(setup_sql, list) and len(setup_sql) > 0:
+                        setup_sql = setup_sql[0]
+                    if setup_sql:
+                        self.db.execute(setup_sql)
+                    setup_succeeded = True
+                except Exception as setup_error:
+                    return (
+                        None,
+                        None,
+                        f"DML setup_sql failed: {setup_error}",
+                    )
                 result, eval_result, error = self.db.execute(
                     query, eval_query, use_cache=False, rollback=True
                 )
@@ -159,11 +175,12 @@ class SQLExecWork(Work):
                 try:
                     setup_sql = self.eval_result.get("setup_sql")
                     if isinstance(setup_sql, dict):
-                        setup_sql = setup_sql.get(self.db.dialect)
+                        setup_sql = setup_sql.get(getattr(self.db, "dialect", None))
                     elif isinstance(setup_sql, list) and len(setup_sql) > 0:
                         setup_sql = setup_sql[0]
                     if setup_sql:
                         self.db.execute(setup_sql)
+                    setup_succeeded = True
                 except Exception as setup_error:
                     return (
                         None,
@@ -181,17 +198,22 @@ class SQLExecWork(Work):
             error = str(e)
             result = None
         finally:
-            if query_type in ("dml", "ddl"):
+            if setup_succeeded and query_type in ("dml", "ddl"):
                 cleanup_sql = self.eval_result.get("cleanup_sql")
                 if isinstance(cleanup_sql, dict):
-                    cleanup_sql = cleanup_sql.get(self.db.dialect)
+                    cleanup_sql = cleanup_sql.get(getattr(self.db, "dialect", None))
                 elif isinstance(cleanup_sql, list) and len(cleanup_sql) > 0:
                     cleanup_sql = cleanup_sql[0]
                 if cleanup_sql:
                     try:
                         self.db.execute(cleanup_sql)
-                    except Exception:
-                        pass
+                    except Exception as cleanup_error:
+                        logging.warning(
+                            "cleanup_sql failed (id=%s, query_type=%s): %s",
+                            self.eval_result.get("id"),
+                            query_type,
+                            cleanup_error,
+                        )
 
         if is_golden and error:
             logging.warning(
