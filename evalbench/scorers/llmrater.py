@@ -223,11 +223,8 @@ class LLMRater(comparator.Comparator):
         seen_dicts = set()
         new_list = []
         for d in (output_list or []):
-            # Convert the dictionary or tuple/scalar to a hashable representation for efficient lookup
-            if isinstance(d, dict):
-                t = frozenset((k, make_hashable(v)) for k, v in d.items())
-            else:
-                t = make_hashable(d)
+            # Convert the dictionary to a hashable frozenset for efficient lookup
+            t = frozenset((k, make_hashable(v)) for k, v in d.items())
             if t not in seen_dicts:
                 seen_dicts.add(t)
                 new_list.append(d)

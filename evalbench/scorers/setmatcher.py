@@ -64,12 +64,10 @@ class SetMatcher(comparator.Comparator):
                 else:
                     # SQL Model: flat primitives, ignore column names, remove duplicates
                     golden_execution_result_tuple = [
-                        tuple(d.values()) if isinstance(d, dict) else (tuple(d) if isinstance(d, (list, tuple)) else (d,))
-                        for d in golden_res
+                        tuple(d.values()) for d in golden_res
                     ]
                     generated_execution_result_tuple = [
-                        tuple(d.values()) if isinstance(d, dict) else (tuple(d) if isinstance(d, (list, tuple)) else (d,))
-                        for d in generated_res
+                        tuple(d.values()) for d in generated_res
                     ]
                     score = (
                         100

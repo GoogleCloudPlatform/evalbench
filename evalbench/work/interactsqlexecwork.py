@@ -3,6 +3,7 @@
 from typing import Any
 from databases import DB
 from work import Work
+from work.sqlexecwork import validate_and_normalize_execution_result
 from util.sanitizer import sanitize_sql
 from queue import Queue
 import sqlparse
@@ -82,29 +83,38 @@ class InteractSQLExecWork(Work):
         result = None
         eval_result = None
         error = None
-        if query_type == "dql":
-            result, _, error = self.db.execute(
-                sqlparse.split(query)[0], use_cache=True, rollback=True
-            )
-        elif query_type == "dml":
-            # self.db.execute(self.eval_result["setup_sql"])
-            result, eval_result, error = self.db.execute(
-                query, eval_query, use_cache=False, rollback=True
-            )
-            # self.db.execute(self.eval_result["cleanup_sql"])
-        elif query_type == "ddl":
-            # self.db.execute(self.eval_result["setup_sql"])
-            try:
-                self.db.resetup_database(force=True)
-            except Exception as setup_error:
-                return (
-                    None,
-                    None,
-                    f"Was not able to run DDL due to setup_error {setup_error}",
+        connector_name = getattr(self.db, "__class__", type(self.db)).__name__
+        try:
+            if query_type == "dql":
+                result, _, error = self.db.execute(
+                    sqlparse.split(query)[0], use_cache=True, rollback=True
                 )
-            result, _, error = self.db.execute(query, use_cache=False)
-            eval_result = self.db.get_metadata()
-            # self.db.execute(self.eval_result["cleanup_sql"])
+            elif query_type == "dml":
+                # self.db.execute(self.eval_result["setup_sql"])
+                result, eval_result, error = self.db.execute(
+                    query, eval_query, use_cache=False, rollback=True
+                )
+                # self.db.execute(self.eval_result["cleanup_sql"])
+            elif query_type == "ddl":
+                # self.db.execute(self.eval_result["setup_sql"])
+                try:
+                    self.db.resetup_database(force=True)
+                except Exception as setup_error:
+                    return (
+                        None,
+                        None,
+                        f"Was not able to run DDL due to setup_error {setup_error}",
+                    )
+                result, _, error = self.db.execute(query, use_cache=False)
+                eval_result = self.db.get_metadata()
+                # self.db.execute(self.eval_result["cleanup_sql"])
+            if error is None:
+                result = validate_and_normalize_execution_result(
+                    result, connector_name
+                )
+        except Exception as e:
+            error = str(e)
+            result = None
         return result, eval_result, error
 
     def _sanitize_sql(self):
