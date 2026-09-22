@@ -74,17 +74,6 @@ steps:
     env: *harness_env
     volumes: *results_volume
 
-  # Neither gate covers agy_cli yet: it intermittently fails to authenticate
-  # from the service-account key, and then attaches no tools and activates no
-  # skills. Its steps still run so the logs keep accruing evidence.
-  - id: verify-harnesses
-    name: 'evalbench-harness-ci'
-    dir: '/evalbench'
-    waitFor: ['agy-cli', 'claude-code', 'codex-cli']
-    args: ['uv', 'run', '--no-sync', 'python3', '.ci/verify_harness.py',
-           '--harnesses', 'claude_code', 'codex_cli']
-    volumes: *results_volume
-
   - id: agy-cli-skills
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
@@ -130,14 +119,26 @@ steps:
     secretEnv: *skills_secrets
     volumes: *results_volume
 
-  - id: verify-skills
+  # Both channels run in one step so a failure in either still reports the
+  # other. agy_cli is excluded until its intermittent service-account auth
+  # failure is fixed; its steps still run so the logs keep accruing evidence.
+  - id: verify
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
-    waitFor: ['agy-cli-skills', 'claude-code-skills', 'codex-cli-skills']
-    args: ['uv', 'run', '--no-sync', 'python3', '.ci/verify_harness.py',
-           '--run-config', '.ci/skills_run_config.yaml',
-           '--evalset', '.ci/harness_skills.evalset.json',
-           '--harnesses', 'claude_code', 'codex_cli']
+    waitFor: ['agy-cli', 'claude-code', 'codex-cli',
+              'agy-cli-skills', 'claude-code-skills', 'codex-cli-skills']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        rc=0
+        uv run --no-sync python3 .ci/verify_harness.py \
+          --harnesses claude_code codex_cli || rc=1
+        uv run --no-sync python3 .ci/verify_harness.py \
+          --run-config .ci/skills_run_config.yaml \
+          --evalset .ci/harness_skills.evalset.json \
+          --harnesses claude_code codex_cli || rc=1
+        exit $$rc
     volumes: *results_volume
 
 availableSecrets:
