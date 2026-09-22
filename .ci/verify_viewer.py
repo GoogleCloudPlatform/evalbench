@@ -84,7 +84,10 @@ def main():
             failures.append(f"{label} raised {type(e).__name__}: {e}")
             traceback.print_exc()
         for record in captured.records:
-            failures.append(f"{label} logged an error: {record.getMessage()}")
+            detail = record.getMessage()
+            if record.exc_info:
+                detail += "\n" + "".join(traceback.format_exception(*record.exc_info))
+            failures.append(f"{label} logged an error: {detail}")
 
     def render_tab(tab):
         state = me.state(viewer_app.State)
