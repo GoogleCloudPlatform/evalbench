@@ -1,4 +1,6 @@
+import sys
 import threading
+import types
 import unittest
 from unittest.mock import patch
 
@@ -43,6 +45,22 @@ class BareMinimumGenerator:
 
 class TestSPICustomClassLoader(unittest.TestCase):
 
+    def setUp(self):
+        super().setUp()
+        # In-memory virtual module to test custom class loading hermetically
+        # without depending on test-runner import-path resolution.
+        self.mock_pkg = types.ModuleType("virtual_custom_engine_pkg")
+        self.mock_pkg.DummyCustomConnector = DummyCustomConnector
+        self.mock_pkg.DummyCustomGenerator = DummyCustomGenerator
+        self.mock_pkg.BareMinimumConnector = BareMinimumConnector
+        self.mock_pkg.BareMinimumGenerator = BareMinimumGenerator
+        self.patcher = patch.dict(sys.modules, {"virtual_custom_engine_pkg": self.mock_pkg})
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+        super().tearDown()
+
     def test_load_custom_class_colon_syntax(self):
         cls = load_custom_class("unittest.mock:MagicMock")
         from unittest.mock import MagicMock
@@ -72,7 +90,7 @@ class TestSPICustomClassLoader(unittest.TestCase):
     def test_get_database_with_connector_class(self):
         config = {
             "db_type": "custom",
-            "connector_class": f"{__name__}:DummyCustomConnector",
+            "connector_class": "virtual_custom_engine_pkg:DummyCustomConnector",
         }
         db = get_database(config, "test_db")
         self.assertIsInstance(db, DummyCustomConnector)
@@ -90,7 +108,7 @@ class TestSPICustomClassLoader(unittest.TestCase):
     def test_get_generator_with_generator_class(self, mock_load_yaml):
         mock_load_yaml.return_value = {
             "generator": "custom",
-            "generator_class": f"{__name__}:DummyCustomGenerator",
+            "generator_class": "virtual_custom_engine_pkg:DummyCustomGenerator",
         }
         global_models = {"registered_models": {}, "lock": threading.Lock()}
         model = get_generator(global_models, "dummy_path.yaml")
@@ -136,7 +154,9 @@ class TestSPICustomClassLoader(unittest.TestCase):
         config = {
             "db_type": "sqlite",
             "database_name": "test_db",
-            "connector_class": f"{__name__}:DummyCustomConnector",
+            "database_path": "/tmp",
+            "max_executions_per_minute": 60,
+            "connector_class": "virtual_custom_engine_pkg:DummyCustomConnector",
         }
         with self.assertLogs("root", level="WARNING") as cm:
             db = get_database(config, "test_db")
@@ -147,7 +167,7 @@ class TestSPICustomClassLoader(unittest.TestCase):
     def test_get_generator_precedence_logging(self, mock_load_yaml):
         mock_load_yaml.return_value = {
             "generator": "noop",
-            "generator_class": f"{__name__}:DummyCustomGenerator",
+            "generator_class": "virtual_custom_engine_pkg:DummyCustomGenerator",
         }
         global_models = {"registered_models": {}, "lock": threading.Lock()}
         with self.assertLogs("root", level="WARNING") as cm:
@@ -160,7 +180,7 @@ class TestSPICustomClassLoader(unittest.TestCase):
         config = {
             "db_type": "custom",
             "database_name": "test_db",
-            "connector_class": f"{__name__}:BareMinimumConnector",
+            "connector_class": "virtual_custom_engine_pkg:BareMinimumConnector",
         }
         db = get_database(config, "test_db")
         self.assertIsInstance(db, BareMinimumConnector)
@@ -174,7 +194,7 @@ class TestSPICustomClassLoader(unittest.TestCase):
         """Verifies that a bare-bones custom generator with only generate works via get_generator."""
         mock_load_yaml.return_value = {
             "generator": "custom",
-            "generator_class": f"{__name__}:BareMinimumGenerator",
+            "generator_class": "virtual_custom_engine_pkg:BareMinimumGenerator",
         }
         global_models = {"registered_models": {}, "lock": threading.Lock()}
         model = get_generator(global_models, "dummy_bare_generator.yaml")
