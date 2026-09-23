@@ -1,0 +1,33 @@
+# Pre-merge NL2SQL smoke suite. Gated by .ci/verify_nl2sql.py.
+dataset_config: .ci/nl2sql_smoke.evalset.json
+# Trials apply to DQL only. Below 2 the consistency scorers never run.
+num_trials: 2
+database_configs:
+ - datasets/bat/db_configs/sqlite.yaml
+dialects:
+ - sqlite
+query_types:
+ - dql
+ - dml
+ - ddl
+
+model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+prompt_generator: 'SQLGenBasePromptGenerator'
+
+# Required for DDL and DML.
+setup_directory: datasets/bat/setup
+
+scorers:
+  exact_match: null
+  llmrater:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  returned_sql: null
+  set_match: null
+  executable_sql: null
+  exact_match_consistency: null
+  llm_consistency:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+
+reporting:
+  csv:
+    output_directory: 'results'
