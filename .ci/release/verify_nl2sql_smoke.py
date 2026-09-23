@@ -10,6 +10,7 @@ When eval runs via eval_server.py, CsvReporter writes to
 /tmp_session_files/results. Pass --results-dir to override the config path.
 """
 import argparse
+import ast
 import csv
 import json
 import math
@@ -36,12 +37,33 @@ def base_id(row_id):
     return match.group("base") if match else (row_id or "")
 
 
-def expected_ids(dataset_config):
-    """Returns scenario ids from a flat list or a dict with 'scenarios'."""
+def row_dialect(raw):
+    """scores.csv stores the dialects list as its repr, e.g. "['sqlite']"."""
+    try:
+        parsed = ast.literal_eval(raw or "")
+    except (ValueError, SyntaxError):
+        parsed = raw
+    if isinstance(parsed, (list, tuple)):
+        return ",".join(str(dialect) for dialect in parsed)
+    return str(parsed or "")
+
+
+def expected_keys(dataset_config, config_dialects):
+    """Returns the {(dialect, scenario id)} pairs the run should score.
+
+    A scenario runs once per dialect, and dataset.py intersects the scenario's
+    own dialects with config['dialects'] when that list is non-empty.
+    """
     with open(dataset_config) as f:
         data = json.load(f)
     items = data["scenarios"] if isinstance(data, dict) else data
-    return {str(item["id"]) for item in items}
+    keys = set()
+    for item in items:
+        dialects = item.get("dialects") or []
+        if config_dialects:
+            dialects = [d for d in dialects if d in config_dialects]
+        keys.update((dialect, str(item["id"])) for dialect in dialects)
+    return keys
 
 
 def job_dirs(results_dir):
@@ -54,7 +76,7 @@ def job_dirs(results_dir):
 
 
 def load_rows(job_dir):
-    """Returns {(comparator, base_id): (score_or_None, error)}, or None."""
+    """Returns {(dialect, comparator, base_id): (score_or_None, error)}, or None."""
     path = os.path.join(job_dir, "scores.csv")
     if not os.path.exists(path):
         return None
@@ -67,18 +89,20 @@ def load_rows(job_dir):
                     score = None
             except (KeyError, TypeError, ValueError):
                 score = None
-            key = (row.get("comparator"), base_id(row.get("id")))
+            key = (row_dialect(row.get("dialects")),
+                   row.get("comparator"),
+                   base_id(row.get("id")))
             rows[key] = (score, (row.get("comparison_error") or "").strip())
     return rows
 
 
-def find_job(results_dir, ids):
-    """Returns (job_dir, rows) for the newest job that contains all ids."""
+def find_job(results_dir, keys):
+    """Returns (job_dir, rows) for the newest job covering every expected key."""
     for job_dir in job_dirs(results_dir):
         rows = load_rows(job_dir)
         if rows is None:
             continue
-        if ids <= {row_id for _, row_id in rows}:
+        if keys <= {(dialect, row_id) for dialect, _, row_id in rows}:
             return job_dir, rows
     return None, None
 
@@ -88,32 +112,36 @@ def check(leg_name, leg, results_dir_override):
     scorers = sorted(config.get("scorers") or {})
     results_dir = results_dir_override or config["reporting"]["csv"][
         "output_directory"]
-    ids = expected_ids(config["dataset_config"])
+    keys = expected_keys(config["dataset_config"], config.get("dialects") or [])
+    if not keys:
+        return [f"{config['dataset_config']} has no scenarios matching "
+                f"dialects {config.get('dialects')}"], 0, scorers, None
 
-    job_dir, rows = find_job(results_dir, ids)
+    job_dir, rows = find_job(results_dir, keys)
     if job_dir is None:
-        return [f"no scores.csv under {results_dir} covering ids "
-                f"{sorted(ids)}"], 0, scorers, None
+        return [f"no scores.csv under {results_dir} covering "
+                f"{sorted(keys)}"], 0, scorers, None
 
     problems = []
     checked = 0
     for scorer in scorers:
-        for scenario_id in sorted(ids):
-            entry = rows.get((scorer, scenario_id))
+        for dialect, scenario_id in sorted(keys):
+            target = f"{scenario_id} [{dialect}]"
+            entry = rows.get((dialect, scorer, scenario_id))
             if entry is None:
-                problems.append(f"{scorer}: no row for {scenario_id}")
+                problems.append(f"{scorer}: no row for {target}")
                 continue
             score, error = entry
             checked += 1
             if error:
                 problems.append(
-                    f"{scorer}: errored on {scenario_id} -- {error[:120]}")
+                    f"{scorer}: errored on {target} -- {error[:120]}")
             elif score is None:
                 problems.append(
-                    f"{scorer}: non-numeric score for {scenario_id}")
+                    f"{scorer}: non-numeric score for {target}")
             elif scorer in leg["positive"] and score <= 0:
                 problems.append(
-                    f"{scorer}: {scenario_id} reported 0 -- the released "
+                    f"{scorer}: {target} reported 0 -- the released "
                     f"image could not complete this step")
     return problems, checked, scorers, job_dir
 

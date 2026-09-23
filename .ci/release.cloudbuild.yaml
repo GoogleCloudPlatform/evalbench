@@ -1,4 +1,4 @@
-# Weekly release pipeline -- Stages 0 to 5.
+# Weekly release pipeline.
 #
 # Resolves the tested image from the Build trigger, runs the gRPC smoke gate
 # inside that image, and tags the immutable release.
@@ -8,7 +8,8 @@
 
 steps:
 
-  # Stage 0: Verify that the Build trigger published the commit image.
+  # Nothing is built here -- fail unless the Build trigger already pushed an
+  # image for this commit, then derive the release tag from its digest.
   - id: resolve-release
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: 'bash'
@@ -22,7 +23,8 @@ steps:
           exit 1
         fi
 
-        IMAGE="${_IMAGE_REPO}:$COMMIT_SHA"
+        REPO="us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server"
+        IMAGE="$$REPO:$COMMIT_SHA"
         echo "Resolving $$IMAGE"
 
         DIGEST=$$(gcloud artifacts docker images describe "$$IMAGE" \
@@ -35,14 +37,17 @@ steps:
         # Use ISO week-year (%G) and ISO week (%V) to avoid year-boundary drift.
         TAG="v$$(date -u +%G.%V).$SHORT_SHA"
 
+        echo "$$REPO"   > /workspace/image_repo.txt
         echo "$$DIGEST" > /workspace/image_digest.txt
         echo "$$TAG"    > /workspace/release_tag.txt
         echo "digest = $$DIGEST"
         echo "tag    = $$TAG"
 
-  # Stages 1-4: Start eval_server, run gRPC smoke eval, and verify scores.csv.
+  # Exercise the candidate image itself: serve, evaluate, and audit the scores
+  # it produced. eval_client exits 0 on a completed run, so scores.csv is the
+  # only real gate.
   - id: smoke-gate
-    name: '${_IMAGE_REPO}:$COMMIT_SHA'
+    name: 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server:$COMMIT_SHA'
     dir: '/evalbench'
     waitFor: ['resolve-release']
     entrypoint: 'bash'
@@ -89,12 +94,13 @@ steps:
 
         echo "===== smoke gate passed ====="
     env:
-      - 'EVAL_GCP_PROJECT_ID=${_EVAL_PROJECT}'
+      - 'EVAL_GCP_PROJECT_ID=$PROJECT_ID'
       - 'EVAL_GCP_PROJECT_REGION=${_EVAL_REGION}'
-      - 'GOOGLE_CLOUD_PROJECT=${_EVAL_PROJECT}'
+      - 'GOOGLE_CLOUD_PROJECT=$PROJECT_ID'
       - 'UV_CACHE_DIR=/tmp/uv-cache'
 
-  # Stage 5: Create the immutable release tag and promote test tag.
+  # Tag by digest, not by :$COMMIT_SHA, so the release points at the exact
+  # image the gate just passed.
   - id: tag-release
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     waitFor: ['smoke-gate']
@@ -103,25 +109,24 @@ steps:
       - '-c'
       - |
         set -euo pipefail
+        REPO=$$(cat /workspace/image_repo.txt)
         DIGEST=$$(cat /workspace/image_digest.txt)
         TAG=$$(cat /workspace/release_tag.txt)
-        echo "Tagging ${_IMAGE_REPO}@$$DIGEST as :$$TAG"
+        echo "Tagging $$REPO@$$DIGEST as :$$TAG"
         gcloud artifacts docker tags add \
-          "${_IMAGE_REPO}@$$DIGEST" \
-          "${_IMAGE_REPO}:$$TAG"
-        echo "Release tag created: ${_IMAGE_REPO}:$$TAG"
+          "$$REPO@$$DIGEST" \
+          "$$REPO:$$TAG"
+        echo "Release tag created: $$REPO:$$TAG"
 
         if [[ -n "${_PROMOTE_TAG}" ]]; then
-          echo "Tagging ${_IMAGE_REPO}@$$DIGEST as :${_PROMOTE_TAG}"
+          echo "Tagging $$REPO@$$DIGEST as :${_PROMOTE_TAG}"
           gcloud artifacts docker tags add \
-            "${_IMAGE_REPO}@$$DIGEST" \
-            "${_IMAGE_REPO}:${_PROMOTE_TAG}"
-          echo "Promotion tag created: ${_IMAGE_REPO}:${_PROMOTE_TAG}"
+            "$$REPO@$$DIGEST" \
+            "$$REPO:${_PROMOTE_TAG}"
+          echo "Promotion tag created: $$REPO:${_PROMOTE_TAG}"
         fi
 
 substitutions:
-  _IMAGE_REPO: 'us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server'
-  _EVAL_PROJECT: 'cloud-db-nl2sql'
   _EVAL_REGION: 'global'
   _PROMOTE_TAG: 'latest-test'
 
