@@ -32,6 +32,16 @@ GKE_SA_KEY_PATH = "/etc/evalbench-sa-key/key.json"
 _SKILL_PATH_PATTERN = re.compile(r"/skills/([^/\s\"']+)/[^\s\"']")
 
 
+def _tail(text: str, limit: int = 2000) -> str:
+    """Returns the last `limit` characters, where the useful errors are."""
+    text = (text or "").strip()
+    if not text:
+        return "  (empty)"
+    if len(text) > limit:
+        text = "...\n" + text[-limit:]
+    return "\n".join(f"  {line}" for line in text.splitlines())
+
+
 def _shred_credential(path: str) -> None:
     """Deletes a temporary credential copy. Module-level and instance-free so
     weakref.finalize can hold it without keeping the generator alive."""
@@ -516,7 +526,7 @@ class AgyCliGenerator(AgentCliGenerator):
             self.agy_bin, "ping", model=self.model
         )
         try:
-            subprocess.run(
+            probe = subprocess.run(
                 cmd, env=env, cwd=self.fake_home,
                 stdin=subprocess.DEVNULL, capture_output=True, text=True,
                 timeout=120, check=False,
@@ -594,6 +604,10 @@ class AgyCliGenerator(AgentCliGenerator):
                 msg += "\nProbe log fatal markers:\n" + "\n".join(
                     f"  {h}" for h in marker_hits
                 )
+            # The only evidence left when the probe exits before writing a log.
+            msg += f"\nProbe exit code: {probe.returncode}"
+            msg += f"\nProbe STDOUT:\n{_tail(probe.stdout)}"
+            msg += f"\nProbe STDERR:\n{_tail(probe.stderr)}"
             raise RuntimeError(msg)
 
         for server, tools in loaded.items():
