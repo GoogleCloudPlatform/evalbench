@@ -1,0 +1,8 @@
+metric_name,metric_score,correct_results_count,total_results_count,job_id,run_time
+exact_match,50.0,2.0,4,fixture-run-b,2026-01-06 11:30:00.654321
+llmrater,75.0,3.0,4,fixture-run-b,2026-01-06 11:30:00.654321
+trajectory_matcher,100.0,4.0,4,fixture-run-b,2026-01-06 11:30:00.654321
+goal_completion,75.0,3.0,4,fixture-run-b,2026-01-06 11:30:00.654321
+end_to_end_latency,8421.25,33685.0,4,fixture-run-b,2026-01-06 11:30:00.654321
+token_consumption,15230.5,60922.0,4,fixture-run-b,2026-01-06 11:30:00.654321
+executable,1.0,4.0,4,fixture-run-b,2026-01-06 11:30:00.654321
