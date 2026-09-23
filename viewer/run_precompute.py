@@ -9,6 +9,7 @@ import precompute_trends
 import precompute_dataset_quality
 from precompute_lease import PrecomputeLease
 
+
 def main():
     interval = int(os.environ.get("PRECOMPUTE_INTERVAL", 300))
     results_dir = precompute_trends.get_results_dir()
@@ -29,6 +30,7 @@ def main():
                     except Exception as e:
                         print(f"Error in {precompute.__module__}: {e}")
         time.sleep(interval)
+
 
 if __name__ == "__main__":
     main()

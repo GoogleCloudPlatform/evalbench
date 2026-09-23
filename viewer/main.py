@@ -11,6 +11,7 @@ from run_index import list_run_directories
 from summarizer import summarize_eval_scoring
 from ai_comparer import compare_evals
 
+
 @me.stateclass
 class State:
     selected_directory: str = ""
@@ -43,6 +44,7 @@ class State:
     compare_evals: str = "[]"
     select_mode_active: bool = False
     ai_comparison: str = ""
+
 
 try:
     # Try to read version from file (created during build)
@@ -112,15 +114,12 @@ def df_to_config(df: pd.DataFrame) -> dict:
     return original_dict
 
 
-
-
-
 def get_results_dir():
     # Try to read from environment variable
     res_dir = os.environ.get("RESULTS_DIR")
     if res_dir:
         return res_dir
-        
+
     # Check multiple locations for results directory
     results_dir_candidates = [
         "/tmp_session_files/results",
@@ -248,9 +247,6 @@ def on_load(e: me.LoadEvent):
         state.ai_comparison = compare_evals(eval1, eval2)
 
 
-
-
-
 def status_component():
     results_dir = get_results_dir()
     directories = list_run_directories(results_dir)
@@ -269,17 +265,18 @@ def status_component():
         me.text("Product status", type="headline-5")
         me.box(style=me.Style(height="16px"))
         me.text(f"Total Evaluation Jobs: {len(directories)}")
-        
+
         me.box(style=me.Style(height="24px"))
         me.text("Product Performance (Latest Eval per Product)", type="headline-6")
         me.box(style=me.Style(height="8px"))
-        
+
         # Add agent tabs
         state = me.state(State)
+
         def on_agent_tab_change(e):
             st = me.state(State)
             st.status_agent_tab = e.value
-            
+
         me.button_toggle(
             value=state.status_agent_tab,
             buttons=[
@@ -291,7 +288,7 @@ def status_component():
             on_change=on_agent_tab_change,
         )
         me.box(style=me.Style(height="16px"))
-        
+
         # Build summary data from precomputed trends cache
         data = []
         cache_file = os.path.join(results_dir, "trends_cache.csv")
@@ -318,7 +315,7 @@ def status_component():
             logging.warning(f"Trends cache file not found at {cache_file}")
             me.text("Trends cache file not found. Please run precompute.")
             return
-                    
+
         # Add requested default products if not present in data
         default_products = ['spanner', 'bigtable', 'alloydb', 'memorystore', 'dms', 'datastream']
         products_in_data = [d['Product'] for d in data]
@@ -337,20 +334,20 @@ def status_component():
                     'End-to-End Latency': None,
                     'Run Time': None
                 })
-                    
+
         if data:
             df = pd.DataFrame(data)
             # Filter out unknown products
             df = df[df['Product'] != 'unknown']
-            
+
             if not df.empty:
                 # Sort by Run Time descending to get the latest
                 df['Run Time'] = pd.to_datetime(df['Run Time'])
                 df = df.sort_values('Run Time', ascending=False, na_position='last')
-                
+
                 # Group by Product and Dataset and take the first (latest)
                 summary_df = df.groupby(["Product", "Dataset", "model_config.generator"], dropna=False).first().reset_index()
-                
+
                 # Filter by agent tab
                 if state.status_agent_tab == "Gemini":
                     summary_df = summary_df[(summary_df['model_config.generator'] == 'gemini_cli') | (summary_df['model_config.generator'] == 'unknown') | (summary_df['model_config.generator'] == 'N/A') | summary_df['Product'].isin(default_products)]
@@ -360,7 +357,7 @@ def status_component():
                     summary_df = summary_df[(summary_df['model_config.generator'] == 'codex_cli')]
                 elif state.status_agent_tab == "Antigravity":
                     summary_df = summary_df[(summary_df['model_config.generator'] == 'agy_cli')]
-                
+
                 # Render table similar to lists tab
                 with me.box(
                     style=me.Style(
@@ -369,156 +366,156 @@ def status_component():
                         margin=me.Margin(top="16px"),
                     )
                 ):
-                  with me.box(
-                    style=me.Style(
-                        display="table",
-                        width="100%",
-                        border=me.Border.all(
-                            me.BorderSide(width="1px", color="#e5e7eb", style="solid")
-                        ),
-                        border_radius="8px",
-                        background="#ffffff",
-                    )
-                  ):
-                    # Header row
                     with me.box(
                         style=me.Style(
-                            display="table-row",
-                            background="#f8fafc",
-                            font_weight="bold",
-                            color="#475569",
-                            font_size="12px",
-                            text_transform="uppercase",
-                            letter_spacing="0.05em",
+                            display="table",
+                            width="100%",
+                            border=me.Border.all(
+                                me.BorderSide(width="1px", color="#e5e7eb", style="solid")
+                            ),
+                            border_radius="8px",
+                            background="#ffffff",
                         )
                     ):
-                        headers = [
-                            "Product",
-                            "Dataset",
-                            "AI Score",
-                            "Trajectory Matcher",
-                            "Goal Completion",
-                            "Turn Count",
-                            "Executable",
-                            "Token Consumption",
-                            "End-to-End Latency"
-                        ]
-                        for label in headers:
-                            with me.box(
-                                style=me.Style(
-                                    display="table-cell",
-                                    padding=me.Padding.symmetric(vertical="12px", horizontal="16px"),
-                                    text_align="center",
-                                    border=me.Border.all(
-                                        me.BorderSide(width="1px", color="#e2e8f0", style="solid")
-                                    ),
-                                    background="#f8fafc",
-                                )
-                            ):
-                                me.text(label)
-                                
-                    # Data rows
-                    for idx, row in summary_df.iterrows():
-                        is_na = pd.isna(row['Trajectory Matcher'])
-                        
-                        # Mask scores in Claude tab if not Claude or N/A generator
-                        if state.status_agent_tab == "Claude":
-                            gen = str(row.get('model_config.generator', '')).lower()
-                            if not ('claude' in gen or gen == 'n/a'):
-                                is_na = True
-                        
+                        # Header row
                         with me.box(
                             style=me.Style(
                                 display="table-row",
-                                background="#ffffff" if idx % 2 == 0 else "#f9fafb",
+                                background="#f8fafc",
+                                font_weight="bold",
+                                color="#475569",
+                                font_size="12px",
+                                text_transform="uppercase",
+                                letter_spacing="0.05em",
                             )
                         ):
-                            def render_cell(text, color="#334155", cell_bg=None, on_click=None):
-                                style = me.Style(
-                                    display="table-cell",
-                                    padding=me.Padding.symmetric(vertical="12px", horizontal="16px"),
-                                    text_align="center",
-                                    border=me.Border.all(
-                                        me.BorderSide(width="1px", color="#e2e8f0", style="solid")
-                                    ),
+                            headers = [
+                                "Product",
+                                "Dataset",
+                                "AI Score",
+                                "Trajectory Matcher",
+                                "Goal Completion",
+                                "Turn Count",
+                                "Executable",
+                                "Token Consumption",
+                                "End-to-End Latency"
+                            ]
+                            for label in headers:
+                                with me.box(
+                                    style=me.Style(
+                                        display="table-cell",
+                                        padding=me.Padding.symmetric(vertical="12px", horizontal="16px"),
+                                        text_align="center",
+                                        border=me.Border.all(
+                                            me.BorderSide(width="1px", color="#e2e8f0", style="solid")
+                                        ),
+                                        background="#f8fafc",
+                                    )
+                                ):
+                                    me.text(label)
+
+                        # Data rows
+                        for idx, row in summary_df.iterrows():
+                            is_na = pd.isna(row['Trajectory Matcher'])
+
+                            # Mask scores in Claude tab if not Claude or N/A generator
+                            if state.status_agent_tab == "Claude":
+                                gen = str(row.get('model_config.generator', '')).lower()
+                                if not ('claude' in gen or gen == 'n/a'):
+                                    is_na = True
+
+                            with me.box(
+                                style=me.Style(
+                                    display="table-row",
+                                    background="#ffffff" if idx % 2 == 0 else "#f9fafb",
                                 )
-                                if cell_bg:
-                                    style.background = cell_bg
-                                with me.box(style=style):
-                                    if on_click:
-                                        me.button(
-                                            text,
-                                            on_click=on_click,
-                                            style=me.Style(
-                                                color=color,
-                                                background="transparent",
-                                                border=me.Border.all(me.BorderSide(width="0px")),
-                                                padding=me.Padding.all("0px"),
-                                                margin=me.Margin.all("0px"),
-                                                font_size="inherit",
-                                                font_weight="500",
-                                                cursor="pointer",
+                            ):
+                                def render_cell(text, color="#334155", cell_bg=None, on_click=None):
+                                    style = me.Style(
+                                        display="table-cell",
+                                        padding=me.Padding.symmetric(vertical="12px", horizontal="16px"),
+                                        text_align="center",
+                                        border=me.Border.all(
+                                            me.BorderSide(width="1px", color="#e2e8f0", style="solid")
+                                        ),
+                                    )
+                                    if cell_bg:
+                                        style.background = cell_bg
+                                    with me.box(style=style):
+                                        if on_click:
+                                            me.button(
+                                                text,
+                                                on_click=on_click,
+                                                style=me.Style(
+                                                    color=color,
+                                                    background="transparent",
+                                                    border=me.Border.all(me.BorderSide(width="0px")),
+                                                    padding=me.Padding.all("0px"),
+                                                    margin=me.Margin.all("0px"),
+                                                    font_size="inherit",
+                                                    font_weight="500",
+                                                    cursor="pointer",
+                                                )
                                             )
-                                        )
-                                    else:
-                                        me.text(text, style=me.Style(color=color))
-                                    
-                            product_val = str(row['Product'])
-                            dataset_val = str(row['Dataset'])
-                            
-                            def make_click_handler(p_val, d_val, g_val):
-                                def handler(e: me.ClickEvent):
-                                    st = me.state(State)
-                                    st.selected_main_tab = "List"
-                                    st.product_filter = p_val
-                                    st.dataset_filter = d_val
-                                    st.list_agent_tab = st.status_agent_tab
-                                
-                                safe_p = str(p_val).replace(" ", "_").replace(".", "_").replace("-", "_")
-                                safe_d = str(d_val).replace(" ", "_").replace(".", "_").replace("-", "_")
-                                handler_name = f"click_status_row_{safe_p}_{safe_d}"
-                                handler.__name__ = handler_name
-                                globals()[handler_name] = handler
-                                return handler
-                                
-                            click_handler = make_click_handler(product_val, dataset_val, row.get('model_config.generator'))
-                            render_cell(product_val, color="#2563eb", on_click=click_handler)
-                            render_cell("N/A" if is_na else dataset_val, color="#2563eb", on_click=None if is_na else click_handler)
-                            
-                            if is_na or 'AI Score' not in row or pd.isna(row['AI Score']):
-                                render_cell("N/A", color="#94a3b8", cell_bg="#e2e8f0")
-                            else:
-                                score_str = f"{row['AI Score']:.0f}%"
-                                render_cell(score_str, get_color_for_pct(score_str))
-                            
-                            if is_na:
-                                # Make cells gray for products with no data
-                                render_cell("N/A", color="#94a3b8", cell_bg="#e2e8f0")
-                                render_cell("N/A", color="#94a3b8", cell_bg="#e2e8f0")
-                                render_cell("N/A", color="#94a3b8", cell_bg="#e2e8f0")
-                                render_cell("N/A", color="#94a3b8", cell_bg="#e2e8f0")
-                                render_cell("N/A", color="#94a3b8", cell_bg="#e2e8f0")
-                                render_cell("N/A", color="#94a3b8", cell_bg="#e2e8f0")
-                            else:
-                                traj_str = f"{row['Trajectory Matcher']:.0f}%"
-                                render_cell(traj_str, get_color_for_pct(traj_str))
-                                
-                                if 'Goal Completion' not in row or pd.isna(row['Goal Completion']):
+                                        else:
+                                            me.text(text, style=me.Style(color=color))
+
+                                product_val = str(row['Product'])
+                                dataset_val = str(row['Dataset'])
+
+                                def make_click_handler(p_val, d_val, g_val):
+                                    def handler(e: me.ClickEvent):
+                                        st = me.state(State)
+                                        st.selected_main_tab = "List"
+                                        st.product_filter = p_val
+                                        st.dataset_filter = d_val
+                                        st.list_agent_tab = st.status_agent_tab
+
+                                    safe_p = str(p_val).replace(" ", "_").replace(".", "_").replace("-", "_")
+                                    safe_d = str(d_val).replace(" ", "_").replace(".", "_").replace("-", "_")
+                                    handler_name = f"click_status_row_{safe_p}_{safe_d}"
+                                    handler.__name__ = handler_name
+                                    globals()[handler_name] = handler
+                                    return handler
+
+                                click_handler = make_click_handler(product_val, dataset_val, row.get('model_config.generator'))
+                                render_cell(product_val, color="#2563eb", on_click=click_handler)
+                                render_cell("N/A" if is_na else dataset_val, color="#2563eb", on_click=None if is_na else click_handler)
+
+                                if is_na or 'AI Score' not in row or pd.isna(row['AI Score']):
                                     render_cell("N/A", color="#94a3b8", cell_bg="#e2e8f0")
                                 else:
-                                    goal_str = f"{row['Goal Completion']:.0f}%"
-                                    render_cell(goal_str, get_color_for_pct(goal_str))
-                                
-                                render_cell(f"{row['Turn Count']:.1f}")
-                                
-                                exec_str = f"{row['Executable']:.0f}%"
-                                render_cell(exec_str, get_color_for_pct(exec_str))
-                                
-                                render_cell(f"{row['Token Consumption']:.0f}")
-                                if pd.isna(row['End-to-End Latency']):
-                                    render_cell("N/A")
+                                    score_str = f"{row['AI Score']:.0f}%"
+                                    render_cell(score_str, get_color_for_pct(score_str))
+
+                                if is_na:
+                                    # Make cells gray for products with no data
+                                    render_cell("N/A", color="#94a3b8", cell_bg="#e2e8f0")
+                                    render_cell("N/A", color="#94a3b8", cell_bg="#e2e8f0")
+                                    render_cell("N/A", color="#94a3b8", cell_bg="#e2e8f0")
+                                    render_cell("N/A", color="#94a3b8", cell_bg="#e2e8f0")
+                                    render_cell("N/A", color="#94a3b8", cell_bg="#e2e8f0")
+                                    render_cell("N/A", color="#94a3b8", cell_bg="#e2e8f0")
                                 else:
-                                    render_cell(f"{row['End-to-End Latency'] / 60000.0:.2f}m")
+                                    traj_str = f"{row['Trajectory Matcher']:.0f}%"
+                                    render_cell(traj_str, get_color_for_pct(traj_str))
+
+                                    if 'Goal Completion' not in row or pd.isna(row['Goal Completion']):
+                                        render_cell("N/A", color="#94a3b8", cell_bg="#e2e8f0")
+                                    else:
+                                        goal_str = f"{row['Goal Completion']:.0f}%"
+                                        render_cell(goal_str, get_color_for_pct(goal_str))
+
+                                    render_cell(f"{row['Turn Count']:.1f}")
+
+                                    exec_str = f"{row['Executable']:.0f}%"
+                                    render_cell(exec_str, get_color_for_pct(exec_str))
+
+                                    render_cell(f"{row['Token Consumption']:.0f}")
+                                    if pd.isna(row['End-to-End Latency']):
+                                        render_cell("N/A")
+                                    else:
+                                        render_cell(f"{row['End-to-End Latency'] / 60000.0:.2f}m")
             else:
                 me.text("No evaluation data found for known products.")
         else:
@@ -567,12 +564,12 @@ def list_view_component(directories, results_dir):
                 margin=me.Margin(bottom="16px"),
             ),
         )
-        
+
         # Add agent tabs for List view
         def on_list_agent_tab_change(e):
             st = me.state(State)
             st.list_agent_tab = e.value
-            
+
         me.button_toggle(
             value=state.list_agent_tab,
             buttons=[
@@ -593,7 +590,7 @@ def list_view_component(directories, results_dir):
                     summaries = json.loads(s.eval_summaries)
                 except Exception:
                     summaries = []
-    
+
             if not summaries:
                 cache_file = os.path.join(results_dir, "trends_cache.csv")
                 logging.info(f"trends_cache.csv exists: {os.path.exists(cache_file)}")
@@ -608,7 +605,7 @@ def list_view_component(directories, results_dir):
                                 match = re.search(r"General Score:.*?(\d+(\.\d+)?)", row['ai_summary'])
                                 if match:
                                     score = float(match.group(1))
-                                    
+
                             summaries.append({
                                 "id": str(row['job_id']),
                                 "date": str(row['run_time']) if not pd.isna(row['run_time']) else "N/A",
@@ -631,14 +628,14 @@ def list_view_component(directories, results_dir):
                         logging.error(f"Error reading trends cache: {e}")
                 else:
                     logging.warning(f"Trends cache file not found at {cache_file}")
-    
+
             # Sort by selected column
             reverse = state.sort_descending
             col = state.sort_column
-    
+
             def get_sort_key(x):
                 val = x.get(col, "N/A")
-    
+
                 # Handle numbers and percentages
                 if col in [
                     "exact_match",
@@ -655,7 +652,7 @@ def list_view_component(directories, results_dir):
                         except ValueError:
                             return -1.0 if reverse else 101.0
                     return -1.0 if reverse else 101.0
-    
+
                 elif col in [
                     "turn_count",
                     "token_consumption",
@@ -667,14 +664,14 @@ def list_view_component(directories, results_dir):
                         return float(val)
                     except ValueError:
                         return -1.0 if reverse else 1e12
-    
+
                 # String columns (product, requester, id, date)
                 if val == "N/A":
                     return "" if reverse else "\xff\xff\xff\xff"
                 return str(val)
-    
+
             summaries.sort(key=get_sort_key, reverse=reverse)
-    
+
             # Extract unique values for filters from ALL summaries
             all_summaries = []
             if s.eval_summaries:
@@ -682,7 +679,7 @@ def list_view_component(directories, results_dir):
                     all_summaries = json.loads(s.eval_summaries)
                 except Exception:
                     all_summaries = []
-    
+
             filters_file = os.path.join(results_dir, "filters_cache.json")
             if os.path.exists(filters_file):
                 try:
@@ -727,7 +724,7 @@ def list_view_component(directories, results_dir):
                         )
                     )
                 )
-            
+
             # Fallback for datasets if empty from cache
             if not datasets and all_summaries:
                 datasets = sorted(
@@ -739,7 +736,7 @@ def list_view_component(directories, results_dir):
                         )
                     )
                 )
-    
+
             # Apply filters
             if state.list_agent_tab == "Gemini":
                 summaries = [x for x in summaries if x.get("model_config.generator") == "gemini_cli" or x.get("model_config.generator") == "unknown" or x.get("model_config.generator") == "N/A" or x.get("product") in ['spanner', 'bigtable', 'alloydb', 'memorystore', 'dms', 'datastream']]
@@ -777,7 +774,7 @@ def list_view_component(directories, results_dir):
                     if x.get("dataset", "N/A")
                     == state.dataset_filter
                 ]
-            
+
             if state.base_product:
                 summaries = [
                     x
@@ -793,7 +790,7 @@ def list_view_component(directories, results_dir):
 
             # Limit number of rows to show after filter/sort
             summaries = summaries[:state.rows_to_show]
-    
+
             # Render filters UI
             with me.box(
                 style=me.Style(
@@ -824,18 +821,18 @@ def list_view_component(directories, results_dir):
                         st.open_dropdown = ""
                     else:
                         st.open_dropdown = "eval_id"
-    
+
                 def make_eval_id_handler(val):
                     def handler(e: me.ClickEvent):
                         st = me.state(State)
                         st.eval_id_filter = val
                         st.open_dropdown = ""
-    
+
                     handler_name = f"click_eval_id_{val}"
                     handler.__name__ = handler_name
                     globals()[handler_name] = handler
                     return handler
-    
+
                 with me.box(
                     style=me.Style(
                         position="relative",
@@ -866,7 +863,7 @@ def list_view_component(directories, results_dir):
                                 color="#1f2937"
                             ),
                         )
-    
+
                     # The Popup List
                     if state.open_dropdown == "eval_id":
                         with me.box(
@@ -902,7 +899,7 @@ def list_view_component(directories, results_dir):
                                         color="#1f2937"
                                     ),
                                 )
-    
+
                             for d in eval_ids:
                                 with me.box(
                                     style=me.Style(
@@ -917,7 +914,7 @@ def list_view_component(directories, results_dir):
                                             color="#1f2937"
                                         ),
                                     )
-    
+
                 # Product Filter with Floating Autocomplete
                 def toggle_product_dropdown(e: me.ClickEvent):
                     st = me.state(State)
@@ -925,22 +922,22 @@ def list_view_component(directories, results_dir):
                         st.open_dropdown = ""
                     else:
                         st.open_dropdown = "product"
-    
+
                 def make_prod_dropdown_handler(val):
                     def handler(e: me.ClickEvent):
                         st = me.state(State)
                         st.product_filter = val
                         st.open_dropdown = ""
-    
+
                     # Sanitize name for Mesop event routing
                     safe_val = str(val).replace(" ", "_").replace(".", "_").replace("-", "_")
                     handler_name = f"click_prod_dd_{safe_val}"
                     handler.__name__ = handler_name
                     globals()[handler_name] = handler
                     return handler
-    
+
                 mk_prod_dd = make_prod_dropdown_handler
-    
+
                 with me.box(
                     style=me.Style(
                         position="relative",
@@ -971,7 +968,7 @@ def list_view_component(directories, results_dir):
                                 color="#1f2937"
                             ),
                         )
-    
+
                     # The Popup List
                     if state.open_dropdown == "product":
                         with me.box(
@@ -1007,7 +1004,7 @@ def list_view_component(directories, results_dir):
                                         color="#1f2937"
                                     ),
                                 )
-    
+
                             for p in products:
                                 with me.box(
                                     style=me.Style(
@@ -1022,7 +1019,7 @@ def list_view_component(directories, results_dir):
                                             color="#1f2937"
                                         ),
                                     )
-    
+
                 # Requester Filter with Floating Autocomplete
                 def toggle_requester_dropdown(e: me.ClickEvent):
                     st = me.state(State)
@@ -1030,22 +1027,22 @@ def list_view_component(directories, results_dir):
                         st.open_dropdown = ""
                     else:
                         st.open_dropdown = "requester"
-    
+
                 def make_req_dropdown_handler(val):
                     def handler(e: me.ClickEvent):
                         st = me.state(State)
                         st.requester_filter = val
                         st.open_dropdown = ""
-    
+
                     # Sanitize name for Mesop event routing
                     safe_val = str(val).replace(" ", "_").replace(".", "_").replace("-", "_")
                     handler_name = f"click_req_dd_{safe_val}"
                     handler.__name__ = handler_name
                     globals()[handler_name] = handler
                     return handler
-    
+
                 mk_req_dd = make_req_dropdown_handler
-    
+
                 with me.box(
                     style=me.Style(
                         position="relative",
@@ -1076,7 +1073,7 @@ def list_view_component(directories, results_dir):
                                 color="#1f2937"
                             ),
                         )
-    
+
                     # The Popup List
                     if state.open_dropdown == "requester":
                         with me.box(
@@ -1112,7 +1109,7 @@ def list_view_component(directories, results_dir):
                                         color="#1f2937"
                                     ),
                                 )
-    
+
                             for r in requesters:
                                 with me.box(
                                     style=me.Style(
@@ -1127,7 +1124,7 @@ def list_view_component(directories, results_dir):
                                             color="#1f2937"
                                         ),
                                     )
-    
+
                 # Dataset Filter with Floating Autocomplete
                 def toggle_dataset_dropdown(e: me.ClickEvent):
                     st = me.state(State)
@@ -1135,22 +1132,22 @@ def list_view_component(directories, results_dir):
                         st.open_dropdown = ""
                     else:
                         st.open_dropdown = "dataset"
-    
+
                 def make_dataset_dropdown_handler(val):
                     def handler(e: me.ClickEvent):
                         st = me.state(State)
                         st.dataset_filter = val
                         st.open_dropdown = ""
-    
+
                     # Sanitize name for Mesop event routing
                     safe_val = str(val).replace(" ", "_").replace(".", "_").replace("-", "_")
                     handler_name = f"click_dataset_dd_{safe_val}"
                     handler.__name__ = handler_name
                     globals()[handler_name] = handler
                     return handler
-    
+
                 mk_dataset_dd = make_dataset_dropdown_handler
-    
+
                 with me.box(
                     style=me.Style(
                         position="relative",
@@ -1181,7 +1178,7 @@ def list_view_component(directories, results_dir):
                                 color="#1f2937"
                             ),
                         )
-    
+
                     # The Popup List
                     if state.open_dropdown == "dataset":
                         with me.box(
@@ -1217,7 +1214,7 @@ def list_view_component(directories, results_dir):
                                         color="#1f2937"
                                     ),
                                 )
-    
+
                             for d in datasets:
                                 with me.box(
                                     style=me.Style(
@@ -1232,7 +1229,7 @@ def list_view_component(directories, results_dir):
                                             color="#1f2937"
                                         ),
                                     )
-                
+
                 # Rows to Show Filter
                 def toggle_rows_dropdown(e: me.ClickEvent):
                     st = me.state(State)
@@ -1240,18 +1237,18 @@ def list_view_component(directories, results_dir):
                         st.open_dropdown = ""
                     else:
                         st.open_dropdown = "rows_to_show"
-    
+
                 def make_rows_handler(val):
                     def handler(e: me.ClickEvent):
                         st = me.state(State)
                         st.rows_to_show = val
                         st.open_dropdown = ""
-    
+
                     handler_name = f"click_rows_{val}"
                     handler.__name__ = handler_name
                     globals()[handler_name] = handler
                     return handler
-    
+
                 with me.box(
                     style=me.Style(
                         position="relative",
@@ -1280,7 +1277,7 @@ def list_view_component(directories, results_dir):
                                 color="#1f2937"
                             ),
                         )
-    
+
                     # The Popup List
                     if state.open_dropdown == "rows_to_show":
                         with me.box(
@@ -1316,7 +1313,7 @@ def list_view_component(directories, results_dir):
                                             color="#1f2937"
                                         ),
                                     )
-                
+
                 def make_select_handler(job_id, item_product, item_dataset):
                     def handler(e: me.ClickEvent):
                         st = me.state(State)
@@ -1324,7 +1321,7 @@ def list_view_component(directories, results_dir):
                             sel = json.loads(st.selected_evals)
                         except Exception:
                             sel = []
-                        
+
                         if job_id in sel:
                             sel.remove(job_id)
                             if not sel:
@@ -1337,9 +1334,9 @@ def list_view_component(directories, results_dir):
                                 st.base_dataset = item_dataset
                             elif len(sel) == 1:
                                 sel.append(job_id)
-                        
+
                         st.selected_evals = json.dumps(sel)
-                    
+
                     safe_id = str(job_id).replace(" ", "_").replace(".", "_").replace("-", "_")
                     handler.__name__ = f"click_select_{safe_id}"
                     return handler
@@ -1357,7 +1354,7 @@ def list_view_component(directories, results_dir):
                     st.select_mode_active = False
                     st.compare_tab_visible = False
                     st.ai_comparison = ""
-                
+
                 me.button(
                     "Reset",
                     on_click=on_reset_click,
@@ -1370,11 +1367,11 @@ def list_view_component(directories, results_dir):
                         cursor="pointer",
                     )
                 )
-                
+
                 def on_toggle_select_mode(e: me.ClickEvent):
                     st = me.state(State)
                     st.select_mode_active = not st.select_mode_active
-                
+
                 me.button(
                     "Compare",
                     on_click=on_toggle_select_mode,
@@ -1388,7 +1385,7 @@ def list_view_component(directories, results_dir):
                         margin=me.Margin(left="8px"),
                     )
                 )
-    
+
             def on_sort_click(col_name):
                 s = me.state(State)
                 if s.sort_column == col_name:
@@ -1396,40 +1393,40 @@ def list_view_component(directories, results_dir):
                 else:
                     s.sort_column = col_name
                     s.sort_descending = True
-    
+
             def click_id(e):
                 on_sort_click("id")
-    
+
             def click_date(e):
                 on_sort_click("date")
-    
+
             def click_product(e):
                 on_sort_click("product")
-    
+
             def click_requester(e):
                 on_sort_click("requester")
-    
+
             def click_traj(e):
                 on_sort_click("trajectory_matcher")
-    
+
             def click_turns(e):
                 on_sort_click("turn_count")
-    
+
             def click_exec(e):
                 on_sort_click("executable")
-    
+
             def click_dataset(e):
                 on_sort_click("dataset")
 
             def click_tokens(e):
                 on_sort_click("token_consumption")
-    
+
             def click_latency(e):
                 on_sort_click("end_to_end_latency")
-    
+
             def click_goal_comp(e):
                 on_sort_click("goal_completion")
-    
+
             def click_ai_score(e):
                 on_sort_click("ai_score")
 
@@ -1451,7 +1448,7 @@ def list_view_component(directories, results_dir):
                 "token_consumption": click_tokens,
                 "end_to_end_latency": click_latency,
             }
-    
+
             def render_header_cell(h_label, h_col, h_width):
                 with me.box(
                     style=me.Style(
@@ -1477,7 +1474,7 @@ def list_view_component(directories, results_dir):
                     s = me.state(State)
                     arrow = " ↓" if s.sort_descending else " ↑"
                     arrow_str = arrow if s.sort_column == h_col else ""
-                    
+
                     words = h_label.split(" ")
                     with me.box(
                         style=me.Style(
@@ -1504,7 +1501,7 @@ def list_view_component(directories, results_dir):
                                         )
                             else:
                                 me.text(w)
-    
+
             # Selection Toolbar
             if selected_evals_list:
                 with me.box(
@@ -1520,36 +1517,36 @@ def list_view_component(directories, results_dir):
                     )
                 ):
                     me.text(f"Selected: {len(selected_evals_list)} / 2", style=me.Style(color="#0369a1", font_weight="600"))
-                    
+
                     def on_clear_selection(e: me.ClickEvent):
                         st = me.state(State)
                         st.selected_evals = "[]"
                         st.base_product = ""
                         st.base_dataset = ""
-                    
+
                     def on_compare_click(e: me.ClickEvent):
                         st = me.state(State)
                         st.compare_tab_visible = True
                         st.compare_evals = st.selected_evals
                         st.selected_main_tab = "Compare"
-                        
+
                         if not st.ai_comparison:
                             st.ai_comparison = "Comparing..."
                             logging.info("Set ai_comparison to Comparing... in on_compare_click")
                             yield
-                            
+
                             try:
                                 comp_evals = json.loads(st.compare_evals)
                             except Exception:
                                 comp_evals = []
-                                
+
                             logging.info(f"comp_evals in on_compare_click: {comp_evals}")
                             if len(comp_evals) == 2:
                                 logging.info("Starting compare_evals in on_compare_click...")
                                 st.ai_comparison = compare_evals(comp_evals[0], comp_evals[1])
                                 logging.info("Finished compare_evals in on_compare_click.")
                                 yield
-                    
+
                     with me.box(style=me.Style(display="flex", gap="8px")):
                         me.button(
                             "Clear",
@@ -1580,84 +1577,113 @@ def list_view_component(directories, results_dir):
                     width="100%",
                 )
             ):
-              with me.box(
-                style=me.Style(
-                    display="table",
-                    width="100%",
-                    border=me.Border.all(
-                        me.BorderSide(
-                            width="1px",
-                            color="#e5e7eb",
-                            style="solid",
-                        )
-                    ),
-                    border_radius="8px",
-                    background="#ffffff",
-                )
-              ):
-                # Header row
                 with me.box(
                     style=me.Style(
-                        display="table-row",
-                        background="#f8fafc",
-                        font_weight="bold",
-                        color="#475569",
-                        font_size="12px",
-                        text_transform="uppercase",
-                        letter_spacing="0.05em",
+                        display="table",
+                        width="100%",
+                        border=me.Border.all(
+                            me.BorderSide(
+                                width="1px",
+                                color="#e5e7eb",
+                                style="solid",
+                            )
+                        ),
+                        border_radius="8px",
+                        background="#ffffff",
                     )
                 ):
-                    headers = []
-                    if state.select_mode_active:
-                        headers.append(("Select", "select", "8ch"))
-                    headers.extend([
-                        ("Eval ID", "id", "36ch"),
-                        ("Date", "date", "20ch"),
-                        ("Product", "product", "12ch"),
-                        ("Requester", "requester", "12ch"),
-                        ("Dataset", "dataset", "15ch"),
-                        ("AI Score", "ai_score", "8ch"),
-                        ("Trajectory Matcher", "trajectory_matcher", "12ch"),
-                        ("Goal Completion", "goal_completion", "12ch"),
-                        ("Turn Count", "turn_count", "8ch"),
-                        ("Executable", "executable", "10ch"),
-                        ("Token Consumption", "token_consumption", "12ch"),
-                        ("End-to-End Latency", "end_to_end_latency", "12ch"),
-                    ])
-                    for label, col, width in headers:
-                        render_header_cell(label, col, width)
-    
-                # Data rows
-                for idx, item in enumerate(summaries):
-                    d = item["id"]
-                    date_val = item.get("date", "N/A")
-                    prod = item["product"]
-                    req_val = item.get("requester", "N/A")
-                    dataset_val = item.get("dataset", "N/A")
-                    ai_score_val = item.get("ai_score", "N/A")
-                    traj = item.get("trajectory_matcher", "N/A")
-                    goal_comp = item.get("goal_completion", "N/A")
-                    turns = item.get("turn_count", "N/A")
-                    exec_val = item.get("executable", "N/A")
-                    tokens = item.get("token_consumption", "N/A")
-                    latency = item.get("end_to_end_latency", "N/A")
-    
-                    bg_color = (
-                        "#ffffff"
-                        if idx % 2 == 0
-                        else "#f8fafc"
-                    )
-    
-
-    
+                    # Header row
                     with me.box(
                         style=me.Style(
                             display="table-row",
-                            background=bg_color,
+                            background="#f8fafc",
+                            font_weight="bold",
+                            color="#475569",
+                            font_size="12px",
+                            text_transform="uppercase",
+                            letter_spacing="0.05em",
                         )
                     ):
-                        # Select checkbox
+                        headers = []
                         if state.select_mode_active:
+                            headers.append(("Select", "select", "8ch"))
+                        headers.extend([
+                            ("Eval ID", "id", "36ch"),
+                            ("Date", "date", "20ch"),
+                            ("Product", "product", "12ch"),
+                            ("Requester", "requester", "12ch"),
+                            ("Dataset", "dataset", "15ch"),
+                            ("AI Score", "ai_score", "8ch"),
+                            ("Trajectory Matcher", "trajectory_matcher", "12ch"),
+                            ("Goal Completion", "goal_completion", "12ch"),
+                            ("Turn Count", "turn_count", "8ch"),
+                            ("Executable", "executable", "10ch"),
+                            ("Token Consumption", "token_consumption", "12ch"),
+                            ("End-to-End Latency", "end_to_end_latency", "12ch"),
+                        ])
+                        for label, col, width in headers:
+                            render_header_cell(label, col, width)
+
+                    # Data rows
+                    for idx, item in enumerate(summaries):
+                        d = item["id"]
+                        date_val = item.get("date", "N/A")
+                        prod = item["product"]
+                        req_val = item.get("requester", "N/A")
+                        dataset_val = item.get("dataset", "N/A")
+                        ai_score_val = item.get("ai_score", "N/A")
+                        traj = item.get("trajectory_matcher", "N/A")
+                        goal_comp = item.get("goal_completion", "N/A")
+                        turns = item.get("turn_count", "N/A")
+                        exec_val = item.get("executable", "N/A")
+                        tokens = item.get("token_consumption", "N/A")
+                        latency = item.get("end_to_end_latency", "N/A")
+
+                        bg_color = (
+                            "#ffffff"
+                            if idx % 2 == 0
+                            else "#f8fafc"
+                        )
+
+                        with me.box(
+                            style=me.Style(
+                                display="table-row",
+                                background=bg_color,
+                            )
+                        ):
+                            # Select checkbox
+                            if state.select_mode_active:
+                                with me.box(
+                                    style=me.Style(
+                                        display="table-cell",
+                                        padding=me.Padding.symmetric(
+                                            vertical="10px", horizontal="16px"
+                                        ),
+                                        text_align="center",
+                                        border=me.Border.all(
+                                            me.BorderSide(
+                                                width="1px",
+                                                color="#e2e8f0",
+                                                style="solid",
+                                            )
+                                        ),
+                                        width="8ch",
+                                    )
+                                ):
+                                    is_selected = d in selected_evals_list
+                                    label = "✅" if is_selected else "⬜"
+                                    me.button(
+                                        label,
+                                        on_click=make_select_handler(d, prod, dataset_val),
+                                        style=me.Style(
+                                            background="transparent",
+                                            color="#0284c7" if is_selected else "#64748b",
+                                            font_weight="bold",
+                                            border=me.Border.all(me.BorderSide(width="0px")),
+                                            cursor="pointer",
+                                        ),
+                                    )
+                            # Eval ID as a link/button
                             with me.box(
                                 style=me.Style(
                                     display="table-cell",
@@ -1672,311 +1698,278 @@ def list_view_component(directories, results_dir):
                                             style="solid",
                                         )
                                     ),
-                                    width="8ch",
+                                    width="36ch",
+                                    white_space="nowrap",
                                 )
                             ):
-                                is_selected = d in selected_evals_list
-                                label = "✅" if is_selected else "⬜"
-                                me.button(
-                                    label,
-                                    on_click=make_select_handler(d, prod, dataset_val),
+                                with me.box(
                                     style=me.Style(
-                                        background="transparent",
-                                        color="#0284c7" if is_selected else "#64748b",
-                                        font_weight="bold",
-                                        border=me.Border.all(me.BorderSide(width="0px")),
-                                        cursor="pointer",
-                                    ),
-                                )
-                        # Eval ID as a link/button
-                        with me.box(
-                            style=me.Style(
-                                display="table-cell",
-                                padding=me.Padding.symmetric(
-                                    vertical="10px", horizontal="16px"
-                                ),
-                                text_align="center",
-                                border=me.Border.all(
-                                    me.BorderSide(
-                                        width="1px",
-                                        color="#e2e8f0",
-                                        style="solid",
+                                        display="flex",
+                                        justify_content="center",
+                                        width="100%",
                                     )
-                                ),
-                                width="36ch",
-                                white_space="nowrap",
-                            )
-                        ):
+                                ):
+                                    me.markdown(f'<a href="/?job_id={d}" class="pill-link">{d}</a>')
                             with me.box(
                                 style=me.Style(
-                                    display="flex",
-                                    justify_content="center",
-                                    width="100%",
+                                    display="table-cell",
+                                    padding=me.Padding.symmetric(
+                                        vertical="10px", horizontal="16px"
+                                    ),
+                                    text_align="center",
+                                    border=me.Border.all(
+                                        me.BorderSide(
+                                            width="1px",
+                                            color="#e2e8f0",
+                                            style="solid",
+                                        )
+                                    ),
+                                    width="24ch",
+                                    white_space="nowrap",
                                 )
                             ):
-                                me.markdown(f'<a href="/?job_id={d}" class="pill-link">{d}</a>')
-                        with me.box(
-                            style=me.Style(
-                                display="table-cell",
-                                padding=me.Padding.symmetric(
-                                    vertical="10px", horizontal="16px"
-                                ),
-                                text_align="center",
-                                border=me.Border.all(
-                                    me.BorderSide(
-                                        width="1px",
-                                        color="#e2e8f0",
-                                        style="solid",
-                                    )
-                                ),
-                                width="24ch",
-                                white_space="nowrap",
-                            )
-                        ):
-                            me.text(
-                                date_val,
+                                me.text(
+                                    date_val,
+                                    style=me.Style(
+                                        color="#334155",
+                                        font_family="monospace",
+                                    ),
+                                )
+                            with me.box(
                                 style=me.Style(
-                                    color="#334155",
-                                    font_family="monospace",
-                                ),
-                            )
-                        with me.box(
-                            style=me.Style(
-                                display="table-cell",
-                                padding=me.Padding.symmetric(
-                                    vertical="10px", horizontal="16px"
-                                ),
-                                text_align="center",
-                                border=me.Border.all(
-                                    me.BorderSide(
-                                        width="1px",
-                                        color="#e2e8f0",
-                                        style="solid",
-                                    )
-                                ),
-                            )
-                        ):
-                            me.text(
-                                prod,
+                                    display="table-cell",
+                                    padding=me.Padding.symmetric(
+                                        vertical="10px", horizontal="16px"
+                                    ),
+                                    text_align="center",
+                                    border=me.Border.all(
+                                        me.BorderSide(
+                                            width="1px",
+                                            color="#e2e8f0",
+                                            style="solid",
+                                        )
+                                    ),
+                                )
+                            ):
+                                me.text(
+                                    prod,
+                                    style=me.Style(
+                                        color="#334155"
+                                    ),
+                                )
+
+                            with me.box(
                                 style=me.Style(
-                                    color="#334155"
-                                ),
-                            )
-    
-                        with me.box(
-                            style=me.Style(
-                                display="table-cell",
-                                padding=me.Padding.symmetric(
-                                    vertical="10px", horizontal="16px"
-                                ),
-                                text_align="center",
-                                border=me.Border.all(
-                                    me.BorderSide(
-                                        width="1px",
-                                        color="#e2e8f0",
-                                        style="solid",
-                                    )
-                                ),
-                            )
-                        ):
-                            me.text(
-                                req_val,
+                                    display="table-cell",
+                                    padding=me.Padding.symmetric(
+                                        vertical="10px", horizontal="16px"
+                                    ),
+                                    text_align="center",
+                                    border=me.Border.all(
+                                        me.BorderSide(
+                                            width="1px",
+                                            color="#e2e8f0",
+                                            style="solid",
+                                        )
+                                    ),
+                                )
+                            ):
+                                me.text(
+                                    req_val,
+                                    style=me.Style(
+                                        color="#334155"
+                                    ),
+                                )
+
+                            with me.box(
                                 style=me.Style(
-                                    color="#334155"
-                                ),
-                            )
-                        
-                        with me.box(
-                            style=me.Style(
-                                display="table-cell",
-                                padding=me.Padding.symmetric(
-                                    vertical="10px", horizontal="16px"
-                                ),
-                                text_align="center",
-                                border=me.Border.all(
-                                    me.BorderSide(
-                                        width="1px",
-                                        color="#e2e8f0",
-                                        style="solid",
-                                    )
-                                ),
-                            )
-                        ):
-                            me.text(
-                                dataset_val,
+                                    display="table-cell",
+                                    padding=me.Padding.symmetric(
+                                        vertical="10px", horizontal="16px"
+                                    ),
+                                    text_align="center",
+                                    border=me.Border.all(
+                                        me.BorderSide(
+                                            width="1px",
+                                            color="#e2e8f0",
+                                            style="solid",
+                                        )
+                                    ),
+                                )
+                            ):
+                                me.text(
+                                    dataset_val,
+                                    style=me.Style(
+                                        color="#334155"
+                                    ),
+                                )
+
+                            with me.box(
                                 style=me.Style(
-                                    color="#334155"
-                                ),
-                            )
-                        
-                        with me.box(
-                            style=me.Style(
-                                display="table-cell",
-                                padding=me.Padding.symmetric(
-                                    vertical="10px", horizontal="16px"
-                                ),
-                                text_align="center",
-                                border=me.Border.all(
-                                    me.BorderSide(
-                                        width="1px",
-                                        color="#e2e8f0",
-                                        style="solid",
-                                    )
-                                ),
-                                width="10ch",
-                                white_space="nowrap",
-                            )
-                        ):
-                            me.text(
-                                ai_score_val,
+                                    display="table-cell",
+                                    padding=me.Padding.symmetric(
+                                        vertical="10px", horizontal="16px"
+                                    ),
+                                    text_align="center",
+                                    border=me.Border.all(
+                                        me.BorderSide(
+                                            width="1px",
+                                            color="#e2e8f0",
+                                            style="solid",
+                                        )
+                                    ),
+                                    width="10ch",
+                                    white_space="nowrap",
+                                )
+                            ):
+                                me.text(
+                                    ai_score_val,
+                                    style=me.Style(
+                                        color=get_color_for_pct(ai_score_val)
+                                    ),
+                                )
+
+                            with me.box(
                                 style=me.Style(
-                                    color=get_color_for_pct(ai_score_val)
-                                ),
-                            )
-    
-                        with me.box(
-                            style=me.Style(
-                                display="table-cell",
-                                padding=me.Padding.symmetric(
-                                    vertical="10px", horizontal="16px"
-                                ),
-                                text_align="center",
-                                border=me.Border.all(
-                                    me.BorderSide(
-                                        width="1px",
-                                        color="#e2e8f0",
-                                        style="solid",
-                                    )
-                                ),
-                                width="18ch",
-                                white_space="nowrap",
-                            )
-                        ):
-                            me.text(
-                                traj,
+                                    display="table-cell",
+                                    padding=me.Padding.symmetric(
+                                        vertical="10px", horizontal="16px"
+                                    ),
+                                    text_align="center",
+                                    border=me.Border.all(
+                                        me.BorderSide(
+                                            width="1px",
+                                            color="#e2e8f0",
+                                            style="solid",
+                                        )
+                                    ),
+                                    width="18ch",
+                                    white_space="nowrap",
+                                )
+                            ):
+                                me.text(
+                                    traj,
+                                    style=me.Style(
+                                        color=get_color_for_pct(traj)
+                                    ),
+                                )
+
+                            with me.box(
                                 style=me.Style(
-                                    color=get_color_for_pct(traj)
-                                ),
-                            )
-    
-                        with me.box(
-                            style=me.Style(
-                                display="table-cell",
-                                padding=me.Padding.symmetric(
-                                    vertical="10px", horizontal="16px"
-                                ),
-                                text_align="center",
-                                border=me.Border.all(
-                                    me.BorderSide(
-                                        width="1px",
-                                        color="#e2e8f0",
-                                        style="solid",
-                                    )
-                                ),
-                                width="16ch",
-                                white_space="nowrap",
-                            )
-                        ):
-                            me.text(
-                                goal_comp,
+                                    display="table-cell",
+                                    padding=me.Padding.symmetric(
+                                        vertical="10px", horizontal="16px"
+                                    ),
+                                    text_align="center",
+                                    border=me.Border.all(
+                                        me.BorderSide(
+                                            width="1px",
+                                            color="#e2e8f0",
+                                            style="solid",
+                                        )
+                                    ),
+                                    width="16ch",
+                                    white_space="nowrap",
+                                )
+                            ):
+                                me.text(
+                                    goal_comp,
+                                    style=me.Style(
+                                        color=get_color_for_pct(goal_comp)
+                                    ),
+                                )
+
+                            with me.box(
                                 style=me.Style(
-                                    color=get_color_for_pct(goal_comp)
-                                ),
-                            )
-    
-                        with me.box(
-                            style=me.Style(
-                                display="table-cell",
-                                padding=me.Padding.symmetric(
-                                    vertical="10px", horizontal="16px"
-                                ),
-                                text_align="center",
-                                border=me.Border.all(
-                                    me.BorderSide(
-                                        width="1px",
-                                        color="#e2e8f0",
-                                        style="solid",
-                                    )
-                                ),
-                            )
-                        ):
-                            me.text(
-                                turns,
+                                    display="table-cell",
+                                    padding=me.Padding.symmetric(
+                                        vertical="10px", horizontal="16px"
+                                    ),
+                                    text_align="center",
+                                    border=me.Border.all(
+                                        me.BorderSide(
+                                            width="1px",
+                                            color="#e2e8f0",
+                                            style="solid",
+                                        )
+                                    ),
+                                )
+                            ):
+                                me.text(
+                                    turns,
+                                    style=me.Style(
+                                        color="#334155"
+                                    ),
+                                )
+
+                            with me.box(
                                 style=me.Style(
-                                    color="#334155"
-                                ),
-                            )
-    
-                        with me.box(
-                            style=me.Style(
-                                display="table-cell",
-                                padding=me.Padding.symmetric(
-                                    vertical="10px", horizontal="16px"
-                                ),
-                                text_align="center",
-                                border=me.Border.all(
-                                    me.BorderSide(
-                                        width="1px",
-                                        color="#e2e8f0",
-                                        style="solid",
-                                    )
-                                ),
-                            )
-                        ):
-                            me.text(
-                                exec_val,
+                                    display="table-cell",
+                                    padding=me.Padding.symmetric(
+                                        vertical="10px", horizontal="16px"
+                                    ),
+                                    text_align="center",
+                                    border=me.Border.all(
+                                        me.BorderSide(
+                                            width="1px",
+                                            color="#e2e8f0",
+                                            style="solid",
+                                        )
+                                    ),
+                                )
+                            ):
+                                me.text(
+                                    exec_val,
+                                    style=me.Style(
+                                        color=get_color_for_pct(exec_val)
+                                    ),
+                                )
+
+                            with me.box(
                                 style=me.Style(
-                                    color=get_color_for_pct(exec_val)
-                                ),
-                            )
-    
-                        with me.box(
-                            style=me.Style(
-                                display="table-cell",
-                                padding=me.Padding.symmetric(
-                                    vertical="10px", horizontal="16px"
-                                ),
-                                text_align="center",
-                                border=me.Border.all(
-                                    me.BorderSide(
-                                        width="1px",
-                                        color="#e2e8f0",
-                                        style="solid",
-                                    )
-                                ),
-                            )
-                        ):
-                            me.text(
-                                tokens,
+                                    display="table-cell",
+                                    padding=me.Padding.symmetric(
+                                        vertical="10px", horizontal="16px"
+                                    ),
+                                    text_align="center",
+                                    border=me.Border.all(
+                                        me.BorderSide(
+                                            width="1px",
+                                            color="#e2e8f0",
+                                            style="solid",
+                                        )
+                                    ),
+                                )
+                            ):
+                                me.text(
+                                    tokens,
+                                    style=me.Style(
+                                        color="#334155"
+                                    ),
+                                )
+
+                            with me.box(
                                 style=me.Style(
-                                    color="#334155"
-                                ),
-                            )
-    
-                        with me.box(
-                            style=me.Style(
-                                display="table-cell",
-                                padding=me.Padding.symmetric(
-                                    vertical="10px", horizontal="16px"
-                                ),
-                                text_align="center",
-                                border=me.Border.all(
-                                    me.BorderSide(
-                                        width="1px",
-                                        color="#e2e8f0",
-                                        style="solid",
-                                    )
-                                ),
-                            )
-                        ):
-                            me.text(
-                                latency,
-                                style=me.Style(
-                                    color="#334155"
-                                ),
-                            )
-    
-    
+                                    display="table-cell",
+                                    padding=me.Padding.symmetric(
+                                        vertical="10px", horizontal="16px"
+                                    ),
+                                    text_align="center",
+                                    border=me.Border.all(
+                                        me.BorderSide(
+                                            width="1px",
+                                            color="#e2e8f0",
+                                            style="solid",
+                                        )
+                                    ),
+                                )
+                            ):
+                                me.text(
+                                    latency,
+                                    style=me.Style(
+                                        color="#334155"
+                                    ),
+                                )
 
 
 @me.page(
@@ -2005,15 +1998,18 @@ def on_status_tab_click(e: me.ClickEvent):
     st.selected_main_tab = "Status"
     logging.info("Tab clicked: Status")
 
+
 def on_list_tab_click(e: me.ClickEvent):
     st = me.state(State)
     st.selected_main_tab = "List"
     logging.info("Tab clicked: List")
 
+
 def on_charts_tab_click(e: me.ClickEvent):
     st = me.state(State)
     st.selected_main_tab = "Charts"
     logging.info("Tab clicked: Charts")
+
 
 def on_compare_tab_click(e: me.ClickEvent):
     st = me.state(State)
@@ -2023,12 +2019,12 @@ def on_compare_tab_click(e: me.ClickEvent):
         st.ai_comparison = "Comparing..."
         logging.info("Set ai_comparison to Comparing...")
         yield
-        
+
         try:
             comp_evals = json.loads(st.compare_evals)
         except Exception:
             comp_evals = []
-            
+
         logging.info(f"comp_evals: {comp_evals}")
         if len(comp_evals) == 2:
             logging.info("Starting compare_evals...")
@@ -2042,20 +2038,20 @@ def render_app_content():
         state = me.state(State)
         results_dir = get_results_dir()
         logging.info(f"render_app_content: selected_directory='{state.selected_directory}', selected_evals='{state.selected_evals}', selected_main_tab='{state.selected_main_tab}'")
-    
+
         directories = list_run_directories(results_dir)
 
         def on_title_click(e: me.ClickEvent):
             state.selected_directory = ""
             state.conversation_index = 0
             me.navigate("/")
-            
+
         def on_clear_cache_click(e: me.ClickEvent):
             results_dir = get_results_dir()
             processed_dirs_file = os.path.join(results_dir, "processed_dirs.json")
             trends_cache_file = os.path.join(results_dir, "trends_cache.csv")
             filters_cache_file = os.path.join(results_dir, "filters_cache.json")
-            
+
             try:
                 if os.path.exists(processed_dirs_file):
                     os.remove(processed_dirs_file)
@@ -2063,19 +2059,19 @@ def render_app_content():
                     os.remove(trends_cache_file)
                 if os.path.exists(filters_cache_file):
                     os.remove(filters_cache_file)
-                
+
                 logging.info("Cleared precomputed files. Triggering precompute...")
 
                 run_index.invalidate()
 
                 import threading
                 threading.Thread(target=precompute_trends.precompute).start()
-                
+
                 state.cache_cleared_message = "Cache cleared. Precompute triggered in background."
             except Exception as ex:
                 logging.error(f"Error clearing cache: {ex}")
                 state.cache_cleared_message = f"Error clearing cache: {ex}"
-    
+
         # Full-width header bar
         with me.box(
             style=me.Style(
@@ -2102,22 +2098,22 @@ def render_app_content():
                     text_align="left",
                 ),
             )
-    
+
             import time
             cache_file = os.path.join(results_dir, "trends_cache.csv")
             cache_status = "Not Ready"
-            cache_color = "#ef4444" # Red
-            
+            cache_color = "#ef4444"  # Red
+
             if os.path.exists(cache_file):
                 mtime = os.path.getmtime(cache_file)
                 elapsed = time.time() - mtime
-                if elapsed < 600: # 10 minutes
+                if elapsed < 600:  # 10 minutes
                     cache_status = "Fresh"
-                    cache_color = "#10b981" # Green
+                    cache_color = "#10b981"  # Green
                 else:
                     cache_status = "Stale"
-                    cache_color = "#f59e0b" # Yellow
-                    
+                    cache_color = "#f59e0b"  # Yellow
+
             with me.box(
                 style=me.Style(
                     display="flex",
@@ -2136,7 +2132,7 @@ def render_app_content():
                         me.markdown(
                             f"[Git: {GIT_VERSION}](https://github.com/GoogleCloudPlatform/evalbench/commit/{GIT_VERSION})"
                         )
-                
+
                 with me.box(style=me.Style(display="flex", align_items="center", gap="6px", font_size="12px")):
                     me.box(style=me.Style(width="8px", height="8px", border_radius="50%", background=cache_color))
                     me.text(f"Cache: {cache_status}", style=me.Style(font_weight="500", color="#94a3b8"))
@@ -2152,7 +2148,7 @@ def render_app_content():
                             margin=me.Margin(left="10px"),
                         )
                     )
-    
+
         # Centered content at 90% browser width
         with me.box(
             style=me.Style(
@@ -2169,7 +2165,6 @@ def render_app_content():
             )
         ):
 
-    
             if state.selected_directory:
 
                 # Dataset quality runs have no agent trajectory, so the eval-shaped
@@ -2185,7 +2180,7 @@ def render_app_content():
 
                 def on_tab_change(e: me.ButtonToggleChangeEvent):
                     state.selected_tab = e.value
-                    
+
                 def on_generate_summary_click(e: me.ClickEvent):
                     state = me.state(State)
                     results_dir_full = os.path.join(results_dir, state.selected_directory)
@@ -2195,11 +2190,11 @@ def render_app_content():
                     match = re.search(r"\*\*General Score:\s*(\d+(\.\d+)?)[^*]*\*\*", state.ai_summary)
                     if match:
                         state.ai_score = float(match.group(1))
-                        
+
                 def on_info_click(e: me.ClickEvent):
                     state = me.state(State)
                     state.show_formula = not state.show_formula
-    
+
                 me.button_toggle(
                     value=state.selected_tab,
                     buttons=[
@@ -2226,13 +2221,13 @@ def render_app_content():
                 if os.path.exists(config_path):
                     try:
                         config_df = pd.read_csv(config_path)
-                        
+
                         def get_val(cfg_name):
                             row = config_df[config_df['config'] == cfg_name]
                             if not row.empty:
                                 return row['value'].values[0]
                             return None
-                            
+
                         product = get_val('experiment_config.product_name')
                         requester = get_val('experiment_config.experiment_config.guitar_requester')
                         cli_version = (
@@ -2244,13 +2239,18 @@ def render_app_content():
                             cli_version = 'agy (latest)'
                         orchestrator = get_val('experiment_config.orchestrator')
                         eval_group = get_val('experiment_config.eval_group')
-                        
-                        if product: interesting_configs['Product'] = product
-                        if requester: interesting_configs['Requester'] = requester
-                        if cli_version: interesting_configs['CLI Version'] = cli_version
-                        if orchestrator: interesting_configs['Orchestrator'] = orchestrator
-                        if eval_group: interesting_configs['Eval Group'] = eval_group
-                        
+
+                        if product:
+                            interesting_configs['Product'] = product
+                        if requester:
+                            interesting_configs['Requester'] = requester
+                        if cli_version:
+                            interesting_configs['CLI Version'] = cli_version
+                        if orchestrator:
+                            interesting_configs['Orchestrator'] = orchestrator
+                        if eval_group:
+                            interesting_configs['Eval Group'] = eval_group
+
                     except Exception as e:
                         logging.warning(f"Error reading configs for summary: {e}")
 
@@ -2261,16 +2261,14 @@ def render_app_content():
                                 me.text(k, style=me.Style(font_size="16px", color="#64748b", font_weight="600", text_transform="uppercase"))
                                 me.text(str(v), style=me.Style(font_size="20px", color="#0f172a", font_weight="500"))
 
-
-    
                 if state.selected_tab == "Dashboard":
                     dashboard.dashboard_component(
                         os.path.join(results_dir, state.selected_directory)
                     )
-                    
+
                     me.divider()
                     me.text("AI Summary", type="headline-5")
-                    
+
                     if not state.ai_summary and state.selected_directory:
                         # The cache only carries summaries for the recent window.
                         state.ai_summary = precompute_trends.read_ai_summary(
@@ -2295,7 +2293,7 @@ def render_app_content():
                                     score = run_data['ai_score'].values[0]
                                     if not pd.isna(score):
                                         state.ai_score = float(score)
-                                
+
                                 # Fallback if score was not parsed correctly in cache
                                 if state.ai_score == 0.0 and state.ai_summary:
                                     import re
@@ -2304,40 +2302,49 @@ def render_app_content():
                                         state.ai_score = float(match.group(1))
                             except Exception as e:
                                 logging.error(f"Error reading AI summary from cache: {e}")
-                    
+
                     if not state.ai_summary:
                         me.button("Generate AI Summary", on_click=on_generate_summary_click)
-                    
+
                     if state.ai_summary:
                         with me.box(style=me.Style(display="flex", align_items="flex-start", margin=me.Margin(bottom="8px"))):
                             me.text(f"General Score: {state.ai_score}", type="headline-6")
                             with me.box(style=me.Style(margin=me.Margin(left="2px"), cursor="pointer"), on_click=on_info_click):
                                 me.text("ⓘ", style=me.Style(color="#2563eb", font_size="12px"))
-                        
+
                         if state.show_formula:
                             me.text("Formula: 0.4 * goal_completion + 0.2 * trajectory_matcher + 0.2 * behavioral_metrics + 0.2 * parameter_analysis", style=me.Style(font_size="14px", color="#6b7280", margin=me.Margin(bottom="16px")))
-                        
+
                         # Strip score from summary if present to avoid duplication
                         import re
                         clean_summary = re.sub(r"^\s*\*\*General Score:\s*\d+(\.\d+)?[^*]*\*\*\s*", "", state.ai_summary)
                         me.markdown(clean_summary)
-                        
+
                 elif state.selected_tab == "Conversations":
-    
+
                     def on_prev_conversation(e: me.ClickEvent):
                         s = me.state(State)
                         if s.conversation_index > 0:
                             s.conversation_index -= 1
-    
+
                     def on_next_conversation(e: me.ClickEvent):
                         s = me.state(State)
                         s.conversation_index += 1
-    
+
+                    def make_select_conversation(target_idx: int):
+                        def handler(e: me.ClickEvent):
+                            s = me.state(State)
+                            s.conversation_index = target_idx
+
+                        handler.__name__ = f"select_conversation_{target_idx}"
+                        return handler
+
                     conversations.conversations_component(
                         os.path.join(results_dir, state.selected_directory),
                         conversation_index=state.conversation_index,
                         on_prev=on_prev_conversation,
                         on_next=on_next_conversation,
+                        on_select=make_select_conversation,
                     )
                 elif state.selected_tab == "Configs":
                     config_path = os.path.join(
@@ -2387,73 +2394,73 @@ def render_app_content():
                             f"scores.csv not found in {state.selected_directory}"
                         )
 
-
             else:
-                            from trends import trends_component
-                            state = me.state(State)
-                
-                            def on_main_tab_change(e: me.ButtonToggleChangeEvent):
-                                st = me.state(State)
-                                st.selected_main_tab = e.value
-                                logging.info(f"Main tab changed to: {e.value}")
-                                
-                            with me.box(style=me.Style(margin=me.Margin(bottom="12px"))):
-                                buttons = [
-                                    me.ButtonToggleButton(label="Status", value="Status"),
-                                    me.ButtonToggleButton(label="List", value="List"),
-                                    me.ButtonToggleButton(label="Charts", value="Charts"),
-                                    me.ButtonToggleButton(label="Dataset Quality", value="Dataset Quality"),
-                                ]
-                                if state.compare_tab_visible:
-                                    buttons.append(me.ButtonToggleButton(label="Compare", value="Compare"))
-                                    
-                                me.button_toggle(
-                                    value=state.selected_main_tab,
-                                    buttons=buttons,
-                                    on_change=on_main_tab_change,
-                                )
-                
-                            if state.selected_main_tab == "List":
-                                try:
-                                    list_view_component(directories, results_dir)
-                                except Exception as e:
-                                    logging.exception("Failed to call list_view_component")
-                                    me.text(f"Error: {e}")
-                            elif state.selected_main_tab == "Charts":
-                                trends_component()
-                            elif state.selected_main_tab == "Dataset Quality":
-                                dataset_quality.dataset_quality_component()
-                            elif state.selected_main_tab == "Status":
-                                status_component()
-                            elif state.selected_main_tab == "Compare":
-                                try:
-                                    comp_evals = json.loads(state.compare_evals)
-                                except Exception:
-                                    comp_evals = []
-                                
-                                with me.box(style=me.Style(padding=me.Padding.all("16px"))):
-                                    me.text("Comparison", type="headline-5")
-                                    if len(comp_evals) == 2:
-                                        with me.box(style=me.Style(margin=me.Margin(bottom="16px"))):
-                                            me.markdown(f'Comparing: <a href="/?job_id={comp_evals[0]}" target="_blank">{comp_evals[0]}</a> vs <a href="/?job_id={comp_evals[1]}" target="_blank">{comp_evals[1]}</a>')
-                                        
-                                        if not state.ai_comparison or state.ai_comparison == "Comparing...":
-                                            me.text("Comparing...", style=me.Style(font_weight="bold", color="#0284c7", margin=me.Margin(bottom="16px")))
-                                        else:
-                                            with me.box(style=me.Style(
-                                                background="#ffffff",
-                                                padding=me.Padding.all("16px"),
-                                                border_radius="8px",
-                                                border=me.Border.all(me.BorderSide(width="1px", color="#e2e8f0")),
-                                                margin=me.Margin(top="16px")
-                                            )):
-                                                me.markdown(state.ai_comparison)
-                                    else:
-                                        me.text("Invalid comparison state.")
+                from trends import trends_component
+                state = me.state(State)
 
-                
+                def on_main_tab_change(e: me.ButtonToggleChangeEvent):
+                    st = me.state(State)
+                    st.selected_main_tab = e.value
+                    logging.info(f"Main tab changed to: {e.value}")
+
+                with me.box(style=me.Style(margin=me.Margin(bottom="12px"))):
+                    buttons = [
+                        me.ButtonToggleButton(label="Status", value="Status"),
+                        me.ButtonToggleButton(label="List", value="List"),
+                        me.ButtonToggleButton(label="Charts", value="Charts"),
+                        me.ButtonToggleButton(label="Dataset Quality", value="Dataset Quality"),
+                    ]
+                    if state.compare_tab_visible:
+                        buttons.append(me.ButtonToggleButton(label="Compare", value="Compare"))
+
+                    me.button_toggle(
+                        value=state.selected_main_tab,
+                        buttons=buttons,
+                        on_change=on_main_tab_change,
+                    )
+
+                if state.selected_main_tab == "List":
+                    try:
+                        list_view_component(directories, results_dir)
+                    except Exception as e:
+                        logging.exception("Failed to call list_view_component")
+                        me.text(f"Error: {e}")
+                elif state.selected_main_tab == "Charts":
+                    trends_component()
+                elif state.selected_main_tab == "Dataset Quality":
+                    dataset_quality.dataset_quality_component()
+                elif state.selected_main_tab == "Status":
+                    status_component()
+                elif state.selected_main_tab == "Compare":
+                    try:
+                        comp_evals = json.loads(state.compare_evals)
+                    except Exception:
+                        comp_evals = []
+
+                    with me.box(style=me.Style(padding=me.Padding.all("16px"))):
+                        me.text("Comparison", type="headline-5")
+                        if len(comp_evals) == 2:
+                            with me.box(style=me.Style(margin=me.Margin(bottom="16px"))):
+                                me.markdown(f'Comparing: <a href="/?job_id={comp_evals[0]}" target="_blank">{comp_evals[0]}</a> vs <a href="/?job_id={comp_evals[1]}" target="_blank">{comp_evals[1]}</a>')
+
+                            if not state.ai_comparison or state.ai_comparison == "Comparing...":
+                                me.text("Comparing...", style=me.Style(font_weight="bold", color="#0284c7", margin=me.Margin(bottom="16px")))
+                            else:
+                                with me.box(style=me.Style(
+                                    background="#ffffff",
+                                    padding=me.Padding.all("16px"),
+                                    border_radius="8px",
+                                    border=me.Border.all(me.BorderSide(width="1px", color="#e2e8f0")),
+                                    margin=me.Margin(top="16px")
+                                )):
+                                    me.markdown(state.ai_comparison)
+                        else:
+                            me.text("Invalid comparison state.")
+
     except Exception as e:
         logging.exception("render_app_content failed")
         me.text(f"Fatal Error: {e}")
+
+
 if __name__ == "__main__":
     me.run(app)

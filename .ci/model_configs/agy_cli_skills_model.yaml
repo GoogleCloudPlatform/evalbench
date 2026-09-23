@@ -1,15 +1,14 @@
-codex_cli_version: "@openai/codex@latest"
-generator: codex_cli
-model: "gpt-5.5"
-openai_api_key_secret: "projects/393137573/secrets/OPENAI_API_KEY/versions/1"
+generator: agy_cli
+timeout: "20m"
 
 env:
-  # Set to your project, or export EVAL_GCP_PROJECT_ID and keep the !ENV form.
   GOOGLE_CLOUD_PROJECT: !ENV ${EVAL_GCP_PROJECT_ID}
-  GOOGLE_CLOUD_LOCATION: "us-central1"
+  GOOGLE_CLOUD_LOCATION: "global"
+  GOOGLE_GENAI_USE_VERTEXAI: "true"
 
-  # Export these before running; the skill scripts read them directly.
-  CLOUD_SQL_POSTGRES_PROJECT: !ENV ${CLOUD_SQL_POSTGRES_PROJECT}
+  # The toolbox server initializes every source at startup, so even the
+  # control-plane skill needs a reachable Postgres.
+  CLOUD_SQL_POSTGRES_PROJECT: !ENV ${EVAL_GCP_PROJECT_ID}
   CLOUD_SQL_POSTGRES_REGION: !ENV ${CLOUD_SQL_POSTGRES_REGION}
   CLOUD_SQL_POSTGRES_INSTANCE: !ENV ${CLOUD_SQL_POSTGRES_INSTANCE}
   CLOUD_SQL_POSTGRES_DATABASE: !ENV ${CLOUD_SQL_POSTGRES_DATABASE}
@@ -17,9 +16,11 @@ env:
   CLOUD_SQL_POSTGRES_PASSWORD: !ENV ${CLOUD_SQL_POSTGRES_PASSWORD}
   CLOUD_SQL_POSTGRES_IP_TYPE: !ENV ${CLOUD_SQL_POSTGRES_IP_TYPE}
 
+# No mcp_servers: the skill scripts reach the database through their own
+# @toolbox-sdk/server process, never through MCP.
 setup:
   skills:
-    # Pinned to a release tag: the default branch ships no `skills/` directory,
-    # they are generated per release.
+    # Pinned to a release tag: the default branch ships no `skills/`
+    # directory -- it is generated per release.
     - action: install_from_repo
       url: "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git#0.4.0"

@@ -1,0 +1,35 @@
+name: verify-viewer
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'viewer/**'
+      # Dependency bumps land here only, and mesop is the likeliest way to break the UI.
+      - 'uv.lock'
+      - '.ci/verify_viewer.py'
+      - '.ci/fixtures/viewer_results/**'
+      - '.github/workflows/viewer.yml'
+
+permissions: read-all
+
+jobs:
+  load-and-render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - name: Checkout
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      with:
+        enable-cache: true
+        cache-dependency-glob: "uv.lock"
+
+    # --all-packages because the viewer is a workspace member, not a root dependency.
+    - name: Load the app and render every page
+      run: uv run --all-packages python .ci/verify_viewer.py

@@ -5,12 +5,13 @@ import pandas as pd
 from main import State
 from run_index import list_run_directories
 
+
 def get_results_dir():
     # Try to read from environment variable
     res_dir = os.environ.get("RESULTS_DIR")
     if res_dir:
         return res_dir
-        
+
     # Check multiple locations for results directory
     results_dir_candidates = [
         "/tmp_session_files/results",
@@ -24,14 +25,15 @@ def get_results_dir():
 
     return results_dir_candidates[1]  # Fallback to default
 
+
 def generate_d3_chart(df, x_col, y_col, hue_col, title, ylabel):
     df_sorted = df.sort_values(by=x_col)
-    
+
     # Convert dataframe to records for JSON
     data_records = df_sorted.to_dict(orient='records')
     import json
     data_json = json.dumps(data_records)
-    
+
     html = f"""
     <!DOCTYPE html>
     <html>
@@ -66,7 +68,7 @@ def generate_d3_chart(df, x_col, y_col, hue_col, title, ylabel):
             <div id="chart"></div>
             <div class="tooltip" id="tooltip"></div>
         </div>
-        
+
         <script>
             window.chartData = {data_json};
             window.chartConfig = {{
@@ -83,17 +85,18 @@ def generate_d3_chart(df, x_col, y_col, hue_col, title, ylabel):
     """
     return html
 
+
 def trends_component():
     results_dir = get_results_dir()
-    
+
     if not os.path.exists(results_dir):
         me.text(f"Results directory not found at {results_dir}")
         return
-        
+
     cache_file = os.path.join(results_dir, "trends_cache.csv")
-    
+
     df = None
-    
+
     # Try to load from cache
     if os.path.exists(cache_file):
         try:
@@ -101,49 +104,49 @@ def trends_component():
             logging.info("Loaded trends data from cache.")
         except Exception as e:
             logging.error(f"Error reading cache file: {e}")
-            
+
     # Fallback to computing on the fly if cache is missing or failed
     if df is None:
         directories = list_run_directories(results_dir)
 
         data = []
-        
+
         for d in directories:
             run_dir = os.path.join(results_dir, d)
             configs_file = os.path.join(run_dir, "configs.csv")
             summary_file = os.path.join(run_dir, "summary.csv")
-            
+
             if os.path.exists(configs_file) and os.path.exists(summary_file):
                 try:
                     configs_df = pd.read_csv(configs_file)
-                    
+
                     requester_row = configs_df[configs_df['config'].str.contains('guitar_requester', na=False)]
                     product_row = configs_df[configs_df['config'].isin(['experiment_config.product_name', 'experiment_config.poduct_name'])]
                     generator_row = configs_df[configs_df['config'] == 'model_config.generator']
-                    
+
                     requester = requester_row['value'].values[0] if not requester_row.empty else "unknown"
                     product = product_row['value'].values[0] if not product_row.empty else "unknown"
                     dataset_path = configs_df[configs_df['config'] == 'experiment_config.dataset_config']['value'].values[0] if 'experiment_config.dataset_config' in configs_df['config'].values else "unknown"
                     dataset = os.path.basename(dataset_path) if dataset_path != "unknown" else "unknown"
                     generator = generator_row['value'].values[0] if not generator_row.empty else "unknown"
-                    
+
                     summary_df = pd.read_csv(summary_file)
-                    
+
                     latency_row = summary_df[summary_df['metric_name'] == 'end_to_end_latency']
                     token_row = summary_df[summary_df['metric_name'] == 'token_consumption']
                     trajectory_row = summary_df[summary_df['metric_name'] == 'trajectory_matcher']
-                    
+
                     latency = float(latency_row['metric_score'].values[0]) if not latency_row.empty else 0.0
                     tokens = float(token_row['metric_score'].values[0]) if not token_row.empty else 0.0
                     trajectory = float(trajectory_row['metric_score'].values[0]) if not trajectory_row.empty else 0.0
-                    
+
                     run_time = summary_df['run_time'].values[0] if not summary_df.empty else "unknown"
                     if run_time != "unknown":
                         try:
                             run_time = pd.to_datetime(run_time).strftime('%Y-%m-%d')
                         except Exception as e:
                             logging.warning(f"Failed to parse run_time '{run_time}': {e}")
-                    
+
                     data.append({
                         'run_time': run_time,
                         'requester': requester,
@@ -158,32 +161,32 @@ def trends_component():
                     })
                 except Exception as e:
                     logging.error(f"Error reading data from {d}: {e}")
-                    
+
         if not data:
             me.text("No data found in any run directory.")
             return
-            
+
         df = pd.DataFrame(data)
-        
+
     # Extract unique requesters and products BEFORE filtering so the dropdowns always have full options
     all_requesters = sorted(df['requester'].dropna().unique().tolist())
     all_products_initial = sorted(df['product'].dropna().unique().tolist())
     all_products = [p for p in all_products_initial if p != 'unknown' and str(p).strip() != '']
-    
+
     state = me.state(State)
-    
+
     # Set default requester filter if empty and we have requesters
     if not state.trends_requester_filter and all_requesters:
         state.trends_requester_filter = all_requesters[0]
 
     with me.box(style=me.Style(display="flex", flex_direction="column", gap="24px", padding=me.Padding.all("24px"), width="100%")):
         me.text(f"Trends for {state.trends_requester_filter}", style=me.Style(font_size="20px", font_weight="700"))
-        
+
         # Add agent tabs for Charts view
         def on_trends_agent_tab_change(e):
             st = me.state(State)
             st.trends_agent_tab = e.value
-            
+
         me.button_toggle(
             value=state.trends_agent_tab,
             buttons=[
@@ -195,7 +198,7 @@ def trends_component():
             on_change=on_trends_agent_tab_change,
         )
         me.box(style=me.Style(height="16px"))
-        
+
         # Flex container for dropdowns
         with me.box(style=me.Style(display="flex", gap="16px", flex_wrap="wrap")):
             # --- Requester Dropdown ---
@@ -205,13 +208,13 @@ def trends_component():
                     st.open_dropdown = ""
                 else:
                     st.open_dropdown = "trends_requester"
-                    
+
             def make_requester_handler(val):
                 def handler(e: me.ClickEvent):
                     st = me.state(State)
                     st.trends_requester_filter = val
                     st.open_dropdown = ""
-                
+
                 safe_val = str(val).replace(" ", "_").replace(".", "_").replace("-", "_")
                 handler_name = f"click_trends_req_{safe_val}"
                 handler.__name__ = handler_name
@@ -235,7 +238,7 @@ def trends_component():
                 ):
                     me.text(state.trends_requester_filter if state.trends_requester_filter else "Select Requester", style=me.Style(font_weight="500"))
                     me.text("▼", style=me.Style(font_size="10px", color="#64748b"))
-                    
+
                 if state.open_dropdown == "trends_requester":
                     with me.box(
                         style=me.Style(
@@ -265,20 +268,20 @@ def trends_component():
                     st.open_dropdown = ""
                 else:
                     st.open_dropdown = "trends_product"
-                    
+
             def make_product_handler(val):
                 def handler(e: me.ClickEvent):
                     st = me.state(State)
                     logging.info(f"Product handler triggered for: {val}")
                     st.trends_product_filter = val
                     st.open_dropdown = ""
-                
+
                 safe_val = str(val).replace(" ", "_").replace(".", "_").replace("-", "_")
                 handler_name = f"click_trends_prod_{safe_val}"
                 handler.__name__ = handler_name
                 globals()[handler_name] = handler
                 return handler
-                
+
             with me.box(style=me.Style(position="relative", width="300px")):
                 me.text("Filter by Product", style=me.Style(font_size="14px", font_weight="600", margin=me.Margin(bottom="8px")))
                 with me.box(
@@ -296,7 +299,7 @@ def trends_component():
                 ):
                     me.text(state.trends_product_filter if state.trends_product_filter else "All Products", style=me.Style(font_weight="500"))
                     me.text("▼", style=me.Style(font_size="10px", color="#64748b"))
-                    
+
                 if state.open_dropdown == "trends_product":
                     with me.box(
                         style=me.Style(
@@ -317,21 +320,21 @@ def trends_component():
                             on_click=make_product_handler(""),
                         ):
                             me.text("All Products", style=me.Style(color="#1f2937"))
-                            
+
                         for p in all_products:
                             with me.box(
                                 style=me.Style(padding=me.Padding.all("8px"), cursor="pointer"),
                                 on_click=make_product_handler(p),
                             ):
                                 me.text(p, style=me.Style(color="#1f2937"))
-                                
+
         # Apply filters to data
         if state.trends_requester_filter:
             df = df[df['requester'] == state.trends_requester_filter]
-            
+
         df['product_dataset'] = df['product'] + " (" + df['dataset'] + ")"
         df = df[df['product'].notna() & (df['product'] != 'unknown') & (df['product'].str.strip() != '')]
-        
+
         if state.trends_agent_tab == "Gemini":
             df = df[df['model_config.generator'].str.contains('gemini', case=False) | (df['model_config.generator'] == 'unknown') | (df['model_config.generator'] == 'N/A') | df['product'].isin(['spanner', 'bigtable', 'alloydb', 'memorystore', 'dms', 'datastream'])]
         elif state.trends_agent_tab == "Claude":
@@ -340,7 +343,7 @@ def trends_component():
             df = df[df['model_config.generator'].str.contains('codex', case=False)]
         elif state.trends_agent_tab == "Antigravity":
             df = df[df['model_config.generator'].str.contains('agy', case=False)]
-            
+
         if state.trends_product_filter:
             df = df[df['product'] == state.trends_product_filter]
 
@@ -360,22 +363,22 @@ def trends_component():
                 me.text("No data found for the selected filters.", style=me.Style(font_size="16px", font_weight="500", color="#475569"))
                 me.text("Try adjusting your agent, requester, or product selection.", style=me.Style(font_size="14px", color="#64748b", margin=me.Margin(top="8px")))
             return
-            
+
         # Generate charts
         latency_chart = generate_d3_chart(df, 'run_time', 'latency', 'product_dataset', 'Latency Trend', 'Latency (ms)')
         token_chart = generate_d3_chart(df, 'run_time', 'tokens', 'product_dataset', 'Token Consumption Trend', 'Tokens')
         trajectory_chart = generate_d3_chart(df, 'run_time', 'trajectory', 'product_dataset', 'Trajectory Score Trend', 'Score (%)')
         ai_score_chart = generate_d3_chart(df, 'run_time', 'ai_score', 'product_dataset', 'AI Score Trend', 'Score')
-        
+
         with me.box(style=me.Style(display="flex", flex_direction="column", gap="16px", width="100%", margin=me.Margin(top="24px"))):
             me.text("AI Score", style=me.Style(font_size="16px", font_weight="600"))
             me.html(ai_score_chart, mode="sandboxed", style=me.Style(width="100%", height="550px"))
-            
+
             me.text("Latency", style=me.Style(font_size="16px", font_weight="600"))
             me.html(latency_chart, mode="sandboxed", style=me.Style(width="100%", height="550px"))
-            
+
             me.text("Token Consumption", style=me.Style(font_size="16px", font_weight="600"))
             me.html(token_chart, mode="sandboxed", style=me.Style(width="100%", height="550px"))
-            
+
             me.text("Trajectory Score", style=me.Style(font_size="16px", font_weight="600"))
             me.html(trajectory_chart, mode="sandboxed", style=me.Style(width="100%", height="550px"))

@@ -1,0 +1,20 @@
+generator: agy_cli
+# ADC does not authorize the Pro (High) tier.
+model: "Gemini 3.1 Pro (Low)"
+timeout: "20m"
+
+env:
+  GOOGLE_CLOUD_PROJECT: !ENV ${EVAL_GCP_PROJECT_ID}
+  GOOGLE_CLOUD_LOCATION: "global"
+  GOOGLE_GENAI_USE_VERTEXAI: "true"
+
+setup:
+  mcp_servers:
+    "cloud-sql":
+      httpUrl: "https://sqladmin.googleapis.com/mcp"
+      authProviderType: google_credentials
+      oauth:
+        scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+      headers:
+        X-Goog-User-Project: !ENV ${EVAL_GCP_PROJECT_ID}
