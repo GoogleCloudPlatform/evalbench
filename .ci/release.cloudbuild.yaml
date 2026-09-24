@@ -118,17 +118,53 @@ steps:
           "$$REPO:$$TAG"
         echo "Release tag created: $$REPO:$$TAG"
 
-        if [[ -n "${_PROMOTE_TAG}" ]]; then
-          echo "Tagging $$REPO@$$DIGEST as :${_PROMOTE_TAG}"
-          gcloud artifacts docker tags add \
-            "$$REPO@$$DIGEST" \
-            "$$REPO:${_PROMOTE_TAG}"
-          echo "Promotion tag created: $$REPO:${_PROMOTE_TAG}"
+  # The Deployment spec only carries the mutable :latest tag, so the kubelet's
+  # imageID is the only record of which digest is actually serving.
+  - id: capture-rollback-target
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    waitFor: ['tag-release']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -uo pipefail
+
+        CLUSTER=evalbench-directpath-cluster
+        ZONE=us-central1-c
+        NAMESPACE=evalbench-namespace
+        SELECTOR=app=evalbench-eval-server
+        CONTAINER=evalbench-eval
+
+        if ! gcloud container clusters get-credentials "$$CLUSTER" \
+          --zone "$$ZONE" --project "$PROJECT_ID"; then
+          echo "FAIL: cannot get credentials for $$CLUSTER"
+          exit 1
         fi
+
+        RUNNING=$$(kubectl get pods -n "$$NAMESPACE" -l "$$SELECTOR" \
+          -o jsonpath="{range .items[*]}{.status.containerStatuses[?(@.name=='$$CONTAINER')].imageID}{'\n'}{end}" \
+          | sed -e 's#^.*://##' -e 's#^.*@##' \
+          | grep -v '^$$' | sort -u)
+        COUNT=$$(echo "$$RUNNING" | grep -c .)
+
+        if [[ "$$COUNT" -eq 0 ]]; then
+          echo "FAIL: no running $$CONTAINER container in $$NAMESPACE."
+          echo "Refusing to deploy without a rollback target."
+          exit 1
+        fi
+
+        if [[ "$$COUNT" -gt 1 ]]; then
+          echo "FAIL: pods are serving more than one digest:"
+          echo "$$RUNNING"
+          echo "A rollout is already in progress. Refusing to deploy."
+          exit 1
+        fi
+
+        echo "$$RUNNING" > /workspace/rollback_digest.txt
+        echo "rollback target = $$RUNNING"
 
 substitutions:
   _EVAL_REGION: 'global'
-  _PROMOTE_TAG: 'latest-test'
 
 timeout: '1800s'
 
