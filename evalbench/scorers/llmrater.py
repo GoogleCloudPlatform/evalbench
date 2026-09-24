@@ -222,7 +222,7 @@ class LLMRater(comparator.Comparator):
         """
         seen_dicts = set()
         new_list = []
-        for d in output_list:
+        for d in (output_list or []):
             # Convert the dictionary to a hashable frozenset for efficient lookup
             t = frozenset((k, make_hashable(v)) for k, v in d.items())
             if t not in seen_dicts:
@@ -247,6 +247,8 @@ class LLMRater(comparator.Comparator):
         database: str = "",
         **kwargs,
     ) -> Tuple[float, str]:
+        golden_execution_result = golden_execution_result or []
+        generated_execution_result = generated_execution_result or []
         is_empty_results = len(golden_execution_result) == 0 and len(generated_execution_result) == 0
 
         if not is_empty_results and self._is_exact_match(

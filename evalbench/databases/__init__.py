@@ -1,3 +1,5 @@
+import logging
+from util.class_loader import load_custom_class
 from .postgres import PGDB
 from .mysql import MySQLDB
 from .sqlserver import SQLServerDB
@@ -10,14 +12,46 @@ from .alloydb_omni import AlloyDBOmni
 from .spanner import SpannerDB
 from .mongodb import MongoDB
 
+# Backward compatibility alias
+_load_custom_class = load_custom_class
+
 
 def get_database(db_config, db_name) -> DB:
+    """Initializes and returns a database connector instance.
+
+    If 'connector_class' is specified in db_config, the custom class is
+    dynamically loaded and instantiated with db_config. Custom connector
+    classes do not need to inherit from DB, but must implement the duck-typed
+    interface expected by EvalBench:
+      - execute(query, eval_query=None, **kwargs) -> (result, eval_result, error)
+        where result must be list[dict[str, Any]] (mapping column names to values)
+        or None/[] for 0 rows. Non-dict rows raise TypeError at the boundary.
+      - clean_tmp_creations() (optional)
+      - close_connections() (optional)
+    """
     # if db_name is provided:
     #   - It will override the provided default database_name
     #   - This is useful as the default db may be "postgres" or a default only used for setup
     if db_name:
         suffix = db_config.get("db_name_suffix", "")
         db_config["database_name"] = f"{db_name}{suffix}"
+
+    db_type = db_config.get("db_type")
+    connector_class = db_config.get("connector_class")
+
+    if connector_class:
+        if db_type and db_type != "custom":
+            logging.warning(
+                f"Using custom connector class '{connector_class}' "
+                f"(overriding db_type '{db_type}')."
+            )
+        return _load_custom_class(connector_class)(db_config)
+
+    if db_type == "custom":
+        raise ValueError(
+            "db_type 'custom' specified, but 'connector_class' is missing from"
+            " db_config."
+        )
 
     if db_config["db_type"] == "postgres":
         return PGDB(db_config)

@@ -55,17 +55,19 @@ class SetMatcher(comparator.Comparator):
                                     return True
                     return False
 
-                if _is_document_structure(golden_execution_result) or _is_document_structure(generated_execution_result):
-                    h1 = [make_hashable(d) for d in golden_execution_result]
-                    h2 = [make_hashable(d) for d in generated_execution_result]
+                golden_res = golden_execution_result or []
+                generated_res = generated_execution_result or []
+                if _is_document_structure(golden_res) or _is_document_structure(generated_res):
+                    h1 = [make_hashable(d) for d in golden_res]
+                    h2 = [make_hashable(d) for d in generated_res]
                     score = 100 if Counter(h1) == Counter(h2) else 0
                 else:
                     # SQL Model: flat primitives, ignore column names, remove duplicates
                     golden_execution_result_tuple = [
-                        tuple(d.values()) for d in golden_execution_result
+                        tuple(d.values()) for d in golden_res
                     ]
                     generated_execution_result_tuple = [
-                        tuple(d.values()) for d in generated_execution_result
+                        tuple(d.values()) for d in generated_res
                     ]
                     score = (
                         100
