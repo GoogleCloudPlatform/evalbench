@@ -1,15 +1,15 @@
 # Weekly release pipeline.
 #
-# Resolves the tested image from the Build trigger, runs the gRPC smoke gate
-# inside that image, and tags the immutable release.
+# Gates the image the Build trigger already pushed for this commit, tags it as
+# an immutable release, then rolls it out to GKE and Corp Run.
 #
 # Shell variables use $$NAME and command substitutions use $$(...) so Cloud
 # Build passes them to bash unexpanded.
 
 steps:
 
-  # Nothing is built here -- fail unless the Build trigger already pushed an
-  # image for this commit, then derive the release tag from its digest.
+  # Nothing is built here: the Build trigger must have already pushed an image
+  # for this commit.
   - id: resolve-release
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: 'bash'
@@ -43,9 +43,8 @@ steps:
         echo "digest = $$DIGEST"
         echo "tag    = $$TAG"
 
-  # Exercise the candidate image itself: serve, evaluate, and audit the scores
-  # it produced. eval_client exits 0 on a completed run, so scores.csv is the
-  # only real gate.
+  # eval_client exits 0 on any completed run, so scores.csv is the only real
+  # gate on whether the candidate image evaluates correctly.
   - id: smoke-gate
     name: 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server:$COMMIT_SHA'
     dir: '/evalbench'
@@ -198,8 +197,8 @@ steps:
             | grep -v '^$$' | sort -u
         }
 
-        # The Deployment tracks :latest, so moving the tag is what selects the
-        # image; the restart is what makes the kubelet pull it.
+        # The Deployment tracks :latest, so the tag selects the image and the
+        # restart is what makes the kubelet pull it.
         roll_to() {
           echo "Pointing :latest at $$1"
           gcloud artifacts docker tags add "$$REPO@$$1" "$$REPO:latest" || return 1
@@ -256,10 +255,8 @@ steps:
         echo "===== release deployed ====="
         echo "serving $$REPO@$$NEW_DIGEST as $$(cat /workspace/release_tag.txt)"
 
-  # The Mesop UI runs the same image on Cloud Run in evalbench-dev. Both repos
-  # live on us-central1-docker.pkg.dev, so gcrane mounts the existing blobs
-  # instead of transferring the image. :latest keeps the manual
-  # 'make deploy-corprun' path pointing at the same bits.
+  # The Mesop UI serves this same image from Cloud Run in evalbench-dev.
+  # Writing :latest keeps the manual 'make deploy-corprun' path in sync.
   - id: copy-corprun-image
     name: 'gcr.io/go-containerregistry/gcrane'
     waitFor: ['deploy-gke']
@@ -295,16 +292,16 @@ steps:
         fi
         echo "rollback revision = $$OLD_REVISION"
 
-        # Deploying by digest also proves the copy landed the exact image the
-        # GKE gate accepted; a mismatched copy cannot resolve and fails here.
-        # A revision that never becomes ready serves no traffic, so a failed
-        # deploy leaves OLD_REVISION in place by itself.
+        # Deploying by digest proves the copy landed the image the GKE gate
+        # accepted; a mismatched copy cannot resolve and fails here.
         echo "===== deploy to Cloud Run ====="
         if ! gcloud run deploy "$$SERVICE" \
           --project="$$CR_PROJECT" \
           --region="$$CR_REGION" \
           --image="$$CR_REPO@$$DIGEST"; then
           echo "FAIL: Cloud Run deploy did not succeed."
+          # A revision that never goes ready takes no traffic, so this only
+          # matters if the deploy failed after the traffic split moved.
           echo "===== pinning traffic back to $$OLD_REVISION ====="
           gcloud run services update-traffic "$$SERVICE" \
             --project="$$CR_PROJECT" --region="$$CR_REGION" \
