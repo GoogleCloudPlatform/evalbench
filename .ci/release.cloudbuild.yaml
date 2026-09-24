@@ -163,10 +163,103 @@ steps:
         echo "$$RUNNING" > /workspace/rollback_digest.txt
         echo "rollback target = $$RUNNING"
 
+  # Deploy, verify, and roll back live in one step: Cloud Build has no
+  # on-failure hook, so a separate rollback step would never run.
+  - id: deploy
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    waitFor: ['capture-rollback-target']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -uo pipefail
+
+        NAMESPACE=evalbench-namespace
+        SELECTOR=app=evalbench-eval-server
+        CONTAINER=evalbench-eval
+        DEPLOYMENT=deployment/evalbench-eval-server-deploy
+        ROLLOUT_TIMEOUT=600s
+
+        REPO=$$(cat /workspace/image_repo.txt)
+        NEW_DIGEST=$$(cat /workspace/image_digest.txt)
+        OLD_DIGEST=$$(cat /workspace/rollback_digest.txt)
+
+        if ! gcloud container clusters get-credentials \
+          evalbench-directpath-cluster \
+          --zone us-central1-c --project "$PROJECT_ID"; then
+          echo "FAIL: cannot get cluster credentials."
+          exit 1
+        fi
+
+        running_digests() {
+          kubectl get pods -n "$$NAMESPACE" -l "$$SELECTOR" \
+            -o jsonpath="{range .items[*]}{.status.containerStatuses[?(@.name=='$$CONTAINER')].imageID}{'\n'}{end}" \
+            | sed -e 's#^.*://##' -e 's#^.*@##' \
+            | grep -v '^$$' | sort -u
+        }
+
+        # The Deployment tracks :latest, so moving the tag is what selects the
+        # image; the restart is what makes the kubelet pull it.
+        roll_to() {
+          echo "Pointing :latest at $$1"
+          gcloud artifacts docker tags add "$$REPO@$$1" "$$REPO:latest" || return 1
+          kubectl rollout restart "$$DEPLOYMENT" -n "$$NAMESPACE" || return 1
+          kubectl rollout status "$$DEPLOYMENT" -n "$$NAMESPACE" \
+            --timeout="$$ROLLOUT_TIMEOUT" || return 1
+        }
+
+        rollback() {
+          echo "===== rolling back to $$OLD_DIGEST ====="
+          if ! roll_to "$$OLD_DIGEST"; then
+            echo "FAIL: rollback did not complete. Not retrying."
+            echo "Last known-good digest: $$REPO@$$OLD_DIGEST"
+            kubectl get pods -n "$$NAMESPACE" -l "$$SELECTOR" -o wide
+            exit 1
+          fi
+          echo "Rolled back to $$OLD_DIGEST. Failing the build."
+          exit 1
+        }
+
+        echo "===== deploy $$NEW_DIGEST ====="
+        if ! roll_to "$$NEW_DIGEST"; then
+          echo "FAIL: rollout did not complete within $$ROLLOUT_TIMEOUT."
+          kubectl get pods -n "$$NAMESPACE" -l "$$SELECTOR" -o wide
+          rollback
+        fi
+
+        # Pods that lost the rollout can linger in Terminating for a few
+        # seconds after rollout status returns, so retry before believing it.
+        echo "===== confirm the pods are serving $$NEW_DIGEST ====="
+        for _ in $$(seq 20); do
+          SERVING=$$(running_digests)
+          [[ "$$SERVING" == "$$NEW_DIGEST" ]] && break
+          sleep 3
+        done
+        if [[ "$$SERVING" != "$$NEW_DIGEST" ]]; then
+          echo "FAIL: expected $$NEW_DIGEST, pods report:"
+          echo "$$SERVING"
+          rollback
+        fi
+
+        # There is no readiness probe on this Deployment, so "Ready" only means
+        # the process started. A gRPC Ping is the first real health signal.
+        echo "===== gRPC health check ====="
+        POD=$$(kubectl get pods -n "$$NAMESPACE" -l "$$SELECTOR" \
+          -o jsonpath='{.items[0].metadata.name}')
+        if ! kubectl exec -n "$$NAMESPACE" "$$POD" -c "$$CONTAINER" -- \
+          python /evalbench/.ci/release/wait_for_grpc.py --timeout 300; then
+          echo "FAIL: $$POD never answered Ping."
+          kubectl logs -n "$$NAMESPACE" "$$POD" -c "$$CONTAINER" --tail=40
+          rollback
+        fi
+
+        echo "===== release deployed ====="
+        echo "serving $$REPO@$$NEW_DIGEST as $$(cat /workspace/release_tag.txt)"
+
 substitutions:
   _EVAL_REGION: 'global'
 
-timeout: '1800s'
+timeout: '3600s'
 
 options:
   logging: CLOUD_LOGGING_ONLY
