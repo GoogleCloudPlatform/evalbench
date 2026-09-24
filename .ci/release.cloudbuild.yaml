@@ -201,10 +201,10 @@ steps:
         # restart is what makes the kubelet pull it.
         roll_to() {
           echo "Pointing :latest at $$1"
-          gcloud artifacts docker tags add "$$REPO@$$1" "$$REPO:latest" || return 1
-          kubectl rollout restart "$$DEPLOYMENT" -n "$$NAMESPACE" || return 1
-          kubectl rollout status "$$DEPLOYMENT" -n "$$NAMESPACE" \
-            --timeout="$$ROLLOUT_TIMEOUT" || return 1
+          gcloud artifacts docker tags add "$$REPO@$$1" "$$REPO:latest" \
+            && kubectl rollout restart "$$DEPLOYMENT" -n "$$NAMESPACE" \
+            && kubectl rollout status "$$DEPLOYMENT" -n "$$NAMESPACE" \
+                 --timeout="$$ROLLOUT_TIMEOUT"
         }
 
         rollback() {
@@ -229,7 +229,7 @@ steps:
         # Pods that lost the rollout can linger in Terminating for a few
         # seconds after rollout status returns, so retry before believing it.
         echo "===== confirm the pods are serving $$NEW_DIGEST ====="
-        for _ in $$(seq 20); do
+        for _ in {1..20}; do
           SERVING=$$(running_digests)
           [[ "$$SERVING" == "$$NEW_DIGEST" ]] && break
           sleep 3
