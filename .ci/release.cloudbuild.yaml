@@ -295,7 +295,7 @@ steps:
         # Deploying by digest proves the copy landed the image the GKE gate
         # accepted; a mismatched copy cannot resolve and fails here.
         echo "===== deploy to Cloud Run ====="
-        if ! gcloud run deploy "$$SERVICE" \
+        if ! gcloud run deploy "$$SERVICE" --quiet \
           --project="$$CR_PROJECT" \
           --region="$$CR_REGION" \
           --image="$$CR_REPO@$$DIGEST"; then
@@ -303,9 +303,13 @@ steps:
           # A revision that never goes ready takes no traffic, so this only
           # matters if the deploy failed after the traffic split moved.
           echo "===== pinning traffic back to $$OLD_REVISION ====="
-          gcloud run services update-traffic "$$SERVICE" \
+          if ! gcloud run services update-traffic "$$SERVICE" --quiet \
             --project="$$CR_PROJECT" --region="$$CR_REGION" \
-            --to-revisions="$$OLD_REVISION=100"
+            --to-revisions="$$OLD_REVISION=100"; then
+            echo "FAIL: could not pin traffic back. $$SERVICE may be serving"
+            echo "an unverified revision."
+            echo "Last known-good revision: $$OLD_REVISION"
+          fi
           exit 1
         fi
 
