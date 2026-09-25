@@ -173,9 +173,7 @@ def process_directory(d, results_dir):
                         df = pd.read_csv(file_to_read, usecols=['comparator', 'score'])
                         gc_scores = df[df['comparator'] == 'goal_completion']
                         if not gc_scores.empty:
-                            correct = len(gc_scores[gc_scores['score'] == 100.0])
-                            total = len(gc_scores)
-                            goal_completion = (correct / total) * 100 if total > 0 else 0.0
+                            goal_completion = float(gc_scores['score'].mean())
                             logging.info(f"Computed goal_completion from {os.path.basename(file_to_read)} for {d}: {goal_completion}")
                 except Exception as e:
                     logging.warning(f"Error reading {os.path.basename(file_to_read)} for {d}: {e}")
