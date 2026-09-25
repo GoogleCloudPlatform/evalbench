@@ -234,7 +234,7 @@ steps:
         # Pods that lost the rollout can linger in Terminating for a few
         # seconds after rollout status returns, so retry before believing it.
         echo "===== confirm the pods are serving $$NEW_DIGEST ====="
-        for _ in {1..20}; do
+        for ATTEMPT in {1..20}; do
           SERVING=$$(running_digests)
           [[ "$$SERVING" == "$$NEW_DIGEST" ]] && break
           sleep 3
@@ -244,6 +244,7 @@ steps:
           echo "$$SERVING"
           rollback
         fi
+        echo "Every pod reports the release digest (attempt $$ATTEMPT)."
 
         # There is no readiness probe on this Deployment, so "Ready" only means
         # the process started. A gRPC Ping is the first real health signal.
