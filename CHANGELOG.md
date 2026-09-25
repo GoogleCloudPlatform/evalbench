@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.19.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.18.0...v1.19.0) (2026-09-25)
+
+
+### Features
+
+* **mcp_readability:** group style findings per tool ([dae668e](https://github.com/GoogleCloudPlatform/evalbench/commit/dae668e680c8ee940f1058de80bf10311f5accd5))
+* **mcp_readability:** group style findings per tool ([c4541a3](https://github.com/GoogleCloudPlatform/evalbench/commit/c4541a369b7a8a7be00c8aa7933bcf0f0ca48c5e))
+* **mcp_readability:** record the tool surface each run was judged against ([7f62ce4](https://github.com/GoogleCloudPlatform/evalbench/commit/7f62ce41cee80472a36a0a43cde30584e1710a3a))
+* **mcp_readability:** record the tool surface each run was judged against ([43d6bcf](https://github.com/GoogleCloudPlatform/evalbench/commit/43d6bcf665471068106f0e2041409a566ce4540d))
+* **mcp_readability:** tag each run as daily or ad-hoc on the result row ([5fc047a](https://github.com/GoogleCloudPlatform/evalbench/commit/5fc047a460f890f05f6419b556bd32f00a57fd37))
+* **mcp_readability:** tag each run as daily or ad-hoc on the result row ([fcbff75](https://github.com/GoogleCloudPlatform/evalbench/commit/fcbff7577c7a513278e8893f2c15e11c03da2227))
+* **spi:** pluggable custom connector & generator SPI with boundary contract enforcement ([#625](https://github.com/GoogleCloudPlatform/evalbench/issues/625)) ([b6d00c0](https://github.com/GoogleCloudPlatform/evalbench/commit/b6d00c08e5a9871ea3b84e6ac029a4a2c5b5b7b9))
+* **viewer:** add conversation page selector with pass/fail status indicators ([540df44](https://github.com/GoogleCloudPlatform/evalbench/commit/540df4469270548f66033b8199aadd2bf186f72b))
+* **viewer:** add conversation page selector with pass/fail status indicators ([40a37a0](https://github.com/GoogleCloudPlatform/evalbench/commit/40a37a0e29af4a3782713dfb354b0917c3252771))
+
+
+### Bug Fixes
+
+* **agy:** count skills activated by reading SKILL.md ([#617](https://github.com/GoogleCloudPlatform/evalbench/issues/617)) ([26ef32b](https://github.com/GoogleCloudPlatform/evalbench/commit/26ef32b34828360db13e8e38909311aca1779bd9))
+* **agy:** register the cwd as a workspace, not just a declared work_dir ([#599](https://github.com/GoogleCloudPlatform/evalbench/issues/599)) ([40a338b](https://github.com/GoogleCloudPlatform/evalbench/commit/40a338b393fdeb7275c4037ed8cfe4a5fff05205))
+* **claude_code:** measure per-tool latency, which was always reported as 0 ([#601](https://github.com/GoogleCloudPlatform/evalbench/issues/601)) ([e6892c8](https://github.com/GoogleCloudPlatform/evalbench/commit/e6892c81b44f33173815d83ded6cec4b1070202e))
+* **codex_cli:** keep captured stderr when the CLI times out ([#603](https://github.com/GoogleCloudPlatform/evalbench/issues/603)) ([7f7c200](https://github.com/GoogleCloudPlatform/evalbench/commit/7f7c200e5ccef6f0142dd73af663c34e8a2fa2b2))
+* **evaluator:** make DB queue timeout configurable and dynamically scaled to prevent head-of-line blocking ([af5dc2a](https://github.com/GoogleCloudPlatform/evalbench/commit/af5dc2a15dcfb4d81e9fb9f84e0dcffad0879c3d))
+* **evaluator:** make DB queue timeout configurable and dynamically scaled to prevent head-of-line blocking ([44086b2](https://github.com/GoogleCloudPlatform/evalbench/commit/44086b2ed0dc3371fa31fa2f037ae0bd571ab6ec))
+* **viewer:** address review feedback for conversation page selector ([db194a8](https://github.com/GoogleCloudPlatform/evalbench/commit/db194a876251603b23b97b67843f30b9dbd14a66))
+* **viewer:** guard mesop import for core pytest CI environment ([6d43815](https://github.com/GoogleCloudPlatform/evalbench/commit/6d4381549c683a82b18b88b78177441ab0ff59a0))
+* **viewer:** specify UTC timezone in dataset quality last run column ([#602](https://github.com/GoogleCloudPlatform/evalbench/issues/602)) ([b6aeb3c](https://github.com/GoogleCloudPlatform/evalbench/commit/b6aeb3cd3363785106b109412b8c1085314080dd))
+
 ## [1.18.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.17.0...v1.18.0) (2026-09-08)
 
 
