@@ -1,0 +1,334 @@
+# Weekly release pipeline.
+#
+# Gates the image the Build trigger already pushed for this commit, tags it as
+# an immutable release, then rolls it out to GKE and Corp Run.
+#
+# Shell variables use $$NAME and command substitutions use $$(...) so Cloud
+# Build passes them to bash unexpanded.
+
+steps:
+
+  # Nothing is built here: the Build trigger must have already pushed an image
+  # for this commit.
+  - id: resolve-release
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -uo pipefail
+
+        if [[ -z "$COMMIT_SHA" || -z "$SHORT_SHA" ]]; then
+          echo "FAIL: COMMIT_SHA or SHORT_SHA is empty."
+          exit 1
+        fi
+
+        REPO="us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server"
+        IMAGE="$$REPO:$COMMIT_SHA"
+        echo "Resolving $$IMAGE"
+
+        DIGEST=$$(gcloud artifacts docker images describe "$$IMAGE" \
+          --format='value(image_summary.digest)' 2>/dev/null)
+        if [[ -z "$$DIGEST" ]]; then
+          echo "FAIL: no image at $$IMAGE"
+          exit 1
+        fi
+
+        TAG="v$$(date -u +%Y.%m.%d).$SHORT_SHA"
+
+        echo "$$REPO"   > /workspace/image_repo.txt
+        echo "$$DIGEST" > /workspace/image_digest.txt
+        echo "$$TAG"    > /workspace/release_tag.txt
+        echo "digest = $$DIGEST"
+        echo "tag    = $$TAG"
+
+  # eval_client exits 0 on any completed run, so scores.csv is the only real
+  # gate on whether the candidate image evaluates correctly.
+  - id: smoke-gate
+    name: 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server:$COMMIT_SHA'
+    dir: '/evalbench'
+    waitFor: ['resolve-release']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -uo pipefail
+
+        # Add both module roots so eval_client and proto imports resolve.
+        export PYTHONPATH=/evalbench/evalbench:/evalbench/evalbench/evalproto
+
+        echo "===== start eval_server ====="
+        python evalbench/eval_server.py --localhost > /tmp/server.log 2>&1 &
+        SERVER_PID=$$!
+        trap 'kill $$SERVER_PID 2>/dev/null || true' EXIT
+
+        dump_log() {
+          echo "----- eval_server log, last 40 lines -----"
+          tail -40 /tmp/server.log
+        }
+
+        echo "===== wait for gRPC ====="
+        if ! python .ci/release/wait_for_grpc.py --timeout 300 --insecure; then
+          dump_log
+          exit 1
+        fi
+
+        echo "===== run the smoke eval over gRPC ====="
+        if ! EVALBENCH_HOST=localhost PORT=50051 EVALBENCH_INSECURE=true \
+          python evalbench/client/eval_client.py \
+            --endpoint=local \
+            --experiment=.ci/release/release_smoke_config.yaml; then
+          dump_log
+          exit 1
+        fi
+
+        # CsvReporter forces /tmp_session_files/results on the gRPC path.
+        echo "===== audit scores.csv ====="
+        if ! python .ci/release/verify_nl2sql_smoke.py \
+          --results-dir /tmp_session_files/results; then
+          dump_log
+          exit 1
+        fi
+
+        echo "===== smoke gate passed ====="
+    env:
+      - 'EVAL_GCP_PROJECT_ID=$PROJECT_ID'
+      - 'EVAL_GCP_PROJECT_REGION=${_EVAL_REGION}'
+      - 'GOOGLE_CLOUD_PROJECT=$PROJECT_ID'
+      - 'UV_CACHE_DIR=/tmp/uv-cache'
+
+  # Tag by digest, not by :$COMMIT_SHA, so the release points at the exact
+  # image the gate just passed.
+  - id: tag-release
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    waitFor: ['smoke-gate']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        REPO=$$(cat /workspace/image_repo.txt)
+        DIGEST=$$(cat /workspace/image_digest.txt)
+        TAG=$$(cat /workspace/release_tag.txt)
+        echo "Tagging $$REPO@$$DIGEST as :$$TAG"
+        # 'docker tags add' deletes and recreates an existing tag, which needs
+        # tags.delete. 'tags update' repoints it in place, but cannot create
+        # it, so fall back to add for a tag this commit has not had before.
+        gcloud artifacts tags update "$$TAG" --location=us-central1 \
+            --repository=evalbench --package=eval_server \
+            --version="$$DIGEST" 2>/dev/null \
+          || gcloud artifacts docker tags add "$$REPO@$$DIGEST" "$$REPO:$$TAG"
+        echo "Release tag: $$REPO:$$TAG"
+
+  # The Deployment spec only carries the mutable :latest tag, so the kubelet's
+  # imageID is the only record of which digest is actually serving.
+  - id: capture-rollback-target
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    waitFor: ['tag-release']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -uo pipefail
+
+        CLUSTER=evalbench-directpath-cluster
+        ZONE=us-central1-c
+        NAMESPACE=evalbench-namespace
+        SELECTOR=app=evalbench-eval-server
+        CONTAINER=evalbench-eval
+
+        if ! gcloud container clusters get-credentials "$$CLUSTER" \
+          --zone "$$ZONE" --project "$PROJECT_ID"; then
+          echo "FAIL: cannot get credentials for $$CLUSTER"
+          exit 1
+        fi
+
+        RUNNING=$$(kubectl get pods -n "$$NAMESPACE" -l "$$SELECTOR" \
+          -o jsonpath="{range .items[*]}{.status.containerStatuses[?(@.name=='$$CONTAINER')].imageID}{'\n'}{end}" \
+          | sed -e 's#^.*://##' -e 's#^.*@##' \
+          | grep -v '^$$' | sort -u)
+        COUNT=$$(echo "$$RUNNING" | grep -c .)
+
+        if [[ "$$COUNT" -eq 0 ]]; then
+          echo "FAIL: no running $$CONTAINER container in $$NAMESPACE."
+          echo "Refusing to deploy without a rollback target."
+          exit 1
+        fi
+
+        if [[ "$$COUNT" -gt 1 ]]; then
+          echo "FAIL: pods are serving more than one digest:"
+          echo "$$RUNNING"
+          echo "A rollout is already in progress. Refusing to deploy."
+          exit 1
+        fi
+
+        echo "$$RUNNING" > /workspace/rollback_digest.txt
+        echo "rollback target = $$RUNNING"
+
+  # Deploy, verify, and roll back live in one step: Cloud Build has no
+  # on-failure hook, so a separate rollback step would never run.
+  - id: deploy-gke
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    waitFor: ['capture-rollback-target']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -uo pipefail
+
+        NAMESPACE=evalbench-namespace
+        SELECTOR=app=evalbench-eval-server
+        CONTAINER=evalbench-eval
+        DEPLOYMENT=deployment/evalbench-eval-server-deploy
+        ROLLOUT_TIMEOUT=600s
+
+        REPO=$$(cat /workspace/image_repo.txt)
+        NEW_DIGEST=$$(cat /workspace/image_digest.txt)
+        OLD_DIGEST=$$(cat /workspace/rollback_digest.txt)
+
+        if ! gcloud container clusters get-credentials \
+          evalbench-directpath-cluster \
+          --zone us-central1-c --project "$PROJECT_ID"; then
+          echo "FAIL: cannot get cluster credentials."
+          exit 1
+        fi
+
+        running_digests() {
+          kubectl get pods -n "$$NAMESPACE" -l "$$SELECTOR" \
+            -o jsonpath="{range .items[*]}{.status.containerStatuses[?(@.name=='$$CONTAINER')].imageID}{'\n'}{end}" \
+            | sed -e 's#^.*://##' -e 's#^.*@##' \
+            | grep -v '^$$' | sort -u
+        }
+
+        # The Deployment tracks :latest, so the tag selects the image and the
+        # restart is what makes the kubelet pull it.
+        roll_to() {
+          echo "Pointing :latest at $$1"
+          gcloud artifacts tags update latest --location=us-central1 \
+              --repository=evalbench --package=eval_server --version="$$1" \
+            && kubectl rollout restart "$$DEPLOYMENT" -n "$$NAMESPACE" \
+            && kubectl rollout status "$$DEPLOYMENT" -n "$$NAMESPACE" \
+                 --timeout="$$ROLLOUT_TIMEOUT"
+        }
+
+        rollback() {
+          echo "===== rolling back to $$OLD_DIGEST ====="
+          if ! roll_to "$$OLD_DIGEST"; then
+            echo "FAIL: rollback did not complete. Not retrying."
+            echo "Last known-good digest: $$REPO@$$OLD_DIGEST"
+            kubectl get pods -n "$$NAMESPACE" -l "$$SELECTOR" -o wide
+            exit 1
+          fi
+          echo "Rolled back to $$OLD_DIGEST. Failing the build."
+          exit 1
+        }
+
+        echo "===== deploy $$NEW_DIGEST ====="
+        if ! roll_to "$$NEW_DIGEST"; then
+          echo "FAIL: rollout did not complete within $$ROLLOUT_TIMEOUT."
+          kubectl get pods -n "$$NAMESPACE" -l "$$SELECTOR" -o wide
+          rollback
+        fi
+
+        # Pods that lost the rollout can linger in Terminating for a few
+        # seconds after rollout status returns, so retry before believing it.
+        echo "===== confirm the pods are serving $$NEW_DIGEST ====="
+        for ATTEMPT in {1..20}; do
+          SERVING=$$(running_digests)
+          [[ "$$SERVING" == "$$NEW_DIGEST" ]] && break
+          sleep 3
+        done
+        if [[ "$$SERVING" != "$$NEW_DIGEST" ]]; then
+          echo "FAIL: expected $$NEW_DIGEST, pods report:"
+          echo "$$SERVING"
+          rollback
+        fi
+        echo "Every pod reports the release digest (attempt $$ATTEMPT)."
+
+        # There is no readiness probe on this Deployment, so "Ready" only means
+        # the process started. A gRPC Ping is the first real health signal.
+        echo "===== gRPC health check ====="
+        POD=$$(kubectl get pods -n "$$NAMESPACE" -l "$$SELECTOR" \
+          -o jsonpath='{.items[0].metadata.name}')
+        if ! kubectl exec -n "$$NAMESPACE" "$$POD" -c "$$CONTAINER" -- \
+          python /evalbench/.ci/release/wait_for_grpc.py --timeout 300; then
+          echo "FAIL: $$POD never answered Ping."
+          kubectl logs -n "$$NAMESPACE" "$$POD" -c "$$CONTAINER" --tail=150
+          rollback
+        fi
+
+        echo "===== release deployed ====="
+        echo "serving $$REPO@$$NEW_DIGEST as $$(cat /workspace/release_tag.txt)"
+
+  # The Mesop UI serves this same image from Cloud Run in evalbench-dev.
+  # Writing :latest keeps the manual 'make deploy-corprun' path in sync.
+  - id: copy-corprun-image
+    name: 'gcr.io/go-containerregistry/gcrane'
+    waitFor: ['deploy-gke']
+    args:
+      - 'copy'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server:$COMMIT_SHA'
+      - 'us-central1-docker.pkg.dev/evalbench-dev/cr-images/eval_server:latest'
+
+  - id: deploy-corprun
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    waitFor: ['copy-corprun-image']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -uo pipefail
+
+        SERVICE=evalbench
+        CR_PROJECT=evalbench-dev
+        CR_REGION=us-central1
+        CR_REPO=us-central1-docker.pkg.dev/evalbench-dev/cr-images/eval_server
+
+        DIGEST=$$(cat /workspace/image_digest.txt)
+
+        # Cloud Run pins each revision to a digest, so the previous revision is
+        # a complete rollback target on its own.
+        OLD_REVISION=$$(gcloud run services describe "$$SERVICE" \
+          --project="$$CR_PROJECT" --region="$$CR_REGION" \
+          --format='value(status.latestReadyRevisionName)')
+        if [[ -z "$$OLD_REVISION" ]]; then
+          echo "FAIL: $$SERVICE has no ready revision to roll back to."
+          exit 1
+        fi
+        echo "rollback revision = $$OLD_REVISION"
+
+        # Deploying by digest proves the copy landed the image the GKE gate
+        # accepted; a mismatched copy cannot resolve and fails here.
+        echo "===== deploy to Cloud Run ====="
+        if ! gcloud run deploy "$$SERVICE" --quiet \
+          --project="$$CR_PROJECT" \
+          --region="$$CR_REGION" \
+          --image="$$CR_REPO@$$DIGEST"; then
+          echo "FAIL: Cloud Run deploy did not succeed."
+          # A revision that never goes ready takes no traffic, so this only
+          # matters if the deploy failed after the traffic split moved.
+          echo "===== pinning traffic back to $$OLD_REVISION ====="
+          if ! gcloud run services update-traffic "$$SERVICE" --quiet \
+            --project="$$CR_PROJECT" --region="$$CR_REGION" \
+            --to-revisions="$$OLD_REVISION=100"; then
+            echo "FAIL: could not pin traffic back. $$SERVICE may be serving"
+            echo "an unverified revision."
+            echo "Last known-good revision: $$OLD_REVISION"
+          fi
+          exit 1
+        fi
+
+        NEW_REVISION=$$(gcloud run services describe "$$SERVICE" \
+          --project="$$CR_PROJECT" --region="$$CR_REGION" \
+          --format='value(status.latestReadyRevisionName)')
+        echo "===== Corp Run deployed ====="
+        echo "$$NEW_REVISION serving $$CR_REPO@$$DIGEST"
+
+substitutions:
+  _EVAL_REGION: 'global'
+
+timeout: '3600s'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'

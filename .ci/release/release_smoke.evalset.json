@@ -1,0 +1,63 @@
+[
+  {
+    "id": 3,
+    "nl_prompt": "How many bloggers who have posted at least 1 blog in 2024 and have linked twitter account",
+    "query_type": "dql",
+    "database": "db_blog",
+    "dialects": [
+      "sqlite"
+    ],
+    "golden_sql": {
+      "sqlite": [
+        "SELECT COUNT(DISTINCT u.user_id) AS num_bloggers FROM tbl_users u INNER JOIN tbl_posts p ON u.user_id = p.user_id WHERE p.created_at BETWEEN DATE('2024-01-01') AND DATE('2024-12-31') AND json_extract(u.social_media_links, '$.twitter') IS NOT NULL;"
+      ]
+    },
+    "eval_query": {
+      "sqlite": [
+        null
+      ]
+    },
+    "setup_sql": {},
+    "cleanup_sql": {},
+    "tags": [
+      "DQL",
+      "difficulty: moderate",
+      "SELECT",
+      "JOIN",
+      "JSON",
+      "JSON_EXTRACT",
+      "datalinking"
+    ]
+  },
+  {
+    "id": 5,
+    "nl_prompt": "What is the number of comments per post for each user? -- Use user_id to identify users and post_id to identify posts.",
+    "query_type": "dql",
+    "database": "db_blog",
+    "dialects": [
+      "sqlite"
+    ],
+    "golden_sql": {
+      "sqlite": [
+        "SELECT u.user_id, p.post_id, COUNT(c.comment_id) AS comment_count FROM tbl_users u INNER JOIN tbl_posts p ON u.user_id = p.user_id LEFT JOIN tbl_comments c ON p.post_id = c.post_id GROUP BY u.user_id, p.post_id;"
+      ]
+    },
+    "eval_query": {
+      "sqlite": [
+        null
+      ]
+    },
+    "setup_sql": {},
+    "cleanup_sql": {},
+    "tags": [
+      "DQL",
+      "difficulty: simple",
+      "SELECT",
+      "JOIN",
+      "AGGREGATE",
+      "CASE",
+      "LEFT_JOIN",
+      "IS_NULL"
+    ]
+  }
+]
