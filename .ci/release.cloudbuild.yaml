@@ -112,10 +112,14 @@ steps:
         DIGEST=$$(cat /workspace/image_digest.txt)
         TAG=$$(cat /workspace/release_tag.txt)
         echo "Tagging $$REPO@$$DIGEST as :$$TAG"
-        gcloud artifacts docker tags add \
-          "$$REPO@$$DIGEST" \
-          "$$REPO:$$TAG"
-        echo "Release tag created: $$REPO:$$TAG"
+        # 'docker tags add' deletes and recreates an existing tag, which needs
+        # tags.delete. 'tags update' repoints it in place, but cannot create
+        # it, so fall back to add for a tag this commit has not had before.
+        gcloud artifacts tags update "$$TAG" --location=us-central1 \
+            --repository=evalbench --package=eval_server \
+            --version="$$DIGEST" 2>/dev/null \
+          || gcloud artifacts docker tags add "$$REPO@$$DIGEST" "$$REPO:$$TAG"
+        echo "Release tag: $$REPO:$$TAG"
 
   # The Deployment spec only carries the mutable :latest tag, so the kubelet's
   # imageID is the only record of which digest is actually serving.
@@ -201,7 +205,8 @@ steps:
         # restart is what makes the kubelet pull it.
         roll_to() {
           echo "Pointing :latest at $$1"
-          gcloud artifacts docker tags add "$$REPO@$$1" "$$REPO:latest" \
+          gcloud artifacts tags update latest --location=us-central1 \
+              --repository=evalbench --package=eval_server --version="$$1" \
             && kubectl rollout restart "$$DEPLOYMENT" -n "$$NAMESPACE" \
             && kubectl rollout status "$$DEPLOYMENT" -n "$$NAMESPACE" \
                  --timeout="$$ROLLOUT_TIMEOUT"
