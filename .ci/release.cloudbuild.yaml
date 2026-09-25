@@ -34,8 +34,7 @@ steps:
           exit 1
         fi
 
-        # Use ISO week-year (%G) and ISO week (%V) to avoid year-boundary drift.
-        TAG="v$$(date -u +%G.%V).$SHORT_SHA"
+        TAG="v$$(date -u +%Y.%m.%d).$SHORT_SHA"
 
         echo "$$REPO"   > /workspace/image_repo.txt
         echo "$$DIGEST" > /workspace/image_digest.txt
