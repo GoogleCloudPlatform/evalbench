@@ -23,11 +23,11 @@ _MODEL_LABEL = "Gemini 3.1 Pro (High)"
 def sandbox(tmp_path, monkeypatch):
     """Isolates HOME under a throwaway dir so the generator builds its sandbox
     there instead of touching the real machine. Returns the host (real) home
-    path for tests that need to pre-seed host-side files (settings.json, an
-    on-disk oauth token, ...).
+    path for tests that need to pre-seed host-side files.
 
-    Seeds a host ADC because the generator refuses to construct without one.
-    Tests that exercise credential resolution drop it with _remove_adc.
+    Seeds a host ADC file so auth resolves to a file and not to the metadata
+    server. Tests that exercise credential resolution drop it with
+    _remove_adc.
     """
     real_home = tmp_path / "real_home"
     real_home.mkdir()
@@ -1229,11 +1229,6 @@ def test_translate_mcp_config_passes_native_fields_through_unchanged():
     assert AgyCliGenerator._translate_mcp_config(dict(cfg)) == cfg
 
 
-def _written_settings(generator):
-    with open(generator.settings_path) as f:
-        return json.load(f)
-
-
 def test_run_passes_configured_model_flag(mock_run, sandbox):
     """The turn command carries the configured model via ``--model``."""
     generator = AgyCliGenerator({"model": _MODEL_LABEL})
@@ -1243,12 +1238,16 @@ def test_run_passes_configured_model_flag(mock_run, sandbox):
     assert argv[argv.index("--model") + 1] == _MODEL_LABEL
 
 
-def test_model_never_written_to_settings(mock_run, sandbox):
-    """The model is selected via the flag, not the settings.json `model`
-    key -- so no `model` key is ever written there."""
-    generator = AgyCliGenerator({"model": _MODEL_LABEL})
+def test_settings_file_not_written(mock_run, sandbox):
+    """agy ignores a ``gcp`` block in settings.json under ADC auth, and the
+    model goes through ``--model``, so the harness writes no settings.json."""
+    generator = AgyCliGenerator({
+        "model": _MODEL_LABEL,
+        "env": {"GOOGLE_CLOUD_PROJECT": "p", "GOOGLE_CLOUD_LOCATION": "global"},
+    })
 
-    assert "model" not in _written_settings(generator)
+    assert not os.path.exists(
+        os.path.join(generator.app_data_dir, "settings.json"))
 
 
 def _stats_models(generator):

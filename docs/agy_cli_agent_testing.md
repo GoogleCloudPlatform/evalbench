@@ -167,13 +167,14 @@ Specifies the generator, model label, execution timeouts, and environment:
 | `generator` | Yes | Must be `agy_cli` |
 | `model` | Optional | Model label (e.g. `"Gemini 3.1 Pro (Low)"` or `"Gemini 3.5 Flash (Medium)"`). Omit to use agy's default. |
 | `timeout` | Optional | CLI turn timeout string (e.g. `"20m"`, passed to `--print-timeout`). Defaults to 5m. |
-| `env` | Optional | Environment block. Set `GOOGLE_CLOUD_PROJECT` (see below); `GOOGLE_CLOUD_LOCATION` defaults to `global`. |
+| `env` | Optional | Environment block passed to agy. Set `GOOGLE_CLOUD_PROJECT` (see below). |
 | `setup` | Optional | Tool setup block for `mcp_servers`, `skills`, or `fake_mcp_servers`. |
 
 > [!IMPORTANT]
-> **Project Configuration Required:** agy resolves its GCP backend project from
-> `settings.json`, which EvalBench populates from `env.GOOGLE_CLOUD_PROJECT`.
-> Always include `GOOGLE_CLOUD_PROJECT` in your model config `env` block.
+> **Quota project:** With a credential file, agy reads its project only from
+> the file's `quota_project_id`. If the file has none, EvalBench adds
+> `env.GOOGLE_CLOUD_PROJECT`, or else the key's `project_id`. Without a
+> credential file, agy uses the metadata server's project.
 
 ---
 
@@ -334,6 +335,6 @@ operational differences:
   `<fake_home>/.gemini/config/import_manifest.json`.
 
 ### Empty Responses
-* Ensure `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION` are configured in the
-  `env` block of your model config.
+* A missing quota project makes agy reject every model. See
+  [Model Authorization](#model-authorization--invalid-model-selection).
 

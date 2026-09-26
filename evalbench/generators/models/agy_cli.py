@@ -90,15 +90,14 @@ class AgyCliGenerator(AgentCliGenerator):
         self._validate_timeout(self.timeout)
 
         # Keep these calls in this order. The sandbox directories must exist
-        # before install, settings, and auth write into them. self.env must
-        # carry HOME before the installer and auth run. The version needs the
-        # installed binary.
+        # before install and auth write into them. self.env must carry HOME
+        # before the installer and auth run. The version needs the installed
+        # binary.
         self._init_paths(querygenerator_config)
         self.env["HOME"] = self.fake_home
         self._ensure_agy_installed()
         # Read by the evaluator as agent_version (see the version property).
         self.agy_cli_version = self._resolve_agy_version()
-        self._initialize_settings_file()
         self._setup_auth()
 
         self.setup_config = querygenerator_config.get("setup", {})
@@ -155,7 +154,6 @@ class AgyCliGenerator(AgentCliGenerator):
         # detection reads exactly this run's log rather than guessing the
         # newest file (which races under concurrency).
         self.cli_log_path = os.path.join(self.app_data_dir, "log", "eval-cli.log")
-        self.settings_path = os.path.join(self.app_data_dir, "settings.json")
         self.config_dir = os.path.join(self.fake_home, ".gemini", "config")
         self.mcp_config_path = os.path.join(self.config_dir, "mcp_config.json")
         # agy records installed plugins (which carry the skills) here.
@@ -167,7 +165,6 @@ class AgyCliGenerator(AgentCliGenerator):
         os.makedirs(self.bin_dir, exist_ok=True)
         os.makedirs(self.app_data_dir, exist_ok=True)
         os.makedirs(os.path.dirname(self.cli_log_path), exist_ok=True)
-        os.makedirs(os.path.dirname(self.settings_path), exist_ok=True)
         os.makedirs(self.config_dir, exist_ok=True)
 
     def _ensure_agy_installed(self):
@@ -324,7 +321,8 @@ class AgyCliGenerator(AgentCliGenerator):
         if credentials.get("quota_project_id"):
             return
 
-        project = self.gcp_project or credentials.get("project_id")
+        project = (self.env.get("GOOGLE_CLOUD_PROJECT")
+                   or credentials.get("project_id"))
         if not project:
             raise RuntimeError(
                 f"agy ADC {self.adc_path} has no quota_project_id and no "
@@ -353,108 +351,6 @@ class AgyCliGenerator(AgentCliGenerator):
             "agy ADC had no quota_project_id; using augmented copy at %s "
             "with project %s.", augmented, project,
         )
-
-    def _initialize_settings_file(self):
-        """Writes the ``gcp.project``/``gcp.location`` block into agy's
-        ``settings.json``.
-
-        This block is load-bearing: agy resolves the project for its Vertex
-        model backend from ``settings.json`` -> ``gcp.project``, **not** from
-        the ``GOOGLE_CLOUD_PROJECT`` env var (verified empirically -- with the
-        block removed, every ``agy -p`` turn returns an empty response and
-        makes no tool calls, even though ``GOOGLE_CLOUD_PROJECT`` is exported
-        and the MCP server still attaches). This is why agy is the only
-        harness that writes a gcp block; the others pass the project purely
-        through the environment.
-
-        The model is intentionally *not* written here -- it is selected
-        per-invocation via the ``--model`` flag (see _base_agy_command).
-        """
-        current_settings = {}
-        if os.path.exists(self.settings_path):
-            try:
-                with open(self.settings_path, "r") as f:
-                    current_settings = json.load(f)
-            except json.JSONDecodeError:
-                logging.warning(
-                    "Invalid JSON in agy settings at %s; using defaults.",
-                    self.settings_path,
-                )
-
-        gcp_config = current_settings.setdefault("gcp", {})
-
-        # Priority: env/config, then the sandbox settings.json from a previous
-        # run, then the host's real settings.json.
-        project = (
-            self.env.get("GOOGLE_CLOUD_PROJECT") or gcp_config.get("project")
-        )
-        location = (
-            self.env.get("GOOGLE_CLOUD_LOCATION") or gcp_config.get("location")
-        )
-
-        # Read the host file only for missing values. In sandboxed and CI runs
-        # it is often absent or empty.
-        if project and location:
-            logging.info(
-                "agy settings: project/location satisfied by env and "
-                "sandbox %s; skipping real settings.json read.",
-                self.settings_path,
-            )
-        else:
-            real_gcp = self._read_real_settings().get("gcp", {})
-            project = project or real_gcp.get("project")
-            location = location or real_gcp.get("location")
-
-        location = location or "global"
-
-        if project:
-            gcp_config["project"] = project
-        gcp_config["location"] = location
-        # Reused by _setup_auth; agy's ADC path ignores this settings block.
-        self.gcp_project = project
-
-        logging.info(
-            "agy settings resolved: project=%s location=%s",
-            project, location,
-        )
-
-        with open(self.settings_path, "w") as f:
-            json.dump(current_settings, f, indent=2)
-
-    def _read_real_settings(self) -> dict:
-        """Reads the host's real ``settings.json`` as a fallback for
-        project and location. Returns ``{}`` if the file is absent, empty,
-        unreadable, or malformed. Only the last two log a warning.
-        """
-        path = os.path.join(
-            self.real_home, self.APP_DATA_SUBPATH, "settings.json"
-        )
-        if not os.path.exists(path):
-            logging.info(
-                "agy real settings.json not present at %s; using defaults.",
-                path,
-            )
-            return {}
-        try:
-            with open(path, "r") as f:
-                raw = f.read().strip()
-        except OSError as e:
-            logging.warning(
-                "Failed to read real settings.json %s: %s", path, e
-            )
-            return {}
-        if not raw:
-            logging.info(
-                "agy real settings.json at %s is empty; using defaults.", path,
-            )
-            return {}
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError as e:
-            logging.warning(
-                "Ignoring malformed real settings.json at %s: %s", path, e,
-            )
-            return {}
 
     def _setup_tools(self):
         """Writes the configured MCP servers and installs the skills."""
