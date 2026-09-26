@@ -21,7 +21,7 @@ steps:
     allowFailure: true
     args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/evalbench-harness-ci:cache']
 
-  # No key file: agy uses the build service account via the metadata server.
+  # agy authenticates as the build service account via the metadata server.
   - id: agy-cli
     name: 'evalbench-harness-ci'
     dir: '/evalbench'

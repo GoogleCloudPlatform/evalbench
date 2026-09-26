@@ -210,8 +210,8 @@ agy resolves ADC in the standard order:
 
 1. The file in `GOOGLE_APPLICATION_CREDENTIALS`, or the gcloud ADC file
    (`gcloud auth application-default login`).
-2. The metadata server (Cloud Build, GCE, GKE Workload Identity). No key file
-   is necessary. agy takes the quota project from the metadata project.
+2. The metadata server (Cloud Build, GCE, GKE Workload Identity). agy takes
+   the quota project from the metadata project.
 
 If a credential file has no `quota_project_id`, EvalBench adds one from
 `env.GOOGLE_CLOUD_PROJECT` or the key's `project_id`. Without it, the model
