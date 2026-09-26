@@ -1200,21 +1200,34 @@ def test_adc_staged_into_sandbox(sandbox):
     assert generator.adc_path is not None
 
 
-def test_missing_adc_is_fatal(sandbox):
-    """agy takes its entitlement project from the credential file's
-    quota_project_id, and a metadata-server token has none -- so continuing
-    without a file guarantees an empty model registry. Fail at setup rather
-    than log a reassuring fallback and let every turn fail."""
+def test_missing_adc_falls_back_to_metadata_server(sandbox, monkeypatch):
+    """Without a credential file, agy authenticates from the metadata server
+    (Cloud Build, GCE, GKE Workload Identity), so setup must not fail and
+    must not point agy at a file."""
     _remove_adc(sandbox)
+    monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
 
-    with pytest.raises(RuntimeError, match="requires an application default"):
+    generator = AgyCliGenerator({})
+
+    assert generator.adc_path is None
+    assert "GOOGLE_APPLICATION_CREDENTIALS" not in generator.env
+    assert generator.env["AGY_ADC_AUTH"] == "true"
+
+
+def test_stale_adc_path_is_fatal(sandbox, monkeypatch, tmp_path):
+    """agy does not fall back to the metadata server when the variable names
+    a missing file, so a stale path fails setup with a clear message."""
+    _remove_adc(sandbox)
+    monkeypatch.setenv(
+        "GOOGLE_APPLICATION_CREDENTIALS", str(tmp_path / "missing.json"))
+
+    with pytest.raises(RuntimeError, match="does not exist"):
         AgyCliGenerator({})
 
 
 def test_shell_exported_adc_is_used(sandbox, monkeypatch, tmp_path):
-    """A shell-exported GOOGLE_APPLICATION_CREDENTIALS (the service-account/CI
-    pattern) satisfies the credential requirement: CI never runs
-    `gcloud auth application-default login`, so there is no well-known file."""
+    """A shell-exported GOOGLE_APPLICATION_CREDENTIALS is used as the ADC
+    file."""
     _remove_adc(sandbox)
     key = tmp_path / "sa_key.json"
     key.write_text(json.dumps(
@@ -1228,9 +1241,7 @@ def test_shell_exported_adc_is_used(sandbox, monkeypatch, tmp_path):
 
 
 def test_gke_secret_mount_supplies_adc(sandbox, monkeypatch, tmp_path):
-    """On GKE nothing runs `gcloud auth application-default login`, so the
-    well-known-file lookup finds nothing and the mounted service-account key
-    is the pod's only ADC."""
+    """When no other ADC file exists, the mounted GKE key is used."""
     _remove_adc(sandbox)
     key = tmp_path / "key.json"
     key.write_text(json.dumps(
