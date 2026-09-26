@@ -293,7 +293,7 @@ operational differences:
 | Installation | `npm install -g @google/gemini-cli@<ver>` | Auto-staged into `<fake_home>/.local/bin/` |
 | Invocation | `npm exec @google/gemini-cli -- ...` | `agy -p <prompt> --dangerously-skip-permissions` |
 | Output Format | `--output-format stream-json` | `--output-format stream-json` |
-| Session Resume | `--resume <id>` | `--continue` |
+| Session Resume | `--resume <id>` | `--conversation <id>` |
 | Settings Path | `~/.gemini/settings.json` | `~/.gemini/antigravity-cli/settings.json` |
 | MCP Config | `mcpServers` in `settings.json` | `mcpServers` in `~/.gemini/config/mcp_config.json` |
 | MCP Tool Naming | `mcp_<server>_<tool>` | `call_mcp_tool` wrapper (canonicalized to `<server>__<tool>`) |
@@ -307,7 +307,9 @@ operational differences:
 
 ### Authentication Errors / Interactive Login Prompt
 * agy shows every ADC token failure as `authentication required. Run 'agy' to
-  log in.` To see the real cause, search the agy `cli.log` for `adcAuth:`.
+  log in.` The harness runs a startup probe and fails setup with
+  `agy failed to authenticate with ADC`. The error includes the `adcAuth:`
+  lines from the agy log, which state the real cause.
 * Outside GCP, ensure fresh ADC credentials exist by running
   `gcloud auth application-default login`.
 * On GCP without a key file, ensure the metadata-server service account can
