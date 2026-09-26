@@ -1201,9 +1201,8 @@ def test_adc_staged_into_sandbox(sandbox):
 
 
 def test_missing_adc_falls_back_to_metadata_server(sandbox, monkeypatch):
-    """Without a credential file, agy authenticates from the metadata server
-    (Cloud Build, GCE, GKE Workload Identity), so setup must not fail and
-    must not point agy at a file."""
+    """Without an ADC file, setup succeeds and leaves agy on the metadata
+    server."""
     _remove_adc(sandbox)
     monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
 
@@ -1215,8 +1214,7 @@ def test_missing_adc_falls_back_to_metadata_server(sandbox, monkeypatch):
 
 
 def test_stale_adc_path_is_fatal(sandbox, monkeypatch, tmp_path):
-    """agy does not fall back to the metadata server when the variable names
-    a missing file, so a stale path fails setup with a clear message."""
+    """A GOOGLE_APPLICATION_CREDENTIALS path to a missing file fails setup."""
     _remove_adc(sandbox)
     monkeypatch.setenv(
         "GOOGLE_APPLICATION_CREDENTIALS", str(tmp_path / "missing.json"))

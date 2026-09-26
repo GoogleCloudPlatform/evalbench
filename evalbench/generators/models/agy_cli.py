@@ -279,10 +279,7 @@ class AgyCliGenerator(AgentCliGenerator):
             )
 
         self.adc_path = None
-        logging.info(
-            "agy found no ADC file; it will authenticate from the metadata "
-            "server. Outside GCP, run 'gcloud auth application-default login'."
-        )
+        logging.info("agy found no ADC file; using the metadata server.")
 
     def _ensure_quota_project(self) -> None:
         """Adds ``quota_project_id`` to the resolved ADC file when it is
