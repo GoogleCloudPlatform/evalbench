@@ -14,8 +14,8 @@ from typing import Optional, Union, Dict, List
 from util.context import rpc_id_var
 from util.config import parse_timeout_seconds
 
-# Default CLI label reported in metadata. The executed binary is installed
-# per-session at self.agy_bin (see _ensure_agy_installed).
+# Agent version label, and its prefix in ``agy@<version>``. It is not a path.
+# The harness runs the per-session binary at self.agy_bin.
 AGY_CLI = "agy"
 
 AGY_INSTALL_URL = "https://antigravity.google/cli/install.sh"
@@ -82,11 +82,6 @@ class AgyCliGenerator(AgentCliGenerator):
         super().__init__(querygenerator_config)
         self.name = "agy_cli"
 
-        # Parity with gemini_cli_version/codex_cli_version/claude_code_version:
-        # the evaluator reads this as agent_version. Set to the installed
-        # binary's version after install (see _resolve_agy_version).
-        self.agy_cli_version = AGY_CLI
-
         self.env = querygenerator_config.get("env") or {}
 
         # Top-level `model` key, applied per-invocation via agy's `--model`
@@ -97,13 +92,14 @@ class AgyCliGenerator(AgentCliGenerator):
 
         self._validate_timeout(self.timeout)
 
-        # Order is load-bearing: paths/dirs must exist before the binary
-        # installs and settings/auth write into them, and self.env must carry
-        # HOME before the installer stages files (and auth resolves ADC) into
-        # the sandbox. Keep these calls in sequence.
+        # Keep these calls in this order. The sandbox directories must exist
+        # before install, settings, and auth write into them. self.env must
+        # carry HOME before the installer and auth run. The version needs the
+        # installed binary.
         self._init_paths(querygenerator_config)
         self.env["HOME"] = self.fake_home
         self._ensure_agy_installed()
+        # Read by the evaluator as agent_version (see the version property).
         self.agy_cli_version = self._resolve_agy_version()
         self._initialize_settings_file()
         self._setup_auth()
@@ -112,8 +108,9 @@ class AgyCliGenerator(AgentCliGenerator):
         if self.setup_config:
             self._setup_tools()
 
-        # Fail fast: bad auth, an unusable model, or a dead MCP server
-        # otherwise degrades silently and scores as poor model behaviour.
+        # Fail fast. Without this check, bad auth, an unusable model, or a
+        # dead MCP server does not stop the run, and the eval scores the
+        # fault as poor model behaviour.
         self._verify_runtime(self._configured_mcp_servers())
 
     @staticmethod
@@ -1008,9 +1005,8 @@ class AgyCliGenerator(AgentCliGenerator):
         # that, a scenario with no work_dir writes to <appDataDir>/scratch
         # instead of the cwd, unlike the other CLI harnesses.
         cwd = cli_cmd.cwd if cli_cmd.cwd else self.fake_home
-        # The executable is always this session's sandbox binary, regardless of
-        # the label carried on cli_cmd.cli (the evaluator passes agent_version,
-        # which is not a path).
+        # Always run the session binary. cli_cmd.cli holds the agent_version
+        # label from the evaluator, not a path.
         command = self._base_agy_command(
             self.agy_bin, cli_cmd.prompt, cli_cmd.resume, self.model,
             output_format="stream-json", log_file=self.cli_log_path,
@@ -1333,12 +1329,9 @@ class AgyCliGenerator(AgentCliGenerator):
         self, cli: str, prompt: str, env: dict = None, resume: bool = False,
         session_id: str = None, cwd: str = None,
     ) -> CLICommand:
-        # The executable is always this session's sandbox binary
-        # (self.agy_bin); the ``cli`` argument -- the agent_version label
-        # the evaluator passes -- is a display label, not a path, so it is not
-        # used to launch the process. Only the per-call overrides are stored
-        # here; the generator's configured ``self.env`` and the process
-        # environment are layered in once at invocation time by
-        # ``_run_agy_cli`` via ``_merged_env``.
+        # ``cli`` is the agent_version label from the evaluator, not a path,
+        # so it is ignored. The command always runs self.agy_bin. Only the
+        # per-call env is stored here. _run_agy_cli merges it with self.env
+        # and the process env at run time.
         return CLICommand(cli=self.agy_bin, prompt=prompt, env=env or {},
                           resume=resume, cwd=cwd, session_id=session_id)
