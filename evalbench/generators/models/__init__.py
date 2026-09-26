@@ -1,3 +1,4 @@
+import logging
 from .alloydb_ai_nl import AlloyDBGenerator
 from databases import DB
 from generators.models.generator import QueryGenerator
@@ -14,7 +15,11 @@ from .agy_cli import AgyCliGenerator
 from .mcp_tools import McpToolsGenerator
 from .noop_agent import NoopAgentGenerator
 from .agent_runtime import AgentRuntimeGenerator
+from util.class_loader import load_custom_class
 from util.config import load_yaml_config
+
+# Backward compatibility alias
+_load_custom_class = load_custom_class
 
 
 def _get_grpc_proxy(config):
@@ -28,6 +33,13 @@ def _get_agent_grpc_proxy(config):
 
 
 def get_generator(global_models, model_config_path: str, db: DB = None):
+    """Initializes and returns a model generator instance.
+
+    If 'generator_class' is specified in config, the custom class is
+    dynamically loaded and instantiated with config. Custom generator
+    classes do not need to inherit from QueryGenerator, but must implement
+    the duck-typed interface expected by EvalBench (notably generate).
+    """
     with global_models.get("lock"):
         global_model_configs = global_models.get("registered_models")
         if model_config_path in global_model_configs:
@@ -53,10 +65,25 @@ def get_generator(global_models, model_config_path: str, db: DB = None):
             "noop_agent": lambda: NoopAgentGenerator(config),
             "agent_runtime": lambda: AgentRuntimeGenerator(config),
         }
-        generator = config["generator"]
-        if generator not in generators:
+        generator = config.get("generator")
+        generator_class = config.get("generator_class")
+
+        if generator_class:
+            if generator and generator != "custom":
+                logging.warning(
+                    f"Using custom generator class '{generator_class}' "
+                    f"(overriding generator '{generator}')."
+                )
+            model = _load_custom_class(generator_class)(config)
+        elif generator == "custom":
+            raise ValueError(
+                "generator 'custom' specified, but 'generator_class' is missing from"
+                " model config."
+            )
+        elif generator not in generators:
             raise ValueError(f"Unknown Generator {generator}")
-        model = generators[generator]()
+        else:
+            model = generators[generator]()
 
         global_model_configs[model_config_path] = model
     return model

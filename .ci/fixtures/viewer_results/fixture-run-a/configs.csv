@@ -1,0 +1,7 @@
+job_id,run_time,config,value
+fixture-run-a,2026-01-05 10:00:00.123456,db_configs,[]
+fixture-run-a,2026-01-05 10:00:00.123456,experiment_config.dataset_config,datasets/fixture/fixture_agent.evalset.json
+fixture-run-a,2026-01-05 10:00:00.123456,experiment_config.dataset_format,agent-format
+fixture-run-a,2026-01-05 10:00:00.123456,experiment_config.orchestrator,agent
+fixture-run-a,2026-01-05 10:00:00.123456,experiment_config.product_name,Fixture Product A
+fixture-run-a,2026-01-05 10:00:00.123456,model_config.generator,gemini_cli

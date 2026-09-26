@@ -181,7 +181,7 @@ class OneShotOrchestrator(Orchestrator):
                 f"Could not connect to database {actual_db_name} (from {database}) on"
                 f" {dialect}; due to {e}"
             )
-            return [], []
+            return [], [], []
 
         prompt_generator = prompts.get_generator(core_db, self.config)
         model_generator = models.get_generator(
@@ -242,8 +242,10 @@ class OneShotOrchestrator(Orchestrator):
         # Cleanup all the tmp creations that were built from the core
         # connection
         if core_db:
-            core_db.clean_tmp_creations()
-            core_db.close_connections()
+            if hasattr(core_db, "clean_tmp_creations"):
+                core_db.clean_tmp_creations()
+            if hasattr(core_db, "close_connections"):
+                core_db.close_connections()
 
         return (
             total_eval_outputs,

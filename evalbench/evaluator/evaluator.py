@@ -74,6 +74,10 @@ class Evaluator:
         self.task_timeout_seconds = runner_config.get(
             "task_timeout_seconds", 600
         )
+        self.db_queue_timeout_seconds = runner_config.get(
+            "db_queue_timeout_seconds",
+            runner_config.get("queue_timeout_seconds", None),
+        )
         self.num_trials = self.config.get("num_trials", 1)
 
     def evaluate(
@@ -154,6 +158,22 @@ class Evaluator:
                     self.genrunner.execute_work(work)
                     gen_future_to_eval[self.genrunner.futures[-1]] = trial_output
 
+            # Determine the database queue acquisition timeout.
+            # If explicitly configured, honor it (with <= 0 meaning unbounded / blocking).
+            # Otherwise, default to 1.5x task_timeout_seconds (with a 300s floor and 1800s ceiling).
+            # Since active queries are bounded by task_timeout_seconds, 1.5x provides ample headroom
+            # under load without risking unbounded hangs on genuine deadlocks.
+            if self.db_queue_timeout_seconds is not None:
+                queue_timeout = (
+                    None
+                    if float(self.db_queue_timeout_seconds) <= 0
+                    else float(self.db_queue_timeout_seconds)
+                )
+            else:
+                queue_timeout = min(
+                    1800.0, max(300.0, float(self.task_timeout_seconds * 1.5))
+                )
+
             exec_future_to_eval = {}
             score_future_to_eval = {}
             for future, eval_output, timed_out in _process_futures_with_timeout(
@@ -176,14 +196,18 @@ class Evaluator:
                 record_successful_sql_gen(progress_reporting)
 
                 try:
-                    db_conn = db_queue.get(timeout=180)
+                    if queue_timeout is None:
+                        db_conn = db_queue.get(block=True)
+                    else:
+                        db_conn = db_queue.get(timeout=queue_timeout)
                     work = sqlexecwork.SQLExecWork(
                         db_conn, self.config, eval_output, db_queue
                     )
                     self.sqlrunner.execute_work(work)
                     exec_future_to_eval[self.sqlrunner.futures[-1]] = eval_output
                 except queue.Empty:
-                    error_msg = f"Timeout Error: Waited too long (queue.Empty) for database '{eval_output.get('database', 'unknown')}'"
+                    timeout_str = "unbounded" if queue_timeout is None else f"{queue_timeout}s"
+                    error_msg = f"Timeout Error: Waited too long ({timeout_str}, queue.Empty) for database '{eval_output.get('database', 'unknown')}'"
                     logging.error(error_msg)
                     eval_output["generated_error"] = error_msg
 
