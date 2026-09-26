@@ -65,15 +65,12 @@ class CLICommand:
 class AgyCliGenerator(AgentCliGenerator):
     """Generator that queries via the Antigravity CLI (``agy``).
 
-    The eval turn runs ``agy -p <prompt> --dangerously-skip-permissions
-    --output-format stream-json [--model <label>] [--print-timeout <timeout>]
-    [--conversation <id>]``. The on-disk
-    layout lives under ``~/.gemini/antigravity-cli/`` (the binary calls this
-    ``appDataDir``). Skills are delivered via plugins (see _setup_skills).
-    ``--output-format stream-json`` emits newline-delimited events (an
-    ``init``, one ``step_update`` per step, then a final ``result``); tool
-    calls, the response, token usage, and latency are all read from that
-    stream (see _parse_stream_json).
+    Each turn runs ``agy -p <prompt> --output-format stream-json`` (full argv
+    in _base_agy_command). Tool calls, the response, token usage, and latency
+    come from that event stream (see _parse_stream_json).
+
+    agy keeps its data under ``~/.gemini/antigravity-cli/`` (``appDataDir``
+    in the binary). Skills are installed as plugins (see _setup_skills).
     """
 
     APP_DATA_SUBPATH = os.path.join(".gemini", "antigravity-cli")
@@ -386,10 +383,8 @@ class AgyCliGenerator(AgentCliGenerator):
 
         gcp_config = current_settings.setdefault("gcp", {})
 
-        # Resolve project/location, preferring (in order): the env / config,
-        # then any values the sandbox settings.json already carries from a
-        # previous run, then the host's real settings.json. The model is not
-        # resolved here -- it is passed per-invocation via the ``--model`` flag.
+        # Priority: env/config, then the sandbox settings.json from a previous
+        # run, then the host's real settings.json.
         project = (
             self.env.get("GOOGLE_CLOUD_PROJECT") or gcp_config.get("project")
         )
@@ -397,11 +392,8 @@ class AgyCliGenerator(AgentCliGenerator):
             self.env.get("GOOGLE_CLOUD_LOCATION") or gcp_config.get("location")
         )
 
-        # Only consult the host's real settings.json for whatever the env and
-        # sandbox file did not already supply. When the sandbox already covers
-        # everything we skip the read entirely -- both to avoid the extra I/O
-        # and to avoid noise from an empty/absent real file, which is a normal
-        # state for sandboxed and CI runs.
+        # Read the host file only for missing values. In sandboxed and CI runs
+        # it is often absent or empty.
         if project and location:
             logging.info(
                 "agy settings: project/location satisfied by env and "
@@ -430,11 +422,9 @@ class AgyCliGenerator(AgentCliGenerator):
             json.dump(current_settings, f, indent=2)
 
     def _read_real_settings(self) -> dict:
-        """Reads the host's real ``settings.json`` as a fallback source for
-        project/location. Returns ``{}`` when the file is absent or
-        empty -- both are normal states (e.g. sandboxed/CI runs, or a fresh
-        agy install) and not worth a warning. Only genuinely malformed
-        (non-empty, non-JSON) content is warned about.
+        """Reads the host's real ``settings.json`` as a fallback for
+        project and location. Returns ``{}`` if the file is absent, empty,
+        unreadable, or malformed. Only the last two log a warning.
         """
         path = os.path.join(
             self.real_home, self.APP_DATA_SUBPATH, "settings.json"
@@ -467,7 +457,7 @@ class AgyCliGenerator(AgentCliGenerator):
             return {}
 
     def _setup_tools(self):
-        """Performs initial setup for agy CLI."""
+        """Writes the configured MCP servers and installs the skills."""
         mcp_servers_config = self.setup_config.get("mcp_servers", {})
         self._setup_mcp_servers(mcp_servers_config)
         if "fake_mcp_servers" in self.setup_config:
@@ -534,19 +524,15 @@ class AgyCliGenerator(AgentCliGenerator):
     _AUTH_OK_MARKER = "authenticated successfully"
 
     def _verify_runtime(self, configured_servers: list):
-        """Spawns a short-lived ``agy -p`` probe and confirms that ADC auth
-        works, the configured model is accepted, and each configured MCP
-        server actually attached and discovered tools.
+        """Runs a short ``agy -p`` probe. Confirms that ADC auth works, agy
+        accepts the configured model, and each configured MCP server
+        discovered at least one tool.
 
-        Validates attachment by checking the disk cache
-        (``<appDataDir>/mcp/<server>/<tool>.json``), which agy populates
-        during initialization. This prevents silent failures where agy
-        accepts an invalid config but exposes zero tools without logging a
-        fatal error.
-
-        Prior to the probe, we clear the schema directory to ensure we don't
-        read a stale cache. Fatal logs are still scanned to enrich error
-        messages, and the probe is bounded by a timeout.
+        Attachment is read from the schema cache
+        (``<appDataDir>/mcp/<server>/<tool>.json``). agy can accept a bad
+        server config, expose zero tools, and log no fatal error. The probe
+        clears the cache first, so a stale cache cannot pass. MCP log markers
+        only add detail to the error.
         """
         mcp_schema_root = os.path.join(self.app_data_dir, "mcp")
         for server in configured_servers:
@@ -805,18 +791,13 @@ class AgyCliGenerator(AgentCliGenerator):
         logging.info("agy registered plugins: %s", names)
 
     def _clone_skill_repo(self, url: str, workdir: str, env: dict):
-        """Clones a skill repo. Supports ``<url>#<ref>`` pinning where
-        ``<ref>`` is a branch or tag name.
+        """Clones a skill repo and returns the clone directory, or None on
+        failure.
 
-        Pinning is implemented with ``git clone --depth 1 --branch <ref>``,
-        which accepts branch and tag names only -- a raw commit SHA is not a
-        valid ``--branch`` argument and will fail the clone (git reports the
-        ref as not found). Fetching an arbitrary SHA is intentionally not
-        supported: a shallow fetch-by-SHA needs server-side
-        ``uploadpack.allowAnySHA1InWant``, which common hosts (e.g. GitHub)
-        do not enable. Pin to a tag (or branch), not a commit SHA.
-
-        Returns the clone directory on success, or None on failure.
+        ``<url>#<ref>`` pins the clone with ``git clone --depth 1 --branch
+        <ref>``. ``<ref>`` must be a branch or tag. A commit SHA fails: a
+        shallow fetch by SHA needs ``uploadpack.allowAnySHA1InWant`` on the
+        server, and common hosts such as GitHub do not enable it.
         """
         clone_url, _, version_tag = url.partition("#")
         repo_name = re.sub(r"\.git$", "", clone_url.rstrip("/").split("/")[-1])
@@ -847,16 +828,11 @@ class AgyCliGenerator(AgentCliGenerator):
 
     def _setup_mcp_servers(self, mcp_servers_config: dict):
         """Writes MCP servers into ``<HOME>/.gemini/config/mcp_config.json``
-        under the ``mcpServers`` key.
+        under the ``mcpServers`` key. The agy binary defines this path and
+        key.
 
-        The path and key are verified from the agy binary itself: the
-        load-error string ``Failed to load JSON config file
-        <HOME>/.gemini/config/mcp_config.json`` reveals the path, and
-        the binary's struct tag ``json:"mcpServers"`` (from
-        ``struct { McpServers map[string]interface {} }``) reveals the
-        key. agy has no offline verification subcommand, so this step
-        only writes config -- it does not confirm the server actually
-        loads. Failures will surface at eval time via the stream-json output.
+        This step only writes the config. _verify_runtime confirms that each
+        server attaches.
         """
         if not mcp_servers_config:
             return
@@ -916,33 +892,26 @@ class AgyCliGenerator(AgentCliGenerator):
         timeout: str = None, add_dir: str = None,
         conversation_id: str = None,
     ) -> list:
-        """Builds the non-interactive ``agy -p`` argv shared by the eval
-        turn path and the setup-time MCP probe.
+        """Builds the ``agy -p`` argv for eval turns and the startup probe.
 
-        The model is selected with agy's ``--model`` flag (e.g.
-        ``Gemini 3.1 Pro (Low)`` or ``gemini-3.1-pro-low``); an unrecognized
-        value fails the run. When no model is configured the flag is omitted
-        and agy uses its default. See docs/agy_cli_agent_testing.md.
+        Each optional argument adds a flag only when set:
 
-        ``output_format`` maps to agy's ``--output-format`` (values ``json``
-        and ``stream-json``); the eval turn passes ``stream-json`` to get the
-        machine-readable event stream. Omitted for the setup probe.
-
-        ``log_file`` maps to ``--log-file``, pinning the CLI log to a known
-        path for deterministic model detection.
-
-        ``timeout`` maps to ``--print-timeout`` (e.g. "20m"). If omitted,
-        defaults to agy's internal default (5 minutes).
-
-        ``add_dir`` maps to ``--add-dir``, registering the working directory
-        as an agy workspace. Required on top of the subprocess cwd:
-        unregistered, agy runs its shell and write tools in
-        ``<appDataDir>/scratch`` rather than the cwd.
-
-        When ``resume`` is set, ``conversation_id`` maps to
-        ``--conversation``. Without an ID, agy's ``--continue`` resumes the
-        most recent conversation in the sandbox, which can belong to another
-        scenario.
+        * ``model`` -> ``--model``, a UI label or slug (for example
+          ``gemini-3.1-pro-low``). agy rejects unknown values. Without it,
+          agy uses its default model. See docs/agy_cli_agent_testing.md.
+        * ``output_format`` -> ``--output-format``. Eval turns pass
+          ``stream-json``. The probe omits it.
+        * ``log_file`` -> ``--log-file``, so model detection reads this run's
+          log.
+        * ``timeout`` -> ``--print-timeout`` (for example ``20m``). Without
+          it, agy uses its own default.
+        * ``add_dir`` -> ``--add-dir``. The cwd alone is not enough: without
+          a registered workspace, agy runs shell and write tools in
+          ``<appDataDir>/scratch``.
+        * ``conversation_id`` -> ``--conversation``, only with ``resume``.
+          Without an ID, ``resume`` adds ``--continue``, which resumes the
+          most recent conversation in the sandbox. That conversation can
+          belong to another scenario.
         """
         command = [cli, "-p", prompt, "--dangerously-skip-permissions"]
         if model:
