@@ -242,6 +242,10 @@ class AgyCliGenerator(AgentCliGenerator):
         token, and is set unconditionally: the harness overrides ``HOME``, so
         the sandbox has no token and agy would otherwise block on the
         device-code URL.
+
+        A credential file is optional. Without one, agy uses the metadata
+        server (Cloud Build, GCE, GKE Workload Identity) and takes the quota
+        project from the metadata project.
         """
         self.env[ADC_AUTH_ENV_VAR] = "true"
         self._setup_gcloud_credentials(self.env, self.real_home, self.fake_home)
@@ -259,27 +263,32 @@ class AgyCliGenerator(AgentCliGenerator):
             adc_path = GKE_SA_KEY_PATH
             self.env["GOOGLE_APPLICATION_CREDENTIALS"] = adc_path
 
-        self.adc_path = adc_path if adc_path and os.path.exists(adc_path) else None
-        if not self.adc_path:
+        if adc_path and os.path.exists(adc_path):
+            self.adc_path = adc_path
+            logging.info("agy ADC resolved from %s", self.adc_path)
+            self._ensure_quota_project()
+            return
+
+        # agy does not fall back when the variable names a missing file, so
+        # a stale path would fail every turn with a generic login prompt.
+        if adc_path:
             raise RuntimeError(
-                "agy requires an application default credentials file: it "
-                "reads its entitlement project from the credential's "
-                "quota_project_id, which a metadata-server token does not "
-                "carry. Run 'gcloud auth application-default login', set "
-                "GOOGLE_APPLICATION_CREDENTIALS, or mount a service-account "
-                f"key at {GKE_SA_KEY_PATH}."
+                f"GOOGLE_APPLICATION_CREDENTIALS is set to {adc_path}, which "
+                "does not exist. Fix or unset it. If it is unset, agy uses "
+                "the metadata server."
             )
-        logging.info("agy ADC resolved from %s", self.adc_path)
-        self._ensure_quota_project()
+
+        self.adc_path = None
+        logging.info("agy found no ADC file; using the metadata server.")
 
     def _ensure_quota_project(self) -> None:
-        """Adds ``quota_project_id`` to the resolved ADC when it is missing.
+        """Adds ``quota_project_id`` to the resolved ADC file when it is
+        missing.
 
-        agy reads its entitlement project from that field alone -- not
-        GOOGLE_CLOUD_PROJECT, not GOOGLE_CLOUD_QUOTA_PROJECT (verified against
-        ``agy models``: only the file field populates the registry), not
-        settings.json. A stock service-account key has none, and without it
-        agy's model registry comes back empty and every ``--model`` value,
+        With a credential file, agy reads its entitlement project from that
+        field alone -- not GOOGLE_CLOUD_PROJECT, not GOOGLE_CLOUD_QUOTA_PROJECT,
+        not settings.json. A stock service-account key has none, and without
+        it agy's model registry comes back empty and every ``--model`` value,
         including its own default, is rejected as unknown.
 
         Raises on every path that cannot deliver the field: a run without it
@@ -599,7 +608,8 @@ class AgyCliGenerator(AgentCliGenerator):
                 "reachability. agy degrades silently to shell-outs when "
                 "MCP tools are missing."
             )
-            msg += f"\nADC in use: {self.adc_path}"
+            msg += (f"\nADC in use: "
+                    f"{self.adc_path or 'metadata server (no ADC file)'}")
             if marker_hits:
                 msg += "\nProbe log fatal markers:\n" + "\n".join(
                     f"  {h}" for h in marker_hits

@@ -21,23 +21,11 @@ steps:
     allowFailure: true
     args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/evalbench-harness-ci:cache']
 
-  - id: fetch-sa-key
-    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: 'bash'
-    waitFor: ['-']
-    args:
-      - '-c'
-      - |
-        mkdir -p /etc/evalbench-sa-key
-        gcloud secrets versions access latest --secret="evalbench-sa-key" --project="$_EVAL_PROJECT" > /etc/evalbench-sa-key/key.json
-    volumes:
-      - name: 'sa_key_volume'
-        path: '/etc/evalbench-sa-key'
-
+  # agy authenticates as the build service account via the metadata server.
   - id: agy-cli
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
-    waitFor: ['build-image', 'fetch-sa-key']
+    waitFor: ['build-image']
     allowFailure: true
     entrypoint: 'bash'
     args: ['-c', 'CI_HARNESS=agy_cli uv run --no-sync evalbench/evalbench.py --experiment_config=.ci/run_config.yaml']
@@ -46,11 +34,9 @@ steps:
       - 'EVAL_GCP_PROJECT_REGION=global'
       - 'CI_CSQL_INSTANCE=${_CI_CSQL_INSTANCE}'
       - 'UV_CACHE_DIR=/tmp/uv-cache'
-    volumes:
+    volumes: &results_volume
       - name: 'eval_results'
         path: '/evalbench/results'
-      - name: 'sa_key_volume'
-        path: '/etc/evalbench-sa-key'
 
   - id: claude-code
     name: 'evalbench-harness-ci'
@@ -60,9 +46,7 @@ steps:
     entrypoint: 'bash'
     args: ['-c', 'CI_HARNESS=claude_code uv run --no-sync evalbench/evalbench.py --experiment_config=.ci/run_config.yaml']
     env: *harness_env
-    volumes: &results_volume
-      - name: 'eval_results'
-        path: '/evalbench/results'
+    volumes: *results_volume
 
   - id: codex-cli
     name: 'evalbench-harness-ci'
@@ -77,7 +61,7 @@ steps:
   - id: agy-cli-skills
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
-    waitFor: ['build-image', 'fetch-sa-key']
+    waitFor: ['build-image']
     allowFailure: true
     entrypoint: 'bash'
     args: ['-c', 'CI_HARNESS=agy_cli uv run --no-sync evalbench/evalbench.py --experiment_config=.ci/skills_run_config.yaml']
@@ -91,11 +75,7 @@ steps:
       - 'CLOUD_SQL_POSTGRES_USER=${_CLOUD_SQL_POSTGRES_USER}'
       - 'CLOUD_SQL_POSTGRES_IP_TYPE=${_CLOUD_SQL_POSTGRES_IP_TYPE}'
     secretEnv: &skills_secrets ['CLOUD_SQL_POSTGRES_PASSWORD']
-    volumes:
-      - name: 'eval_results'
-        path: '/evalbench/results'
-      - name: 'sa_key_volume'
-        path: '/etc/evalbench-sa-key'
+    volumes: *results_volume
 
   - id: claude-code-skills
     name: 'evalbench-harness-ci'
@@ -120,8 +100,7 @@ steps:
     volumes: *results_volume
 
   # Both channels run in one step so a failure in either still reports the
-  # other. agy_cli is excluded until its intermittent service-account auth
-  # failure is fixed; its steps still run so the logs keep accruing evidence.
+  # other.
   - id: verify
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
@@ -133,11 +112,11 @@ steps:
       - |
         rc=0
         uv run --no-sync python3 .ci/verify_harness.py \
-          --harnesses claude_code codex_cli || rc=1
+          --harnesses agy_cli claude_code codex_cli || rc=1
         uv run --no-sync python3 .ci/verify_harness.py \
           --run-config .ci/skills_run_config.yaml \
           --evalset .ci/harness_skills.evalset.json \
-          --harnesses claude_code codex_cli || rc=1
+          --harnesses agy_cli claude_code codex_cli || rc=1
         exit $$rc
     volumes: *results_volume
 
