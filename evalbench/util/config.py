@@ -136,6 +136,14 @@ def config_to_df(
     return df
 
 
+def with_agent_version(model_config: dict, orchestrator) -> dict:
+    """Returns model_config plus the orchestrator's agent_version, if set."""
+    version = getattr(orchestrator, "agent_version", None)
+    if not isinstance(version, str) or not version:
+        return model_config
+    return {**(model_config or {}), "agent_version": version}
+
+
 def update_google3_relative_paths(
     experiment_config: dict, session_id: str, resource_map: dict
 ):

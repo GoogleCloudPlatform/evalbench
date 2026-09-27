@@ -96,7 +96,7 @@ class AgyCliGenerator(AgentCliGenerator):
         self._init_paths(querygenerator_config)
         self.env["HOME"] = self.fake_home
         self._ensure_agy_installed()
-        # Read by the evaluator as agent_version (see the version property).
+        # The viewer shows this as the CLI version.
         self.agy_cli_version = self._resolve_agy_version()
         self._setup_auth()
 
