@@ -2,12 +2,84 @@ import os
 import tempfile
 import zipfile
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from google.cloud import storage
 import pandas as pd
 
 from reporting.report import Reporter, STORETYPE
+
+DEFAULT_PATH_PREFIX = "results"
+# Directories never worth shipping: dependency trees and caches that dwarf the
+# agent's actual work product.
+EXCLUDED_DIRS = frozenset({".venv", "__pycache__", "node_modules", "venv"})
+
+
+def artifact_blob_name(path_prefix: str, job_id: str, name: str) -> str:
+    """The object name a run's sandbox zip is stored under."""
+    return f"{path_prefix}/{job_id}/{name}.zip"
+
+
+def zip_and_upload_dir(
+    src_dir: str, bucket: storage.Bucket, blob_name: str
+) -> Optional[str]:
+    """Zips `src_dir` and uploads it to `bucket` as `blob_name`.
+
+    Hidden files and directories and `EXCLUDED_DIRS` are skipped. Shared by
+    `GcsReporter` (in-process runs, called from the eval server) and the
+    containerized case runner (called from inside the case pod, whose sandbox
+    is gone by the time the eval server reports), so both paths produce the
+    same artifacts.
+
+    Returns the `gs://` URI on success and None on any failure; an artifact
+    upload must never fail the eval it documents.
+    """
+    logging.info(
+        "zip_and_upload_dir: src_dir=%s, blob=%s", src_dir, blob_name)
+    if not os.path.exists(src_dir):
+        logging.warning("Source directory %s does not exist.", src_dir)
+        return None
+
+    zip_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_file:
+            zip_path = tmp_file.name
+
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(src_dir):
+                # Exclude hidden directories and common heavy/cache directories
+                dirs[:] = [
+                    d
+                    for d in dirs
+                    if not d.startswith(".") and d not in EXCLUDED_DIRS
+                ]
+                for file in files:
+                    # Exclude hidden files for privacy and size
+                    if file.startswith("."):
+                        continue
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, src_dir)
+                    zipf.write(file_path, arcname)
+
+        logging.info(
+            "zip_and_upload_dir: Zip created. Size=%d bytes. Uploading to "
+            "gs://%s/%s ...",
+            os.path.getsize(zip_path),
+            bucket.name,
+            blob_name,
+        )
+        blob = bucket.blob(blob_name)
+        blob.upload_from_filename(zip_path)
+        uri = f"gs://{bucket.name}/{blob_name}"
+        logging.info("Uploaded %s to %s", src_dir, uri)
+        return uri
+
+    except Exception:
+        logging.exception("Failed to upload %s to GCS", src_dir)
+        return None
+    finally:
+        if zip_path and os.path.exists(zip_path):
+            os.remove(zip_path)
 
 
 class GcsReporter(Reporter):
@@ -26,8 +98,8 @@ class GcsReporter(Reporter):
     ```
     """
 
-    _DEFAULT_PATH_PREFIX = "results"
-    _EXCLUDED_DIRS = frozenset({".venv", "__pycache__", "node_modules", "venv"})
+    _DEFAULT_PATH_PREFIX = DEFAULT_PATH_PREFIX
+    _EXCLUDED_DIRS = EXCLUDED_DIRS
 
     def __init__(
         self,
@@ -112,57 +184,8 @@ class GcsReporter(Reporter):
             eval_id: The evaluation ID used for the GCS object name.
             bucket: The GCS bucket to upload to.
         """
-        logging.info(
-            "GcsReporter._zip_and_upload: src_dir=%s, eval_id=%s",
+        zip_and_upload_dir(
             src_dir,
-            eval_id,
+            bucket,
+            artifact_blob_name(self.path_prefix, self.job_id, eval_id),
         )
-        if not os.path.exists(src_dir):
-            logging.warning("Source directory %s does not exist.", src_dir)
-            return
-
-        zip_path: str | None = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                suffix=".zip", delete=False
-            ) as tmp_file:
-                zip_path = tmp_file.name
-
-            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-                for root, dirs, files in os.walk(src_dir):
-                    # Exclude hidden directories and common heavy/cache directories
-                    dirs[:] = [
-                        d
-                        for d in dirs
-                        if not d.startswith(".")
-                        and d not in self._EXCLUDED_DIRS
-                    ]
-                    for file in files:
-                        # Exclude hidden files for privacy and size
-                        if file.startswith("."):
-                            continue
-                        file_path = os.path.join(root, file)
-                        arcname = os.path.relpath(file_path, src_dir)
-                        zipf.write(file_path, arcname)
-
-            blob_name = f"{self.path_prefix}/{self.job_id}/{eval_id}.zip"
-            logging.info(
-                "GcsReporter._zip_and_upload: Zip created. Size=%d bytes. Uploading to gs://%s/%s ...",
-                os.path.getsize(zip_path),
-                self.bucket_name,
-                blob_name,
-            )
-            blob = bucket.blob(blob_name)
-            blob.upload_from_filename(zip_path)
-            logging.info(
-                "Uploaded %s to gs://%s/%s",
-                src_dir,
-                self.bucket_name,
-                blob_name,
-            )
-
-        except Exception:
-            logging.exception("Failed to upload %s to GCS", src_dir)
-        finally:
-            if zip_path and os.path.exists(zip_path):
-                os.remove(zip_path)

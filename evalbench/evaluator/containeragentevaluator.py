@@ -327,4 +327,5 @@ class ContainerAgentEvaluator:
             "fake_home": None,
             "worker_pool": result.pool,
             "container_ref": result.container_ref,
+            "artifact_uri": result.artifact_uri,
         }

@@ -30,6 +30,10 @@ class CaseResult:
     pool: Optional[str] = None
     container_ref: Optional[str] = None
     logs: str = ""
+    # Where the case pod uploaded its sandbox home, when
+    # `reporting.gcs_artifacts` is configured. Set on failures too: those are
+    # the cases worth debugging.
+    artifact_uri: Optional[str] = None
 
     @property
     def ok(self) -> bool:
@@ -42,6 +46,7 @@ class CaseResult:
             agent_results=payload.get("agent_results") or [],
             scoring_results=payload.get("scoring_results") or [],
             error=payload.get("error"),
+            artifact_uri=payload.get("artifact_uri"),
         )
 
 

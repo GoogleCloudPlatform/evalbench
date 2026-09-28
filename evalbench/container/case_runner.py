@@ -18,6 +18,7 @@ import logging
 import os
 import sys
 import traceback
+from typing import Optional
 
 # Match how supervisord launches eval_server.py: run by path so the package
 # root is on sys.path and the flat intra-package imports resolve.
@@ -108,15 +109,117 @@ def run_case(case_dir: str) -> dict:
         id=str(spec.case_id), payload=json.dumps(spec.scenario))
 
     run_time = _parse_run_time(spec.run_time_iso)
-    eval_outputs, scoring_results = evaluator.evaluate(
-        [item], spec.job_id, run_time)
+    try:
+        eval_outputs, scoring_results = evaluator.evaluate(
+            [item], spec.job_id, run_time)
+    except Exception as e:
+        logging.exception("case: evaluation of %s raised", spec.case_id)
+        # A crashed case is exactly the one someone will want to debug, so
+        # still ship whatever the agent left in its sandbox.
+        return {
+            "case_id": spec.case_id,
+            "agent_results": [],
+            "scoring_results": [],
+            "error": f"{type(e).__name__}: {e}\n{traceback.format_exc()}",
+            "artifact_uri": _publish_sandbox(config, spec, fake_home, []),
+        }
+
+    artifact_uri = _publish_sandbox(config, spec, fake_home, eval_outputs)
+
+    # `AgentEvaluator` logs and swallows a scenario that raises, returning no
+    # rows. In-process that is merely a short run; here it would make the
+    # case vanish from reporting, so surface it as an error instead.
+    error = None
+    if not eval_outputs:
+        error = (
+            f"Eval case {spec.case_id} produced no result rows; the scenario "
+            f"most likely raised inside AgentEvaluator. See the case logs."
+        )
 
     return {
         "case_id": spec.case_id,
         "agent_results": eval_outputs,
         "scoring_results": scoring_results,
-        "error": None,
+        "error": error,
+        "artifact_uri": artifact_uri,
     }
+
+
+def _gcs_artifacts_config(config: dict) -> Optional[dict]:
+    """The `reporting.gcs_artifacts` block this case should honour, if any.
+
+    Mirrors `reporting.get_reporters`: a `delegated` block means some other
+    component owns artifact upload, so the case must not upload either.
+    """
+    gcs = ((config or {}).get("reporting") or {}).get("gcs_artifacts")
+    if not isinstance(gcs, dict) or gcs.get("delegated", False):
+        return None
+    return gcs if gcs.get("bucket") else None
+
+
+def _publish_sandbox(
+    config: dict,
+    spec: EvalCaseSpec,
+    fake_home: Optional[str],
+    eval_outputs: list,
+    bucket_factory=None,
+) -> Optional[str]:
+    """Uploads this case's sandbox home and rewrites the rows to point at it.
+
+    In-process runs leave the sandbox on the eval server, where `GcsReporter`
+    zips it at reporting time. A case pod is deleted long before that, so
+    without this the agent's work product -- the only way to debug a
+    trajectory -- is lost. The upload uses the same bucket, prefix and
+    `<job_id>/<eval_id>.zip` naming as `GcsReporter`, so consumers see one
+    layout regardless of execution mode.
+
+    Every row's `fake_home` is cleared either way: it is a path inside this
+    container, meaningless to the eval server, and leaving it set would make
+    the server's `GcsReporter` warn about (or, on a path collision, zip) a
+    directory that is not this case's. `artifact_uri` records where the
+    sandbox went, or stays unset when nothing was uploaded.
+
+    Returns the `gs://` URI, or None when nothing was uploaded. Never raises:
+    a failed upload must not turn a scored case into a failure.
+    """
+    uri = None
+    gcs = _gcs_artifacts_config(config)
+    if gcs and fake_home and os.path.isdir(fake_home):
+        try:
+            from reporting.gcs_artifact import (
+                DEFAULT_PATH_PREFIX,
+                artifact_blob_name,
+                zip_and_upload_dir,
+            )
+
+            if bucket_factory is None:
+                from google.cloud import storage
+
+                def bucket_factory(name):
+                    return storage.Client().bucket(name)
+
+            blob_name = artifact_blob_name(
+                gcs.get("path_prefix") or DEFAULT_PATH_PREFIX,
+                spec.job_id,
+                str(spec.case_id),
+            )
+            uri = zip_and_upload_dir(
+                fake_home, bucket_factory(gcs["bucket"]), blob_name)
+        except Exception:
+            logging.exception("case: failed to publish sandbox %s", fake_home)
+            uri = None
+    elif gcs:
+        logging.warning(
+            "case: gcs_artifacts is configured but sandbox %r does not exist; "
+            "nothing to upload", fake_home)
+
+    for row in eval_outputs:
+        if not isinstance(row, dict):
+            continue
+        row["fake_home"] = None
+        if uri:
+            row["artifact_uri"] = uri
+    return uri
 
 
 def _parse_run_time(run_time_iso: str) -> datetime.datetime:

@@ -223,6 +223,34 @@ failure row with the same shape as a normal result, carrying `worker_pool`,
 `container_ref`, and whatever the backend could learn about why — pod phase,
 unmet conditions, `waiting`/`terminated` reasons — so unschedulable pods and
 image-pull failures show up in reporting instead of as a silently short run.
+A case whose scenario raised inside `AgentEvaluator` (which yields no rows) is
+reported the same way rather than silently dropped.
+
+### Sandbox artifacts (agent trajectories)
+
+In-process runs leave each scenario's sandbox home (`fake_home`) on the eval
+server, where the `gcs_artifacts` reporter zips it at reporting time. A case
+pod is gone by then, so **the case runner uploads its own sandbox** before
+emitting the result, whenever the run config has:
+
+```yaml
+reporting:
+  gcs_artifacts:
+    bucket: evalbench-sessions-cloud-db-nl2sql
+    path_prefix: results   # optional, defaults to `results`
+```
+
+- Same exclusions (hidden files, `node_modules`, `.venv`, …) and the same
+  object layout as the reporter: `gs://<bucket>/<path_prefix>/<job_id>/<eval_id>.zip`.
+- The row's `artifact_uri` column holds that URI. Failed and crashed cases
+  upload too, and their failure rows carry `artifact_uri`, since those are the
+  ones worth debugging.
+- The row's `fake_home` is cleared (it is a path inside the deleted pod), so
+  the eval-server reporter does not upload a second copy.
+- Upload failures are logged and never fail the case. `delegated: true`
+  disables the upload, as it does for the reporter.
+- The case pod uploads with its own identity (`service_account` / mounted
+  `secrets:`), which therefore needs `storage.objects.create` on the bucket.
 
 ---
 

@@ -220,6 +220,23 @@ class TestEvaluate(_EvaluatorTestBase):
         # The healthy case still contributes its score; the failed one does not.
         self.assertEqual([s["id"] for s in scores], ["a"])
 
+    def test_a_failure_row_links_the_sandbox_the_case_uploaded(self):
+        backend = FakeBackend(
+            self.containerization,
+            results={
+                "b": CaseResult(
+                    case_id="b",
+                    error="agent crashed",
+                    artifact_uri="gs://bkt/results/job-1/b.zip",
+                )
+            },
+        )
+        evaluator, _ = self._evaluator(backend)
+        outputs, _ = evaluator.evaluate(self._dataset(["b"]), "job-1", _now())
+        self.assertEqual(
+            outputs[0]["artifact_uri"], "gs://bkt/results/job-1/b.zip")
+        self.assertIsNone(outputs[0]["fake_home"])
+
     def test_cleans_up_every_container(self):
         backend = FakeBackend(self.containerization, fail_case_ids={"b"})
         evaluator, _ = self._evaluator(backend)
