@@ -410,6 +410,41 @@ class TestWaitAndCollect(_BackendTestBase):
         self.assertIsNotNone(extract_result_payload(payload))
 
 
+class TestExtractResultPayload(unittest.TestCase):
+    """Pod logs merge stdout and stderr, which can reorder."""
+
+    def test_skips_a_stderr_line_between_the_markers(self):
+        # Shape of two case logs from the 100-run GKE load test that the old
+        # parser reported as "produced no result payload".
+        logs = (
+            "harness chatter\n"
+            f"\n{RESULT_BEGIN}\n"
+            "2026-09-28 13:23:50,996 INFO Uploaded /evalbench/.venv/fake_home"
+            " to gs://bucket/nightly_evals/job/case.zip\n"
+            '{"case_id": "c", "agent_results": [{"eval_id": "c"}]}\n'
+            f"{RESULT_END}\n"
+        )
+        payload = extract_result_payload(logs)
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["agent_results"], [{"eval_id": "c"}])
+
+    def test_skips_stray_lines_on_both_sides_of_the_payload(self):
+        logs = (
+            f"{RESULT_BEGIN}\nWARNING before\n{{not json\n"
+            '{"case_id": "c"}\n'
+            f"INFO after\n{RESULT_END}\n"
+        )
+        self.assertEqual(extract_result_payload(logs), {"case_id": "c"})
+
+    def test_a_non_object_line_is_not_a_payload(self):
+        logs = f"{RESULT_BEGIN}\n[1, 2]\n{RESULT_END}\n"
+        self.assertIsNone(extract_result_payload(logs))
+
+    def test_still_none_when_there_is_no_json(self):
+        logs = f"{RESULT_BEGIN}\nINFO only a log line\n{RESULT_END}\n"
+        self.assertIsNone(extract_result_payload(logs))
+
+
 class TestSharedStatusList(_BackendTestBase):
     """Many waiters, one LIST per poll interval."""
 

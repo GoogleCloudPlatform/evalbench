@@ -170,6 +170,12 @@ def extract_result_payload(logs: str) -> Optional[dict]:
     Returns None when the markers are absent or the payload does not parse --
     both mean the case died before reporting, and the caller turns that into a
     `CaseResult` with an error.
+
+    Pod logs interleave stdout and stderr, which reach the node's log file
+    through separate pipes and can be reordered by a few milliseconds. So a
+    stderr log line written just before the payload may land *between* the
+    markers (a 100-run load test lost 2 results that way). The payload is
+    always a single JSON line, so any line that isn't it is skipped.
     """
     import json
 
@@ -180,7 +186,21 @@ def extract_result_payload(logs: str) -> Optional[dict]:
     end = logs.find(RESULT_END, start)
     if end == -1:
         return None
+    body = logs[start:end].strip()
     try:
-        return json.loads(logs[start:end].strip())
+        payload = json.loads(body)
     except json.JSONDecodeError:
-        return None
+        payload = None
+    if isinstance(payload, dict):
+        return payload
+    for line in body.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return None

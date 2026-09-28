@@ -58,9 +58,14 @@ def _configure_logging() -> None:
 
 
 def _emit(payload: dict) -> None:
-    sys.stdout.write(f"\n{RESULT_BEGIN}\n")
-    json.dump(payload, sys.stdout, default=str)
-    sys.stdout.write(f"\n{RESULT_END}\n")
+    # Pod logs merge stdout and stderr from separate pipes, so get pending log
+    # lines out first and write the payload as one chunk. Reordering is still
+    # possible; `extract_result_payload` skips stray lines between the markers.
+    for handler in logging.getLogger().handlers:
+        handler.flush()
+    sys.stderr.flush()
+    body = json.dumps(payload, default=str)
+    sys.stdout.write(f"\n{RESULT_BEGIN}\n{body}\n{RESULT_END}\n")
     sys.stdout.flush()
 
 
