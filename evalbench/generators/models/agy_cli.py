@@ -805,9 +805,9 @@ class AgyCliGenerator(AgentCliGenerator):
           a registered workspace, agy runs shell and write tools in
           ``<appDataDir>/scratch``.
         * ``conversation_id`` -> ``--conversation``, only with ``resume``.
-          Without an ID, ``resume`` adds ``--continue``, which resumes the
-          most recent conversation in the sandbox. That conversation can
-          belong to another scenario.
+          Without an ID, agy starts a new conversation. The harness never
+          uses ``--continue`` because it picks the most recent conversation
+          in the sandbox, which can belong to another scenario.
         """
         command = [cli, "-p", prompt, "--dangerously-skip-permissions"]
         if model:
@@ -820,11 +820,8 @@ class AgyCliGenerator(AgentCliGenerator):
             command += ["--print-timeout", timeout]
         if add_dir:
             command += ["--add-dir", add_dir]
-        if resume:
-            if conversation_id:
-                command += ["--conversation", conversation_id]
-            else:
-                command.append("--continue")
+        if resume and conversation_id:
+            command += ["--conversation", conversation_id]
         return command
 
     def generate_internal(self, cli_cmd, timeout_seconds=None):

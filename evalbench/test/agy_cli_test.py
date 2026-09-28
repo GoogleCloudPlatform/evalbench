@@ -325,9 +325,10 @@ def test_run_command_argv_resumes_by_conversation_id(mock_run, sandbox):
     ]
 
 
-def test_run_command_argv_shape_with_continue(mock_run, sandbox):
-    """Without a session ID (turn 1 emitted none), resume falls back to
-    ``--continue``."""
+def test_resume_without_session_id_starts_new_conversation(mock_run, sandbox):
+    """Without a session ID (turn 1 emitted none), resume starts a new
+    conversation. ``--continue`` can attach to another scenario's
+    conversation."""
     generator = AgyCliGenerator({})
     cmd = CLICommand(cli="agy", prompt="next turn", resume=True)
     generator._run_agy_cli(cmd)
@@ -337,7 +338,7 @@ def test_run_command_argv_shape_with_continue(mock_run, sandbox):
         generator.agy_bin, "-p", "next turn",
         "--dangerously-skip-permissions", "--output-format", "stream-json",
         "--log-file", generator.cli_log_path,
-        "--add-dir", generator.fake_home, "--continue",
+        "--add-dir", generator.fake_home,
     ]
 
 
