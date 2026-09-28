@@ -33,6 +33,17 @@ spec:
           value: cloud-db-nl2sql
         - name: EVAL_GCP_PROJECT_REGION
           value: us-central1
+        # How many `Eval` RPCs this pod runs at once. Unset, Python's default
+        # executor caps it at min(32, cpu+4) -- a hard ceiling that callers
+        # driving one scenario per RPC (the continuous CI fan-out) hit long
+        # before the pod runs out of CPU.
+        #
+        # Only raise this once `containerization.enabled: true` is in use: the
+        # threads are then just polling Kubernetes Jobs and are nearly idle. In
+        # in-process mode each thread runs a full agent CLI on this pod, so a
+        # high value only thrashes.
+        # - name: EVALBENCH_EVAL_THREADS
+        #   value: "400"
         imagePullPolicy: Always
         name: evalbench-eval
         resources:

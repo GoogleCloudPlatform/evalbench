@@ -43,6 +43,7 @@ python_handler.addFilter(SessionIdFilter())
 
 # --- Remaining Imports ---
 import asyncio
+import concurrent.futures
 from collections.abc import Sequence
 
 from absl import app
@@ -65,9 +66,55 @@ PORT = os.getenv("PORT", 50051)
 _cleanup_coroutines = []
 
 
+def _eval_executor_size() -> int:
+    """How many `Eval` RPCs this pod may run at once.
+
+    `EvalServicer.Eval` hands the whole evaluation to
+    `loop.run_in_executor(None, ...)`, so one in-flight RPC occupies one thread
+    of the loop's default executor for the entire run -- minutes to hours.
+    CPython sizes that pool at `min(32, cpu_count + 4)`, which silently caps a
+    20-CPU pod at ~32 concurrent evaluations no matter how much headroom the
+    cluster has. Callers that drive one scenario per RPC (the continuous CI
+    fan-out does) hit that wall long before they hit the pod's CPU.
+
+    The right size depends on what the threads actually do:
+
+    - `containerization.enabled: true` -- the thread only builds a case spec
+      and polls a Kubernetes Job. It is idle almost the whole time, the real
+      work is out on the worker pools, and this can safely be in the hundreds.
+    - in-process execution -- the thread runs the agent CLI, the simulated
+      user and the scorers on *this* pod, so oversubscribing it just thrashes.
+
+    Hence the conservative default and the explicit knob.
+    """
+    configured = os.getenv("EVALBENCH_EVAL_THREADS")
+    if configured:
+        try:
+            size = int(configured)
+        except ValueError:
+            logging.error(
+                "Ignoring EVALBENCH_EVAL_THREADS=%r: not an integer.", configured)
+        else:
+            if size > 0:
+                return size
+            logging.error(
+                "Ignoring EVALBENCH_EVAL_THREADS=%d: must be positive.", size)
+    return min(32, (os.cpu_count() or 1) + 4)
+
+
 async def _serve():
     """Starts the server."""
     logging.info("Starting server")
+
+    # `Eval` offloads onto the loop's default executor, so sizing it is what
+    # actually sets this pod's concurrent-evaluation limit.
+    eval_threads = _eval_executor_size()
+    eval_executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=eval_threads, thread_name_prefix="evalbench-eval"
+    )
+    asyncio.get_running_loop().set_default_executor(eval_executor)
+    logging.info("Eval executor sized to %d concurrent evaluation(s)",
+                 eval_threads)
 
     interceptors = [
         SessionManagerInterceptor("SessionManagerInterceptor"),

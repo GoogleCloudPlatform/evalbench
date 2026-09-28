@@ -1,0 +1,101 @@
+############################################################
+### Dataset / Eval Items
+############################################################
+dataset_config: datasets/claude-code-tools/claude-code.evalset.json
+dataset_format: agent-format
+
+orchestrator: agent
+model_config: datasets/model_configs/claude_code_model.yaml
+simulated_user_model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+
+############################################################
+### Containerized Execution
+############################################################
+# Run every scenario in its own short-lived container, spread round-robin over
+# dedicated GKE worker (node) pools, instead of as subprocesses inside the eval
+# server pod. Create the pools first:
+#
+#   POOL_COUNT=2 evalbench_service/k8s/worker_pools.sh create
+#
+# See docs/containerized_evals.md.
+containerization:
+  enabled: true
+  backend: gke
+
+  # The image the case containers run. Same image as the eval server -- it
+  # already carries Claude Code's runtime (node, npm, gcloud, uv).
+  image: us-central1-docker.pkg.dev/cloud-db-nl2sql/evalbench/eval_server:latest
+
+  namespace: evalbench-namespace
+  service_account: evalbench-ksa
+
+  # Must match the pools created by worker_pools.sh. Cases are handed out
+  # round-robin; a saturated pool is skipped rather than blocking.
+  worker_pools:
+    - evalbench-worker-pool-1
+    - evalbench-worker-pool-2
+
+  # Concurrent cases per pool. Total in-flight cases = sum over pools.
+  max_concurrent_per_pool: 4
+
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+
+  # A case container inherits none of the eval server Deployment's env. These
+  # four are copied across automatically when set on the orchestrator; add
+  # anything else the scenario needs here. `env` wins over the inherited value.
+  #   EVAL_GCP_PROJECT_ID, EVAL_GCP_PROJECT_REGION,
+  #   GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION
+  env: {}
+
+  # Case containers get none of the eval server's volumes, so the
+  # service-account key Claude Code reads at /etc/evalbench-sa-key/key.json
+  # has to be mounted explicitly. Drop this when using Workload Identity.
+  secrets:
+    - name: evalbench-sa-key
+      mount_path: /etc/evalbench-sa-key
+      optional: true
+
+  # Kubernetes-side deadline. Defaults to eval_case_timeout + 10m when unset.
+  job_timeout: 45m
+  # Keep failed Jobs for `kubectl describe`; successful ones are deleted.
+  keep_failed_jobs: true
+
+# Per-case timeout enforced inside the container.
+eval_case_timeout: 30m
+
+# Ignored under containerization (one scenario per container already), kept so
+# the config still works with `containerization.enabled: false`.
+runners:
+  agent_runners: 1
+
+############################################################
+### Scorer Related Configs
+############################################################
+scorers:
+  trajectory_matcher: {}
+  goal_completion:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  behavioral_metrics:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  parameter_analysis:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  turn_count: {}
+  agent_steps: {}
+  end_to_end_latency: {}
+  tool_call_latency: {}
+  token_consumption: {}
+  tokens_processed: {}
+  effective_billed_tokens: {}
+
+############################################################
+### Reporting Related Configs
+############################################################
+reporting:
+  csv:
+    output_directory: 'results'

@@ -1,0 +1,41 @@
+# Lets the eval server dispatch containerized eval cases.
+#
+# With `containerization.enabled: true` the orchestrator creates one Job (plus
+# a ConfigMap carrying the case spec) per eval case and reads the result back
+# out of the pod's logs, so it needs create/read/delete on those three kinds
+# inside its own namespace and nothing else.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: evalbench-case-dispatcher
+  namespace: evalbench-namespace
+rules:
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["create", "get", "list", "watch", "delete"]
+- apiGroups: ["batch"]
+  resources: ["jobs/status"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["create", "get", "list", "delete"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: evalbench-case-dispatcher
+  namespace: evalbench-namespace
+subjects:
+- kind: ServiceAccount
+  name: evalbench-ksa
+  namespace: evalbench-namespace
+roleRef:
+  kind: Role
+  name: evalbench-case-dispatcher
+  apiGroup: rbac.authorization.k8s.io

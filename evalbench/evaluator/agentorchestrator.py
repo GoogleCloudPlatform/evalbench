@@ -4,6 +4,7 @@ import datetime
 import logging
 import tempfile
 import json
+from container.config import load_containerization_config
 from dataset.evalgeminicliinput import EvalGeminiCliRequest
 from evaluator.agentevaluator import AgentEvaluator
 
@@ -27,13 +28,34 @@ class AgentOrchestrator(Orchestrator):
         self.report_progress = report_progress
 
     def evaluate(self, dataset: list[EvalGeminiCliRequest]):
-        logging.info("Starting agent CLI evaluation")
-        evaluator = AgentEvaluator(self.config)
+        evaluator = self._get_evaluator()
         eval_outputs, scoring_results = evaluator.evaluate(
             dataset, self.job_id, self.run_time
         )
         self.total_eval_outputs.extend(eval_outputs)
         self.total_scoring_results.extend(scoring_results)
+
+    def _get_evaluator(self):
+        """Picks the in-process or the containerized evaluator.
+
+        With `containerization.enabled: true` every scenario runs in its own
+        container on a dedicated worker pool instead of as a subprocess inside
+        this pod. Both evaluators return the same
+        `(eval_outputs, scoring_results)` pair, so nothing downstream changes.
+        """
+        containerization = load_containerization_config(self.config)
+        if not containerization.enabled:
+            logging.info("Starting agent CLI evaluation")
+            return AgentEvaluator(self.config)
+
+        # Imported here so a run that does not containerize never needs the
+        # Kubernetes client installed.
+        from evaluator.containeragentevaluator import ContainerAgentEvaluator
+
+        logging.info(
+            "Starting containerized agent CLI evaluation (one container per "
+            "eval case, worker pools: %s)", containerization.pool_names)
+        return ContainerAgentEvaluator(self.config, containerization)
 
     def process(self):
         with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:

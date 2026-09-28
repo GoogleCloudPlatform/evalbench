@@ -41,6 +41,9 @@ dependencies = [
     "grpcio-tools>=1.80.0",
     "aiologger",
     "jsonschema",
+    # Dispatches one Kubernetes Job per eval case when
+    # `containerization.enabled` is set (evalbench/container/k8s_backend.py).
+    "kubernetes",
     "ratelimit",
     "backoff",
     "GitPython",

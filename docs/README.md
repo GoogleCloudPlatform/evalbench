@@ -32,6 +32,7 @@ Every evaluation is driven by a run config that points at a dataset, a database 
 | [Codex CLI](/docs/codex_cli_agent_testing.md) | Setup and configuration for evaluating Codex CLI. |
 | [Antigravity CLI](/docs/agy_cli_agent_testing.md) | Setup and configuration for evaluating the Antigravity (agy) CLI. |
 | [Data agent spec](/docs/dataagent_spec.md) | ADKDataAgent support — multi-turn database agents with clarification turns. |
+| [Containerized eval cases](/docs/containerized_evals.md) | Running each eval case in its own container on dedicated GKE worker pools. |
 
 ## Examples
 
