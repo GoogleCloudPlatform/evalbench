@@ -1,0 +1,15 @@
+# One-time seed of db_blog on the CI instance. CI does not run this.
+# Re-run only when the db_blog schema or data changes. It drops and
+# re-creates the public schema.
+#
+# Set EVAL_GCP_PROJECT_ID and CLOUD_SQL_POSTGRES_{REGION,INSTANCE,USER,PASSWORD}
+# to the verify-nl2sql trigger values, then run:
+#   PYTHONPATH=.:evalbench uv run python evalbench/util/setup_databases.py \
+#     --experiment_config=.ci/nl2sql_seed_config.yaml
+dataset_config: .ci/nl2sql_smoke.evalset.json
+dataset_format: evalbench-standard-format
+database_configs:
+  - .ci/db_configs/nl2sql_ci_postgres.yaml
+dialects:
+  - postgres
+setup_directory: datasets/bat/setup

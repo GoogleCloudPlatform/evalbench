@@ -1,0 +1,29 @@
+# NL2SQL smoke eval for the verify-nl2sql check (.ci/nl2sql.cloudbuild.yaml).
+# QueryData answers DQL prompts against db_blog on the CI instance.
+#
+# No setup_directory: db_blog is seeded once (.ci/nl2sql_seed_config.yaml).
+# A per-run seed would drop tables that concurrent builds still query.
+dataset_config: .ci/nl2sql_smoke.evalset.json
+dataset_format: evalbench-standard-format
+database_configs:
+  - .ci/db_configs/nl2sql_ci_postgres.yaml
+dialects:
+  - postgres
+# QueryData generates read queries only.
+query_types:
+  - dql
+
+model_config: .ci/model_configs/querydata_ci.yaml
+# QueryData receives the raw question, with no prompt template.
+prompt_generator: 'NOOPGenerator'
+
+scorers:
+  returned_sql: null
+  executable_sql: null
+  set_match: null
+  llmrater:
+    model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+
+reporting:
+  csv:
+    output_directory: 'results'
