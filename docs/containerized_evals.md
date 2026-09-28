@@ -374,17 +374,29 @@ rollout behind it. The manifests therefore pin:
 
 Horizontal scale comes from the worker pools, not from more eval servers.
 
-The server exposes plain-HTTP probe endpoints next to gRPC:
+The server exposes plain-HTTP probe endpoints next to gRPC, served from their
+own thread rather than the gRPC event loop:
 
 | Path | Returns |
 |---|---|
-| `/healthz`, `/livez` | `200` while the process is up. |
+| `/healthz`, `/livez` | `200` unless the gRPC event loop has not ticked for `EVALBENCH_LOOP_STALL_SECONDS`, then `503`. |
 | `/readyz` | `200` once the gRPC server has started, `503` before that and while draining. |
 
 | Env var | Default | Meaning |
 |---|---|---|
 | `EVALBENCH_HEALTH_PORT` | `8080` | Port for the probe endpoints. `0` disables them. Skipped if it collides with the gRPC `PORT` (Cloud Run sets `PORT=8080`). |
+| `EVALBENCH_LOOP_STALL_SECONDS` | `300` | How long the event loop may go without a heartbeat before liveness fails. |
 | `EVALBENCH_SHUTDOWN_GRACE_SECONDS` | `5` | How long in-flight RPCs get after `SIGTERM` or `Ctrl-C`. |
+
+**Liveness means "wedged", not "busy".** Sessions live in the server's memory,
+so a restart fails every in-flight eval. In a 100-run load test, an earlier
+version served the probes on the gRPC loop with a 10s timeout; when ~30 runs
+finished at once the loop was too busy to answer, the kubelet restarted the
+pod, and 22 runs failed with `Session not configured`. So the endpoint now has
+its own thread, the loop refreshes a heartbeat every second, and `/healthz`
+fails only once that heartbeat is minutes old. The server logs
+`health: event loop lagged Ns` whenever the loop wakes up 5s or more late —
+the early warning that a handler is blocking it.
 
 On `SIGTERM` the server flips `/readyz` to `503` (so the Service stops routing
 to it) and then stops gRPC with the grace period above.

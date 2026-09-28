@@ -56,6 +56,10 @@ spec:
         # ALTS, which a `grpc:` probe cannot speak.
         - name: EVALBENCH_HEALTH_PORT
           value: "8080"
+        # /healthz fails only after the gRPC event loop has not ticked for
+        # this long: a wedged process, not a busy one.
+        - name: EVALBENCH_LOOP_STALL_SECONDS
+          value: "300"
         # This pod's identity, so every eval-case Job it creates (and, through
         # the Job, its ConfigMap) is owned by it and garbage-collected by
         # Kubernetes if the pod goes away mid-run (container/k8s_backend.py).
@@ -111,24 +115,27 @@ spec:
           periodSeconds: 10
           failureThreshold: 60
         # Ready only once the gRPC server is bound and started; 503 again as
-        # soon as SIGTERM starts draining.
+        # soon as SIGTERM starts draining. Generous timeout: the endpoint has
+        # its own thread, but it still shares the GIL with busy workers.
         readinessProbe:
           httpGet:
             path: /readyz
             port: health
           periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
-        # Proves the event loop is still scheduling work. Deliberately lenient:
-        # a restart kills every in-flight eval (and, via ownerReferences, its
-        # case Jobs), so only restart a pod that is truly wedged.
+          timeoutSeconds: 10
+          failureThreshold: 6
+        # Fails only if the gRPC event loop has not ticked for
+        # EVALBENCH_LOOP_STALL_SECONDS (util/health.py), i.e. the process is
+        # wedged, not merely busy. A restart kills every in-flight eval and its
+        # in-memory sessions (a load test lost 22/100 runs to one), so the
+        # probe itself also tolerates ~5 minutes of timeouts.
         livenessProbe:
           httpGet:
             path: /healthz
             port: health
-          periodSeconds: 20
-          timeoutSeconds: 10
-          failureThreshold: 6
+          periodSeconds: 30
+          timeoutSeconds: 30
+          failureThreshold: 10
         volumeMounts:
         - mountPath: /tmp
           name: tmp-volume

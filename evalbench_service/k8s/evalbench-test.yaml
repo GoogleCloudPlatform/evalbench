@@ -25,6 +25,8 @@ spec:
           value: pantheon
         - name: EVALBENCH_HEALTH_PORT
           value: "8080"
+        - name: EVALBENCH_LOOP_STALL_SECONDS
+          value: "300"
         - name: EVALBENCH_POD_NAME
           valueFrom:
             fieldRef:
@@ -68,15 +70,15 @@ spec:
             path: /readyz
             port: health
           periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
+          timeoutSeconds: 10
+          failureThreshold: 6
         livenessProbe:
           httpGet:
             path: /healthz
             port: health
-          periodSeconds: 20
-          timeoutSeconds: 10
-          failureThreshold: 6
+          periodSeconds: 30
+          timeoutSeconds: 30
+          failureThreshold: 10
         volumeMounts:
         - mountPath: /tmp
           name: tmp-volume

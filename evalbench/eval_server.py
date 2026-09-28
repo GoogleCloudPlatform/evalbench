@@ -54,7 +54,12 @@ import util
 from eval_service import EvalServicer
 from eval_service import SessionManagerInterceptor
 from evalproto import eval_service_pb2_grpc
-from util.health import HealthState, start_health_server
+from util.health import (
+    DEFAULT_STALL_SECONDS,
+    HealthState,
+    run_loop_heartbeat,
+    start_health_server,
+)
 
 _LOCALHOST = flags.DEFINE_bool(
     "localhost",
@@ -139,8 +144,9 @@ async def _serve():
     if bound_port == 0:
         raise RuntimeError(f"Failed to bind to port {PORT} on host {host}!")
 
-    health_state = HealthState()
-    health_server = await _start_health_endpoint(health_state)
+    health_state = HealthState(stall_seconds=_stall_seconds())
+    health_server = _start_health_endpoint(health_state)
+    heartbeat = asyncio.ensure_future(run_loop_heartbeat(health_state))
 
     await server.start()
     health_state.mark_serving()
@@ -150,6 +156,7 @@ async def _serve():
         logging.info("Starting graceful shutdown...")
         health_state.mark_draining()
         await server.stop(_shutdown_grace_seconds())
+        heartbeat.cancel()
         if health_server is not None:
             health_server.close()
 
@@ -165,7 +172,15 @@ def _shutdown_grace_seconds() -> float:
         return 5.0
 
 
-async def _start_health_endpoint(state: HealthState):
+def _stall_seconds() -> float:
+    try:
+        return float(os.getenv(
+            "EVALBENCH_LOOP_STALL_SECONDS", str(DEFAULT_STALL_SECONDS)))
+    except ValueError:
+        return DEFAULT_STALL_SECONDS
+
+
+def _start_health_endpoint(state: HealthState):
     """Starts the kubelet probe endpoint, unless disabled with port 0.
 
     A bind failure is logged rather than fatal: locally the port may simply be
@@ -186,7 +201,7 @@ async def _start_health_endpoint(state: HealthState):
             "Health port %d equals the gRPC port; health endpoint disabled.", port)
         return None
     try:
-        return await start_health_server(state, port)
+        return start_health_server(state, port)
     except OSError as e:
         logging.error("Could not start health endpoint on port %d: %s", port, e)
         return None
@@ -200,16 +215,27 @@ def _install_sigterm_handler(server, state: HealthState) -> None:
     without a status. Flip readiness first, then stop the server with the
     configured grace; `wait_for_termination` then returns and `main` runs the
     rest of the cleanup.
+
+    A plain `signal.signal` handler, not `loop.add_signal_handler`: the latter
+    only runs once the event loop gets round to it, and a busy loop would keep
+    reporting ready for seconds after the kubelet asked it to stop.
     """
-    def _on_sigterm():
+    loop = asyncio.get_running_loop()
+
+    def _stop():
         logging.info("SIGTERM received; draining.")
-        state.mark_draining()
         asyncio.ensure_future(server.stop(_shutdown_grace_seconds()))
 
+    def _on_sigterm(signum, frame):
+        # Runs between bytecodes on the main thread: flip readiness, then hand
+        # everything else (logging included) to the loop.
+        state.mark_draining()
+        loop.call_soon_threadsafe(_stop)
+
     try:
-        asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, _on_sigterm)
-    except (NotImplementedError, RuntimeError):
-        # Not on the main thread, or a platform without loop signal support.
+        signal.signal(signal.SIGTERM, _on_sigterm)
+    except ValueError:
+        # Not on the main thread.
         logging.debug("SIGTERM handler not installed", exc_info=True)
 
 
