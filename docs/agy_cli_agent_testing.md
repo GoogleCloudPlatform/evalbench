@@ -206,12 +206,18 @@ agy authenticates non-interactively using **Google Application Default
 Credentials (ADC)** (`AGY_ADC_AUTH=true`), which also supplies outbound
 credentials for `authProviderType: google_credentials` MCP servers.
 
-agy reads its model entitlement from the credential's `quota_project_id` field
-alone -- not `GOOGLE_CLOUD_PROJECT`, and not `GOOGLE_CLOUD_QUOTA_PROJECT`.
-EvalBench injects it when the resolved ADC lacks it, which is the normal case
-for the service-account keys used on GKE. A credential *file* is therefore
-required, and setup fails fast without one rather than falling through to the
-metadata server, whose tokens carry no quota project.
+agy resolves ADC in the standard order:
+
+1. The file in `GOOGLE_APPLICATION_CREDENTIALS`, or the gcloud ADC file
+   (`gcloud auth application-default login`).
+2. The metadata server (Cloud Build, GCE, GKE Workload Identity). agy takes
+   the quota project from the metadata project.
+
+If a credential file has no `quota_project_id`, EvalBench adds one from
+`env.GOOGLE_CLOUD_PROJECT` or the key's `project_id`. Without it, the model
+registry of agy is empty. If `GOOGLE_APPLICATION_CREDENTIALS` names a missing
+file, setup fails, because agy does not fall back to the metadata server in
+that case.
 
 ### Supported Model Tiers
 * **Supported under ADC**: Flash models (e.g. `"Gemini 3.5 Flash (Medium)"`,
@@ -300,7 +306,12 @@ operational differences:
 ## Troubleshooting
 
 ### Authentication Errors / Interactive Login Prompt
-* Ensure fresh ADC credentials exist by running `gcloud auth application-default login`.
+* agy shows every ADC token failure as `authentication required. Run 'agy' to
+  log in.` To see the real cause, search the agy `cli.log` for `adcAuth:`.
+* Outside GCP, ensure fresh ADC credentials exist by running
+  `gcloud auth application-default login`.
+* On GCP without a key file, ensure the metadata-server service account can
+  call Vertex AI (for example, `roles/aiplatform.user`).
 
 ### Model Authorization / `invalid model selection`
 * Ensure the configured `model` in `model_config.yaml` is supported under ADC
