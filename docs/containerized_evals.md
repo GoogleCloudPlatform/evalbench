@@ -101,18 +101,37 @@ This creates `evalbench-worker-pool-1..N`, each:
 
 It then applies [`worker_rbac.yaml`](/evalbench_service/k8s/worker_rbac.yaml),
 which grants the `evalbench-ksa` service account the permissions the dispatcher
-needs: create/get/delete `jobs` and `configmaps`, and get `pods/log`.
+needs: create/get/list/delete `jobs`, create/get/patch/delete `configmaps`
+(`patch` sets each ConfigMap's owner to its Job), and get `pods/log`.
 
 Other subcommands:
 
 ```bash
 evalbench_service/k8s/worker_pools.sh list     # pools and their nodes
 evalbench_service/k8s/worker_pools.sh delete   # tear the pools down
+DRY_RUN=1 evalbench_service/k8s/worker_pools.sh create   # print, don't run
 ```
 
 Everything is overridable by environment variable — `PROJECT`, `CLUSTER`,
 `ZONE`, `POOL_PREFIX`, `POOL_COUNT`, `MACHINE_TYPE`, `DISK_SIZE`, `MIN_NODES`,
 `MAX_NODES`, `TAINT_KEY`, `TAINT_VALUE`, `NAMESPACE`, `KSA`.
+
+**Spread pools across zones.** A single zone can stock out of a machine type
+(the prototype hit this with `n2-standard-64` in `us-central1-c`), and then the
+autoscaler cannot add nodes at all. Set `NODE_LOCATIONS` to spread each pool:
+
+```bash
+NODE_LOCATIONS=us-central1-a,us-central1-b,us-central1-f \
+TOTAL_MAX_NODES=30 \
+  evalbench_service/k8s/worker_pools.sh create
+```
+
+With `NODE_LOCATIONS` set the bounds are pool-wide (`TOTAL_MIN_NODES` /
+`TOTAL_MAX_NODES`, defaulting to `MIN_NODES` / `MAX_NODES`) and
+`LOCATION_POLICY` defaults to `ANY`, so the autoscaler takes capacity wherever
+it exists rather than insisting on balance. Existing pools are skipped, not
+modified — delete and recreate them (or use
+`gcloud container node-pools update --node-locations`) to change zones.
 
 The node pools are cluster-wide, but the dispatcher's Role is namespaced. To
 dispatch from the test deployment instead, re-target both together:
@@ -325,6 +344,21 @@ The backend itself is shared too: one Kubernetes API client per
 `(backend, namespace)`, refcounted so the last session out closes it rather
 than the first one to finish.
 
+**Status polling is one LIST per interval, not one GET per case.** With 500
+cases in flight, per-case polling would be 100 GETs a second against the API
+server at the default 5s interval. Instead every Job carries an
+`evalbench.io/dispatcher=<eval server pod name>` label, and the first waiter to
+find the snapshot older than `poll_interval_seconds` refreshes it with a single
+paged, label-selected LIST; everyone else reads from it. A Job missing from a
+snapshot taken after it was created is confirmed with one direct GET (a `404`
+means it was reaped and the case failed). If the LIST itself fails, waiters
+fall back to per-Job GETs until it recovers.
+
+**Transient API errors are retried.** `429`, `5xx` and connection errors get up
+to five attempts with jittered exponential backoff capped at 8s (honouring
+`Retry-After`). A create that gets `409 AlreadyExists` on a *retry* is taken as
+the earlier attempt having landed; on the first attempt it is still an error.
+
 ---
 
 ## Eval server health and topology
@@ -355,6 +389,17 @@ The server exposes plain-HTTP probe endpoints next to gRPC:
 On `SIGTERM` the server flips `/readyz` to `503` (so the Service stops routing
 to it) and then stops gRPC with the grace period above.
 
+**Nothing outlives its owner.** Each case Job is owned by the eval server pod
+that created it (`EVALBENCH_POD_NAME` / `EVALBENCH_POD_UID` /
+`EVALBENCH_POD_NAMESPACE`, set through the downward API), and each case
+ConfigMap by its Job. So when the eval server pod is deleted mid-run — a
+rollout, an eviction — Kubernetes garbage-collects its in-flight Jobs rather
+than letting them burn their full deadline, and a failed Job kept by
+`keep_failed_jobs` takes its ConfigMap with it when the TTL reaps it. Pod
+ownership is skipped when the eval server runs in a different namespace from
+the Jobs (ownerReferences cannot cross namespaces) or outside the cluster; the
+Jobs then rely on their TTL alone.
+
 ---
 
 ## Limitations
@@ -371,6 +416,10 @@ to it) and then stops gRPC with the grace period above.
   so cases still share whatever database fixtures those scripts create.
 - **One-shot Jobs.** `backoffLimit: 0`: a retried eval case would double-charge
   tokens and report a run nobody asked for.
+- **Client cancellation is not propagated.** If the caller of `Eval` gives up
+  (deadline, disconnect), the eval server keeps waiting on that run's Jobs
+  until they finish or hit their deadline. Only deleting the eval server pod
+  cancels them early.
 
 ---
 
@@ -402,7 +451,20 @@ mount the key explicitly via `secrets:` — Claude Code reads
 `/etc/evalbench-sa-key/key.json`.
 
 **Logs are missing after a run.** `ttl_seconds_after_finished` (15m default)
-reaps finished Jobs and their pods. Raise it if you need a longer window.
+reaps finished Jobs and their pods. Raise it if you need a longer window. Kept
+failed Jobs are also garbage-collected as soon as the eval server pod that
+created them is deleted, e.g. by a rollout.
+
+**`could not make job ... own its ConfigMap`.** The Role predates the `patch`
+verb on `configmaps`; re-apply `worker_rbac.yaml`. Cases still run — only the
+leak protection for kept failed Jobs is lost.
+
+**Finding one eval server's Jobs.** Filter by dispatcher:
+
+```bash
+kubectl -n evalbench-namespace get jobs \
+  -l app=evalbench-eval-case,evalbench.io/dispatcher=<eval-server-pod-name>
+```
 
 ---
 

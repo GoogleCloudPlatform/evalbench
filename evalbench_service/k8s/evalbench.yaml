@@ -56,9 +56,11 @@ spec:
         # ALTS, which a `grpc:` probe cannot speak.
         - name: EVALBENCH_HEALTH_PORT
           value: "8080"
-        # This pod's identity, so every eval-case Job and ConfigMap it creates
-        # is owned by it and garbage-collected by Kubernetes if the pod goes
-        # away mid-run (container/k8s_backend.py).
+        # This pod's identity, so every eval-case Job it creates (and, through
+        # the Job, its ConfigMap) is owned by it and garbage-collected by
+        # Kubernetes if the pod goes away mid-run (container/k8s_backend.py).
+        # Ownership is skipped unless the namespace matches the Jobs'
+        # namespace: ownerReferences cannot cross namespaces.
         - name: EVALBENCH_POD_NAME
           valueFrom:
             fieldRef:
@@ -67,6 +69,10 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.uid
+        - name: EVALBENCH_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         imagePullPolicy: Always
         name: evalbench-eval
         resources:

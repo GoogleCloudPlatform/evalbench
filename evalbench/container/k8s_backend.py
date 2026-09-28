@@ -6,10 +6,28 @@ Job whose pod is placed on one of the dedicated worker pools created by
 mounted into the pod, and the result travels back through the pod's logs as a
 sentinel-delimited JSON blob -- the cluster's PVC is ReadWriteOnce, so a shared
 filesystem is not available across nodes.
+
+Production concerns handled here, beyond the basic submit/poll/collect loop:
+
+- **API load.** Hundreds of in-flight cases must not mean hundreds of GETs per
+  poll interval. Waiters share one label-selected LIST per interval
+  (`_JobStatusCache`) and only fall back to a per-Job GET to confirm a Job
+  that has vanished from the LIST.
+- **Leaks.** Every Job is owned by the eval server pod that created it, and
+  every ConfigMap by its Job, so Kubernetes garbage collection cleans up after
+  a dispatcher that crashed mid-run and after `keep_failed_jobs` once the TTL
+  reaps the Job.
+- **Transient API errors.** 429/5xx and connection errors are retried with
+  bounded, jittered exponential backoff; a create that hits 409 on a retry is
+  treated as the earlier attempt having landed.
 """
 
-from typing import Optional
+from dataclasses import dataclass
+from typing import Callable, Optional
 import logging
+import os
+import random
+import socket
 import threading
 import time
 
@@ -30,11 +48,248 @@ _NAME_PREFIX = "ebcase"
 _CONFIGMAP_WARN_BYTES = 700 * 1024
 _CONFIGMAP_MAX_BYTES = 1024 * 1024
 
+APP_LABEL = "evalbench-eval-case"
+DISPATCHER_LABEL = "evalbench.io/dispatcher"
+
+# Page size for the shared status LIST.
+_LIST_PAGE_SIZE = 500
+
+# Retries for transient API failures.
+_RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
+_MAX_ATTEMPTS = 5
+_BACKOFF_BASE_SECONDS = 0.5
+_BACKOFF_MAX_SECONDS = 8.0
+
+# The case runner prints its payload last and on a single line, so a short
+# tail almost always holds it; the full log is only fetched when it does not.
+_LOG_TAIL_LINES = 200
+# How much log text a CaseResult keeps. Nothing downstream needs more than the
+# end of the log, and hundreds of in-flight results each holding a full
+# Claude Code transcript add up.
+_MAX_RESULT_LOG_CHARS = 64 * 1024
+
+_SA_NAMESPACE_FILE = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+
+
+# -- identity --------------------------------------------------------------
+
+
+def dispatcher_id(environ: Optional[dict] = None) -> str:
+    """A label-safe id for this eval server process's Jobs.
+
+    The pod name when running in the cluster (set via the downward API), the
+    hostname otherwise -- which is also the pod name, but the env var is
+    explicit about intent.
+    """
+    environ = os.environ if environ is None else environ
+    raw = environ.get("EVALBENCH_POD_NAME") or socket.gethostname()
+    return sanitize_case_id(raw, max_len=63)
+
+
+def _pod_namespace(environ: dict, namespace_file: str) -> Optional[str]:
+    namespace = environ.get("EVALBENCH_POD_NAMESPACE")
+    if namespace:
+        return namespace
+    try:
+        with open(namespace_file) as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
+def owner_pod(
+    job_namespace: str,
+    environ: Optional[dict] = None,
+    namespace_file: str = _SA_NAMESPACE_FILE,
+) -> Optional[tuple[str, str]]:
+    """(name, uid) of the eval server pod to own case Jobs, or None.
+
+    Only returned when the pod lives in the namespace the Jobs are created
+    in. That check is not cosmetic: ownerReferences cannot cross namespaces,
+    and the garbage collector treats a dependent whose owner it cannot find in
+    its own namespace as orphaned and deletes it immediately -- every Job would
+    vanish the moment it was created.
+    """
+    environ = os.environ if environ is None else environ
+    name = environ.get("EVALBENCH_POD_NAME")
+    uid = environ.get("EVALBENCH_POD_UID")
+    if not name or not uid:
+        return None
+    namespace = _pod_namespace(environ, namespace_file)
+    if namespace != job_namespace:
+        logging.info(
+            "k8s: eval server pod is in namespace %r but case Jobs go to %r; "
+            "Jobs will not be owned by the pod and rely on their TTL alone.",
+            namespace, job_namespace)
+        return None
+    return name, uid
+
+
+# -- retries ---------------------------------------------------------------
+
+
+def _api_status(exc: BaseException) -> Optional[int]:
+    from kubernetes.client.rest import ApiException
+
+    return exc.status if isinstance(exc, ApiException) else None
+
+
+def is_retryable(exc: BaseException) -> bool:
+    """Whether an API call that raised `exc` is worth repeating."""
+    status = _api_status(exc)
+    if status is not None:
+        return status in _RETRYABLE_STATUSES
+    import urllib3
+
+    return isinstance(
+        exc, (urllib3.exceptions.HTTPError, ConnectionError, TimeoutError))
+
+
+def _retry_after_seconds(exc: BaseException) -> Optional[float]:
+    headers = getattr(exc, "headers", None) or {}
+    try:
+        value = headers.get("Retry-After")
+    except AttributeError:
+        return None
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+class _AlreadyExists:
+    """Sentinel: a retried create found its object already there."""
+
+
+ALREADY_EXISTS = _AlreadyExists()
+
+
+# -- status cache ----------------------------------------------------------
+
+
+class _JobStatusCache:
+    """One LIST per poll interval, shared by every waiter in the process.
+
+    There is no background thread. A waiter that finds the snapshot older
+    than the interval refreshes it; waiters that arrive mid-refresh block
+    until it lands rather than issuing their own LIST.
+
+    `lookup` returns:
+      - the Job's status, when the latest snapshot has it;
+      - "running", when the Job was submitted after that snapshot's LIST
+        started, so its absence means nothing yet;
+      - None, when the caller should confirm with a direct GET: the Job was
+        submitted before the LIST started but is missing from it (reaped or
+        deleted), or the last refresh failed.
+    """
+
+    def __init__(
+        self,
+        list_statuses: Callable[[], dict[str, str]],
+        interval_seconds: float,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._list_statuses = list_statuses
+        self._interval = max(0.0, float(interval_seconds))
+        self._clock = clock
+        self._cond = threading.Condition()
+        self._statuses: dict[str, str] = {}
+        self._snapshot_started: Optional[float] = None
+        self._healthy = False
+        self._refreshing = False
+        self._generation = 0
+
+    def _fresh(self) -> bool:
+        return (
+            self._healthy
+            and self._snapshot_started is not None
+            and self._clock() - self._snapshot_started < self._interval
+        )
+
+    def refresh_if_stale(self) -> None:
+        with self._cond:
+            if self._fresh():
+                return
+            if self._refreshing:
+                generation = self._generation
+                while self._refreshing and self._generation == generation:
+                    self._cond.wait(timeout=60)
+                return
+            self._refreshing = True
+
+        started = self._clock()
+        statuses = None
+        try:
+            statuses = self._list_statuses()
+        except Exception as e:  # pylint: disable=broad-except
+            logging.warning(
+                "k8s: shared job status LIST failed; falling back to per-job "
+                "reads until it recovers: %s", e)
+        finally:
+            with self._cond:
+                self._refreshing = False
+                self._generation += 1
+                if statuses is not None:
+                    self._statuses = statuses
+                    self._snapshot_started = started
+                    self._healthy = True
+                else:
+                    self._healthy = False
+                self._cond.notify_all()
+
+    def lookup(self, name: str, submitted_at: float) -> Optional[str]:
+        self.refresh_if_stale()
+        with self._cond:
+            if not self._healthy or self._snapshot_started is None:
+                return None
+            status = self._statuses.get(name)
+            if status is not None:
+                return status
+            if submitted_at >= self._snapshot_started:
+                return "running"
+            return None
+
+
+@dataclass
+class _HandleState:
+    """Backend-private bookkeeping carried on a `CaseHandle`."""
+
+    # `clock()` reading taken once the Job create returned.
+    submitted_at: float
+
+
+def job_status_of(job) -> str:
+    """Maps a V1Job to 'succeeded', 'failed', or 'running'."""
+    status = job.status
+    if status is None:
+        return "running"
+    if status.succeeded:
+        return "succeeded"
+    if status.failed:
+        return "failed"
+    for condition in status.conditions or []:
+        if condition.type == "Failed" and condition.status == "True":
+            return "failed"
+    return "running"
+
+
+def _tail(text: str, max_chars: int = _MAX_RESULT_LOG_CHARS) -> str:
+    if len(text) <= max_chars:
+        return text
+    dropped = len(text) - max_chars
+    return f"<{dropped} earlier characters truncated>\n" + text[-max_chars:]
+
 
 class KubernetesJobBackend(ContainerBackend):
     """Submits eval cases as Jobs and collects their results from pod logs."""
 
-    def __init__(self, config: ContainerizationConfig) -> None:
+    def __init__(
+        self,
+        config: ContainerizationConfig,
+        *,
+        sleep: Callable[[float], None] = time.sleep,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         super().__init__(config)
         from kubernetes import client, config as k8s_config
         from kubernetes.config.config_exception import ConfigException
@@ -51,6 +306,51 @@ class KubernetesJobBackend(ContainerBackend):
         self._core = client.CoreV1Api()
         self._counter = 0
         self._counter_lock = threading.Lock()
+        self._sleep = sleep
+        self._clock = clock
+
+        self.dispatcher = dispatcher_id()
+        self._owner = owner_pod(config.namespace)
+        self._adopt_warned = False
+        self._status_cache = _JobStatusCache(
+            self._list_job_statuses, config.poll_interval_seconds, clock=clock)
+        logging.info(
+            "k8s: dispatcher %s, jobs %s", self.dispatcher,
+            f"owned by pod {self._owner[0]}" if self._owner else "unowned")
+
+    # -- retries ---------------------------------------------------------
+
+    def _call(self, what: str, fn: Callable, *, create: bool = False, **kwargs):
+        """Calls `fn(**kwargs)`, retrying transient failures.
+
+        With `create=True`, a 409 on a *retry* means an earlier attempt that
+        looked like it failed (a dropped response, a 504 from a proxy) did in
+        fact create the object; that returns `ALREADY_EXISTS` rather than
+        raising. A 409 on the first attempt is a genuine name collision and
+        still raises.
+        """
+        attempt = 0
+        while True:
+            try:
+                return fn(**kwargs)
+            except Exception as e:  # pylint: disable=broad-except
+                if create and attempt > 0 and _api_status(e) == 409:
+                    return ALREADY_EXISTS
+                attempt += 1
+                if attempt >= _MAX_ATTEMPTS or not is_retryable(e):
+                    raise
+                delay = min(
+                    _BACKOFF_MAX_SECONDS,
+                    _BACKOFF_BASE_SECONDS * (2 ** (attempt - 1)),
+                ) * random.uniform(0.5, 1.0)
+                retry_after = _retry_after_seconds(e)
+                if retry_after is not None:
+                    delay = min(_BACKOFF_MAX_SECONDS, max(delay, retry_after))
+                logging.warning(
+                    "k8s: %s failed (%s); retry %d/%d in %.1fs",
+                    what, getattr(e, "reason", None) or e, attempt,
+                    _MAX_ATTEMPTS - 1, delay)
+                self._sleep(delay)
 
     # -- submission ------------------------------------------------------
 
@@ -63,16 +363,23 @@ class KubernetesJobBackend(ContainerBackend):
         name = self._object_name(spec)
         self._create_configmap(name, spec)
         try:
-            self._create_job(name, spec, pool, deadline_seconds)
+            job_uid = self._create_job(name, spec, pool, deadline_seconds)
         except Exception:
             # Never strand a ConfigMap whose Job failed to create: nothing else
             # will ever garbage-collect it.
             self._delete_configmap(name)
             raise
+        submitted_at = self._clock()
+        self._adopt_configmap(name, job_uid)
         logging.info(
             "k8s: submitted case %s as job %s on worker pool %s "
             "(deadline %ss)", spec.case_id, name, pool.name, deadline_seconds)
-        return CaseHandle(case_id=spec.case_id, pool=pool.name, name=name)
+        return CaseHandle(
+            case_id=spec.case_id,
+            pool=pool.name,
+            name=name,
+            backend_state=_HandleState(submitted_at=submitted_at),
+        )
 
     def _object_name(self, spec: EvalCaseSpec) -> str:
         with self._counter_lock:
@@ -86,7 +393,8 @@ class KubernetesJobBackend(ContainerBackend):
 
     def _labels(self, spec: EvalCaseSpec, pool: Optional[str] = None) -> dict:
         labels = {
-            "app": "evalbench-eval-case",
+            "app": APP_LABEL,
+            DISPATCHER_LABEL: self.dispatcher,
             "evalbench.io/job-id": sanitize_case_id(spec.job_id, max_len=63),
             "evalbench.io/case-id": sanitize_case_id(spec.case_id, max_len=63),
         }
@@ -115,8 +423,30 @@ class KubernetesJobBackend(ContainerBackend):
             ),
             data=spec.to_files(),
         )
-        self._core.create_namespaced_config_map(
-            namespace=self.config.namespace, body=body)
+        self._call(
+            f"create configmap {name}",
+            self._core.create_namespaced_config_map,
+            create=True,
+            namespace=self.config.namespace,
+            body=body,
+        )
+
+    def _owner_references(self) -> Optional[list]:
+        if not self._owner:
+            return None
+        name, uid = self._owner
+        return [
+            self._k8s.V1OwnerReference(
+                api_version="v1",
+                kind="Pod",
+                name=name,
+                uid=uid,
+                controller=False,
+                # Blocking would need `update` on pods/finalizers; the Job has
+                # nothing to protect the pod from.
+                block_owner_deletion=False,
+            )
+        ]
 
     def _create_job(
         self,
@@ -124,7 +454,8 @@ class KubernetesJobBackend(ContainerBackend):
         spec: EvalCaseSpec,
         pool: WorkerPool,
         deadline_seconds: int,
-    ) -> None:
+    ) -> Optional[str]:
+        """Creates the Job and returns its UID when the API reports one."""
         cfg = self.config
         client = self._k8s
 
@@ -224,6 +555,9 @@ class KubernetesJobBackend(ContainerBackend):
                 name=name,
                 namespace=cfg.namespace,
                 labels=self._labels(spec, pool.name),
+                # A dispatcher that dies mid-run takes its Jobs with it
+                # instead of leaving them to burn their full deadline.
+                owner_references=self._owner_references(),
             ),
             spec=client.V1JobSpec(
                 # One shot: a retried eval case would double-charge tokens and
@@ -238,7 +572,65 @@ class KubernetesJobBackend(ContainerBackend):
                 ),
             ),
         )
-        self._batch.create_namespaced_job(namespace=cfg.namespace, body=job)
+        created = self._call(
+            f"create job {name}",
+            self._batch.create_namespaced_job,
+            create=True,
+            namespace=cfg.namespace,
+            body=job,
+        )
+        if created is ALREADY_EXISTS:
+            created = self._call(
+                f"read job {name}",
+                self._batch.read_namespaced_job,
+                name=name,
+                namespace=cfg.namespace,
+            )
+        uid = getattr(getattr(created, "metadata", None), "uid", None)
+        return uid if isinstance(uid, str) and uid else None
+
+    def _adopt_configmap(self, name: str, job_uid: Optional[str]) -> None:
+        """Makes the Job own its ConfigMap, so GC removes both together.
+
+        Without this a kept failed Job is reaped by its TTL but its ConfigMap
+        stays forever. Best effort: explicit cleanup still deletes both, so a
+        failure here (e.g. RBAC missing `patch` on configmaps) only costs the
+        leak protection, not the case.
+        """
+        if not job_uid:
+            return
+        from kubernetes.client.rest import ApiException
+
+        body = {
+            "metadata": {
+                "ownerReferences": [{
+                    "apiVersion": "batch/v1",
+                    "kind": "Job",
+                    "name": name,
+                    "uid": job_uid,
+                    "controller": False,
+                    "blockOwnerDeletion": False,
+                }]
+            }
+        }
+        try:
+            self._call(
+                f"patch configmap {name}",
+                self._core.patch_namespaced_config_map,
+                name=name,
+                namespace=self.config.namespace,
+                body=body,
+            )
+        except ApiException as e:
+            if not self._adopt_warned:
+                self._adopt_warned = True
+                hint = (
+                    " -- grant `patch` on configmaps (worker_rbac.yaml)"
+                    if e.status == 403 else "")
+                logging.warning(
+                    "k8s: could not make job %s own its ConfigMap (%s)%s; "
+                    "ConfigMaps of kept failed jobs will outlive their TTL.",
+                    name, e.reason, hint)
 
     # -- collection ------------------------------------------------------
 
@@ -248,19 +640,19 @@ class KubernetesJobBackend(ContainerBackend):
         # `is not None`, not truthiness: a 0s timeout means "already expired",
         # not "wait forever".
         deadline = (
-            time.monotonic() + timeout_seconds
+            self._clock() + timeout_seconds
             if timeout_seconds is not None
             else None
         )
         interval = self.config.poll_interval_seconds
 
         while True:
-            status = self._job_status(handle.name)
+            status = self._job_status(handle)
             if status in ("succeeded", "failed"):
                 return self._collect(handle, failed=(status == "failed"))
 
-            if deadline is not None and time.monotonic() >= deadline:
-                logs = self._pod_logs(handle.name)
+            if deadline is not None and self._clock() >= deadline:
+                logs = self._pod_logs(handle.name, tail_lines=_LOG_TAIL_LINES)
                 detail = self._scheduling_detail(handle.name)
                 return CaseResult(
                     case_id=handle.case_id,
@@ -270,36 +662,68 @@ class KubernetesJobBackend(ContainerBackend):
                     ),
                     pool=handle.pool,
                     container_ref=handle.name,
-                    logs=logs,
+                    logs=_tail(logs),
                 )
-            time.sleep(interval)
+            self._sleep(interval)
 
-    def _job_status(self, name: str) -> str:
+    def _job_status(self, handle: CaseHandle) -> str:
         """Returns 'succeeded', 'failed', or 'running'."""
+        state = handle.backend_state
+        submitted_at = (
+            state.submitted_at if isinstance(state, _HandleState)
+            else float("-inf"))
+        status = self._status_cache.lookup(handle.name, submitted_at)
+        if status is None:
+            status = self._read_job_status(handle.name)
+        return status
+
+    def _list_job_statuses(self) -> dict[str, str]:
+        """Statuses of every Job this dispatcher owns, in one paged LIST."""
+        selector = f"app={APP_LABEL},{DISPATCHER_LABEL}={self.dispatcher}"
+        statuses: dict[str, str] = {}
+        token = None
+        while True:
+            kwargs = {
+                "namespace": self.config.namespace,
+                "label_selector": selector,
+                "limit": _LIST_PAGE_SIZE,
+            }
+            if token:
+                kwargs["_continue"] = token
+            page = self._call(
+                "list jobs", self._batch.list_namespaced_job, **kwargs)
+            for job in page.items or []:
+                statuses[job.metadata.name] = job_status_of(job)
+            token = getattr(page.metadata, "_continue", None)
+            if not isinstance(token, str) or not token:
+                return statuses
+
+    def _read_job_status(self, name: str) -> str:
         from kubernetes.client.rest import ApiException
 
         try:
-            job = self._batch.read_namespaced_job_status(
-                name=name, namespace=self.config.namespace)
+            job = self._call(
+                f"read job {name} status",
+                self._batch.read_namespaced_job_status,
+                name=name,
+                namespace=self.config.namespace,
+            )
         except ApiException as e:
             if e.status == 404:
                 # TTL reaped the Job before we polled it. Treat it as failed;
                 # the logs are gone with it, so there is nothing to collect.
                 return "failed"
             raise
-        status = job.status
-        if status.succeeded:
-            return "succeeded"
-        if status.failed:
-            return "failed"
-        for condition in status.conditions or []:
-            if condition.type == "Failed" and condition.status == "True":
-                return "failed"
-        return "running"
+        return job_status_of(job)
 
     def _collect(self, handle: CaseHandle, failed: bool) -> CaseResult:
-        logs = self._pod_logs(handle.name)
+        logs = self._pod_logs(handle.name, tail_lines=_LOG_TAIL_LINES)
         payload = extract_result_payload(logs)
+        if payload is None:
+            # The payload line is last, but a crashing harness can print past
+            # it; only then is the whole log worth pulling.
+            logs = self._pod_logs(handle.name)
+            payload = extract_result_payload(logs)
 
         if payload is None:
             detail = self._scheduling_detail(handle.name)
@@ -312,21 +736,25 @@ class KubernetesJobBackend(ContainerBackend):
                 ),
                 pool=handle.pool,
                 container_ref=handle.name,
-                logs=logs,
+                logs=_tail(logs),
             )
 
         result = CaseResult.from_payload(handle.case_id, payload)
         result.pool = handle.pool
         result.container_ref = handle.name
-        result.logs = logs
+        result.logs = _tail(logs)
         return result
 
     def _pods_for_job(self, name: str) -> list:
-        pods = self._core.list_namespaced_pod(
-            namespace=self.config.namespace, label_selector=f"job-name={name}")
+        pods = self._call(
+            f"list pods for job {name}",
+            self._core.list_namespaced_pod,
+            namespace=self.config.namespace,
+            label_selector=f"job-name={name}",
+        )
         return list(pods.items)
 
-    def _read_pod_log(self, pod_name: str) -> str:
+    def _read_pod_log(self, pod_name: str, tail_lines: Optional[int] = None) -> str:
         """Reads one pod's log as text.
 
         `_preload_content=False` is load-bearing, not an optimization. With the
@@ -338,15 +766,22 @@ class KubernetesJobBackend(ContainerBackend):
         `json.loads` rejects a backslash where it expects whitespace. Every
         case would come back as "produced no result payload".
         """
-        response = self._core.read_namespaced_pod_log(
-            name=pod_name,
-            namespace=self.config.namespace,
-            container="eval-case",
-            _preload_content=False,
+        kwargs = {
+            "name": pod_name,
+            "namespace": self.config.namespace,
+            "container": "eval-case",
+            "_preload_content": False,
+        }
+        if tail_lines is not None:
+            kwargs["tail_lines"] = tail_lines
+        response = self._call(
+            f"read log of pod {pod_name}",
+            self._core.read_namespaced_pod_log,
+            **kwargs,
         )
         return response.data.decode("utf-8", errors="replace")
 
-    def _pod_logs(self, name: str) -> str:
+    def _pod_logs(self, name: str, tail_lines: Optional[int] = None) -> str:
         from kubernetes.client.rest import ApiException
 
         chunks = []
@@ -357,7 +792,7 @@ class KubernetesJobBackend(ContainerBackend):
 
         for pod in pods:
             try:
-                chunks.append(self._read_pod_log(pod.metadata.name))
+                chunks.append(self._read_pod_log(pod.metadata.name, tail_lines))
             except ApiException as e:
                 # A pod that never started (ImagePullBackOff, Unschedulable)
                 # has no logs; its status is reported separately.
@@ -413,7 +848,9 @@ class KubernetesJobBackend(ContainerBackend):
         from kubernetes.client.rest import ApiException
 
         try:
-            self._batch.delete_namespaced_job(
+            self._call(
+                f"delete job {name}",
+                self._batch.delete_namespaced_job,
                 name=name,
                 namespace=self.config.namespace,
                 body=self._k8s.V1DeleteOptions(propagation_policy="Background"),
@@ -426,8 +863,12 @@ class KubernetesJobBackend(ContainerBackend):
         from kubernetes.client.rest import ApiException
 
         try:
-            self._core.delete_namespaced_config_map(
-                name=name, namespace=self.config.namespace)
+            self._call(
+                f"delete configmap {name}",
+                self._core.delete_namespaced_config_map,
+                name=name,
+                namespace=self.config.namespace,
+            )
         except ApiException as e:
             if e.status != 404:
                 logging.warning(

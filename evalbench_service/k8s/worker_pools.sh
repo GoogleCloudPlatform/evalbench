@@ -14,6 +14,8 @@
 #
 # Override any of the variables below via the environment, e.g.
 #   POOL_COUNT=4 MACHINE_TYPE=e2-standard-8 ./worker_pools.sh create
+#   NODE_LOCATIONS=us-central1-a,us-central1-b,us-central1-f ./worker_pools.sh create
+#   DRY_RUN=1 ./worker_pools.sh create   # print the commands only
 
 set -euo pipefail
 
@@ -42,26 +44,68 @@ MIN_NODES="${MIN_NODES:-0}"
 MAX_NODES="${MAX_NODES:-10}"
 NUM_NODES="${NUM_NODES:-0}"
 
+# Zones to spread each pool over, comma-separated, e.g.
+#   NODE_LOCATIONS=us-central1-a,us-central1-b,us-central1-f
+# Empty keeps the pool in the cluster's own zone. Spreading matters because a
+# single zone can stock out of a machine type (n2-standard-64 did in
+# us-central1-c) and then the autoscaler cannot add a node at all. With
+# several zones the bounds become pool-wide totals rather than per zone, and
+# LOCATION_POLICY=ANY lets the autoscaler take capacity wherever it exists
+# instead of insisting on balance.
+NODE_LOCATIONS="${NODE_LOCATIONS:-}"
+LOCATION_POLICY="${LOCATION_POLICY:-ANY}"
+TOTAL_MIN_NODES="${TOTAL_MIN_NODES:-${MIN_NODES}}"
+TOTAL_MAX_NODES="${TOTAL_MAX_NODES:-${MAX_NODES}}"
+
 # Must match `containerization.taint_key` / `taint_value` (defaults in
 # evalbench/container/config.py).
 TAINT_KEY="${TAINT_KEY:-evalbench.io/dedicated}"
 TAINT_VALUE="${TAINT_VALUE:-eval-worker}"
 
+# DRY_RUN=1 prints the gcloud/kubectl commands instead of running them.
+DRY_RUN="${DRY_RUN:-0}"
+
+run() {
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    printf '%q ' "$@"
+    echo
+  else
+    "$@"
+  fi
+}
+
 pool_name() {
   echo "${POOL_PREFIX}-$1"
 }
 
+pool_exists() {
+  [[ "${DRY_RUN}" == "1" ]] && return 1
+  gcloud container node-pools describe "$1" \
+      --cluster="${CLUSTER}" --zone="${ZONE}" --project="${PROJECT}" \
+      >/dev/null 2>&1
+}
+
 create_pool() {
   local name="$1"
-  if gcloud container node-pools describe "${name}" \
-      --cluster="${CLUSTER}" --zone="${ZONE}" --project="${PROJECT}" \
-      >/dev/null 2>&1; then
+  if pool_exists "${name}"; then
     echo "Node pool ${name} already exists; skipping."
     return 0
   fi
 
-  echo "Creating node pool ${name}..."
-  gcloud container node-pools create "${name}" \
+  local scaling=(--enable-autoscaling)
+  if [[ -n "${NODE_LOCATIONS}" ]]; then
+    scaling+=(
+      --node-locations="${NODE_LOCATIONS}"
+      --location-policy="${LOCATION_POLICY}"
+      --total-min-nodes="${TOTAL_MIN_NODES}"
+      --total-max-nodes="${TOTAL_MAX_NODES}"
+    )
+  else
+    scaling+=(--min-nodes="${MIN_NODES}" --max-nodes="${MAX_NODES}")
+  fi
+
+  echo "Creating node pool ${name}${NODE_LOCATIONS:+ across ${NODE_LOCATIONS}}..."
+  run gcloud container node-pools create "${name}" \
     --cluster="${CLUSTER}" \
     --zone="${ZONE}" \
     --project="${PROJECT}" \
@@ -69,9 +113,7 @@ create_pool() {
     --disk-size="${DISK_SIZE}" \
     --disk-type="${DISK_TYPE}" \
     --num-nodes="${NUM_NODES}" \
-    --enable-autoscaling \
-    --min-nodes="${MIN_NODES}" \
-    --max-nodes="${MAX_NODES}" \
+    "${scaling[@]}" \
     --service-account="${SERVICE_ACCOUNT}" \
     --workload-metadata=GKE_METADATA \
     --node-taints="${TAINT_KEY}=${TAINT_VALUE}:NoSchedule" \
@@ -81,14 +123,12 @@ create_pool() {
 
 delete_pool() {
   local name="$1"
-  if ! gcloud container node-pools describe "${name}" \
-      --cluster="${CLUSTER}" --zone="${ZONE}" --project="${PROJECT}" \
-      >/dev/null 2>&1; then
+  if [[ "${DRY_RUN}" != "1" ]] && ! pool_exists "${name}"; then
     echo "Node pool ${name} does not exist; skipping."
     return 0
   fi
   echo "Deleting node pool ${name}..."
-  gcloud container node-pools delete "${name}" \
+  run gcloud container node-pools delete "${name}" \
     --cluster="${CLUSTER}" --zone="${ZONE}" --project="${PROJECT}" --quiet
 }
 
@@ -102,9 +142,17 @@ cmd_create() {
   # The pools themselves are cluster-wide, but the dispatcher's Role is
   # namespaced: re-target it so the same script works against the test
   # namespace (NAMESPACE=evalbench-test-namespace KSA=evalbench-test-ksa).
-  sed -e "s/evalbench-namespace/${NAMESPACE}/g" \
+  local rbac
+  rbac="$(sed -e "s/evalbench-namespace/${NAMESPACE}/g" \
       -e "s/name: evalbench-ksa/name: ${KSA}/g" \
-      "$(dirname "$0")/worker_rbac.yaml" | kubectl apply -f -
+      "$(dirname "$0")/worker_rbac.yaml")"
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    echo "kubectl apply -f - <<EOF"
+    echo "${rbac}"
+    echo "EOF"
+  else
+    echo "${rbac}" | kubectl apply -f -
+  fi
 
   echo
   echo "Done. Add this to your run config:"

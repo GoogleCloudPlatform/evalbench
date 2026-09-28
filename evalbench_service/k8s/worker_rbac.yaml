@@ -18,7 +18,9 @@ rules:
   verbs: ["get"]
 - apiGroups: [""]
   resources: ["configmaps"]
-  verbs: ["create", "get", "list", "delete"]
+  # `patch` sets each ConfigMap's ownerReference to its Job after the Job is
+  # created, so garbage collection removes both together.
+  verbs: ["create", "get", "list", "patch", "delete"]
 - apiGroups: [""]
   resources: ["pods"]
   verbs: ["get", "list", "watch"]
