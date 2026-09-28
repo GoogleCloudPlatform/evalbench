@@ -23,6 +23,16 @@ spec:
         env:
         - name: EVAL_DB_PASSWORD
           value: pantheon
+        - name: EVALBENCH_HEALTH_PORT
+          value: "8080"
+        - name: EVALBENCH_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: EVALBENCH_POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
         imagePullPolicy: Always
         name: evalbench-test-eval
         # go/gke-shipshape
@@ -39,6 +49,30 @@ spec:
         ports:
         - protocol: TCP
           containerPort: 50051
+        - protocol: TCP
+          containerPort: 8080
+          name: health
+        # See evalbench.yaml for the reasoning behind these values.
+        startupProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          periodSeconds: 10
+          failureThreshold: 60
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          periodSeconds: 20
+          timeoutSeconds: 10
+          failureThreshold: 6
         volumeMounts:
         - mountPath: /tmp
           name: tmp-volume

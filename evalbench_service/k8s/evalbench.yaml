@@ -7,6 +7,14 @@ metadata:
     app: evalbench-eval-server
 spec:
   replicas: 1
+  # The pod mounts a ReadWriteOnce PVC (evalbench-ssd-pvc), so only one pod
+  # can ever attach it. RollingUpdate starts the new pod before stopping the
+  # old one, and the new pod then sits in ContainerCreating forever waiting for
+  # the volume -- which left the Deployment `Available=False` for months, one
+  # stuck pod per `kubectl rollout restart`. Recreate is the correct strategy
+  # for an RWO-backed singleton; see also hpa.yaml, which is pinned to 1/1.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: evalbench-eval-server
@@ -38,12 +46,27 @@ spec:
         # driving one scenario per RPC (the continuous CI fan-out) hit long
         # before the pod runs out of CPU.
         #
-        # Only raise this once `containerization.enabled: true` is in use: the
-        # threads are then just polling Kubernetes Jobs and are nearly idle. In
-        # in-process mode each thread runs a full agent CLI on this pod, so a
-        # high value only thrashes.
-        # - name: EVALBENCH_EVAL_THREADS
-        #   value: "400"
+        # Sized for containerized runs, where each thread only polls a
+        # Kubernetes Job and is nearly idle. In-process runs execute a full
+        # agent CLI per thread on this pod, so do not route large in-process
+        # fan-outs here expecting this many to run well.
+        - name: EVALBENCH_EVAL_THREADS
+          value: "128"
+        # Plain-HTTP kubelet probe endpoint (util/health.py); the gRPC port is
+        # ALTS, which a `grpc:` probe cannot speak.
+        - name: EVALBENCH_HEALTH_PORT
+          value: "8080"
+        # This pod's identity, so every eval-case Job and ConfigMap it creates
+        # is owned by it and garbage-collected by Kubernetes if the pod goes
+        # away mid-run (container/k8s_backend.py).
+        - name: EVALBENCH_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: EVALBENCH_POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
         imagePullPolicy: Always
         name: evalbench-eval
         resources:
@@ -70,6 +93,36 @@ spec:
         - protocol: TCP
           containerPort: 3000
           name: ui
+        - protocol: TCP
+          containerPort: 8080
+          name: health
+        # Startup gets up to 10 minutes: image pull of a multi-GB image plus
+        # proto generation and the gRPC bind. Liveness only takes over after.
+        startupProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          periodSeconds: 10
+          failureThreshold: 60
+        # Ready only once the gRPC server is bound and started; 503 again as
+        # soon as SIGTERM starts draining.
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        # Proves the event loop is still scheduling work. Deliberately lenient:
+        # a restart kills every in-flight eval (and, via ownerReferences, its
+        # case Jobs), so only restart a pod that is truly wedged.
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          periodSeconds: 20
+          timeoutSeconds: 10
+          failureThreshold: 6
         volumeMounts:
         - mountPath: /tmp
           name: tmp-volume

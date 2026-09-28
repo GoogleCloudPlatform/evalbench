@@ -8,8 +8,15 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: evalbench-eval-server-deploy
+  # Pinned to exactly one replica. The eval server mounts a ReadWriteOnce PVC
+  # (pvc.yaml), so a second pod can never attach it: with minReplicas > 1 the
+  # Deployment was permanently `Available=False` with extra pods stuck in
+  # ContainerCreating. Horizontal scale now comes from containerized eval
+  # cases running on the worker node pools (docs/containerized_evals.md), not
+  # from more eval-server replicas. Lift this only after moving session state
+  # off the RWO volume.
   minReplicas: 1
-  maxReplicas: 10
+  maxReplicas: 1
   metrics:
   - type: Resource
     resource:

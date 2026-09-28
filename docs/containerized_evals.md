@@ -20,6 +20,7 @@ Other generators fall back to in-process execution.
 - [What the container receives](#what-the-container-receives)
 - [Getting results back](#getting-results-back)
 - [Scaling to many concurrent runs](#scaling-to-many-concurrent-runs)
+- [Eval server health and topology](#eval-server-health-and-topology)
 - [Limitations](#limitations)
 - [Troubleshooting](#troubleshooting)
 
@@ -305,12 +306,13 @@ more than the pools can hold just leaves Jobs `Pending` and burning their
 whole evaluation to the event loop's default executor, so each in-flight RPC
 holds one thread for the entire run. CPython sizes that pool at
 `min(32, cpu_count + 4)` — which a caller that drives *one scenario per RPC*
-hits long before the pod runs out of CPU. Set `EVALBENCH_EVAL_THREADS` on the
-Deployment to lift it:
+hits long before the pod runs out of CPU. `EVALBENCH_EVAL_THREADS` on the
+Deployment lifts it; the checked-in manifests set it to 128, the value the
+prototype load test ran at:
 
 ```yaml
 - name: EVALBENCH_EVAL_THREADS
-  value: "400"
+  value: "128"
 ```
 
 > [!WARNING]
@@ -322,6 +324,36 @@ Deployment to lift it:
 The backend itself is shared too: one Kubernetes API client per
 `(backend, namespace)`, refcounted so the last session out closes it rather
 than the first one to finish.
+
+---
+
+## Eval server health and topology
+
+The eval server runs as a **singleton**. `/tmp_sessions` is a
+`ReadWriteOnce` PVC, so a second replica cannot mount it: it would sit in
+`ContainerCreating` forever and — with a `RollingUpdate` strategy — wedge every
+rollout behind it. The manifests therefore pin:
+
+- `strategy: Recreate` on the Deployment — the old pod releases the volume
+  before the new one starts.
+- `minReplicas: 1` / `maxReplicas: 1` in [`hpa.yaml`](/evalbench_service/k8s/hpa.yaml).
+
+Horizontal scale comes from the worker pools, not from more eval servers.
+
+The server exposes plain-HTTP probe endpoints next to gRPC:
+
+| Path | Returns |
+|---|---|
+| `/healthz`, `/livez` | `200` while the process is up. |
+| `/readyz` | `200` once the gRPC server has started, `503` before that and while draining. |
+
+| Env var | Default | Meaning |
+|---|---|---|
+| `EVALBENCH_HEALTH_PORT` | `8080` | Port for the probe endpoints. `0` disables them. Skipped if it collides with the gRPC `PORT` (Cloud Run sets `PORT=8080`). |
+| `EVALBENCH_SHUTDOWN_GRACE_SECONDS` | `5` | How long in-flight RPCs get after `SIGTERM` or `Ctrl-C`. |
+
+On `SIGTERM` the server flips `/readyz` to `503` (so the Service stops routing
+to it) and then stops gRPC with the grace period above.
 
 ---
 
