@@ -21,6 +21,7 @@ import reporting.report as report
 from reporting import get_reporters
 import reporting.analyzer as analyzer
 from util.config import update_google3_relative_paths, set_session_configs, config_to_df
+from util.config import with_agent_version
 from util import get_SessionManager
 from util.scriptrunner import run_script
 import sys
@@ -229,7 +230,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                 scores_tf,
                 multi_trial_scores_tf,
                 config,
-                model_config,
+                with_agent_version(model_config, evaluator),
                 db_configs,
             )
 
@@ -439,7 +440,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                 scores_tf,
                 None,  # Added None for multi_trial_scores_tf
                 config,
-                model_config,
+                with_agent_version(model_config, orchestrator),
                 db_configs,
             )
             logging.info(
@@ -573,7 +574,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                     scores_tf,
                     multi_trial_scores_tf,
                     config,
-                    model_config,
+                    with_agent_version(model_config, orchestrator),
                     db_configs,
                 )
                 return job_id, summary
