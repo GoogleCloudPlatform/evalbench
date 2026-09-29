@@ -1,0 +1,44 @@
+# Log-based alert that emails the RELEASE_RESULT line (lib.sh) of each
+# weekly release run.
+#
+# Replace TRIGGER_ID and CHANNEL_ID, then create the policy:
+#   gcloud alpha monitoring policies create --project=cloud-db-nl2sql \
+#     --policy-from-file=.ci/release/alert_policy.yaml
+displayName: 'EvalBench weekly release'
+combiner: OR
+conditions:
+  - displayName: 'RELEASE_RESULT line in the weekly release build'
+    conditionMatchedLog:
+      filter: >-
+        resource.type="build"
+        AND resource.labels.build_trigger_id="TRIGGER_ID"
+        AND textPayload:"RELEASE_RESULT status="
+      labelExtractors:
+        status: 'REGEXP_EXTRACT(textPayload, "status=(\\S+)")'
+        stage: 'REGEXP_EXTRACT(textPayload, "stage=(\\S+)")'
+        tag: 'REGEXP_EXTRACT(textPayload, "tag=(\\S+)")'
+        commit: 'REGEXP_EXTRACT(textPayload, "commit=(\\S+)")'
+        log: 'REGEXP_EXTRACT(textPayload, "log=(\\S+)")'
+        detail: 'REGEXP_EXTRACT(textPayload, "detail=\"(.*)\"")'
+alertStrategy:
+  # 5 minutes is the minimum. A run prints one line, so no result is lost.
+  notificationRateLimit:
+    period: 300s
+  autoClose: 1800s
+documentation:
+  subject: 'EvalBench release ${log.extracted_label.status}: ${log.extracted_label.tag}'
+  mimeType: text/markdown
+  content: |
+    **Status:** ${log.extracted_label.status}
+
+    **Stage:** ${log.extracted_label.stage}
+
+    **Tag:** ${log.extracted_label.tag}
+
+    **Detail:** ${log.extracted_label.detail}
+
+    **Commit:** ${log.extracted_label.commit}
+
+    **Build log:** ${log.extracted_label.log}
+notificationChannels:
+  - projects/cloud-db-nl2sql/notificationChannels/CHANNEL_ID
