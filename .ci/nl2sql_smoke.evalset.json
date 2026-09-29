@@ -1,0 +1,233 @@
+[
+  {
+    "id": 9,
+    "nl_prompt": "Can you find all the users who have not made any posts?",
+    "query_type": "dql",
+    "database": "db_blog",
+    "dialects": [
+      "postgres"
+    ],
+    "golden_sql": {
+      "postgres": [
+        "SELECT u.user_id FROM tbl_users u LEFT JOIN tbl_posts p ON u.user_id = p.user_id WHERE p.post_id IS NULL;"
+      ]
+    },
+    "eval_query": {
+      "postgres": [
+        null
+      ]
+    },
+    "setup_sql": {},
+    "cleanup_sql": {},
+    "tags": [
+      "DQL",
+      "difficulty: simple",
+      "SELECT",
+      "LEFT_JOIN"
+    ]
+  },
+  {
+    "id": 16,
+    "nl_prompt": "How many followers does each user have?",
+    "query_type": "dql",
+    "database": "db_blog",
+    "dialects": [
+      "postgres"
+    ],
+    "golden_sql": {
+      "postgres": [
+        "SELECT tbl_users.user_id, COUNT(tbl_followers.follower_id) AS follower_count FROM tbl_users LEFT JOIN tbl_followers ON tbl_users.user_id = tbl_followers.following_id GROUP BY tbl_users.user_id;"
+      ]
+    },
+    "eval_query": {
+      "postgres": [
+        null
+      ]
+    },
+    "setup_sql": {},
+    "cleanup_sql": {},
+    "tags": [
+      "DQL",
+      "difficulty: simple",
+      "SELECT",
+      "JOIN",
+      "AGGREGATE",
+      "LEFT_JOIN"
+    ]
+  },
+  {
+    "id": 18,
+    "nl_prompt": "What posts have been reported and are pending review? What is the reason for the review? -- Identify posts by including post_id",
+    "query_type": "dql",
+    "database": "db_blog",
+    "dialects": [
+      "postgres"
+    ],
+    "golden_sql": {
+      "postgres": [
+        "SELECT p.post_id, r.report_reason FROM tbl_posts p INNER JOIN tbl_reports r ON p.post_id = r.post_id WHERE r.is_resolved = FALSE;"
+      ]
+    },
+    "eval_query": {
+      "postgres": [
+        null
+      ]
+    },
+    "setup_sql": {},
+    "cleanup_sql": {},
+    "tags": [
+      "DQL",
+      "difficulty: simple",
+      "SELECT",
+      "JOIN"
+    ]
+  },
+  {
+    "id": 19,
+    "nl_prompt": "What is the most common reason for reporting a post, and what is the average time to resolve the report in minutes?",
+    "query_type": "dql",
+    "database": "db_blog",
+    "dialects": [
+      "postgres"
+    ],
+    "golden_sql": {
+      "postgres": [
+        "WITH rc AS (SELECT report_reason, COUNT(*) AS report_count, AVG(EXTRACT(EPOCH FROM (resolution_timestamp - report_timestamp)) / 60) AS avg_resolution_time FROM tbl_reports GROUP BY report_reason) SELECT report_reason, report_count, avg_resolution_time from rc WHERE report_count = (SELECT MAX(report_count) FROM rc);"
+      ]
+    },
+    "eval_query": {
+      "postgres": [
+        null
+      ]
+    },
+    "setup_sql": {},
+    "cleanup_sql": {},
+    "tags": [
+      "DQL",
+      "difficulty: moderate",
+      "SELECT",
+      "AGGREGATE",
+      "DATE",
+      "time"
+    ]
+  },
+  {
+    "id": 100,
+    "nl_prompt": "Identify which is the most active hour of the day across all users",
+    "query_type": "dql",
+    "database": "db_blog",
+    "dialects": [
+      "postgres"
+    ],
+    "golden_sql": {
+      "postgres": [
+        "SELECT EXTRACT(HOUR FROM activity_timestamp) AS active_hour, COUNT(*) AS activity_count FROM tbl_user_activity GROUP BY active_hour ORDER BY activity_count DESC LIMIT 1;"
+      ]
+    },
+    "eval_query": {
+      "postgres": [
+        null
+      ]
+    },
+    "setup_sql": {},
+    "cleanup_sql": {},
+    "tags": [
+      "DQL",
+      "difficulty: moderate",
+      "SELECT",
+      "EXTRACT",
+      "AGGREGATE",
+      "SORT",
+      "LIMIT",
+      "HOUR",
+      "time"
+    ]
+  },
+  {
+    "id": 180,
+    "nl_prompt": "Which posts have tags related to both 'programming' and 'database' ?",
+    "query_type": "dql",
+    "database": "db_blog",
+    "dialects": [
+      "postgres"
+    ],
+    "golden_sql": {
+      "postgres": [
+        "SELECT * FROM tbl_posts WHERE tags::jsonb @> '[ \"programming\", \"database\" ]'::jsonb;"
+      ]
+    },
+    "eval_query": {
+      "postgres": [
+        null
+      ]
+    },
+    "setup_sql": {},
+    "cleanup_sql": {},
+    "tags": [
+      "DQL",
+      "difficulty: simple",
+      "SELECT",
+      "JSON",
+      "difficulty: moderate",
+      "JSON_CONTAINS"
+    ]
+  },
+  {
+    "id": 156,
+    "nl_prompt": "List the latest uploaded media file for each user -- include user_id, user name and media url",
+    "query_type": "dql",
+    "database": "db_blog",
+    "dialects": [
+      "postgres"
+    ],
+    "golden_sql": {
+      "postgres": [
+        "SELECT m1.uploader_id, u.username, m1.url FROM tbl_media m1 INNER JOIN ( SELECT uploader_id, MAX(upload_date) AS max_upload_date FROM tbl_media GROUP BY uploader_id ) m2 ON m1.uploader_id = m2.uploader_id AND m1.upload_date = m2.max_upload_date INNER JOIN tbl_users u ON m1.uploader_id = u.user_id;"
+      ]
+    },
+    "eval_query": {
+      "postgres": [
+        null
+      ]
+    },
+    "setup_sql": {},
+    "cleanup_sql": {},
+    "tags": [
+      "DQL",
+      "SELECT",
+      "AGGREGATE",
+      "JOIN",
+      "difficulty: moderate"
+    ]
+  },
+  {
+    "id": 3,
+    "nl_prompt": "How many bloggers who have posted at least 1 blog in 2024 and have linked twitter account",
+    "query_type": "dql",
+    "database": "db_blog",
+    "dialects": [
+      "postgres"
+    ],
+    "golden_sql": {
+      "postgres": [
+        "SELECT COUNT(DISTINCT u.user_id) AS num_bloggers FROM tbl_users u INNER JOIN tbl_posts p ON u.user_id = p.user_id WHERE p.created_at >= DATE('2024-01-01') AND p.created_at <= DATE('2024-12-31') AND u.social_media_links ->> 'twitter' IS NOT NULL;"
+      ]
+    },
+    "eval_query": {
+      "postgres": [
+        null
+      ]
+    },
+    "setup_sql": {},
+    "cleanup_sql": {},
+    "tags": [
+      "DQL",
+      "difficulty: moderate",
+      "SELECT",
+      "JOIN",
+      "JSON",
+      "JSON_EXTRACT",
+      "datalinking"
+    ]
+  }
+]
