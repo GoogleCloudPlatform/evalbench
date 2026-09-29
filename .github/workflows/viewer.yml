@@ -38,12 +38,15 @@ jobs:
     # Mesop answers 200 for every URL, so this checks boot, not page content.
     - name: Boot the frontend server
       working-directory: viewer
+      timeout-minutes: 3
+      env:
+        PORT: 3000
       run: |
-        PORT=3000 uv run --all-packages ./run_frontend.sh > /tmp/frontend.log 2>&1 &
+        uv run --all-packages ./run_frontend.sh > /tmp/frontend.log 2>&1 &
         PID=$!
         for _ in $(seq 1 30); do
-          if curl -fs -o /dev/null http://localhost:3000/; then
-            echo "The server answered on port 3000."
+          if curl -fs -o /dev/null --max-time 2 "http://localhost:$PORT/"; then
+            echo "The server answered on port $PORT."
             kill "$PID"
             exit 0
           fi
@@ -51,7 +54,7 @@ jobs:
           kill -0 "$PID" 2>/dev/null || break
           sleep 2
         done
-        echo "FAIL: the server did not answer on port 3000."
+        echo "FAIL: the server did not answer on port $PORT."
         cat /tmp/frontend.log
         kill "$PID" 2>/dev/null || true
         exit 1
