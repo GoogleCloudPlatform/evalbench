@@ -108,4 +108,5 @@ default = true
 [tool.pytest.ini_options]
 markers = [
     "real_agy_install: exercise the real agy installer path (opts out of the autouse install stub)",
+    "real_agy_probe: exercise the real agy startup probe (opts out of the autouse probe stub)",
 ]

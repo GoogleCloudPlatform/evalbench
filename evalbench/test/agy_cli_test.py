@@ -23,11 +23,11 @@ _MODEL_LABEL = "Gemini 3.1 Pro (High)"
 def sandbox(tmp_path, monkeypatch):
     """Isolates HOME under a throwaway dir so the generator builds its sandbox
     there instead of touching the real machine. Returns the host (real) home
-    path for tests that need to pre-seed host-side files (settings.json, an
-    on-disk oauth token, ...).
+    path for tests that need to pre-seed host-side files.
 
-    Seeds a host ADC because the generator refuses to construct without one.
-    Tests that exercise credential resolution drop it with _remove_adc.
+    Seeds a host ADC file so auth resolves to a file and not to the metadata
+    server. Tests that exercise credential resolution drop it with
+    _remove_adc.
     """
     real_home = tmp_path / "real_home"
     real_home.mkdir()
@@ -51,6 +51,27 @@ def skip_agy_install(request):
         AgyCliGenerator, "_ensure_agy_installed", lambda self: None
     ):
         yield
+
+
+_REAL_RESOLVE_AGY_VERSION = AgyCliGenerator._resolve_agy_version
+
+
+@pytest.fixture(autouse=True)
+def skip_agy_probe(request):
+    """The generator runs ``agy --version`` and an ``agy -p`` startup probe
+    during __init__. Stub both for every test. Tests that exercise the probe
+    opt out with @pytest.mark.real_agy_probe. Version tests call
+    _REAL_RESOLVE_AGY_VERSION directly."""
+    with patch.object(
+        AgyCliGenerator, "_resolve_agy_version", lambda self: "agy"
+    ):
+        if request.node.get_closest_marker("real_agy_probe"):
+            yield
+            return
+        with patch.object(
+            AgyCliGenerator, "_verify_runtime", lambda self, servers: None
+        ):
+            yield
 
 
 @pytest.fixture
@@ -284,7 +305,30 @@ def test_run_command_argv_shape(mock_run, sandbox):
     assert mock_run.call_args.kwargs["cwd"] == generator.fake_home
 
 
-def test_run_command_argv_shape_with_continue(mock_run, sandbox):
+def test_run_command_argv_resumes_by_conversation_id(mock_run, sandbox):
+    """A resumed turn targets its own conversation. ``--continue`` would pick
+    the most recent conversation in the sandbox, which can be another
+    scenario's."""
+    generator = AgyCliGenerator({})
+    cmd = generator.create_command(
+        cli="agy", prompt="next turn", resume=True, session_id="conv-123",
+    )
+    assert cmd.session_id == "conv-123"
+    generator._run_agy_cli(cmd)
+
+    sent_argv = mock_run.call_args[0][0]
+    assert sent_argv == [
+        generator.agy_bin, "-p", "next turn",
+        "--dangerously-skip-permissions", "--output-format", "stream-json",
+        "--log-file", generator.cli_log_path,
+        "--add-dir", generator.fake_home, "--conversation", "conv-123",
+    ]
+
+
+def test_resume_without_session_id_starts_new_conversation(mock_run, sandbox):
+    """Without a session ID (turn 1 emitted none), resume starts a new
+    conversation. ``--continue`` can attach to another scenario's
+    conversation."""
     generator = AgyCliGenerator({})
     cmd = CLICommand(cli="agy", prompt="next turn", resume=True)
     generator._run_agy_cli(cmd)
@@ -294,8 +338,19 @@ def test_run_command_argv_shape_with_continue(mock_run, sandbox):
         generator.agy_bin, "-p", "next turn",
         "--dangerously-skip-permissions", "--output-format", "stream-json",
         "--log-file", generator.cli_log_path,
-        "--add-dir", generator.fake_home, "--continue",
+        "--add-dir", generator.fake_home,
     ]
+
+
+def test_first_turn_ignores_session_id(mock_run, sandbox):
+    """A session ID without ``resume`` adds no resume flag."""
+    generator = AgyCliGenerator({})
+    cmd = CLICommand(cli="agy", prompt="hello", session_id="conv-123")
+    generator._run_agy_cli(cmd)
+
+    sent_argv = mock_run.call_args[0][0]
+    assert "--conversation" not in sent_argv
+    assert "--continue" not in sent_argv
 
 
 def test_run_command_argv_passes_work_dir_as_add_dir(mock_run, sandbox):
@@ -771,6 +826,7 @@ def _local_app_data_dir():
     )
 
 
+@pytest.mark.real_agy_probe
 def test_verify_runtime_raises_when_no_tools_attach(mock_run, sandbox):
     """A server that attaches zero tools (the silent failure mode caused
     by a wrong URL field) must raise RuntimeError so the eval doesn't
@@ -793,6 +849,7 @@ def test_verify_runtime_raises_when_no_tools_attach(mock_run, sandbox):
         AgyCliGenerator(config)
 
 
+@pytest.mark.real_agy_probe
 def test_verify_runtime_includes_fatal_markers_in_error(mock_run, sandbox):
     """When attach fails AND the probe log has a fatal marker, the marker
     is surfaced in the error for diagnosis."""
@@ -817,6 +874,7 @@ def test_verify_runtime_includes_fatal_markers_in_error(mock_run, sandbox):
         AgyCliGenerator(config)
 
 
+@pytest.mark.real_agy_probe
 def test_verify_runtime_includes_probe_output_in_error(mock_run, sandbox):
     """A probe that dies before writing a scannable log leaves its exit code
     and stderr as the only evidence, so both must reach the error."""
@@ -842,6 +900,7 @@ def test_verify_runtime_includes_probe_output_in_error(mock_run, sandbox):
     assert "Probe STDOUT:\n  (empty)" in msg
 
 
+@pytest.mark.real_agy_probe
 def test_verify_runtime_raises_on_invalid_model(mock_run, sandbox):
     """agy populates the tool-schema cache before it resolves ``--model``, so
     an unrecognized model attaches tools normally and only then fails every
@@ -874,6 +933,7 @@ def test_verify_runtime_raises_on_invalid_model(mock_run, sandbox):
         AgyCliGenerator(config)
 
 
+@pytest.mark.real_agy_probe
 def test_verify_runtime_passes_when_tools_attach(mock_run, sandbox):
     """When the probe populates the tool-schema cache, setup completes."""
     config = {
@@ -897,6 +957,7 @@ def test_verify_runtime_passes_when_tools_attach(mock_run, sandbox):
     assert gen.name == "agy_cli"
 
 
+@pytest.mark.real_agy_probe
 def test_verify_runtime_ignores_non_schema_json(mock_run, sandbox):
     """A ``*.json`` that isn't a tool schema (sidecar file, junk, or a
     non-object) must not be counted as a discovered tool -- otherwise a
@@ -924,6 +985,7 @@ def test_verify_runtime_ignores_non_schema_json(mock_run, sandbox):
         AgyCliGenerator(config)
 
 
+@pytest.mark.real_agy_probe
 def test_verify_runtime_counts_only_valid_schemas(mock_run, sandbox):
     """A real tool schema sitting next to junk still passes, and only the
     valid schema is counted as a discovered tool."""
@@ -947,6 +1009,7 @@ def test_verify_runtime_counts_only_valid_schemas(mock_run, sandbox):
     assert gen.name == "agy_cli"
 
 
+@pytest.mark.real_agy_probe
 def test_verify_runtime_clears_stale_schema_cache(mock_run, sandbox):
     """A stale schema dir from a previous run must not cause a false pass:
     if this run's probe writes nothing, verification must still fail."""
@@ -970,11 +1033,17 @@ def test_verify_runtime_clears_stale_schema_cache(mock_run, sandbox):
         AgyCliGenerator(config)
 
 
-def test_verify_runtime_skipped_with_nothing_to_verify(mock_run, sandbox):
-    """No MCP servers and no configured model -> no probe, no subprocess call."""
+@pytest.mark.real_agy_probe
+def test_verify_runtime_runs_for_skills_only_config(mock_run, sandbox):
+    """With no MCP servers and no model, the probe still runs, so an auth
+    failure surfaces at setup instead of on every turn."""
     AgyCliGenerator({"setup": {"skills": []}})
 
-    assert mock_run.call_count == 0
+    probes = [
+        c for c in mock_run.call_args_list
+        if c.args and list(c.args[0][1:3]) == ["-p", "ping"]
+    ]
+    assert len(probes) == 1
 
 
 def _invalid_model_probe(cmd, *args, **kwargs):
@@ -988,6 +1057,7 @@ def _invalid_model_probe(cmd, *args, **kwargs):
     return MagicMock(returncode=1, stdout="", stderr="")
 
 
+@pytest.mark.real_agy_probe
 def test_invalid_model_rejected_on_skills_only_config(mock_run, sandbox):
     """The model check must not ride on MCP configuration: a skills-only run
     hits the same empty-response failure and has no server to trigger it."""
@@ -999,6 +1069,7 @@ def test_invalid_model_rejected_on_skills_only_config(mock_run, sandbox):
         })
 
 
+@pytest.mark.real_agy_probe
 def test_invalid_model_rejected_without_setup_block(mock_run, sandbox):
     """A config with no ``setup:`` at all skips _setup_tools entirely, so the
     probe has to be driven from the model alone."""
@@ -1007,6 +1078,7 @@ def test_invalid_model_rejected_without_setup_block(mock_run, sandbox):
         AgyCliGenerator({"model": "gemini-9.9-nonexistent"})
 
 
+@pytest.mark.real_agy_probe
 def test_verify_runtime_unreadable_probe_log_does_not_mask_failure(
     mock_run, sandbox,
 ):
@@ -1032,6 +1104,96 @@ def test_verify_runtime_unreadable_probe_log_does_not_mask_failure(
     mock_run.side_effect = fake_run
     with pytest.raises(RuntimeError, match="attached no tools"):
         AgyCliGenerator(config)
+
+
+_ADC_FAILURE_LINE = (
+    'W0926 17:14:14.796747 1 adc_auth.go:49] adcAuth: failed to get token '
+    'from token source: oauth2: "invalid_grant" "Bad Request"'
+)
+
+
+@pytest.mark.real_agy_probe
+def test_verify_runtime_raises_auth_error_with_adc_log_lines(
+    mock_run, sandbox,
+):
+    """agy prints the same generic stderr line for every ADC failure. The
+    error must carry the adcAuth log lines, which hold the cause, and list
+    each line once."""
+    def fake_run(cmd, *args, **kwargs):
+        _write_probe_log(
+            _local_app_data_dir(), "cli-probe.log",
+            f"{_ADC_FAILURE_LINE}\n"
+            f"{_ADC_FAILURE_LINE.replace('14.796747', '14.820747')}\n",
+        )
+        return MagicMock(
+            returncode=1, stdout="",
+            stderr="Error: authentication required. Run 'agy' to log in.",
+        )
+
+    mock_run.side_effect = fake_run
+    with pytest.raises(RuntimeError) as excinfo:
+        AgyCliGenerator({"setup": {"skills": []}})
+    msg = str(excinfo.value)
+    assert "agy failed to authenticate with ADC" in msg
+    assert "ADC in use:" in msg
+    assert msg.count("invalid_grant") == 1
+
+
+@pytest.mark.real_agy_probe
+def test_verify_runtime_raises_auth_error_from_log_alone(mock_run, sandbox):
+    """adcAuth failures with no success line fail the probe even if the
+    stderr wording changes."""
+    def fake_run(cmd, *args, **kwargs):
+        _write_probe_log(
+            _local_app_data_dir(), "cli-probe.log", f"{_ADC_FAILURE_LINE}\n",
+        )
+        return MagicMock(returncode=1, stdout="", stderr="")
+
+    mock_run.side_effect = fake_run
+    with pytest.raises(RuntimeError, match="failed to authenticate"):
+        AgyCliGenerator({})
+
+
+@pytest.mark.real_agy_probe
+def test_verify_runtime_passes_after_transient_auth_failure(mock_run, sandbox):
+    """A failed token fetch followed by a successful one is not an auth
+    failure."""
+    def fake_run(cmd, *args, **kwargs):
+        _write_probe_log(
+            _local_app_data_dir(), "cli-probe.log",
+            f"{_ADC_FAILURE_LINE}\n"
+            "I0926 17:14:15 1 adc_auth.go:73] adcAuth: authenticated "
+            "successfully with quota project p, token is non-empty: true\n",
+        )
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    mock_run.side_effect = fake_run
+    AgyCliGenerator({})
+
+
+def test_resolve_agy_version_reports_binary_version(mock_run, sandbox):
+    generator = AgyCliGenerator({})
+    mock_run.return_value = MagicMock(returncode=0, stdout="1.2.3\n", stderr="")
+
+    assert _REAL_RESOLVE_AGY_VERSION(generator) == "agy@1.2.3"
+    assert list(mock_run.call_args.args[0]) == [generator.agy_bin, "--version"]
+
+
+@pytest.mark.parametrize("result", [
+    MagicMock(returncode=0, stdout="", stderr=""),
+    MagicMock(returncode=1, stdout="1.2.3", stderr="boom"),
+    FileNotFoundError("agy"),
+])
+def test_resolve_agy_version_falls_back_to_bare_name(
+    mock_run, sandbox, result,
+):
+    generator = AgyCliGenerator({})
+    if isinstance(result, Exception):
+        mock_run.side_effect = result
+    else:
+        mock_run.return_value = result
+
+    assert _REAL_RESOLVE_AGY_VERSION(generator) == "agy"
 
 
 def test_translate_mcp_config_maps_httpurl_to_serverurl():
@@ -1068,11 +1230,6 @@ def test_translate_mcp_config_passes_native_fields_through_unchanged():
     assert AgyCliGenerator._translate_mcp_config(dict(cfg)) == cfg
 
 
-def _written_settings(generator):
-    with open(generator.settings_path) as f:
-        return json.load(f)
-
-
 def test_run_passes_configured_model_flag(mock_run, sandbox):
     """The turn command carries the configured model via ``--model``."""
     generator = AgyCliGenerator({"model": _MODEL_LABEL})
@@ -1082,12 +1239,16 @@ def test_run_passes_configured_model_flag(mock_run, sandbox):
     assert argv[argv.index("--model") + 1] == _MODEL_LABEL
 
 
-def test_model_never_written_to_settings(mock_run, sandbox):
-    """The model is selected via the flag, not the settings.json `model`
-    key -- so no `model` key is ever written there."""
-    generator = AgyCliGenerator({"model": _MODEL_LABEL})
+def test_settings_file_not_written(mock_run, sandbox):
+    """agy ignores a ``gcp`` block in settings.json under ADC auth, and the
+    model goes through ``--model``, so the harness writes no settings.json."""
+    generator = AgyCliGenerator({
+        "model": _MODEL_LABEL,
+        "env": {"GOOGLE_CLOUD_PROJECT": "p", "GOOGLE_CLOUD_LOCATION": "global"},
+    })
 
-    assert "model" not in _written_settings(generator)
+    assert not os.path.exists(
+        os.path.join(generator.app_data_dir, "settings.json"))
 
 
 def _stats_models(generator):
@@ -1285,6 +1446,7 @@ def test_host_adc_wins_over_gke_secret_mount(sandbox, monkeypatch, tmp_path):
     assert generator.adc_path.startswith(str(sandbox))
 
 
+@pytest.mark.real_agy_probe
 def test_mcp_attach_failure_names_the_adc_in_use(mock_run, sandbox):
     """Attachment failures are usually auth-shaped, so the error names the
     credential the servers were attaching with."""
