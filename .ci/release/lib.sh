@@ -4,7 +4,8 @@
 # POSIX sh, so the busybox shell in the gcrane image can source it. Needs
 # BUILD_ID, COMMIT_SHA, LOCATION and PROJECT_ID from options.env.
 
-# alert_policy.yaml parses this line. Update it if the format changes.
+# alert_policy.yaml matches this prefix and parses the line format. If you
+# change either, update the policy.
 RELEASE_RESULT_PREFIX="RELEASE_RESULT"
 
 # Prints the result line of the run.
@@ -23,7 +24,7 @@ release_result() {
   _prs=$(cat /workspace/release_prs.txt 2>/dev/null \
     || echo "PR list not computed before this step ended the run.")
   _prs=$(printf '%s' "$_prs" | tr '"\n' "' ")
-  _compare=$(cat /workspace/release_compare.txt 2>/dev/null || echo "none")
+  _compare=$(cat /workspace/release_compare.txt 2>/dev/null || echo "unavailable")
   _log="https://console.cloud.google.com/cloud-build/builds;region=${LOCATION}/${BUILD_ID}?project=${PROJECT_ID}"
   _commit="https://github.com/GoogleCloudPlatform/evalbench/commit/${COMMIT_SHA}"
   echo "${RELEASE_RESULT_PREFIX} status=$1 stage=$2 tag=${_tag} commit=${_commit} log=${_log} compare=${_compare} prs=\"${_prs}\" detail=\"${_detail}\""

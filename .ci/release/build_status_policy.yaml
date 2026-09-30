@@ -1,0 +1,48 @@
+# Log-based alert that emails when a weekly release run ends without a
+# RELEASE_RESULT line: a timeout, a cancel, or an internal error.
+#
+# Cloud Build writes an audit entry when a build ends. Its status code is 1
+# for CANCELLED, 4 for TIMEOUT, 9 for FAILURE, and 13 for INTERNAL_ERROR. A
+# failed step prints a RELEASE_RESULT line, so alert_policy.yaml emails a
+# FAILURE and this policy skips code 9. Each run sends one email.
+#
+# Not covered: a build that fails before a step prints its line, for example
+# when a step image does not pull, and a build that never starts.
+#
+# A log-based policy has only one condition, so this alert is a separate
+# policy. TRIGGER_ID and CHANNEL_NAME are placeholders, as in
+# alert_policy.yaml. To create the policy, fill in a copy of this file and
+# run 'gcloud alpha monitoring policies create'.
+displayName: 'EvalBench weekly release build status'
+combiner: OR
+conditions:
+  - displayName: 'Weekly release build ended without a result'
+    conditionMatchedLog:
+      filter: >-
+        logName:"cloudaudit.googleapis.com%2Factivity"
+        AND resource.type="build"
+        AND resource.labels.build_trigger_id="TRIGGER_ID"
+        AND protoPayload.methodName="google.devtools.cloudbuild.v1.CloudBuild.CreateBuild"
+        AND operation.last=true
+        AND protoPayload.status.code>0
+        AND protoPayload.status.code!=9
+      labelExtractors:
+        code: 'EXTRACT(protoPayload.status.code)'
+alertStrategy:
+  # 5 minutes is the minimum.
+  notificationRateLimit:
+    period: 300s
+  autoClose: 1800s
+documentation:
+  subject: 'EvalBench release build ended without a result (code ${log.extracted_label.code})'
+  mimeType: text/markdown
+  content: |
+    **Status code:** ${log.extracted_label.code} (1 = CANCELLED, 4 = TIMEOUT, 13 = INTERNAL_ERROR)
+
+    The run ended before it printed a RELEASE_RESULT line, so no other email
+    comes for it. If deploy-gke or deploy-cloudrun did not finish, check the
+    image that GKE and Cloud Run serve.
+
+    **Build log:** https://console.cloud.google.com/cloud-build/builds;region=us-central1/${resource.label.build_id}?project=${resource.label.project_id}
+notificationChannels:
+  - CHANNEL_NAME

@@ -6,7 +6,7 @@
 #   TRIGGER_ID    id of the trigger 'weekly-evalbench-release' (us-central1)
 #   CHANNEL_NAME  name of the notification channel 'EvalBench release'
 # To change the policy, fill in a copy of this file and run
-# 'gcloud alpha monitoring policies update'. Do not create a second policy.
+# 'gcloud alpha monitoring policies update'. Do not create a duplicate.
 displayName: 'EvalBench weekly release'
 combiner: OR
 conditions:
@@ -37,13 +37,13 @@ documentation:
   content: |
     **Status:** ${log.extracted_label.status}
 
+    **Detail:** ${log.extracted_label.detail}
+
     **Stage:** ${log.extracted_label.stage}
 
     **Tag:** ${log.extracted_label.tag}
 
-    **Detail:** ${log.extracted_label.detail}
-
-    **PRs since the previous release:** ${log.extracted_label.prs}
+    **PRs since the last release:** ${log.extracted_label.prs}
 
     **Compare:** ${log.extracted_label.compare}
 

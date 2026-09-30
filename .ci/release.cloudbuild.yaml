@@ -5,8 +5,9 @@
 # to Corp Run.
 #
 # Each run prints one RELEASE_RESULT line (lib.sh), and alert_policy.yaml
-# emails it. Cloud Build has no on-failure hook, so a failed step prints its
-# own line. A timeout or a cancel prints no line.
+# emails it. Cloud Build has no on-failure hook, so each failed step prints
+# its own line. A timeout, a cancel, or an internal error prints no line, so
+# build_status_policy.yaml emails those.
 #
 # Use $$ for shell variables and $$(...). Cloud Build expands a single $.
 
@@ -126,6 +127,7 @@ steps:
     name: 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server:$COMMIT_SHA'
     dir: '/evalbench'
     waitFor: ['resolve-release']
+    timeout: '1200s'
     entrypoint: 'bash'
     args:
       - '-c'
@@ -193,7 +195,7 @@ steps:
         fi
 
         # Scan from the passing attempt to the end. Any traceback or ERROR
-        # record fails the gate, also one from a handled exception.
+        # record fails the gate, even one from a handled exception.
         PROBLEMS=$$(tail -c +$$((LOG_OFFSET + 1)) "$$SERVER_LOG" | log_problems)
         if [[ -n "$$PROBLEMS" ]]; then
           echo "$$PROBLEMS"
@@ -478,7 +480,7 @@ steps:
       - '-c'
       - |
         . /workspace/.ci/release/lib.sh
-        release_result SUCCESS release "GKE and Cloud Run serve $$(cat /workspace/image_digest.txt)."
+        release_result SUCCESS notify-success "GKE and Cloud Run serve $$(cat /workspace/release_tag.txt) ($$(cat /workspace/image_digest.txt))."
 
 substitutions:
   _EVAL_REGION: 'global'
