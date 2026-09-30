@@ -27,7 +27,7 @@ conditions:
         prs: 'REGEXP_EXTRACT(textPayload, "prs=\"([^\"]*)\"")'
         detail: 'REGEXP_EXTRACT(textPayload, "detail=\"(.*)\"")'
 alertStrategy:
-  # 5 minutes is the minimum. A run prints one line, so no result is lost.
+  # 5 minutes is the minimum.
   notificationRateLimit:
     period: 300s
   autoClose: 1800s

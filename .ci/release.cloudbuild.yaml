@@ -29,9 +29,9 @@ steps:
 
         # Stop if another run is active, because two runs race on GKE and
         # :latest. If the list call fails, continue.
-        if [[ -n "$TRIGGER_ID" ]]; then
+        if [[ -n "$TRIGGER_NAME" ]]; then
           OTHERS=$$(gcloud builds list --ongoing --region="$LOCATION" \
-            --filter="buildTriggerId=$TRIGGER_ID AND id!=$BUILD_ID" \
+            --filter="substitutions.TRIGGER_NAME=$TRIGGER_NAME AND id!=$BUILD_ID" \
             --format='value(id)' 2>/dev/null)
           if [[ -n "$$OTHERS" ]]; then
             release_fail $$STAGE "Another release run is active: $$OTHERS"
@@ -114,10 +114,12 @@ steps:
         echo "PRs since $$OLD_SHA:"
         cat "$$NOTES"
 
-  # Serves the candidate image over gRPC and runs two checks on it:
+  # Serves the candidate image over gRPC and runs three checks on it:
   #   1. The smoke eval: the server generates SQL with a model. eval_client
   #      exits 0 for any completed run, so the verifier grades the CSVs.
   #   2. client_sql_smoke.py: the client-generated SQL path, with fixed scores.
+  #   3. The log scan: any ERROR, CRITICAL, or traceback in the server log
+  #      fails the gate.
   - id: smoke-gate
     name: 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server:$COMMIT_SHA'
     dir: '/evalbench'
