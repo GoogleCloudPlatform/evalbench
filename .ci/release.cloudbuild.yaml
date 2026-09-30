@@ -2,7 +2,7 @@
 #
 # Gates the image that the Build trigger pushed for this commit, tags it,
 # deploys it to GKE with automatic rollback, moves :latest, and deploys it
-# to Corp Run.
+# to Cloud Run.
 #
 # Each run prints one RELEASE_RESULT line (lib.sh), and alert_policy.yaml
 # emails it. Cloud Build has no on-failure hook, so each failed step prints
@@ -56,9 +56,9 @@ steps:
         echo "digest = $$DIGEST"
         echo "tag    = $$TAG"
 
-  # Lists the PRs merged since the release that GKE serves now. lib.sh adds
-  # the list to the result line. Runs in parallel with the smoke gate. Every
-  # failure writes a reason and exits 0, so this step never fails the release.
+  # Lists the PRs merged since the release that GKE serves now, for the
+  # result line. Every failure writes a reason and exits 0, so this step
+  # never fails the release.
   - id: release-notes
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     waitFor: ['resolve-release']
@@ -158,6 +158,14 @@ steps:
           release_fail $$STAGE "The eval server did not answer Ping within 300 s."
         fi
 
+        # The final scan starts at the passing attempt, so check startup here.
+        PROBLEMS=$$(log_problems < "$$SERVER_LOG")
+        if [[ -n "$$PROBLEMS" ]]; then
+          echo "$$PROBLEMS"
+          dump_log
+          release_fail $$STAGE "The eval server logged errors or exceptions at startup."
+        fi
+
         # Retry once if the client crashes or the verifier exits 2 (model).
         for ATTEMPT in 1 2; do
           echo "===== smoke eval, attempt $$ATTEMPT ====="
@@ -185,8 +193,7 @@ steps:
           release_fail $$STAGE "The smoke eval failed on attempt $$ATTEMPT. The build log has the verifier output."
         done
 
-        # Client SQL, noop generator, EvalConfig resources, batch and
-        # streaming. Scores are fixed, so there is no retry.
+        # Scores are fixed, so there is no retry.
         echo "===== client SQL smoke ====="
         if ! EVALBENCH_INSECURE=true python .ci/release/client_sql_smoke.py \
             --results-dir "$$RESULTS"; then
@@ -194,8 +201,7 @@ steps:
           release_fail $$STAGE "The client SQL smoke failed. The build log lists the problems."
         fi
 
-        # Scan from the passing attempt to the end. Any traceback or ERROR
-        # record fails the gate, even one from a handled exception.
+        # Skip a failed model attempt. Handled exceptions still fail the gate.
         PROBLEMS=$$(tail -c +$$((LOG_OFFSET + 1)) "$$SERVER_LOG" | log_problems)
         if [[ -n "$$PROBLEMS" ]]; then
           echo "$$PROBLEMS"
@@ -275,8 +281,8 @@ steps:
         echo "$$RUNNING" > /workspace/rollback_digest.txt
         echo "rollback target = $$RUNNING"
 
-  # Deploy, check, and rollback share one step, so a failed check can roll
-  # back. See the header.
+  # Deploy, check, and rollback share one step, because Cloud Build has no
+  # on-failure hook.
   - id: deploy-gke
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     waitFor: ['capture-rollback-target']
@@ -324,7 +330,6 @@ steps:
                  --timeout="$$ROLLOUT_TIMEOUT"
         }
 
-        # Restore the previous digest and print the result line.
         rollback() {
           echo "===== rolling back to $$OLD_DIGEST ====="
           if pin "$$OLD_DIGEST"; then
@@ -366,8 +371,8 @@ steps:
         fi
 
         echo "===== scan the new pod startup log ====="
-        # The pod takes traffic as soon as it starts, so a client request can
-        # log an ERROR. Scan only the startup log, up to "Server started".
+        # Client requests can log an ERROR after startup, so stop at
+        # "Server started".
         PROBLEMS=$$(kubectl logs -n "$$NAMESPACE" "$$POD" -c "$$CONTAINER" \
           | sed '/Server started/q' | log_problems)
         if [[ -n "$$PROBLEMS" ]]; then
@@ -375,7 +380,7 @@ steps:
           rollback "The new pod $$POD logged errors or exceptions at startup."
         fi
 
-        # Record the release. An annotation does not restart the pod.
+        # An annotation does not restart the pod.
         kubectl annotate "$$DEPLOYMENT" -n "$$NAMESPACE" --overwrite \
           kubernetes.io/change-cause="release $$TAG ($$NEW_DIGEST)" || true
 
@@ -438,7 +443,6 @@ steps:
           --format='value(status.latestReadyRevisionName)')
         echo "current revision = $$OLD_REVISION"
 
-        # Keep traffic on the current revision until the digest check passes.
         echo "===== deploy a revision with no traffic ====="
         if ! gcloud run deploy "$$SERVICE" "$${RUN[@]}" \
           --image="$$CR_REPO@$$DIGEST" --no-traffic; then

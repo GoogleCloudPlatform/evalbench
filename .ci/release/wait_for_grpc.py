@@ -21,7 +21,6 @@ for _path in (os.path.join(_REPO, "evalbench"),
 
 from client.eval_client import EvalbenchClient  # noqa: E402
 
-# Consecutive ALTS handshake failures before aborting.
 _ALTS_FAILURE_LIMIT = 5
 
 

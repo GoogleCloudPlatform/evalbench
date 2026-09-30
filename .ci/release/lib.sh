@@ -15,9 +15,8 @@ RELEASE_RESULT_PREFIX="RELEASE_RESULT"
 #   STAGE   the id of the step that ended the run
 #   DETAIL  one sentence for the email
 #
-# Reads the tag, PR list, and compare link from /workspace. If a step did not
-# write them, it prints a fallback. Double quotes become single quotes. Keep
-# detail last, because the alert policy reads it with a greedy regex.
+# Reads the tag, PR list, and compare link from /workspace. Keep detail
+# last, because the alert policy reads it with a greedy regex.
 release_result() {
   _tag=$(cat /workspace/release_tag.txt 2>/dev/null || echo "none")
   _detail=$(printf '%s' "$3" | tr '"\n' "' ")
@@ -30,9 +29,6 @@ release_result() {
   echo "${RELEASE_RESULT_PREFIX} status=$1 stage=$2 tag=${_tag} commit=${_commit} log=${_log} compare=${_compare} prs=\"${_prs}\" detail=\"${_detail}\""
 }
 
-# Prints a FAILED result line and ends the step with an error.
-#
-# Usage: release_fail STAGE DETAIL
 release_fail() {
   release_result FAILED "$1" "$2"
   exit 1
