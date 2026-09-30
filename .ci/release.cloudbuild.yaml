@@ -365,12 +365,14 @@ steps:
           rollback "The new pod $$POD did not answer Ping."
         fi
 
-        echo "===== scan the new pod logs ====="
+        echo "===== scan the new pod startup log ====="
+        # The pod takes traffic as soon as it starts, so a client request can
+        # log an ERROR. Scan only the startup log, up to "Server started".
         PROBLEMS=$$(kubectl logs -n "$$NAMESPACE" "$$POD" -c "$$CONTAINER" \
-          | log_problems)
+          | sed '/Server started/q' | log_problems)
         if [[ -n "$$PROBLEMS" ]]; then
           echo "$$PROBLEMS"
-          rollback "The new pod $$POD logged server errors or exceptions."
+          rollback "The new pod $$POD logged errors or exceptions at startup."
         fi
 
         # Record the release. An annotation does not restart the pod.
