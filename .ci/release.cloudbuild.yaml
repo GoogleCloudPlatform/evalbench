@@ -13,9 +13,10 @@
 
 steps:
 
-  # The Build trigger must have pushed an image for this commit.
+  # Waits for the image that the Build trigger pushes after its tests pass.
   - id: resolve-release
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    timeout: '3300s'
     entrypoint: 'bash'
     args:
       - '-c'
@@ -40,13 +41,19 @@ steps:
         fi
 
         REPO="us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server"
+        DEADLINE=$$(( $$(date +%s) + ${_IMAGE_WAIT_SECONDS} ))
         echo "Resolving $$REPO:$COMMIT_SHA"
-        DIGEST=$$(gcloud artifacts docker images describe \
-          "$$REPO:$COMMIT_SHA" \
-          --format='value(image_summary.digest)' 2>/dev/null)
-        if [[ -z "$$DIGEST" ]]; then
-          release_fail $$STAGE "No image at $$REPO:$COMMIT_SHA. The Build trigger has not published this commit."
-        fi
+        while true; do
+          DIGEST=$$(gcloud artifacts docker images describe \
+            "$$REPO:$COMMIT_SHA" \
+            --format='value(image_summary.digest)' 2>/dev/null)
+          [[ -n "$$DIGEST" ]] && break
+          if (( $$(date +%s) >= DEADLINE )); then
+            release_fail $$STAGE "No image at $$REPO:$COMMIT_SHA after ${_IMAGE_WAIT_SECONDS} s. The Build trigger failed or is still running for this commit."
+          fi
+          echo "No image yet. Checking again in 5 min."
+          sleep 300
+        done
 
         TAG="v$$(date -u +%Y.%m.%d).$SHORT_SHA"
 
@@ -490,8 +497,11 @@ steps:
 
 substitutions:
   _EVAL_REGION: 'global'
+  # The Build trigger took 15 to 26 min in 59 runs.
+  _IMAGE_WAIT_SECONDS: '2700'
 
-timeout: '3600s'
+# The image wait, one extra poll, and about 3000 s for the other steps.
+timeout: '6600s'
 
 options:
   logging: CLOUD_LOGGING_ONLY
