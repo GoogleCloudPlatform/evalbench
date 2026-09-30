@@ -22,6 +22,7 @@ prompt_generator: 'SQLGenBasePromptGenerator'
 
 # The verifier needs a score from every scorer, not a high score.
 scorers:
+  exact_match: null
   returned_sql: null
   executable_sql: null
   set_match: null

@@ -114,8 +114,10 @@ steps:
         echo "PRs since $$OLD_SHA:"
         cat "$$NOTES"
 
-  # Serves the candidate image over gRPC and runs the smoke eval on it.
-  # eval_client exits 0 for any completed run, so the verifier grades the CSVs.
+  # Serves the candidate image over gRPC and runs two checks on it:
+  #   1. The smoke eval: the server generates SQL with a model. eval_client
+  #      exits 0 for any completed run, so the verifier grades the CSVs.
+  #   2. client_sql_smoke.py: the client-generated SQL path, with fixed scores.
   - id: smoke-gate
     name: 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server:$COMMIT_SHA'
     dir: '/evalbench'
@@ -177,13 +179,25 @@ steps:
           release_fail $$STAGE "The smoke eval failed on attempt $$ATTEMPT. The build log has the verifier output."
         done
 
-        # Scan only the passing attempt. Any traceback fails the gate, also
-        # one from a handled exception.
-        EXCEPTIONS=$$(tail -c +$$((LOG_OFFSET + 1)) "$$SERVER_LOG" \
+        # Client SQL, noop generator, EvalConfig resources, batch and
+        # streaming. Scores are fixed, so there is no retry.
+        echo "===== client SQL smoke ====="
+        if ! EVALBENCH_INSECURE=true python .ci/release/client_sql_smoke.py \
+            --results-dir "$$RESULTS"; then
+          dump_log
+          release_fail $$STAGE "The client SQL smoke failed. The build log lists the problems."
+        fi
+
+        # Scan from the passing attempt to the end. Any traceback or ERROR
+        # line fails the gate, also one from a handled exception.
+        SCAN=$$(tail -c +$$((LOG_OFFSET + 1)) "$$SERVER_LOG")
+        EXCEPTIONS=$$(echo "$$SCAN" \
           | grep -n -A8 'Traceback (most recent call last)' | head -80)
-        if [[ -n "$$EXCEPTIONS" ]]; then
+        ERRORS=$$(echo "$$SCAN" | grep -nE '\] (ERROR|CRITICAL) ' | head -40)
+        if [[ -n "$$EXCEPTIONS$$ERRORS" ]]; then
+          echo "$$ERRORS"
           echo "$$EXCEPTIONS"
-          release_fail $$STAGE "The eval server logged exceptions during the smoke eval."
+          release_fail $$STAGE "The eval server logged errors or exceptions during the smoke evals."
         fi
 
         echo "===== smoke gate passed ====="
