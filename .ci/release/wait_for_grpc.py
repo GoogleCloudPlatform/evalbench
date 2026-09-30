@@ -3,7 +3,7 @@
 
 Exit codes:
     0  the server answered Ping
-    1  the deadline passed or a permanent security mismatch occurred
+    1  the deadline passed, or ALTS handshakes failed repeatedly
 """
 import argparse
 import asyncio
@@ -50,7 +50,7 @@ async def wait(timeout: float, interval: float) -> int:
             if "Alts handshake failed" in last_error:
                 alts_failures += 1
                 if alts_failures >= _ALTS_FAILURE_LIMIT:
-                    print(f"\nAborting after {alts_failures} consecutive ALTS "
+                    print(f"Aborting after {alts_failures} consecutive ALTS "
                           f"handshake failures.")
                     print("Pass --insecure, or set EVALBENCH_INSECURE=true.")
                     return 1
@@ -61,7 +61,7 @@ async def wait(timeout: float, interval: float) -> int:
         await asyncio.sleep(interval)
 
     print(f"No Ping within {timeout:.0f}s after {attempt} attempts.")
-    print(f"Last error -- {last_error}")
+    print(f"Last error: {last_error}")
     return 1
 
 

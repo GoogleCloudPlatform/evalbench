@@ -27,7 +27,8 @@ steps:
           release_fail $$STAGE "COMMIT_SHA or SHORT_SHA is empty."
         fi
 
-        # Two runs race on GKE and :latest. A failed list call does not block.
+        # Stop if another run is active, because two runs race on GKE and
+        # :latest. If the list call fails, continue.
         if [[ -n "$TRIGGER_ID" ]]; then
           OTHERS=$$(gcloud builds list --ongoing --region="$LOCATION" \
             --filter="buildTriggerId=$TRIGGER_ID AND id!=$BUILD_ID" \
@@ -53,6 +54,65 @@ steps:
         echo "$$TAG"    > /workspace/release_tag.txt
         echo "digest = $$DIGEST"
         echo "tag    = $$TAG"
+
+  # Lists the PRs merged since the release that GKE serves now. lib.sh adds
+  # the list to the result line. Runs in parallel with the smoke gate. Every
+  # failure writes a reason and exits 0, so this step never fails the release.
+  - id: release-notes
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    waitFor: ['resolve-release']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -uo pipefail
+        NOTES=/workspace/release_prs.txt
+        GITHUB=https://github.com/GoogleCloudPlatform/evalbench
+
+        unavailable() {
+          echo "PR list unavailable: $$1" | tee "$$NOTES"
+          exit 0
+        }
+
+        if ! gcloud container clusters get-credentials \
+          evalbench-directpath-cluster \
+          --zone us-central1-c --project "$PROJECT_ID" > /dev/null 2>&1; then
+          unavailable "no credentials for evalbench-directpath-cluster."
+        fi
+        OLD_DIGEST=$$(kubectl get pods -n evalbench-namespace \
+          -l app=evalbench-eval-server \
+          -o jsonpath="{range .items[*]}{.status.containerStatuses[?(@.name=='evalbench-eval')].imageID}{'\n'}{end}" \
+          | sed -e 's#^.*://##' -e 's#^.*@##' \
+          | grep -v '^$$' | sort -u)
+        if [[ $$(echo "$$OLD_DIGEST" | grep -c .) -ne 1 ]]; then
+          unavailable "GKE does not serve exactly one digest."
+        fi
+
+        # The Build trigger tags each image with its full commit SHA.
+        OLD_SHA=$$(gcloud artifacts tags list --package=eval_server \
+          --repository=evalbench --location=us-central1 \
+          --project="$PROJECT_ID" --filter="version~$$OLD_DIGEST" \
+          --format='value(name.basename())' 2> /dev/null \
+          | grep -E '^[0-9a-f]{40}$$' | head -1)
+        if [[ -z "$$OLD_SHA" ]]; then
+          unavailable "the previous commit is unknown. GKE serves $$OLD_DIGEST, which has no commit SHA tag."
+        fi
+        echo "$$GITHUB/compare/$$OLD_SHA...$COMMIT_SHA" \
+          > /workspace/release_compare.txt
+
+        # A treeless clone has every commit message and no file contents.
+        if ! git clone --quiet --filter=tree:0 --no-checkout \
+          "$$GITHUB.git" /tmp/evalbench; then
+          unavailable "git clone of $$GITHUB failed."
+        fi
+        if ! python3 /workspace/.ci/release/release_notes.py \
+          --repo-dir /tmp/evalbench --old "$$OLD_SHA" --new "$COMMIT_SHA" \
+          > /tmp/prs.txt; then
+          unavailable "git log $$OLD_SHA..$COMMIT_SHA failed."
+        fi
+        mv /tmp/prs.txt "$$NOTES"
+        echo "PRs since $$OLD_SHA:"
+        cat "$$NOTES"
 
   # Serves the candidate image over gRPC and runs the smoke eval on it.
   # eval_client exits 0 for any completed run, so the verifier grades the CSVs.
@@ -85,7 +145,6 @@ steps:
           tail -60 "$$SERVER_LOG"
         }
 
-        echo "===== wait for gRPC ====="
         if ! python .ci/release/wait_for_grpc.py --timeout 300 --insecure; then
           dump_log
           release_fail $$STAGE "The eval server did not answer Ping within 300 s."
@@ -156,11 +215,10 @@ steps:
           release_fail $$STAGE ":$COMMIT_SHA moved from $$DIGEST to $$CURRENT during the run. Start the release again."
         fi
 
-        echo "Tagging $$REPO@$$DIGEST as :$$TAG"
         if ! move_tag "$$REPO" "$$TAG" "$$DIGEST"; then
           release_fail $$STAGE "Could not apply the release tag $$TAG."
         fi
-        echo "Release tag: $$REPO:$$TAG"
+        echo "Tagged $$REPO@$$DIGEST as :$$TAG"
 
   # Records the digest that GKE serves now. The pod imageID is exact, but
   # the Deployment spec can hold a tag.
@@ -201,8 +259,8 @@ steps:
         echo "$$RUNNING" > /workspace/rollback_digest.txt
         echo "rollback target = $$RUNNING"
 
-  # Deploy, check, and rollback share one step. Cloud Build has no
-  # on-failure hook, so a separate rollback step never runs.
+  # Deploy, check, and rollback share one step, so a failed check can roll
+  # back. See the header.
   - id: deploy-gke
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     waitFor: ['capture-rollback-target']
@@ -244,7 +302,6 @@ steps:
 
         # Pin by digest, so a tag move cannot change the running image.
         pin() {
-          echo "Pinning $$CONTAINER to $$REPO@$$1"
           kubectl set image "$$DEPLOYMENT" "$$CONTAINER=$$REPO@$$1" \
               -n "$$NAMESPACE" \
             && kubectl rollout status "$$DEPLOYMENT" -n "$$NAMESPACE" \
@@ -270,7 +327,7 @@ steps:
         fi
 
         # Old pods can stay Terminating for a few seconds after the rollout.
-        echo "===== confirm the pods serve $$NEW_DIGEST ====="
+        echo "===== confirm the pods serve the new digest ====="
         for ATTEMPT in {1..20}; do
           SERVING=$$(running_digests)
           [[ "$$SERVING" == "$$NEW_DIGEST" ]] && break
@@ -283,9 +340,9 @@ steps:
 
         # The Deployment has no readiness probe, so Ready means only that the
         # process started. Ping is the real health check.
-        echo "===== gRPC health check ====="
         POD=$$(kubectl get pods -n "$$NAMESPACE" -l "$$SELECTOR" \
           -o jsonpath='{.items[0].metadata.name}')
+        echo "===== gRPC health check on $$POD ====="
         if ! kubectl exec -n "$$NAMESPACE" "$$POD" -c "$$CONTAINER" -- \
           python /evalbench/.ci/release/wait_for_grpc.py --timeout 300; then
           kubectl logs -n "$$NAMESPACE" "$$POD" -c "$$CONTAINER" --tail=150
@@ -401,7 +458,7 @@ steps:
 
   - id: notify-success
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    waitFor: ['deploy-cloudrun']
+    waitFor: ['deploy-cloudrun', 'release-notes']
     entrypoint: 'bash'
     args:
       - '-c'

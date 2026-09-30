@@ -13,12 +13,20 @@ RELEASE_RESULT_PREFIX="RELEASE_RESULT"
 #   STATUS  SUCCESS, FAILED, ROLLED_BACK, or ROLLBACK_FAILED
 #   STAGE   the id of the step that ended the run
 #   DETAIL  one sentence for the email. Double quotes become single quotes.
+#
+# The release-notes step writes the PR list and the compare link. If the step
+# did not finish, the line says so. detail stays last, because the alert
+# policy reads it with a greedy regex.
 release_result() {
   _tag=$(cat /workspace/release_tag.txt 2>/dev/null || echo "none")
   _detail=$(printf '%s' "$3" | tr '"\n' "' ")
+  _prs=$(cat /workspace/release_prs.txt 2>/dev/null \
+    || echo "PR list not computed before this step ended the run.")
+  _prs=$(printf '%s' "$_prs" | tr '"\n' "' ")
+  _compare=$(cat /workspace/release_compare.txt 2>/dev/null || echo "none")
   _log="https://console.cloud.google.com/cloud-build/builds;region=${LOCATION}/${BUILD_ID}?project=${PROJECT_ID}"
   _commit="https://github.com/GoogleCloudPlatform/evalbench/commit/${COMMIT_SHA}"
-  echo "${RELEASE_RESULT_PREFIX} status=$1 stage=$2 tag=${_tag} commit=${_commit} log=${_log} detail=\"${_detail}\""
+  echo "${RELEASE_RESULT_PREFIX} status=$1 stage=$2 tag=${_tag} commit=${_commit} log=${_log} compare=${_compare} prs=\"${_prs}\" detail=\"${_detail}\""
 }
 
 # Prints a FAILED result line and ends the step with an error.

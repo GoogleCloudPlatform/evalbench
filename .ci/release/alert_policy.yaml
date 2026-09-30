@@ -1,9 +1,12 @@
 # Log-based alert that emails the RELEASE_RESULT line (lib.sh) of each
 # weekly release run.
 #
-# Replace TRIGGER_ID and CHANNEL_ID, then create the policy:
-#   gcloud alpha monitoring policies create --project=cloud-db-nl2sql \
-#     --policy-from-file=.ci/release/alert_policy.yaml
+# TRIGGER_ID and CHANNEL_NAME are placeholders, so this public file has no
+# project resource IDs. The live policy already has the real values:
+#   TRIGGER_ID    id of the trigger 'weekly-evalbench-release' (us-central1)
+#   CHANNEL_NAME  name of the notification channel 'EvalBench release'
+# To change the policy, fill in a copy of this file and run
+# 'gcloud alpha monitoring policies update'. Do not create a second policy.
 displayName: 'EvalBench weekly release'
 combiner: OR
 conditions:
@@ -18,7 +21,10 @@ conditions:
         stage: 'REGEXP_EXTRACT(textPayload, "stage=(\\S+)")'
         tag: 'REGEXP_EXTRACT(textPayload, "tag=(\\S+)")'
         commit: 'REGEXP_EXTRACT(textPayload, "commit=(\\S+)")'
-        log: 'REGEXP_EXTRACT(textPayload, "log=(\\S+)")'
+        # 'log' is a reserved label name.
+        build_log: 'REGEXP_EXTRACT(textPayload, "log=(\\S+)")'
+        compare: 'REGEXP_EXTRACT(textPayload, "compare=(\\S+)")'
+        prs: 'REGEXP_EXTRACT(textPayload, "prs=\"([^\"]*)\"")'
         detail: 'REGEXP_EXTRACT(textPayload, "detail=\"(.*)\"")'
 alertStrategy:
   # 5 minutes is the minimum. A run prints one line, so no result is lost.
@@ -37,8 +43,12 @@ documentation:
 
     **Detail:** ${log.extracted_label.detail}
 
+    **PRs since the previous release:** ${log.extracted_label.prs}
+
+    **Compare:** ${log.extracted_label.compare}
+
     **Commit:** ${log.extracted_label.commit}
 
-    **Build log:** ${log.extracted_label.log}
+    **Build log:** ${log.extracted_label.build_log}
 notificationChannels:
-  - projects/cloud-db-nl2sql/notificationChannels/CHANNEL_ID
+  - CHANNEL_NAME
