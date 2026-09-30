@@ -78,6 +78,9 @@ BASE_COLUMNS = [
     "mcp_readability_source_url",
     "mcp_readability_endpoint_type",
     "mcp_readability_check_timestamp",
+    # Unambiguous run ordering. The column above is naive local time, so rows
+    # written from google3 and from OSS interleave wrongly when sorted by it.
+    "mcp_readability_check_timestamp_utc",
     "mcp_readability_run_tag",
     # The exact tool surface this row was judged against, as a sha256 per tool.
     "mcp_readability_tool_fingerprints_json",
@@ -345,6 +348,9 @@ class McpReadabilityOrchestrator(Orchestrator):
             "mcp_readability_endpoint_type": endpoint_type,
             "mcp_readability_check_timestamp": (
                 datetime.datetime.now().isoformat()
+            ),
+            "mcp_readability_check_timestamp_utc": (
+                datetime.datetime.now(datetime.timezone.utc).isoformat()
             ),
             # Run-level, like job_id: filled in by the caller.
             "mcp_readability_run_tag": "",
