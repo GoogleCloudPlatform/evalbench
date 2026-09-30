@@ -10,7 +10,7 @@
 displayName: 'EvalBench weekly release'
 combiner: OR
 conditions:
-  - displayName: 'RELEASE_RESULT line in the weekly release build'
+  - displayName: 'Weekly release result'
     conditionMatchedLog:
       filter: >-
         resource.type="build"
