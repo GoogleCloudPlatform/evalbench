@@ -12,11 +12,11 @@ RELEASE_RESULT_PREFIX="RELEASE_RESULT"
 # Usage: release_result STATUS STAGE DETAIL
 #   STATUS  SUCCESS, FAILED, ROLLED_BACK, or ROLLBACK_FAILED
 #   STAGE   the id of the step that ended the run
-#   DETAIL  one sentence for the email. Double quotes become single quotes.
+#   DETAIL  one sentence for the email
 #
-# The release-notes step writes the PR list and the compare link. If the step
-# did not finish, the line says so. detail stays last, because the alert
-# policy reads it with a greedy regex.
+# Reads the tag, PR list, and compare link from /workspace. If a step did not
+# write them, it prints a fallback. Double quotes become single quotes. Keep
+# detail last, because the alert policy reads it with a greedy regex.
 release_result() {
   _tag=$(cat /workspace/release_tag.txt 2>/dev/null || echo "none")
   _detail=$(printf '%s' "$3" | tr '"\n' "' ")
@@ -35,6 +35,19 @@ release_result() {
 release_fail() {
   release_result FAILED "$1" "$2"
   exit 1
+}
+
+# Prints the ERROR and CRITICAL records and tracebacks in an eval_server log.
+# Prints nothing if the log is clean. Matches only at the start of a line,
+# because eval payloads can quote a traceback.
+#
+# Usage: log_problems < LOG
+log_problems() {
+  _log=$(cat)
+  printf '%s\n' "$_log" \
+    | grep -nE '^[0-9-]{10} [0-9:,]+ \[[^]]*\] (ERROR|CRITICAL) ' | head -40
+  printf '%s\n' "$_log" \
+    | grep -n -A8 '^Traceback (most recent call last)' | head -80
 }
 
 # Points TAG at DIGEST. 'tags update' moves an existing tag without the

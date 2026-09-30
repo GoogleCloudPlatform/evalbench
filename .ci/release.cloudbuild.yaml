@@ -189,14 +189,10 @@ steps:
         fi
 
         # Scan from the passing attempt to the end. Any traceback or ERROR
-        # line fails the gate, also one from a handled exception.
-        SCAN=$$(tail -c +$$((LOG_OFFSET + 1)) "$$SERVER_LOG")
-        EXCEPTIONS=$$(echo "$$SCAN" \
-          | grep -n -A8 'Traceback (most recent call last)' | head -80)
-        ERRORS=$$(echo "$$SCAN" | grep -nE '\] (ERROR|CRITICAL) ' | head -40)
-        if [[ -n "$$EXCEPTIONS$$ERRORS" ]]; then
-          echo "$$ERRORS"
-          echo "$$EXCEPTIONS"
+        # record fails the gate, also one from a handled exception.
+        PROBLEMS=$$(tail -c +$$((LOG_OFFSET + 1)) "$$SERVER_LOG" | log_problems)
+        if [[ -n "$$PROBLEMS" ]]; then
+          echo "$$PROBLEMS"
           release_fail $$STAGE "The eval server logged errors or exceptions during the smoke evals."
         fi
 
@@ -364,11 +360,11 @@ steps:
         fi
 
         echo "===== scan the new pod logs ====="
-        EXCEPTIONS=$$(kubectl logs -n "$$NAMESPACE" "$$POD" -c "$$CONTAINER" \
-          | grep -n -A8 'Traceback (most recent call last)' | head -80)
-        if [[ -n "$$EXCEPTIONS" ]]; then
-          echo "$$EXCEPTIONS"
-          rollback "The new pod $$POD logged server exceptions."
+        PROBLEMS=$$(kubectl logs -n "$$NAMESPACE" "$$POD" -c "$$CONTAINER" \
+          | log_problems)
+        if [[ -n "$$PROBLEMS" ]]; then
+          echo "$$PROBLEMS"
+          rollback "The new pod $$POD logged server errors or exceptions."
         fi
 
         # Record the release. An annotation does not restart the pod.
