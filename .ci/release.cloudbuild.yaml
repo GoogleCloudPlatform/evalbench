@@ -88,10 +88,12 @@ steps:
           unavailable "GKE does not serve exactly one digest."
         fi
 
-        # The Build trigger tags each image with its full commit SHA.
+        # The Build trigger tags each image with its full commit SHA. The
+        # version filter needs the full resource name.
         OLD_SHA=$$(gcloud artifacts tags list --package=eval_server \
           --repository=evalbench --location=us-central1 \
-          --project="$PROJECT_ID" --filter="version~$$OLD_DIGEST" \
+          --project="$PROJECT_ID" \
+          --filter="version=projects/$PROJECT_ID/locations/us-central1/repositories/evalbench/packages/eval_server/versions/$$OLD_DIGEST" \
           --format='value(name.basename())' 2> /dev/null \
           | grep -E '^[0-9a-f]{40}$$' | head -1)
         if [[ -z "$$OLD_SHA" ]]; then
