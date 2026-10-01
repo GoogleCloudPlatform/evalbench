@@ -1,0 +1,34 @@
+# Release smoke eval. The release pipeline sends it to the gRPC server in
+# the candidate image. SQLite only, so it needs no external database. Paths
+# are relative to /evalbench.
+dataset_config: .ci/release/release_smoke.evalset.json
+# One row per prompt, so the verifier can check coverage.
+num_trials: 1
+
+database_configs:
+  - datasets/bat/db_configs/sqlite.yaml
+dialects:
+  - sqlite
+query_types:
+  - dql
+  - dml
+  - ddl
+
+# Rebuild db_blog on every run, because DML and DDL prompts change it.
+setup_directory: datasets/bat/setup
+
+model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+prompt_generator: 'SQLGenBasePromptGenerator'
+
+# The verifier needs a score from every scorer, not a high score.
+scorers:
+  exact_match: null
+  returned_sql: null
+  executable_sql: null
+  set_match: null
+  llmrater:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+
+reporting:
+  csv:
+    output_directory: 'results/release'

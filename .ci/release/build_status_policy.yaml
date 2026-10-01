@@ -1,0 +1,49 @@
+# Log-based alert that emails when a weekly release run fails.
+#
+# Cloud Build writes an audit entry when a build ends. Its status code is 1
+# for CANCELLED, 4 for TIMEOUT, 9 for FAILURE, and 13 for INTERNAL_ERROR. A
+# step timeout or a step image that does not pull gives code 9 and prints no
+# RELEASE_RESULT line, so this policy also emails code 9. A failed step that
+# prints its RELEASE_RESULT line sends a second email from alert_policy.yaml.
+#
+# Not covered: a build that never starts, for example an invalid config.
+#
+# A log-based policy has only one condition, so this alert is a separate
+# policy. TRIGGER_ID and CHANNEL_NAME are placeholders, as in
+# alert_policy.yaml. To create the policy, fill in a copy of this file and
+# run 'gcloud alpha monitoring policies create'.
+displayName: 'EvalBench weekly release build status'
+combiner: OR
+conditions:
+  - displayName: 'Weekly release build failed'
+    conditionMatchedLog:
+      filter: >-
+        logName:"cloudaudit.googleapis.com%2Factivity"
+        AND resource.type="build"
+        AND resource.labels.build_trigger_id="TRIGGER_ID"
+        AND protoPayload.methodName="google.devtools.cloudbuild.v1.CloudBuild.CreateBuild"
+        AND operation.last=true
+        AND protoPayload.status.code>0
+      labelExtractors:
+        code: 'EXTRACT(protoPayload.status.code)'
+alertStrategy:
+  # 5 minutes is the minimum.
+  notificationRateLimit:
+    period: 300s
+  autoClose: 1800s
+documentation:
+  subject: 'EvalBench release build failed (code ${log.extracted_label.code})'
+  mimeType: text/markdown
+  content: |
+    **Status code:** ${log.extracted_label.code} (1 = CANCELLED, 4 = TIMEOUT, 9 = FAILURE, 13 = INTERNAL_ERROR)
+
+    The release run failed.
+
+    1. Open the build log to see where the run stopped.
+    2. Check that all GKE pods and Cloud Run serve the same image digest. If
+       they do not, the deploy is incomplete.
+    3. If necessary, start the release again.
+
+    **Build log:** https://console.cloud.google.com/cloud-build/builds;region=us-central1/${resource.label.build_id}?project=${resource.label.project_id}
+notificationChannels:
+  - CHANNEL_NAME
