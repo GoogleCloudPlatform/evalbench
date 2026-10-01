@@ -121,7 +121,7 @@ All of these require a `model_config` pointing at the LLM that performs the eval
 
 | Scorer Key | Score Range | What it Measures |
 |---|---|---|
-| `goal_completion` | 0–100 | Whether the agent accomplished the `conversation_plan`'s intent. Returns 100 for PASS, 0 for FAIL. |
+| `goal_completion` | 0–100 | Whether the agent accomplished the `conversation_plan`'s intent. The judge splits the plan into discrete sub-goals and rules on each; the score is the share met, so a plan completed in part scores in part. |
 | `behavioral_metrics` | 0–100 | Hallucination rate and unnecessary-clarification rate in a single pass. Starts at 100 and penalizes 50 per hallucination and 20 per unnecessary clarification. |
 | `parameter_analysis` | 100 (qualitative) | Qualitative feedback on the arguments passed to each tool. Always scores 100 — the value is in the textual explanation. |
 | `binary_rubric_scorer` | 0–100 | Pass/fail against your own rubric criteria. |
