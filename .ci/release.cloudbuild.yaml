@@ -6,8 +6,8 @@
 #
 # Each run prints one RELEASE_RESULT line (lib.sh), and alert_policy.yaml
 # emails it. Cloud Build has no on-failure hook, so each failed step prints
-# its own line. A timeout, a cancel, or an internal error prints no line, so
-# build_status_policy.yaml emails those.
+# its own line. A step timeout or a cancel prints no line, so
+# build_status_policy.yaml emails every run that fails.
 #
 # Use $$ for shell variables and $$(...). Cloud Build expands a single $.
 
