@@ -77,7 +77,7 @@ Then classify the change, because it determines what "working" means:
 | `evalbench/reporting/` | Round-trip a score through CSV; check BigQuery schema compatibility |
 | `datasets/`, `docs/configs/`, `*.yaml` | Load the config and validate the schema; no Python tests will catch this |
 | `pyproject.toml` | Pin has a comment explaining *why*; `uv.lock` regenerated; `docs/architecture.md` graph updated |
-| `evalbench_service/`, `Makefile`, `cloudbuild.yaml`, `.dockerignore` | Phase 3 — build the image, dry-run the manifests |
+| `evalbench_service/`, `Makefile`, `.ci/build.cloudbuild.yaml`, `.dockerignore` | Phase 3 — build the image, dry-run the manifests |
 | `docs/` only | Cross-check every claim against the code it documents |
 
 State the classification in your report. If the diff spans several rows, all of
@@ -184,7 +184,7 @@ Then, if the diff touches anything in the table below:
 | Concurrency, memory, caching | Fits 20 CPU / 80Gi on GKE *and* 4 CPU / 8Gi on Cloud Run? |
 | `k8s/*.yaml` | Was the parallel `*-test.yaml` updated too? `kubectl apply --dry-run=client` clean? |
 | A new GCP API call | Needs an IAM grant on `evalbench@cloud-db-nl2sql.iam.gserviceaccount.com` — not inferable from the diff, so say it. |
-| A scorer key or dataset used by `datasets/bat/example_run_config.yaml` | Cloud Build runs a real eval with that config and gates on `verifier/verify.py`. |
+| A scorer key or dataset used by `datasets/bat/example_run_config.yaml` | Cloud Build runs a real eval with that config and gates on `.ci/verify_build.py`. |
 | `.git` access at runtime | `.dockerignore` excludes `.git`; `GitPython` code works locally and raises in the image. |
 
 Two standing traps worth checking on any infra-adjacent change: the HPA scales

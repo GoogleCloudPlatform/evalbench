@@ -1,0 +1,94 @@
+# Build trigger: runs on each push to main.
+#
+# Tests the commit, builds the eval_server image, runs a real eval in it,
+# and pushes :$COMMIT_SHA. The images block pushes only after every step
+# passes, and .ci/release.cloudbuild.yaml waits for that tag.
+#
+# unit-tests runs at the same time as pull-cache and build-image.
+#
+# Use $$ for shell variables. Cloud Build expands a single $.
+
+steps:
+
+  # Runs the unit tests on a copy of the source. build-image reads
+  # /workspace as its context, so this step must not write there.
+  - id: unit-tests
+    name: 'python:3.11'
+    waitFor: ['-']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        cp -a /workspace/. /tmp/src
+        cd /tmp/src
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        $$HOME/.local/bin/uv sync
+        $$HOME/.local/bin/uv run python -m grpc_tools.protoc --proto_path=evalbench/evalproto --python_out=evalbench/evalproto --pyi_out=evalbench/evalproto --grpc_python_out=evalbench/evalproto --experimental_editions evalbench/evalproto/*.proto
+        $$HOME/.local/bin/uv run pytest evalbench/test -vv
+    env:
+      - 'PYTHONPATH=evalbench:.'
+      - 'SKIP_CLOUD_TESTS=true'
+
+  # Pulls the previous image for the layer cache. A miss is not a failure.
+  - id: pull-cache
+    name: 'gcr.io/cloud-builders/docker'
+    waitFor: ['-']
+    entrypoint: 'bash'
+    args: ['-c', 'docker pull us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server:build-cache || exit 0']
+
+  # Builds the image. Layers before COPY . . come from the cache if the
+  # base image, uv, pyproject.toml, and uv.lock did not change.
+  - id: build-image
+    name: 'gcr.io/cloud-builders/docker'
+    waitFor: ['pull-cache']
+    args: ['build',
+           '--cache-from', 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server:build-cache',
+           '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server:$COMMIT_SHA',
+           '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server:build-cache',
+           '-f', 'evalbench_service/Dockerfile', '.']
+
+  # Updates the layer cache, also when a later step fails. The images block
+  # runs only after a full pass. Do not deploy :build-cache.
+  - id: push-cache
+    name: 'gcr.io/cloud-builders/docker'
+    waitFor: ['build-image']
+    allowFailure: true
+    args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server:build-cache']
+
+  # Runs a real eval with _VAR_EVAL_CONFIG in the new image.
+  - id: eval
+    name: 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server:$COMMIT_SHA'
+    waitFor: ['build-image']
+    dir: '/evalbench'
+    args: ['/evalbench/evalbench/run.sh']
+    env:
+      - 'EVAL_GCP_PROJECT_ID=$PROJECT_ID'
+      - 'EVAL_GCP_PROJECT_REGION=${_VAR_REGION}'
+      - 'EVAL_CONFIG=${_VAR_EVAL_CONFIG}'
+      - 'UV_CACHE_DIR=/tmp/uv-cache'
+    volumes:
+      - name: 'eval_results'
+        path: '/evalbench/results'
+
+  # Fails the build unless every eval row has generated SQL.
+  - id: verify
+    name: 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server:$COMMIT_SHA'
+    waitFor: ['eval']
+    dir: '/evalbench'
+    args: ['uv', 'run', '--no-sync', 'python', '.ci/verify_build.py']
+    volumes:
+      - name: 'eval_results'
+        path: '/evalbench/results'
+
+images:
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server:$COMMIT_SHA'
+
+substitutions:
+  _VAR_REGION: 'us-central1'
+  _VAR_EVAL_CONFIG: 'datasets/bat/example_run_config.yaml'
+
+options:
+  defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
+  # The default machine has 2 vCPUs. docker build and uv sync use more.
+  machineType: 'E2_HIGHCPU_8'
