@@ -33,3 +33,28 @@ jobs:
     # --all-packages because the viewer is a workspace member, not a root dependency.
     - name: Load the app and render every page
       run: uv run --all-packages python .ci/verify_viewer.py
+
+    # Start the server with the gunicorn command that Cloud Run uses.
+    # Mesop answers 200 for every URL, so this checks boot, not page content.
+    - name: Boot the frontend server
+      working-directory: viewer
+      timeout-minutes: 3
+      env:
+        PORT: 3000
+      run: |
+        uv run --all-packages ./run_frontend.sh > /tmp/frontend.log 2>&1 &
+        PID=$!
+        for _ in $(seq 1 30); do
+          if curl -fs -o /dev/null --max-time 2 "http://localhost:$PORT/"; then
+            echo "The server answered on port $PORT."
+            kill "$PID"
+            exit 0
+          fi
+          # Stop waiting if the server exited early.
+          kill -0 "$PID" 2>/dev/null || break
+          sleep 2
+        done
+        echo "FAIL: the server did not answer on port $PORT."
+        cat /tmp/frontend.log
+        kill "$PID" 2>/dev/null || true
+        exit 1

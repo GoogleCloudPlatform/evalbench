@@ -12,7 +12,7 @@ from evaluator import get_orchestrator
 from reporting import get_reporters
 import reporting.analyzer as analyzer
 import reporting.report as report
-from util.config import config_to_df, load_yaml_config
+from util.config import config_to_df, load_yaml_config, with_agent_version
 from util.config import set_session_configs
 from util.flags import EXPERIMENT_CONFIG
 from util.scriptrunner import run_script
@@ -127,7 +127,13 @@ def eval(experiment_config: str):
         # Create Dataframes for reporting
         if results_tf is not None and scores_tf is not None:
             reporters = get_reporters(parsed_config.get("reporting"), job_id, run_time)
-            config_df = config_to_df(job_id, run_time, config, model_config, db_configs)
+            config_df = config_to_df(
+                job_id,
+                run_time,
+                config,
+                with_agent_version(model_config, evaluator),
+                db_configs,
+            )
             results = load_json(results_tf)
             results_df = report.get_dataframe(results)
             report.quick_summary(results_df)

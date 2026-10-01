@@ -167,13 +167,14 @@ Specifies the generator, model label, execution timeouts, and environment:
 | `generator` | Yes | Must be `agy_cli` |
 | `model` | Optional | Model label (e.g. `"Gemini 3.1 Pro (Low)"` or `"Gemini 3.5 Flash (Medium)"`). Omit to use agy's default. |
 | `timeout` | Optional | CLI turn timeout string (e.g. `"20m"`, passed to `--print-timeout`). Defaults to 5m. |
-| `env` | Optional | Environment block. Set `GOOGLE_CLOUD_PROJECT` (see below); `GOOGLE_CLOUD_LOCATION` defaults to `global`. |
+| `env` | Optional | Environment block passed to agy. Set `GOOGLE_CLOUD_PROJECT` (see below). |
 | `setup` | Optional | Tool setup block for `mcp_servers`, `skills`, or `fake_mcp_servers`. |
 
 > [!IMPORTANT]
-> **Project Configuration Required:** agy resolves its GCP backend project from
-> `settings.json`, which EvalBench populates from `env.GOOGLE_CLOUD_PROJECT`.
-> Always include `GOOGLE_CLOUD_PROJECT` in your model config `env` block.
+> **Quota project:** With a credential file, agy reads its project only from
+> the file's `quota_project_id`. If the file has none, EvalBench adds
+> `env.GOOGLE_CLOUD_PROJECT`, or else the key's `project_id`. Without a
+> credential file, agy uses the metadata server's project.
 
 ---
 
@@ -206,12 +207,18 @@ agy authenticates non-interactively using **Google Application Default
 Credentials (ADC)** (`AGY_ADC_AUTH=true`), which also supplies outbound
 credentials for `authProviderType: google_credentials` MCP servers.
 
-agy reads its model entitlement from the credential's `quota_project_id` field
-alone -- not `GOOGLE_CLOUD_PROJECT`, and not `GOOGLE_CLOUD_QUOTA_PROJECT`.
-EvalBench injects it when the resolved ADC lacks it, which is the normal case
-for the service-account keys used on GKE. A credential *file* is therefore
-required, and setup fails fast without one rather than falling through to the
-metadata server, whose tokens carry no quota project.
+agy resolves ADC in the standard order:
+
+1. The file in `GOOGLE_APPLICATION_CREDENTIALS`, or the gcloud ADC file
+   (`gcloud auth application-default login`).
+2. The metadata server (Cloud Build, GCE, GKE Workload Identity). agy takes
+   the quota project from the metadata project.
+
+If a credential file has no `quota_project_id`, EvalBench adds one from
+`env.GOOGLE_CLOUD_PROJECT` or the key's `project_id`. Without it, the model
+registry of agy is empty. If `GOOGLE_APPLICATION_CREDENTIALS` names a missing
+file, setup fails, because agy does not fall back to the metadata server in
+that case.
 
 ### Supported Model Tiers
 * **Supported under ADC**: Flash models (e.g. `"Gemini 3.5 Flash (Medium)"`,
@@ -287,7 +294,7 @@ operational differences:
 | Installation | `npm install -g @google/gemini-cli@<ver>` | Auto-staged into `<fake_home>/.local/bin/` |
 | Invocation | `npm exec @google/gemini-cli -- ...` | `agy -p <prompt> --dangerously-skip-permissions` |
 | Output Format | `--output-format stream-json` | `--output-format stream-json` |
-| Session Resume | `--resume <id>` | `--continue` |
+| Session Resume | `--resume <id>` | `--conversation <id>` |
 | Settings Path | `~/.gemini/settings.json` | `~/.gemini/antigravity-cli/settings.json` |
 | MCP Config | `mcpServers` in `settings.json` | `mcpServers` in `~/.gemini/config/mcp_config.json` |
 | MCP Tool Naming | `mcp_<server>_<tool>` | `call_mcp_tool` wrapper (canonicalized to `<server>__<tool>`) |
@@ -300,7 +307,14 @@ operational differences:
 ## Troubleshooting
 
 ### Authentication Errors / Interactive Login Prompt
-* Ensure fresh ADC credentials exist by running `gcloud auth application-default login`.
+* agy shows every ADC token failure as `authentication required. Run 'agy' to
+  log in.` The harness runs a startup probe and fails setup with
+  `agy failed to authenticate with ADC`. The error includes the `adcAuth:`
+  lines from the agy log, which state the real cause.
+* Outside GCP, ensure fresh ADC credentials exist by running
+  `gcloud auth application-default login`.
+* On GCP without a key file, ensure the metadata-server service account can
+  call Vertex AI (for example, `roles/aiplatform.user`).
 
 ### Model Authorization / `invalid model selection`
 * Ensure the configured `model` in `model_config.yaml` is supported under ADC
@@ -321,6 +335,6 @@ operational differences:
   `<fake_home>/.gemini/config/import_manifest.json`.
 
 ### Empty Responses
-* Ensure `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION` are configured in the
-  `env` block of your model config.
+* A missing quota project makes agy reject every model. See
+  [Model Authorization](#model-authorization--invalid-model-selection).
 

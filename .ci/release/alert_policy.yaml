@@ -1,0 +1,54 @@
+# Log-based alert that emails the RELEASE_RESULT line (lib.sh) of each
+# weekly release run.
+#
+# TRIGGER_ID and CHANNEL_NAME are placeholders, so this public file has no
+# project resource IDs. The live policy already has the real values:
+#   TRIGGER_ID    id of the trigger 'weekly-evalbench-release' (us-central1)
+#   CHANNEL_NAME  name of the notification channel 'EvalBench release'
+# To change the policy, fill in a copy of this file and run
+# 'gcloud alpha monitoring policies update'. Do not create a duplicate.
+displayName: 'EvalBench weekly release'
+combiner: OR
+conditions:
+  - displayName: 'Weekly release result'
+    conditionMatchedLog:
+      filter: >-
+        resource.type="build"
+        AND resource.labels.build_trigger_id="TRIGGER_ID"
+        AND textPayload:"RELEASE_RESULT status="
+      labelExtractors:
+        status: 'REGEXP_EXTRACT(textPayload, "status=(\\S+)")'
+        stage: 'REGEXP_EXTRACT(textPayload, "stage=(\\S+)")'
+        tag: 'REGEXP_EXTRACT(textPayload, "tag=(\\S+)")'
+        commit: 'REGEXP_EXTRACT(textPayload, "commit=(\\S+)")'
+        # 'log' is a reserved label name.
+        build_log: 'REGEXP_EXTRACT(textPayload, "log=(\\S+)")'
+        compare: 'REGEXP_EXTRACT(textPayload, "compare=(\\S+)")'
+        prs: 'REGEXP_EXTRACT(textPayload, "prs=\"([^\"]*)\"")'
+        detail: 'REGEXP_EXTRACT(textPayload, "detail=\"(.*)\"")'
+alertStrategy:
+  # 5 minutes is the minimum.
+  notificationRateLimit:
+    period: 300s
+  autoClose: 1800s
+documentation:
+  subject: 'EvalBench release ${log.extracted_label.status}: ${log.extracted_label.tag}'
+  mimeType: text/markdown
+  content: |
+    **Status:** ${log.extracted_label.status}
+
+    **Detail:** ${log.extracted_label.detail}
+
+    **Stage:** ${log.extracted_label.stage}
+
+    **Tag:** ${log.extracted_label.tag}
+
+    **PRs since the last release:** ${log.extracted_label.prs}
+
+    **Compare:** ${log.extracted_label.compare}
+
+    **Commit:** ${log.extracted_label.commit}
+
+    **Build log:** ${log.extracted_label.build_log}
+notificationChannels:
+  - CHANNEL_NAME
