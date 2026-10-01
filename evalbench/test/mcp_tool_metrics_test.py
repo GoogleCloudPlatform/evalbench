@@ -5,7 +5,7 @@ import unittest
 
 from mcp import types as mcp_types
 
-from scorers.mcp_tool_metrics import McpToolMetricsScorer
+from scorers.mcp_readability.tool_metrics import McpToolMetricsScorer
 
 
 def _tool(name, description, schema=None):

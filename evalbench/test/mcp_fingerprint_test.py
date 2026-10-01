@@ -9,7 +9,7 @@ import unittest
 
 from mcp import types as mcp_types
 
-from scorers.mcp_fingerprint import (
+from scorers.mcp_readability.fingerprint import (
     canonical_exceptions,
     component_diff,
     judge_fingerprint,
