@@ -509,9 +509,8 @@ substitutions:
   # The Build trigger took 15 to 26 min in 59 runs.
   _IMAGE_WAIT_SECONDS: '1800'
 
-# Covers the step timeouts up to deploy-gke (4740 s), so a rollback always
-# ends.
-timeout: '4800s'
+# Sum of the step timeouts.
+timeout: '5820s'
 
 options:
   logging: CLOUD_LOGGING_ONLY
