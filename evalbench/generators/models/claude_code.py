@@ -1225,7 +1225,12 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         skill_tool = by_name.get("Skill", {})
         for params in skill_tool.get("parameters", []):
             name = params.get("skill") or params.get("name") or params.get("skill_name")
-            if name and name not in items:
+            if not name:
+                continue
+            # Reported as `<plugin>:<skill>`, but scorers match on the skill
+            # directory name, which pattern 1 above also yields.
+            name = name.rsplit(":", 1)[-1]
+            if name not in items:
                 items.append(name)
 
         return items

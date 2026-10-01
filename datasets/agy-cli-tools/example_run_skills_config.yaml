@@ -1,7 +1,7 @@
 ############################################################
 ### Dataset / Eval Items
 ############################################################
-dataset_config: datasets/agy-cli-tools/agy-cli.evalset.json
+dataset_config: datasets/agy-cli-tools/agy-cli-skills.evalset.json
 dataset_format: agent-format
 
 # Orchestrator Configuration
@@ -13,11 +13,15 @@ simulated_user_model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
 ### Scorer Related Configs
 ############################################################
 scorers:
-  # Note: trajectory_matcher and parameter_analysis are omitted here because
-  # skill-driven workflows use a different execution surface. The agent activates
-  # high-level skills rather than directly invoking granular tools.
-  # To evaluate skill execution paths, use the `skills_trajectory` scorer instead.
-
+  # trajectory_matcher and parameter_analysis are omitted: the agent activates
+  # high-level skills rather than invoking granular tools directly.
+  skills_trajectory:
+    # Score recall only. A skill counts as activated once the agent reads its
+    # SKILL.md, so an extra skill means the agent browsed it, not that it
+    # answered wrongly.
+    allow_extra_skills: true
+  skills_best_practices:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
   goal_completion:
     model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
   behavioral_metrics:

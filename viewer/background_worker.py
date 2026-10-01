@@ -11,6 +11,7 @@ import precompute_trends
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+
 def main():
     while True:
         logging.info("Starting precomputation...")
@@ -20,6 +21,7 @@ def main():
             logging.error(f"Error during precomputation: {e}")
         logging.info("Precomputation finished. Sleeping for 5 minutes...")
         time.sleep(300)
+
 
 if __name__ == "__main__":
     main()

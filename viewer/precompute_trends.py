@@ -64,7 +64,7 @@ def get_results_dir():
     res_dir = os.environ.get("RESULTS_DIR")
     if res_dir:
         return res_dir
-        
+
     # Check multiple locations for results directory
     results_dir_candidates = [
         "/tmp_session_files/results",
@@ -486,13 +486,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--clean", action="store_true", help="Delete cache files before processing")
     args = parser.parse_args()
-    
+
     if args.clean:
         results_dir = get_results_dir()
         cache_file = os.path.join(results_dir, "trends_cache.csv")
         filters_file = os.path.join(results_dir, "filters_cache.json")
         processed_dirs_file = os.path.join(results_dir, "processed_dirs.json")
-        
+
         for f in [cache_file, filters_file, processed_dirs_file]:
             if os.path.exists(f):
                 try:
@@ -500,5 +500,5 @@ if __name__ == "__main__":
                     logging.info(f"Removed cache file: {f}")
                 except Exception as e:
                     logging.error(f"Error removing file {f}: {e}")
-                
+
     precompute()

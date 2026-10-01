@@ -1,0 +1,9 @@
+metric_name,metric_score,correct_results_count,total_results_count,job_id,run_time
+skills_trajectory,100.0,2.0,2,fixture-run-a,2026-01-05 10:00:00.123456
+skills_best_practices,80.4,160.8,2,fixture-run-a,2026-01-05 10:00:00.123456
+goal_completion,100.0,2.0,2,fixture-run-a,2026-01-05 10:00:00.123456
+turn_count,1.5,3.0,2,fixture-run-a,2026-01-05 10:00:00.123456
+end_to_end_latency,374320.5,748641.0,2,fixture-run-a,2026-01-05 10:00:00.123456
+tool_call_latency,68047.0,136094.0,2,fixture-run-a,2026-01-05 10:00:00.123456
+token_consumption,299087.5,598175.0,2,fixture-run-a,2026-01-05 10:00:00.123456
+executable,1.0,2.0,2,fixture-run-a,2026-01-05 10:00:00.123456

@@ -1,0 +1,18 @@
+# QueryData (Gemini Data Analytics API) generator.
+generator: query_data_api
+project_id: !ENV ${EVAL_GCP_PROJECT_ID}
+location: global
+# Returns pipeline_debug_info, which verify_nl2sql.py requires.
+use_rest_api: true
+execs_per_minute: 30
+
+# Must name the same database as .ci/db_configs/nl2sql_ci_postgres.yaml.
+context:
+  datasource_references:
+    cloud_sql_reference:
+      database_reference:
+        engine: POSTGRESQL
+        project_id: !ENV ${EVAL_GCP_PROJECT_ID}
+        region: !ENV ${CLOUD_SQL_POSTGRES_REGION}
+        instance_id: !ENV ${CLOUD_SQL_POSTGRES_INSTANCE}
+        database_id: db_blog

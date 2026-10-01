@@ -1,0 +1,235 @@
+[
+  {
+    "id": 3,
+    "nl_prompt": "How many bloggers who have posted at least 1 blog in 2024 and have linked twitter account",
+    "query_type": "dql",
+    "database": "db_blog",
+    "dialects": [
+      "sqlite"
+    ],
+    "golden_sql": {
+      "sqlite": [
+        "SELECT COUNT(DISTINCT u.user_id) AS num_bloggers FROM tbl_users u INNER JOIN tbl_posts p ON u.user_id = p.user_id WHERE p.created_at BETWEEN DATE('2024-01-01') AND DATE('2024-12-31') AND json_extract(u.social_media_links, '$.twitter') IS NOT NULL;"
+      ]
+    },
+    "eval_query": {
+      "sqlite": [
+        null
+      ]
+    },
+    "setup_sql": {},
+    "cleanup_sql": {},
+    "tags": [
+      "DQL",
+      "difficulty: moderate",
+      "SELECT",
+      "JOIN",
+      "JSON",
+      "JSON_EXTRACT",
+      "datalinking"
+    ],
+    "other": {
+      "Comment": "LGTM",
+      "nl_prompt_base": "How many bloggers who have posted at least 1 blog in 2024 and have linked twitter account",
+      "nl_prompt_extra_context": "",
+      "public": true
+    }
+  },
+  {
+    "id": 5,
+    "nl_prompt": "What is the number of comments per post for each user? -- Use user_id to identify users and post_id to identify posts.",
+    "query_type": "dql",
+    "database": "db_blog",
+    "dialects": [
+      "sqlite"
+    ],
+    "golden_sql": {
+      "sqlite": [
+        "SELECT u.user_id, p.post_id, COUNT(c.comment_id) AS comment_count FROM tbl_users u INNER JOIN tbl_posts p ON u.user_id = p.user_id LEFT JOIN tbl_comments c ON p.post_id = c.post_id GROUP BY u.user_id, p.post_id;"
+      ]
+    },
+    "eval_query": {
+      "sqlite": [
+        null
+      ]
+    },
+    "setup_sql": {},
+    "cleanup_sql": {},
+    "tags": [
+      "DQL",
+      "difficulty: simple",
+      "SELECT",
+      "JOIN",
+      "AGGREGATE",
+      "CASE",
+      "LEFT_JOIN",
+      "IS_NULL"
+    ],
+    "other": {
+      "Comment": "LGTM",
+      "nl_prompt_base": "What is the number of comments per post for each user?",
+      "nl_prompt_extra_context": "Use user_id to identify users and post_id to identify posts.",
+      "public": true
+    }
+  },
+  {
+    "id": 42,
+    "nl_prompt": "Can you update my username to 'magic_one' -- user_id = 9;",
+    "query_type": "dml",
+    "database": "db_blog",
+    "dialects": [
+      "sqlite"
+    ],
+    "golden_sql": {
+      "sqlite": [
+        "UPDATE tbl_users SET username = 'magic_one', updated_at = CURRENT_TIMESTAMP WHERE user_id = 9;"
+      ]
+    },
+    "eval_query": {
+      "sqlite": [
+        "SELECT username, updated_at, updated_at > '2024-02-27 07:27:14' AS is_updated FROM tbl_users WHERE user_id = 9;"
+      ]
+    },
+    "setup_sql": {
+      "sqlite": []
+    },
+    "cleanup_sql": {
+      "sqlite": [
+        "UPDATE tbl_users SET username = 'sophia.anderson', updated_at = '2024-02-27 07:26:14' WHERE user_id = 9;"
+      ]
+    },
+    "tags": [
+      "DML",
+      "difficulty: moderate",
+      "UPDATE"
+    ],
+    "other": {
+      "Comment": "LGTM. Instructions do not include updated_at, but that is implied.",
+      "nl_prompt_base": "Can you update my username to 'magic_one'",
+      "nl_prompt_extra_context": "user_id = 9;",
+      "public": true
+    }
+  },
+  {
+    "id": 184,
+    "nl_prompt": "Update the post content in tbl_posts -- post_id = 3, new content should be 'Updated content'",
+    "query_type": "dml",
+    "database": "db_blog",
+    "dialects": [
+      "sqlite"
+    ],
+    "golden_sql": {
+      "sqlite": [
+        "UPDATE tbl_posts SET content = 'Updated content' WHERE post_id = 3;"
+      ]
+    },
+    "eval_query": {
+      "sqlite": [
+        "SELECT content FROM tbl_posts WHERE post_id = 3;"
+      ]
+    },
+    "setup_sql": {
+      "sqlite": [
+        "UPDATE tbl_posts SET content = 'Tips and tricks for efficient web development.' WHERE post_id = 3;"
+      ]
+    },
+    "cleanup_sql": {
+      "sqlite": [
+        "UPDATE tbl_posts SET content = 'Tips and tricks for efficient web development.' WHERE post_id = 3;"
+      ]
+    },
+    "tags": [
+      "DML",
+      "difficulty: simple",
+      "UPDATE"
+    ],
+    "other": {
+      "nl_prompt_base": "Update the post content in tbl_posts",
+      "nl_prompt_extra_context": "post_id = 3, new content should be 'Updated content'",
+      "public": true
+    }
+  },
+  {
+    "id": 43,
+    "nl_prompt": "Update the labels table to include a json field called comments_description.",
+    "query_type": "ddl",
+    "database": "db_blog",
+    "dialects": [
+      "sqlite"
+    ],
+    "golden_sql": {
+      "sqlite": [
+        "ALTER TABLE tbl_labels ADD COLUMN comments_description TEXT CHECK (json_valid(comments_description));"
+      ]
+    },
+    "eval_query": {
+      "sqlite": [
+        "SELECT COUNT(*) FROM tbl_labels WHERE json_valid(comments_description);"
+      ]
+    },
+    "setup_sql": {
+      "sqlite": [
+        "BEGIN TRANSACTION; CREATE TABLE tbl_labels_new (label_id INTEGER PRIMARY KEY, creator_id INTEGER DEFAULT NULL, updated_by INTEGER DEFAULT NULL, name TEXT DEFAULT NULL, description TEXT DEFAULT NULL, created_at TEXT DEFAULT NULL, updated_at TEXT DEFAULT NULL, post_count INTEGER DEFAULT NULL, visibility_status TEXT DEFAULT NULL, is_active INTEGER DEFAULT NULL, usage_frequency INTEGER DEFAULT NULL, parent_label_id INTEGER DEFAULT NULL, FOREIGN KEY (creator_id) REFERENCES tbl_users(user_id), FOREIGN KEY (updated_by) REFERENCES tbl_users(user_id), FOREIGN KEY (parent_label_id) REFERENCES tbl_labels(label_id)); INSERT INTO tbl_labels_new (label_id, creator_id, updated_by, name, description, created_at, updated_at, post_count, visibility_status, is_active, usage_frequency, parent_label_id) SELECT label_id, creator_id, updated_by, name, description, created_at, updated_at, post_count, visibility_status, is_active, usage_frequency, parent_label_id FROM tbl_labels; DROP TABLE tbl_labels; ALTER TABLE tbl_labels_new RENAME TO tbl_labels; COMMIT;"
+      ]
+    },
+    "cleanup_sql": {
+      "sqlite": [
+        "BEGIN TRANSACTION; CREATE TABLE tbl_labels_new (label_id INTEGER PRIMARY KEY, creator_id INTEGER DEFAULT NULL, updated_by INTEGER DEFAULT NULL, name TEXT DEFAULT NULL, description TEXT DEFAULT NULL, created_at TEXT DEFAULT NULL, updated_at TEXT DEFAULT NULL, post_count INTEGER DEFAULT NULL, visibility_status TEXT DEFAULT NULL, is_active INTEGER DEFAULT NULL, usage_frequency INTEGER DEFAULT NULL, parent_label_id INTEGER DEFAULT NULL, FOREIGN KEY (creator_id) REFERENCES tbl_users(user_id), FOREIGN KEY (updated_by) REFERENCES tbl_users(user_id), FOREIGN KEY (parent_label_id) REFERENCES tbl_labels(label_id)); INSERT INTO tbl_labels_new (label_id, creator_id, updated_by, name, description, created_at, updated_at, post_count, visibility_status, is_active, usage_frequency, parent_label_id) SELECT label_id, creator_id, updated_by, name, description, created_at, updated_at, post_count, visibility_status, is_active, usage_frequency, parent_label_id FROM tbl_labels; DROP TABLE tbl_labels; ALTER TABLE tbl_labels_new RENAME TO tbl_labels; COMMIT;"
+      ]
+    },
+    "tags": [
+      "DDL",
+      "difficulty: simple",
+      "ALTER",
+      "ADD_COLUMN",
+      "JSON"
+    ],
+    "other": {
+      "Comment": "LGTM",
+      "nl_prompt_base": "Update the labels table to include a json type field called comments_description.",
+      "nl_prompt_extra_context": null,
+      "public": true
+    }
+  },
+  {
+    "id": 185,
+    "nl_prompt": "Rename the content column in the tbl_posts table to post_content",
+    "query_type": "ddl",
+    "database": "db_blog",
+    "dialects": [
+      "sqlite"
+    ],
+    "golden_sql": {
+      "sqlite": [
+        "ALTER TABLE tbl_posts RENAME COLUMN content TO post_content;"
+      ]
+    },
+    "eval_query": {
+      "sqlite": [
+        "SELECT post_content FROM tbl_posts;"
+      ]
+    },
+    "setup_sql": {
+      "sqlite": [
+        "ALTER TABLE tbl_posts RENAME COLUMN post_content TO content;"
+      ]
+    },
+    "cleanup_sql": {
+      "sqlite": [
+        "ALTER TABLE tbl_posts RENAME COLUMN post_content TO content;"
+      ]
+    },
+    "tags": [
+      "DDL",
+      "difficulty: simple",
+      "ALTER",
+      "RENAME"
+    ],
+    "other": {
+      "comment": "LGTM",
+      "nl_prompt_base": "Rename the content column in the tbl_posts table to post_content",
+      "nl_prompt_extra_context": null,
+      "public": true
+    }
+  }
+]

@@ -1,0 +1,35 @@
+# Shared by every harness. CI_HARNESS selects which one runs, so all of them
+# are scored identically and stay comparable.
+dataset_config: .ci/harness_skills.evalset.json
+dataset_format: agent-format
+
+orchestrator: agent
+model_config: !ENV .ci/model_configs/${CI_HARNESS}_skills_model.yaml
+simulated_user_model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+
+scorers:
+  # trajectory_matcher and parameter_analysis are omitted: a skill runs as
+  # `run_command` on a node script, so neither scorer sees the skill's
+  # identity or its arguments.
+  skills_trajectory:
+    # Score recall only. A skill counts as activated once the agent reads its
+    # SKILL.md, so an extra skill means the agent browsed it, not that it
+    # answered wrongly.
+    allow_extra_skills: true
+  skills_best_practices:
+    model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+  turn_count: {}
+  agent_steps: {}
+  end_to_end_latency: {}
+  tool_call_latency: {}
+  token_consumption: {}
+  tokens_processed: {}
+  effective_billed_tokens: {}
+  goal_completion:
+    model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+  behavioral_metrics:
+    model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
+
+reporting:
+  csv:
+    output_directory: !ENV results/ci/skills/${CI_HARNESS}

@@ -86,14 +86,14 @@ def dashboard_component(results_dir: str):
                     if not gc_df.empty:
                         total = len(gc_df)
                         correct = len(gc_df[gc_df['score'] >= 100.0])
-                        
+
                         pct = (correct / total) * 100 if total > 0 else 0
                         color = (
                             "#10b981"
                             if pct >= 80
                             else ("#ef4444" if pct < 40 else "#f59e0b")
                         )
-                        
+
                         with me.box(
                             style=me.Style(
                                 width="calc(33.333% - 11px)",

@@ -9,7 +9,10 @@ import unittest
 
 from mcp import types as mcp_types
 
-from generators.models.mcp_tool_formatter import format_tools_to_man_page
+from generators.models.mcp_tool_formatter import (
+    format_tool_section,
+    format_tools_to_man_page,
+)
 
 
 def _tool(name, description, schema):
@@ -145,6 +148,55 @@ class FormatToolsToManPageTest(unittest.TestCase):
         )
         self.assertIn("TOOL: a", out)
         self.assertIn("TOOL: b", out)
+
+
+class FormatToolSectionTest(unittest.TestCase):
+    """The per-tool section is exactly the slice the whole man page is built of.
+
+    The readability check fingerprints these sections to decide what to
+    re-judge, so any divergence between a section and its place in the man page
+    would silently re-judge (or fail to re-judge) the wrong tools.
+    """
+
+    def _tools(self):
+        return [
+            _tool(
+                "search",
+                "Search things.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Query."},
+                        "limit": {"type": "integer", "enum": [10, 20]},
+                    },
+                    "required": ["query"],
+                },
+            ),
+            _tool("ping", "Health check.", {"type": "object"}),
+        ]
+
+    def test_man_page_is_the_join_of_its_sections(self):
+        tools = self._tools()
+        joined = "\n".join(format_tool_section(t) for t in tools).strip()
+        self.assertEqual(format_tools_to_man_page(tools), joined)
+
+    def test_each_section_appears_verbatim_in_the_man_page(self):
+        tools = self._tools()
+        man_page = format_tools_to_man_page(tools)
+        for tool in tools:
+            self.assertIn(format_tool_section(tool).strip(), man_page)
+
+    def test_section_is_independent_of_the_other_tools(self):
+        first, second = self._tools()
+        self.assertEqual(
+            format_tool_section(first),
+            format_tool_section(first),
+        )
+        # Rendering alone vs. alongside another tool must not differ.
+        alone = format_tools_to_man_page([first])
+        self.assertEqual(alone, format_tool_section(first).strip())
+        self.assertNotIn("ping", alone)
+        self.assertIn("TOOL: ping", format_tool_section(second))
 
 
 if __name__ == "__main__":
