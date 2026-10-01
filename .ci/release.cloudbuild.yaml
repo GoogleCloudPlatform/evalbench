@@ -16,7 +16,7 @@ steps:
   # Waits for the image that the Build trigger pushes after its tests pass.
   - id: resolve-release
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    timeout: '3300s'
+    timeout: '2400s'
     entrypoint: 'bash'
     args:
       - '-c'
@@ -111,9 +111,10 @@ steps:
           > /workspace/release_compare.txt
 
         # A treeless clone has every commit message and no file contents.
-        if ! git clone --quiet --filter=tree:0 --no-checkout \
+        # A step timeout fails the release, so limit the clone instead.
+        if ! timeout 300 git clone --quiet --filter=tree:0 --no-checkout \
           "$$GITHUB.git" /tmp/evalbench; then
-          unavailable "git clone of $$GITHUB failed."
+          unavailable "git clone of $$GITHUB failed or took more than 300 s."
         fi
         if ! python3 /workspace/.ci/release/release_notes.py \
           --repo-dir /tmp/evalbench --old "$$OLD_SHA" --new "$COMMIT_SHA" \
@@ -226,6 +227,7 @@ steps:
   - id: tag-release
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     waitFor: ['smoke-gate']
+    timeout: '120s'
     entrypoint: 'bash'
     args:
       - '-c'
@@ -254,6 +256,7 @@ steps:
   - id: capture-rollback-target
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     waitFor: ['tag-release']
+    timeout: '120s'
     entrypoint: 'bash'
     args:
       - '-c'
@@ -293,6 +296,8 @@ steps:
   - id: deploy-gke
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     waitFor: ['capture-rollback-target']
+    # 2 rollouts (600 s), confirm (60 s), and Ping (120 s).
+    timeout: '900s'
     entrypoint: 'bash'
     args:
       - '-c'
@@ -304,7 +309,7 @@ steps:
         SELECTOR=app=evalbench-eval-server
         CONTAINER=evalbench-eval
         DEPLOYMENT=deployment/evalbench-eval-server-deploy
-        ROLLOUT_TIMEOUT=600s
+        ROLLOUT_TIMEOUT=300s
 
         REPO=$$(cat /workspace/image_repo.txt)
         NEW_DIGEST=$$(cat /workspace/image_digest.txt)
@@ -372,7 +377,7 @@ steps:
           -o jsonpath='{.items[0].metadata.name}')
         echo "===== gRPC health check on $$POD ====="
         if ! kubectl exec -n "$$NAMESPACE" "$$POD" -c "$$CONTAINER" -- \
-          python /evalbench/.ci/release/wait_for_grpc.py --timeout 300; then
+          python /evalbench/.ci/release/wait_for_grpc.py --timeout 120; then
           kubectl logs -n "$$NAMESPACE" "$$POD" -c "$$CONTAINER" --tail=150
           rollback "The new pod $$POD did not answer Ping."
         fi
@@ -398,6 +403,7 @@ steps:
   - id: promote-latest
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     waitFor: ['deploy-gke']
+    timeout: '120s'
     entrypoint: 'bash'
     args:
       - '-c'
@@ -415,6 +421,7 @@ steps:
   - id: copy-cloudrun-image
     name: 'gcr.io/go-containerregistry/gcrane:debug'
     waitFor: ['promote-latest']
+    timeout: '300s'
     entrypoint: 'sh'
     args:
       - '-c'
@@ -433,6 +440,7 @@ steps:
   - id: deploy-cloudrun
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     waitFor: ['copy-cloudrun-image']
+    timeout: '600s'
     entrypoint: 'bash'
     args:
       - '-c'
@@ -488,6 +496,7 @@ steps:
   - id: notify-success
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     waitFor: ['deploy-cloudrun', 'release-notes']
+    timeout: '60s'
     entrypoint: 'bash'
     args:
       - '-c'
@@ -498,10 +507,11 @@ steps:
 substitutions:
   _EVAL_REGION: 'global'
   # The Build trigger took 15 to 26 min in 59 runs.
-  _IMAGE_WAIT_SECONDS: '2700'
+  _IMAGE_WAIT_SECONDS: '1800'
 
-# The image wait, one extra poll, and about 3000 s for the other steps.
-timeout: '6600s'
+# Covers the step timeouts up to deploy-gke (4740 s), so a rollback always
+# ends.
+timeout: '4800s'
 
 options:
   logging: CLOUD_LOGGING_ONLY
