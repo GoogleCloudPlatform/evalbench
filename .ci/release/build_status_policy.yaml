@@ -39,9 +39,12 @@ documentation:
   content: |
     **Status code:** ${log.extracted_label.code} (1 = CANCELLED, 4 = TIMEOUT, 13 = INTERNAL_ERROR)
 
-    The run ended before it printed a RELEASE_RESULT line, so no other email
-    comes for it. If deploy-gke or deploy-cloudrun did not finish, check the
-    image that GKE and Cloud Run serve.
+    The release run stopped before it reported a result.
+
+    1. Open the build log to see where the run stopped.
+    2. Check that all GKE pods and Cloud Run serve the same image digest. If
+       they do not, the deploy is incomplete.
+    3. If necessary, start the release again.
 
     **Build log:** https://console.cloud.google.com/cloud-build/builds;region=us-central1/${resource.label.build_id}?project=${resource.label.project_id}
 notificationChannels:
