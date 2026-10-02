@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+"""Grades the eval run in .ci/build.cloudbuild.yaml (the Build trigger).
+
+run.sh exits 0 whenever a run completes, so this script fails the build
+unless evals.csv exists, has rows, and every row has generated SQL.
+"""
 import os
 import sys
 import argparse
