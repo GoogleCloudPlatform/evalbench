@@ -1,4 +1,6 @@
+import os
 import sys
+import tempfile
 import threading
 import types
 import unittest
@@ -80,12 +82,88 @@ class TestSPICustomClassLoader(unittest.TestCase):
             load_custom_class("InvalidClassNameWithoutModule")
 
     def test_load_custom_class_module_not_found(self):
-        with self.assertRaises(ImportError):
+        with self.assertRaises(ImportError) as ctx:
             load_custom_class("nonexistent_module.FakeClass")
+        self.assertIn("Failed to import module 'nonexistent_module'", str(ctx.exception))
 
     def test_load_custom_class_attr_not_found(self):
         with self.assertRaises(AttributeError):
             load_custom_class("unittest.mock:NonExistentAttribute12345")
+
+    def test_load_custom_class_cwd_fallback(self):
+        """Verifies that modules in os.getcwd() are loaded when cwd is absent from sys.path (e.g. uvx)."""
+        orig_cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            real_tmp = os.path.abspath(os.path.realpath(tmp_dir))
+            pkg_dir = os.path.join(real_tmp, "local_uvx_pkg")
+            os.makedirs(pkg_dir)
+            with open(os.path.join(pkg_dir, "__init__.py"), "w", encoding="utf-8") as f:
+                f.write("")
+            with open(os.path.join(pkg_dir, "helper.py"), "w", encoding="utf-8") as f:
+                f.write("HELPER_VAL = 'from_sibling'\n")
+            with open(os.path.join(pkg_dir, "my_connector.py"), "w", encoding="utf-8") as f:
+                f.write(
+                    "from local_uvx_pkg.helper import HELPER_VAL\n\n\n"
+                    "class LocalUvxConnector:\n"
+                    "    TAG = HELPER_VAL\n"
+                )
+
+            clean_sys_path = [
+                p for p in sys.path
+                if p not in ("", ".") and os.path.abspath(p) != real_tmp
+            ]
+            try:
+                os.chdir(real_tmp)
+                with patch.object(sys, "path", clean_sys_path):
+                    cls = load_custom_class("local_uvx_pkg.my_connector:LocalUvxConnector")
+                    self.assertEqual(cls.TAG, "from_sibling")
+                    self.assertEqual(sys.path[-1], real_tmp)
+            finally:
+                os.chdir(orig_cwd)
+                for mod_key in list(sys.modules.keys()):
+                    if mod_key == "local_uvx_pkg" or mod_key.startswith("local_uvx_pkg."):
+                        sys.modules.pop(mod_key, None)
+
+    def test_load_custom_class_cwd_already_in_sys_path_does_not_duplicate(self):
+        """When cwd (or '' / '.') is already on sys.path and module is missing, raises without duplicating cwd."""
+        orig_cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            real_tmp = os.path.abspath(os.path.realpath(tmp_dir))
+            try:
+                os.chdir(real_tmp)
+                for existing_entry in (real_tmp, "", "."):
+                    path_with_cwd = [existing_entry]
+                    with patch.object(sys, "path", path_with_cwd):
+                        with self.assertRaises(ImportError) as ctx:
+                            load_custom_class("missing_pkg_xyz.MissingClass")
+                        self.assertIn("Failed to import module", str(ctx.exception))
+                        self.assertEqual(sys.path, [existing_entry])
+            finally:
+                os.chdir(orig_cwd)
+
+    def test_load_custom_class_transitive_missing_dependency_skips_fallback(self):
+        """When the target module is found but fails on an inner import, does not mutate sys.path or retry."""
+        orig_cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            real_tmp = os.path.abspath(os.path.realpath(tmp_dir))
+            mod_dir = os.path.join(real_tmp, "installed_dir")
+            cwd_dir = os.path.join(real_tmp, "other_cwd")
+            os.makedirs(mod_dir)
+            os.makedirs(cwd_dir)
+            with open(os.path.join(mod_dir, "broken_dep_mod.py"), "w", encoding="utf-8") as f:
+                f.write("import nonexistent_third_party_lib_xyz\n")
+
+            custom_sys_path = [mod_dir]
+            try:
+                os.chdir(cwd_dir)
+                with patch.object(sys, "path", custom_sys_path):
+                    with self.assertRaises(ImportError) as ctx:
+                        load_custom_class("broken_dep_mod:SomeClass")
+                    self.assertIn("nonexistent_third_party_lib_xyz", str(ctx.exception))
+                    self.assertEqual(sys.path, [mod_dir])
+            finally:
+                os.chdir(orig_cwd)
+                sys.modules.pop("broken_dep_mod", None)
 
     def test_get_database_with_connector_class(self):
         config = {
