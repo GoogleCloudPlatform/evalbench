@@ -1,15 +1,14 @@
-"""AnalyticsScorer: Conversational Analytics Data Results Rater for Evalbench.
+"""AnalyticsScorer: Data Results Rater for Evalbench.
 
-Grades each generated execution result against the golden execution result using the
-Conversational Analytics "Content/Data Results" rubric
-(google3/storage/evals/scoring/rubrics/ca/accuracy/content/data_results.textproto)
-and a side-by-side LLM validator modeled on the Cortado turn-level rubric autorater.
+Grades each generated execution result against the golden execution result using a
+"Content/Data Results" rubric and a side-by-side LLM validator.
 
-Trajectories are rendered the same way Cortado renders them for the autorater:
-quoted `SQL Query:` / `Data:` blocks, data formatted with pandas `to_string`,
-cell-budget truncation with a "(<side> dataframe was truncated from N rows to
-M rows for display.)" note, and the `Data:` block omitted when the query
-returned zero rows.
+Trajectories are rendered as quoted `SQL Query:` / `Data:` blocks, with data
+formatted with pandas `to_string`, cell-budget truncation with a "(<side>
+dataframe was truncated from N rows to M rows for display.)" note, and the
+`Data:` block omitted when the query returned zero rows. The rubric relies on
+this format (e.g. its definition of an empty data result and its tolerated
+truncation differences).
 """
 
 import logging
@@ -27,11 +26,11 @@ from scorers.prompt.analyticsscorer import (
 )
 from scorers.util import with_cache_execute
 
-# Mirrors Cortado's MAX_DATA_RESULT_ENTRIES: the maximum number of cells
-# (rows x columns) rendered per data result before truncation.
+# The maximum number of cells (rows x columns) rendered per data result before
+# truncation. At least one row is always rendered, even for very wide results.
 DEFAULT_MAX_DATA_RESULT_ENTRIES = 50
 
-# Mirrors Cortado's trajectory_templates.py (including its whitespace).
+# Trajectory block templates (whitespace is intentional).
 _SINGLE_QUERY_TEMPLATE = """
     {query_label}:
     "{query}"
@@ -52,7 +51,7 @@ _BARE_VERDICT_RE = re.compile(r"(PASS|FAIL)\b", re.IGNORECASE)
 
 
 class AnalyticsScorer(comparator.Comparator):
-    """AnalyticsScorer implements the Conversational Analytics Data Results AutoRater for Evalbench."""
+    """AnalyticsScorer implements the Data Results AutoRater for Evalbench."""
 
     def __init__(self, config: dict, global_models: Any):
         super().__init__(config)
@@ -76,7 +75,8 @@ class AnalyticsScorer(comparator.Comparator):
         self.query_label = self.config.get("query_label", "SQL Query")
         # Exact set match implies PASS under the rubric (column names/order and
         # deduplication are tolerated variations 1 and 2), so the LLM call can be
-        # skipped. Cortado has no such shortcut; disable for strict parity.
+        # skipped. Disable to always use the LLM judge, e.g. when prompts carry
+        # ordering or column-naming requirements that set matching ignores.
         self.skip_llm_on_exact_match = bool(
             self.config.get("skip_llm_on_exact_match", True)
         )
@@ -97,7 +97,7 @@ class AnalyticsScorer(comparator.Comparator):
         return None
 
     def _format_data_result(self, data: Any, data_type: str) -> str:
-        """Formats a data result like Cortado's format_dataframe_to_str.
+        """Formats a data result as a table string, truncating large results.
 
         Returns an empty string when there is no data or the result has zero rows,
         in which case the caller omits the `Data:` block.
@@ -111,7 +111,7 @@ class AnalyticsScorer(comparator.Comparator):
         original_rows = df.shape[0]
         is_truncated = False
         if df.shape[1] and df.shape[0] * df.shape[1] > self.max_data_result_entries:
-            limit = self.max_data_result_entries // df.shape[1]
+            limit = max(1, self.max_data_result_entries // df.shape[1])
             df = df.head(limit)
             is_truncated = True
 
@@ -124,7 +124,7 @@ class AnalyticsScorer(comparator.Comparator):
         return output
 
     def _render_trajectory(self, query: Any, data: Any, data_type: str) -> str:
-        """Renders a single-turn trajectory the way Cortado does for the autorater."""
+        """Renders a single-turn trajectory (query and data) for the autorater."""
         parts = []
         if query:
             parts.append(
@@ -216,12 +216,12 @@ class AnalyticsScorer(comparator.Comparator):
         database: str = "",
         **kwargs,
     ) -> Tuple[float, str]:
-        """Evaluates trial result against golden reference following the Conversational Analytics rubric.
+        """Evaluates trial result against golden reference following the Data Results rubric.
 
         Raises:
           ValueError: If the golden reference is unusable (failed or empty). These
             are recorded by score.compare as comparison errors rather than as
-            trial failures, mirroring Cortado skipping side-by-side evaluation.
+            trial failures.
           RuntimeError: If the autorater model fails to return a response.
         """
         # 1. A broken golden reference is not the trial's fault.
@@ -263,7 +263,7 @@ class AnalyticsScorer(comparator.Comparator):
             generated_query, generated_execution_result, "trial"
         )
 
-        # 5. Empty-trajectory handling, as in Cortado's turn-level autorater.
+        # 5. Empty-trajectory handling.
         if not golden_trajectory:
             raise ValueError(
                 "Golden trajectory is empty. Skipping side-by-side rubric evaluation."

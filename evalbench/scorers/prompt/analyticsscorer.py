@@ -1,13 +1,9 @@
-"""Prompts and Rubrics for the Conversational Analytics Data Results Rater.
+"""Prompts and Rubrics for the Data Results Rater.
 
-DATA_RESULTS_RUBRIC is copied verbatim from the `description` field of the
-Conversational Analytics "Content/Data Results" rubric criterion
-(google3/storage/evals/scoring/rubrics/ca/accuracy/content/data_results.textproto).
-ANALYTICS_SCORER_PROMPT_TEMPLATE mirrors the side-by-side validator template of
-the Cortado turn-level rubric autorater
-(google3/cloud/data_analytics/anarres/eval/cortado/raters/turn_level_trace_rubric_autorater.py),
-with an explicit reasoning-first PASS/FAIL output format in place of the
-pbautoraters structured result guide. Keep both in sync with the sources.
+DATA_RESULTS_RUBRIC defines a correct data result as a 4-check PASS/FAIL
+checklist with tolerated variations and calibration examples.
+ANALYTICS_SCORER_PROMPT_TEMPLATE is the side-by-side validator prompt, with an
+explicit reasoning-first PASS/FAIL output format.
 """
 
 # pylint: disable=line-too-long
@@ -87,7 +83,7 @@ Example C (PASS / FULFILLED):
 - Expected rationale: Check 1 YES, the trial contains a data result that happens to be empty, which is not the same as having no data result. Check 2 YES, the trial addresses the requested 30-day window. Check 3 would be NO because the ground truth rows are absent from the trial result, but tolerated variation 11 covers this exact case: the relative-time logic is valid and the emptiness is an artifact of a static dataset, so by the precedence rule this difference must not make the check NO. Check 4 YES. All 4 checks are YES, so the rubric is satisfied (PASS / FULFILLED).
 """
 
-ANALYTICS_SCORER_PROMPT_TEMPLATE = """Your task is to check how Conversational Analytics agent trial responses to a user prompt compare to ground truth Conversational Analytics responses for a single conversational turn.
+ANALYTICS_SCORER_PROMPT_TEMPLATE = """Your task is to check how data analytics agent trial responses to a user prompt compare to ground truth data analytics agent responses for a single conversational turn.
 Note that the ground truth responses serve as a reference for the trial responses, not a strict template that must be matched exactly.
 Below is the rubric which determines how to evaluate trial responses given ground truth responses.
 

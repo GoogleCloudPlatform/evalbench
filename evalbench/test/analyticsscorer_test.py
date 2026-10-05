@@ -1,4 +1,4 @@
-"""Unit tests for AnalyticsScorer (Conversational Analytics Data Results Rater in Evalbench)."""
+"""Unit tests for AnalyticsScorer (Data Results Rater in Evalbench)."""
 
 import unittest
 from unittest.mock import MagicMock, patch
@@ -22,7 +22,7 @@ class TestAnalyticsScorer(unittest.TestCase):
         self.assertEqual(scorer.query_label, "SQL Query")
 
     @patch("scorers.analyticsscorer.get_generator")
-    def test_render_data_truncation_matches_cortado(self, mock_get_gen):
+    def test_render_data_truncation_uses_cell_budget(self, mock_get_gen):
         mock_get_gen.return_value = MagicMock()
         scorer = AnalyticsScorer(
             {"model_config": "model.yaml", "max_data_result_entries": 6},
@@ -38,6 +38,19 @@ class TestAnalyticsScorer(unittest.TestCase):
         )
         self.assertIn("User_2", rendered)
         self.assertNotIn("User_3", rendered)
+
+    @patch("scorers.analyticsscorer.get_generator")
+    def test_render_data_wide_result_keeps_at_least_one_row(self, mock_get_gen):
+        mock_get_gen.return_value = MagicMock()
+        scorer = AnalyticsScorer({"model_config": "model.yaml"}, global_models={})
+        wide_row = {f"c{i}": i for i in range(60)}
+        rendered = scorer._format_data_result([wide_row, wide_row], "golden")
+        self.assertTrue(
+            rendered.startswith(
+                "(golden dataframe was truncated from 2 rows to 1 rows for display.) "
+            )
+        )
+        self.assertIn("c59", rendered)
 
     @patch("scorers.analyticsscorer.get_generator")
     def test_render_data_keeps_duplicate_rows(self, mock_get_gen):
