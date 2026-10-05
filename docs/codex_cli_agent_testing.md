@@ -305,7 +305,7 @@ EvalBench accepts the **same MCP server config schema as Gemini CLI and Claude C
 | `httpUrl` | → `url` (TOML, streamable HTTP server) |
 | `headers` | → `http_headers` (TOML inline table) |
 | `authProviderType: google_credentials` | → mints an **ADC** token (`gcloud auth application-default print-access-token`, falling back to `gcloud auth print-access-token`) and passes it to Codex via `bearer_token_env_var` (env var `EVALBENCH_GCLOUD_MCP_TOKEN`). The generator re-mints a fresh token before **every turn** (each `codex exec` re-reads the env var), so it doesn't expire mid-suite. `X-Goog-User-Project` stays a static `http_headers` entry. Google API MCP endpoints reject the plain user token on tool calls — see [Troubleshooting](#mcp-server-fails-with-401-unauthorized-real-cloud-sql-endpoint). |
-| `oauth.scopes` | (dropped — Codex doesn't use Gemini's OAuth delegation) |
+| `oauth.scopes` | → forwarded as `--scopes` to `gcloud auth application-default print-access-token` when minting `bearer_token_env_var` (`EVALBENCH_GCLOUD_MCP_TOKEN`) |
 | `command` / `args` / `env` / `cwd` (stdio) | → passed through as-is into a `[mcp_servers.NAME]` stdio block |
 
 ### HTTP MCP server (Cloud SQL Managed)

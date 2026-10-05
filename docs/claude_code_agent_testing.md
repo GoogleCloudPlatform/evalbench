@@ -284,7 +284,7 @@ EvalBench accepts the **same MCP server config schema as Gemini CLI** for HTTP s
 |---|---|
 | `httpUrl` | → `url` + auto-adds `type: "http"` |
 | `authProviderType: google_credentials` | → injects `Authorization: Bearer <ADC token>` (from `gcloud auth application-default print-access-token`, falling back to `gcloud auth print-access-token`) **and** sets a `headersHelper` so Claude Code re-mints a fresh ADC token on every connection (avoids ~1h expiry). Google API MCP endpoints reject the plain user token on tool calls — see [Troubleshooting](#mcp-tool-call-fails-with-incompatible-auth-server-does-not-support-dynamic-client-registration). |
-| `oauth.scopes` | (dropped — Claude Code doesn't use Gemini's OAuth delegation) |
+| `oauth.scopes` | → forwarded as `--scopes` to `gcloud auth application-default print-access-token` in both `headersHelper` and the initial static `Authorization` header |
 | `headers` | → passed through as-is |
 | `command` / `args` (stdio) | → passed through as-is |
 
