@@ -1,13 +1,22 @@
 """AnalyticsScorer: Conversational Analytics Data Results Rater for Evalbench.
 
 Grades each generated execution result against the golden execution result using the
-Conversational Analytics Content/Data Results rubric and side-by-side LLM validator.
+Conversational Analytics "Content/Data Results" rubric
+(google3/storage/evals/scoring/rubrics/ca/accuracy/content/data_results.textproto)
+and a side-by-side LLM validator modeled on the Cortado turn-level rubric autorater.
+
+Trajectories are rendered the same way Cortado renders them for the autorater:
+quoted `SQL Query:` / `Data:` blocks, data formatted with pandas `to_string`,
+cell-budget truncation with a "(<side> dataframe was truncated from N rows to
+M rows for display.)" note, and the `Data:` block omitted when the query
+returned zero rows.
 """
 
-import json
 import logging
 import re
 from typing import Any, Tuple
+
+import pandas as pd
 
 from databases.util import get_cache_client
 from generators.models import get_generator
@@ -16,7 +25,30 @@ from scorers.prompt.analyticsscorer import (
     ANALYTICS_SCORER_PROMPT_TEMPLATE,
     DATA_RESULTS_RUBRIC,
 )
-from scorers.util import make_hashable, with_cache_execute
+from scorers.util import with_cache_execute
+
+# Mirrors Cortado's MAX_DATA_RESULT_ENTRIES: the maximum number of cells
+# (rows x columns) rendered per data result before truncation.
+DEFAULT_MAX_DATA_RESULT_ENTRIES = 50
+
+# Mirrors Cortado's trajectory_templates.py (including its whitespace).
+_SINGLE_QUERY_TEMPLATE = """
+    {query_label}:
+    "{query}"
+"""
+
+_SINGLE_DATA_RESULT_TEMPLATE = """
+     Data:
+    "{data}"
+"""
+
+_EMPTY_TRIAL_JUSTIFICATION = (
+    "The trial trajectory is empty and the golden trajectory is not empty."
+    " Thus, the rubric criterion is not met."
+)
+
+_VERDICT_RE = re.compile(r"VERDICT\s*:\s*(PASS|FAIL)\b", re.IGNORECASE)
+_BARE_VERDICT_RE = re.compile(r"(PASS|FAIL)\b", re.IGNORECASE)
 
 
 class AnalyticsScorer(comparator.Comparator):
@@ -31,86 +63,109 @@ class AnalyticsScorer(comparator.Comparator):
             raise ValueError("model_config is required for AnalyticsScorer")
         self.model = get_generator(global_models, self.model_config)
         self.cache_client = get_cache_client(self.config)
-        self.max_rows = self.config.get("max_rows", 50)
+        if "max_rows" in self.config:
+            logging.warning(
+                "AnalyticsScorer: 'max_rows' is no longer supported and is ignored;"
+                " use 'max_data_result_entries' (a rows x columns cell budget)."
+            )
+        self.max_data_result_entries = int(
+            self.config.get(
+                "max_data_result_entries", DEFAULT_MAX_DATA_RESULT_ENTRIES
+            )
+        )
         self.query_label = self.config.get("query_label", "SQL Query")
+        # Exact set match implies PASS under the rubric (column names/order and
+        # deduplication are tolerated variations 1 and 2), so the LLM call can be
+        # skipped. Cortado has no such shortcut; disable for strict parity.
+        self.skip_llm_on_exact_match = bool(
+            self.config.get("skip_llm_on_exact_match", True)
+        )
         self.set_match_checker = setmatcher.SetMatcher({})
 
     @staticmethod
-    def take_n_uniques(output_list: list, n: int) -> list:
-        """Takes n number of unique (non duplicate) values from the output list.
+    def _to_dataframe(data: Any) -> pd.DataFrame | None:
+        """Converts an execution result into a DataFrame, or None if not tabular."""
+        if isinstance(data, pd.DataFrame):
+            return data
+        if isinstance(data, dict):
+            data = [data]
+        if isinstance(data, (list, tuple)):
+            try:
+                return pd.DataFrame(list(data))
+            except (ValueError, TypeError):
+                return None
+        return None
 
-        Args:
-          output_list: The execution output result set
-          n: Max number of unique values needed.
+    def _format_data_result(self, data: Any, data_type: str) -> str:
+        """Formats a data result like Cortado's format_dataframe_to_str.
 
-        Returns:
-          The execution output result set without duplicates in a size of n values or less.
+        Returns an empty string when there is no data or the result has zero rows,
+        in which case the caller omits the `Data:` block.
         """
-        seen_dicts = set()
-        new_list = []
-        for d in output_list:
-            if isinstance(d, dict):
-                t = frozenset((k, make_hashable(v)) for k, v in d.items())
-                if t not in seen_dicts:
-                    seen_dicts.add(t)
-                    new_list.append(d)
-                    if len(new_list) == n:
-                        break
-            else:
-                new_list.append(d)
-                if len(new_list) == n:
-                    break
-        return new_list
-
-    def _render_data(self, data: Any) -> str:
-        """Formats the data payload into a valid JSON string representation, truncating at row level."""
         if data is None:
             return ""
+        df = self._to_dataframe(data)
+        if df is None:
+            return str(data).strip()
 
-        if isinstance(data, list):
-            total_rows = len(data)
-            if total_rows == 0:
-                return "[]"
-            truncated_data = self.take_n_uniques(data, self.max_rows)
-            data_json = json.dumps(truncated_data, default=str)
-            if total_rows > len(truncated_data):
-                return (
-                    f"{data_json}\n[Note: Displaying {len(truncated_data)} of "
-                    f"{total_rows} total rows]"
+        original_rows = df.shape[0]
+        is_truncated = False
+        if df.shape[1] and df.shape[0] * df.shape[1] > self.max_data_result_entries:
+            limit = self.max_data_result_entries // df.shape[1]
+            df = df.head(limit)
+            is_truncated = True
+
+        output = df.to_string(index=False) if not df.empty else ""
+        if is_truncated:
+            return (
+                "(%s dataframe was truncated from %d rows to %d rows for display.) "
+                % (data_type, original_rows, df.shape[0])
+            ) + output
+        return output
+
+    def _render_trajectory(self, query: Any, data: Any, data_type: str) -> str:
+        """Renders a single-turn trajectory the way Cortado does for the autorater."""
+        parts = []
+        if query:
+            parts.append(
+                _SINGLE_QUERY_TEMPLATE.format(
+                    query_label=self.query_label, query=query
                 )
-            return data_json
+            )
+        data_str = self._format_data_result(data, data_type)
+        if data_str:
+            parts.append(_SINGLE_DATA_RESULT_TEMPLATE.format(data=data_str))
+        return "\n".join(parts)
 
-        if isinstance(data, dict):
-            return json.dumps(data, default=str)
+    @staticmethod
+    def _parse_verdict(response_text: str) -> Tuple[float, str]:
+        """Parses the PASS / FAIL verdict from the LLM autorater response.
 
-        return str(data)
-
-    def _render_trajectory(self, query: str, data: Any) -> str:
-        """Renders the query and data as a formatted block for rubric evaluation."""
-        rendered_data = self._render_data(data)
-        query_str = query or ""
-        return f"{self.query_label}:\n{query_str}\nData:\n{rendered_data}"
-
-    def _parse_verdict(self, response_text: str) -> Tuple[float, str]:
-        """Parses the VERDICT: PASS / FAIL label from the LLM autorater response."""
+        The final non-empty line is authoritative; markdown emphasis and code
+        formatting (e.g. `**VERDICT:** PASS`) are ignored.
+        """
         if not response_text:
             return 0.0, "Could not parse valid VERDICT: empty response from autorater."
 
-        cleaned = response_text.strip()
-        matches = re.findall(r"VERDICT:\s*(PASS|FAIL)\b", cleaned, re.IGNORECASE)
+        lines = [
+            re.sub(r"[*_`#>]", "", line).strip()
+            for line in response_text.strip().splitlines()
+        ]
+        lines = [line for line in lines if line]
+        if lines:
+            last_line = lines[-1]
+            match = _VERDICT_RE.search(last_line) or _BARE_VERDICT_RE.match(
+                last_line
+            )
+            if match:
+                verdict = match.group(1).upper()
+                return (100.0 if verdict == "PASS" else 0.0), response_text
+
+        # Fall back to the last VERDICT label anywhere in the response.
+        matches = _VERDICT_RE.findall(re.sub(r"[*_`]", "", response_text))
         if matches:
             verdict = matches[-1].upper()
-            score = 100.0 if verdict == "PASS" else 0.0
-            return score, response_text
-
-        # Check for standalone line PASS/FAIL at the end
-        lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
-        if lines:
-            last_line = lines[-1].upper()
-            if re.fullmatch(r"(VERDICT:\s*)?PASS\b.*", last_line):
-                return 100.0, response_text
-            if re.fullmatch(r"(VERDICT:\s*)?FAIL\b.*", last_line):
-                return 0.0, response_text
+            return (100.0 if verdict == "PASS" else 0.0), response_text
 
         return 0.0, f"Could not parse valid VERDICT from autorater response:\n{response_text}"
 
@@ -161,17 +216,31 @@ class AnalyticsScorer(comparator.Comparator):
         database: str = "",
         **kwargs,
     ) -> Tuple[float, str]:
-        """Evaluates trial result against golden reference following the Conversational Analytics rubric."""
-        # 1. Unconditional execution error checks
+        """Evaluates trial result against golden reference following the Conversational Analytics rubric.
+
+        Raises:
+          ValueError: If the golden reference is unusable (failed or empty). These
+            are recorded by score.compare as comparison errors rather than as
+            trial failures, mirroring Cortado skipping side-by-side evaluation.
+          RuntimeError: If the autorater model fails to return a response.
+        """
+        # 1. A broken golden reference is not the trial's fault.
         if golden_error:
-            return 0.0, f"Golden query failed to execute: {golden_error}"
+            raise ValueError(f"Golden query failed to execute: {golden_error}")
+
+        # 2. A failed trial query produces no data result (rubric Check 1), while
+        # a successfully executed golden query always does (possibly empty).
         if generated_error:
             return 0.0, f"Generated query failed to execute: {generated_error}"
 
-        # 2. Fast short-circuit: if exact set match on non-empty results, skip LLM
+        # 3. Fast short-circuit: exact set match on non-empty results is a PASS.
         is_empty_results = (not golden_execution_result) and (not generated_execution_result)
-        if not is_empty_results and isinstance(golden_execution_result, list) and isinstance(generated_execution_result, list):
-            if self._is_exact_match(
+        if (
+            self.skip_llm_on_exact_match
+            and not is_empty_results
+            and isinstance(golden_execution_result, list)
+            and isinstance(generated_execution_result, list)
+            and self._is_exact_match(
                 nl_prompt,
                 golden_query,
                 query_type,
@@ -182,18 +251,25 @@ class AnalyticsScorer(comparator.Comparator):
                 generated_execution_result,
                 generated_eval_result,
                 generated_error,
-            ):
-                return 100.0, "Skipped. Exact Match was found."
+            )
+        ):
+            return 100.0, "Skipped. Exact Match was found."
 
-        # 3. Format trajectories
+        # 4. Format trajectories.
         golden_trajectory = self._render_trajectory(
-            query=golden_query or "",
-            data=golden_execution_result,
+            golden_query, golden_execution_result, "golden"
         )
         trial_trajectory = self._render_trajectory(
-            query=generated_query or "",
-            data=generated_execution_result,
+            generated_query, generated_execution_result, "trial"
         )
+
+        # 5. Empty-trajectory handling, as in Cortado's turn-level autorater.
+        if not golden_trajectory:
+            raise ValueError(
+                "Golden trajectory is empty. Skipping side-by-side rubric evaluation."
+            )
+        if not trial_trajectory:
+            return 0.0, _EMPTY_TRIAL_JUSTIFICATION
 
         prompt = ANALYTICS_SCORER_PROMPT_TEMPLATE.format(
             rubric=DATA_RESULTS_RUBRIC,
@@ -204,7 +280,8 @@ class AnalyticsScorer(comparator.Comparator):
 
         logging.debug("\n --------- Analytics Scorer Prompt: --------- \n %s", prompt)
 
-        # 4. LLM inference with caching (exceptions propagate to score.compare)
+        # 6. LLM inference. with_cache_execute swallows model exceptions and
+        # returns None; surface that as an error instead of a silent FAIL.
         if self.cache_client:
             response = with_cache_execute(
                 prompt,
@@ -212,6 +289,10 @@ class AnalyticsScorer(comparator.Comparator):
                 self._inference_without_caching,
                 self.cache_client,
             )
+            if response is None:
+                raise RuntimeError(
+                    "AnalyticsScorer autorater returned no response (model call failed)."
+                )
         else:
             response = self._inference_without_caching(prompt)
 
