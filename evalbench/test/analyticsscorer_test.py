@@ -258,7 +258,6 @@ class TestAnalyticsScorer(unittest.TestCase):
         self.assertIn("Check 4 - No Invalid Columns", called_prompt)
         self.assertIn('     Data:\n    " active_cnt\n         42"', called_prompt)
 
-
     @patch("scorers.analyticsscorer.get_generator")
     def test_compare_empty_trial_trajectory_fails_without_llm(self, mock_get_gen):
         mock_model = MagicMock()
