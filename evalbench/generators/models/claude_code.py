@@ -1,4 +1,5 @@
 from .agent_cli import AgentCliGenerator
+from . import mcp_client
 from .tool_naming import canonicalize_claude_tool_name
 import subprocess
 import os
@@ -294,20 +295,8 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         # Gemini-style `oauth.scopes` is forwarded to gcloud, but the `oauth`
         # block itself must be removed so Claude Code doesn't treat it as an
         # interactive MCP OAuth 2.0 dynamic registration config.
-        oauth_config = config.pop("oauth", None)
-        raw_scopes = None
-        if isinstance(oauth_config, dict):
-            raw_scopes = oauth_config.get("scopes")
-        elif isinstance(oauth_config, (list, str)):
-            raw_scopes = oauth_config
-        if not raw_scopes and "scopes" in config:
-            raw_scopes = config.pop("scopes")
-
-        scopes: list[str] = []
-        if isinstance(raw_scopes, list):
-            scopes = [str(s).strip() for s in raw_scopes if str(s).strip()]
-        elif isinstance(raw_scopes, str) and raw_scopes.strip():
-            scopes = [s.strip() for s in raw_scopes.split(",") if s.strip()]
+        scopes = mcp_client.extract_mcp_oauth_scopes(config)
+        config.pop("oauth", None)
 
         if auth_provider == "google_credentials":
             headers = config.get("headers", {}) or {}

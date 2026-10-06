@@ -1,3 +1,4 @@
+from . import mcp_client
 from .agent_cli import AgentCliGenerator
 from .tool_naming import canonical_tool_name
 import subprocess
@@ -608,10 +609,8 @@ class CodexCliGenerator(AgentCliGenerator):
         out: dict = {"url": url}
         headers = dict(config.get("headers") or {})
 
-        oauth = config.pop("oauth", None) or {}
-        scopes = oauth.get("scopes") or config.get("scopes") or []
-        if isinstance(scopes, str):
-            scopes = [scopes]
+        scopes = mcp_client.extract_mcp_oauth_scopes(config)
+        config.pop("oauth", None)
 
         auth_provider = config.get("authProviderType")
         if auth_provider == "google_credentials" and "Authorization" not in headers:
