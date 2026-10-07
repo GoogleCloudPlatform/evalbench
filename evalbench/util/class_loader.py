@@ -1,12 +1,39 @@
 """Utility for dynamically loading custom classes via module paths."""
 
 import importlib
+import os
+import sys
+import threading
+
+_SYS_PATH_LOCK = threading.Lock()
+
+
+def _import_with_cwd_fallback(mod_name: str):
+    """Imports mod_name, falling back to appending os.getcwd() to sys.path."""
+    try:
+        return importlib.import_module(mod_name)
+    except ModuleNotFoundError as e:
+        if e.name is None or not (
+            mod_name == e.name or mod_name.startswith(e.name + ".")
+        ):
+            raise
+        cwd = os.path.abspath(os.getcwd())
+        with _SYS_PATH_LOCK:
+            if not any(os.path.abspath(p or cwd) == cwd for p in sys.path):
+                # Keep cwd at the end of sys.path so lazy runtime imports work
+                # without shadowing standard library or installed packages.
+                sys.path.append(cwd)
+                importlib.invalidate_caches()
+        return importlib.import_module(mod_name)
 
 
 def load_custom_class(class_path: str):
     """Dynamically imports and returns a class from a module path.
 
     Supports both 'module.submodule.ClassName' and 'module:ClassName' formats.
+    If the target module is not found on sys.path (e.g., when invoked via an
+    isolated entrypoint like `uvx`), falls back to appending `os.getcwd()` to
+    `sys.path` as a last resort.
 
     Args:
         class_path: Fully qualified string path to the class.
@@ -34,7 +61,7 @@ def load_custom_class(class_path: str):
         )
 
     try:
-        mod = importlib.import_module(mod_name)
+        mod = _import_with_cwd_fallback(mod_name)
     except ImportError as e:
         raise ImportError(
             f"Failed to import module '{mod_name}' for custom class: {e}"
