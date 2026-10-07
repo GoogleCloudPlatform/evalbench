@@ -80,9 +80,14 @@ class TestQueryDataAPIGenerator(unittest.TestCase):
             "evilgeminidataanalytics.googleapis.com",
             "geminidataanalytics.googleapis.com.",
             "geminidataanalytics-googleapis.com",
-            # Other Google APIs are still out of scope for this generator.
+            # Other Google APIs are still out of scope for this generator,
+            # including their sandbox frontends.
             "sqladmin.googleapis.com",
             "sandbox.googleapis.com",
+            "test-sqladmin.sandbox.googleapis.com",
+            "geminidataanalytics.sqladmin.sandbox.googleapis.com",
+            "geminidataanalytics-evil.sandbox.googleapis.com",
+            "geminidataanalytics.evil.googleapis.com",
             # URL components that would break out of the f-string URL.
             "https://geminidataanalytics.googleapis.com",
             "geminidataanalytics.googleapis.com/evil",

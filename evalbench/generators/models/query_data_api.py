@@ -27,13 +27,16 @@ _DEFAULT_API_ENDPOINT = "geminidataanalytics.googleapis.com"
 # redirect those credentials to a host they control (SSRF / token
 # exfiltration). Only bare hostnames are accepted: no scheme, path, port or
 # userinfo. Permitted shapes:
-#   geminidataanalytics.googleapis.com                 (prod)
-#   <prefix>-geminidataanalytics.googleapis.com        (autopush/staging)
-#   <label>.geminidataanalytics.googleapis.com         (regional)
-#   <label>.sandbox.googleapis.com                     (test environments)
+#   geminidataanalytics.googleapis.com                   (prod)
+#   <prefix>-geminidataanalytics.googleapis.com          (autopush/staging)
+#   <label>.geminidataanalytics.googleapis.com           (regional)
+#   <prefix>-geminidataanalytics.sandbox.googleapis.com  (test environments)
+# The sandbox form still requires the geminidataanalytics service label so
+# that other teams' sandbox frontends (e.g. *-sqladmin.sandbox.googleapis.com)
+# are not trusted.
 _ALLOWED_API_ENDPOINT_RE = re.compile(
-    r"^(?:[a-z0-9-]+\.)*(?:[a-z0-9-]*-)?geminidataanalytics\.googleapis\.com$"
-    r"|^(?:[a-z0-9-]+\.)+sandbox\.googleapis\.com$"
+    r"^(?:[a-z0-9-]+\.)*(?:[a-z0-9-]*-)?geminidataanalytics"
+    r"(?:\.sandbox)?\.googleapis\.com$"
 )
 
 
@@ -54,7 +57,8 @@ def _validate_api_endpoint(endpoint: Any) -> str:
         raise ValueError(
             f"Invalid api_endpoint {endpoint!r}: must be a bare "
             "*.geminidataanalytics.googleapis.com or "
-            "*.sandbox.googleapis.com hostname"
+            "*.sandbox.googleapis.com hostname for the geminidataanalytics "
+            "service"
         )
     return host
 
