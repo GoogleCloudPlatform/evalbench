@@ -299,4 +299,3 @@ def test_fetch_gcloud_access_token_passes_scopes():
             "gcloud", "auth", "application-default", "print-access-token",
             "--scopes=https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/dfareporting",
         ]
-
