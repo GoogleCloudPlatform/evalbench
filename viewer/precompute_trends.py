@@ -257,6 +257,107 @@ def _write_json(path, data):
         json.dump(data, f, indent=2)
 
 
+def filter_valid_cache_rows(df):
+    """Drop malformed cache rows (e.g. spilled multiline summary fragments)."""
+    if df is None or df.empty:
+        return df
+    mask = pd.Series(True, index=df.index)
+    if 'job_id' in df.columns:
+        job_ids = df['job_id'].astype(str).str.strip()
+        mask &= df['job_id'].notna() & (job_ids != '') & (job_ids != 'nan')
+    if 'run_time' in df.columns:
+        valid_time = (
+            pd.to_datetime(
+                df['run_time'], format='mixed', errors='coerce'
+            ).notna()
+            | (df['run_time'] == 'unknown')
+        )
+        mask &= valid_time
+    return df[mask]
+
+
+def _is_valid_cache_row(row):
+    """Whether a csv.DictReader row has a valid job_id, run_time, and column count."""
+    if None in row:
+        return False
+    job_id = (row.get('job_id') or '').strip()
+    if not job_id or job_id == 'nan':
+        return False
+    run_time = (row.get('run_time') or '').strip()
+    if not run_time:
+        return False
+    if run_time != 'unknown' and pd.isna(
+        pd.to_datetime(run_time, format='mixed', errors='coerce')
+    ):
+        return False
+    return True
+
+
+def _truncate_torn_row(cache_file):
+    """Truncate any incomplete trailing CSV row left by an interrupted write.
+
+    A process killed mid-flush can leave cache_file ending inside a multi-line
+    quoted ai_summary (odd quote parity) or mid-line without a newline. Every
+    complete CSV record ends with a newline at even quote parity; truncating to
+    the last such boundary prevents the next append from fusing into the
+    unclosed quote and spilling markdown lines as fake CSV rows.
+    """
+    if not os.path.exists(cache_file):
+        return
+    try:
+        size = os.path.getsize(cache_file)
+    except OSError:
+        return
+    if size == 0:
+        return
+
+    chunk_size = 1024 * 1024
+    try:
+        with open(cache_file, "rb+") as f:
+            chunks = []
+            offset = 0
+            parity = 0
+            last_byte = b""
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                chunks.append((offset, parity))
+                parity = (parity + chunk.count(b'"')) % 2
+                last_byte = chunk[-1:]
+                offset += len(chunk)
+
+            if parity == 0 and last_byte == b"\n":
+                return
+
+            # Slow path: locate the last complete record boundary (newline with
+            # even cumulative quote count).
+            f.seek(0)
+            pos = 0
+            parity = 0
+            valid_ends = []
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                for line in chunk.splitlines(keepends=True):
+                    parity = (parity + line.count(b'"')) % 2
+                    pos += len(line)
+                    if line.endswith(b"\n") and parity == 0:
+                        valid_ends.append(pos)
+
+            # Need at least the header plus one complete data row; otherwise
+            # reset to empty so _append_rows writes a fresh header.
+            target = valid_ends[-1] if len(valid_ends) >= 2 else 0
+            logging.warning(
+                "Truncating torn trailing row in %s from %d to %d bytes",
+                cache_file, size, target,
+            )
+            f.truncate(target)
+    except OSError as e:
+        logging.warning("Could not check/repair %s: %s", cache_file, e)
+
+
 def _cached_job_ids(cache_file):
     """Job ids already in the trends cache, read without the rest of the file.
 
@@ -265,8 +366,13 @@ def _cached_job_ids(cache_file):
     """
     if not os.path.exists(cache_file):
         return set()
+    _truncate_torn_row(cache_file)
+    if not os.path.exists(cache_file) or os.path.getsize(cache_file) == 0:
+        return set()
     try:
-        return set(pd.read_csv(cache_file, usecols=['job_id'])['job_id'].dropna())
+        df = pd.read_csv(cache_file, usecols=['job_id', 'run_time'])
+        df = filter_valid_cache_rows(df)
+        return set(df['job_id'].dropna())
     except Exception as e:
         logging.error(f"Error reading job ids from trends cache: {e}")
         return set()
@@ -275,6 +381,7 @@ def _cached_job_ids(cache_file):
 def _append_rows(cache_file, rows):
     """Append a batch to the trends cache without reading the existing rows back."""
     new_df = pd.DataFrame(rows)
+    _truncate_torn_row(cache_file)
     # A zero-byte cache is the leftover of a write that was killed part way; it
     # has no header to append under, so start it over.
     if not os.path.exists(cache_file) or os.path.getsize(cache_file) == 0:
@@ -289,12 +396,15 @@ def _append_rows(cache_file, rows):
         logging.warning(
             "Trends cache columns changed; rewriting %s to match", cache_file
         )
-        combined = pd.concat([pd.read_csv(cache_file), new_df], ignore_index=True)
+        existing_df = filter_valid_cache_rows(pd.read_csv(cache_file))
+        combined = pd.concat([existing_df, new_df], ignore_index=True)
         combined = combined.drop_duplicates(subset=['job_id'], keep='last')
         combined.to_csv(cache_file, index=False)
         return
 
-    new_df[header].to_csv(cache_file, mode="a", header=False, index=False)
+    payload = new_df[header].to_csv(header=False, index=False).encode("utf-8")
+    with open(cache_file, "ab") as f:
+        f.write(payload)
 
 
 class _NothingToTrim(Exception):
@@ -321,12 +431,14 @@ def _trim_stale_summaries(results_dir, cache_file):
     is only replaced if something was actually trimmed, so a cache already
     inside the window costs one sequential read and no write.
     """
+    _truncate_torn_row(cache_file)
     if not os.path.exists(cache_file) or os.path.getsize(cache_file) == 0:
         return
 
     required = {'ai_summary', 'run_time', 'job_id'}
     temp_file = cache_file + ".trim"
     trimmed = 0
+    dropped = 0
     backfilled = 0
 
     try:
@@ -337,6 +449,9 @@ def _trim_stale_summaries(results_dir, cache_file):
             writer = csv.DictWriter(dst, fieldnames=reader.fieldnames)
             writer.writeheader()
             for row in reader:
+                if not _is_valid_cache_row(row):
+                    dropped += 1
+                    continue
                 if row.get('ai_summary') and not _is_recent(row.get('run_time')):
                     job_id = row.get('job_id') or ""
                     if job_id and not os.path.exists(ai_summary_path(results_dir, job_id)):
@@ -355,14 +470,15 @@ def _trim_stale_summaries(results_dir, cache_file):
         _discard(temp_file)
         return
 
-    if not trimmed:
+    if not trimmed and not dropped:
         _discard(temp_file)
         return
 
     os.replace(temp_file, cache_file)
     logging.info(
-        "Trimmed %d aged-out summaries from the trends cache (%d sidecars backfilled)",
-        trimmed, backfilled,
+        "Trimmed %d aged-out summaries and dropped %d malformed rows from the "
+        "trends cache (%d sidecars backfilled)",
+        trimmed, dropped, backfilled,
     )
 
 
