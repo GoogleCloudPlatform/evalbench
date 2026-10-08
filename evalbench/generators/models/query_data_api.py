@@ -3,6 +3,7 @@ import google.cloud.geminidataanalytics_v1beta as gda
 import google.auth
 import google.auth.transport.requests
 import logging
+import re
 import requests
 import threading
 from typing import Dict, Any
@@ -19,6 +20,48 @@ _REQUEST_TIMEOUT_SECONDS = 300.0
 
 # Default Production API Endpoint for Gemini Data Analytics
 _DEFAULT_API_ENDPOINT = "geminidataanalytics.googleapis.com"
+
+# Hosts that api_endpoint may resolve to. The config is client-supplied, and
+# both the gRPC client and the REST path attach the server's ADC credentials
+# to whatever host is configured, so an arbitrary value would let a caller
+# redirect those credentials to a host they control (SSRF / token
+# exfiltration). Only bare hostnames are accepted: no scheme, path, port or
+# userinfo. Permitted shapes:
+#   geminidataanalytics.googleapis.com                   (prod)
+#   <prefix>-geminidataanalytics.googleapis.com          (autopush/staging)
+#   <label>.geminidataanalytics.googleapis.com           (regional)
+#   <prefix>-geminidataanalytics.sandbox.googleapis.com  (test environments)
+# The sandbox form still requires the geminidataanalytics service label so
+# that other teams' sandbox frontends (e.g. *-sqladmin.sandbox.googleapis.com)
+# are not trusted.
+_ALLOWED_API_ENDPOINT_RE = re.compile(
+    r"^(?:[a-z0-9-]+\.)*(?:[a-z0-9-]*-)?geminidataanalytics"
+    r"(?:\.sandbox)?\.googleapis\.com$"
+)
+
+
+def _validate_api_endpoint(endpoint: Any) -> str:
+    """Returns the normalized endpoint host, or raises ValueError.
+
+    The value is lowercased and stripped of surrounding whitespace, then
+    matched in full against _ALLOWED_API_ENDPOINT_RE. Anything that is not a
+    plain Google API hostname is rejected so that credentials are never sent
+    to a caller-chosen host.
+    """
+    if not isinstance(endpoint, str):
+        raise ValueError(
+            f"Invalid api_endpoint {endpoint!r}: must be a hostname string"
+        )
+    host = endpoint.strip().lower()
+    if not _ALLOWED_API_ENDPOINT_RE.fullmatch(host):
+        raise ValueError(
+            f"Invalid api_endpoint {endpoint!r}: must be a bare "
+            "*.geminidataanalytics.googleapis.com or "
+            "*.sandbox.googleapis.com hostname for the geminidataanalytics "
+            "service"
+        )
+    return host
+
 
 # Shared default generation options settings. generate_debug_info is added
 # only on the REST path: it is an unreleased field, absent from the SDK proto,
@@ -88,7 +131,9 @@ class QueryDataAPIGenerator(QueryGenerator):
         self.location = querygenerator_config.get("location", "global")
         self.context = querygenerator_config.get("context", {})
         self.use_rest_api = querygenerator_config.get("use_rest_api", False)
-        self.api_endpoint = (
+        # Validated before the client is built so neither the gRPC client nor
+        # the REST path can send ADC credentials to a caller-chosen host.
+        self.api_endpoint = _validate_api_endpoint(
             querygenerator_config.get("api_endpoint")
             or _DEFAULT_API_ENDPOINT
         )
