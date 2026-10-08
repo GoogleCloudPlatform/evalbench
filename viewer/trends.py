@@ -2,6 +2,7 @@ import os
 import logging
 import mesop as me
 import pandas as pd
+import precompute_trends
 from main import State
 from run_index import list_run_directories
 
@@ -100,7 +101,10 @@ def trends_component():
     # Try to load from cache
     if os.path.exists(cache_file):
         try:
-            df = pd.read_csv(cache_file)
+            df = pd.read_csv(
+                cache_file, usecols=lambda c: c != 'ai_summary'
+            )
+            df = precompute_trends.filter_valid_cache_rows(df)
             logging.info("Loaded trends data from cache.")
         except Exception as e:
             logging.error(f"Error reading cache file: {e}")
