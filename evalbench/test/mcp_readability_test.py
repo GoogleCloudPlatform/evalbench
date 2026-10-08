@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 import sys
@@ -32,9 +33,10 @@ from evaluator.mcp_readability.orchestrator import (
 from mcp import types as mcp_types
 from generators.models.mcp_tools import McpToolsGenerator, McpToolsError
 from generators.models.mcp_tool_formatter import format_tools_to_man_page
-from scorers.mcp_readability_scoring import EndpointContext
-from scorers.mcp_style_readability import McpStyleReadabilityScorer
-from scorers.mcp_tool_metrics import McpToolMetricsScorer
+from scorers.mcp_readability.fingerprint import judge_fingerprint, sha256_text
+from scorers.mcp_readability.scoring import EndpointContext
+from scorers.mcp_readability.style_readability import McpStyleReadabilityScorer
+from scorers.mcp_readability.tool_metrics import McpToolMetricsScorer
 
 
 # --------------------------------------------------------------------------
@@ -295,6 +297,8 @@ def test_readability_scorer_run():
     scorer = McpStyleReadabilityScorer.__new__(McpStyleReadabilityScorer)
     scorer.name = "mcp_style_readability"
     scorer.style_guide = "guide"
+    scorer.style_guide_sha = sha256_text("guide")
+    scorer.judge_model = "fake-model"
     scorer.model = _FakeLLM()  # one P1 finding, no P0
     ctx = EndpointContext(
         product_name="p", endpoint={}, tools=[], man_page="mp", exceptions=[]
@@ -383,7 +387,7 @@ def _base_config(ep_path, output_dir, token_budget=25000):
 
 def test_orchestrator_end_to_end():
     with patch(
-        "scorers.mcp_style_readability.get_generator", return_value=_FakeLLM()
+        "scorers.mcp_readability.style_readability.get_generator", return_value=_FakeLLM()
     ):
         from evaluator import get_orchestrator
 
@@ -434,6 +438,26 @@ def test_orchestrator_end_to_end():
                 row["mcp_readability_tool_fingerprints_json"]
             )
             assert set(fingerprints) == {"list_datasets", "get_job_state"}
+            # Ordering column: UTC and offset-aware, unlike the naive
+            # check_timestamp beside it.
+            stamp = datetime.datetime.fromisoformat(
+                row["mcp_readability_check_timestamp_utc"]
+            )
+            assert stamp.tzinfo is not None
+            # The judge's inputs, recorded so a later run can tell a changed
+            # style guide from a changed tool.
+            components = json.loads(
+                row["mcp_readability_judge_components_json"]
+            )
+            assert components["style_guide_sha"] == (
+                row["mcp_readability_style_guide_sha"]
+            )
+            assert components["prompt_version"] == (
+                row["mcp_readability_prompt_version"]
+            )
+            assert judge_fingerprint(components)[0] == (
+                row["mcp_readability_judge_fingerprint"]
+            )
 
             # scores_tf: one row per (endpoint, scorer).
             with open(scores_tf) as f:
@@ -458,7 +482,7 @@ def test_orchestrator_fetch_error_aborts_run():
     run log) instead of being recorded as a row.
     """
     with patch(
-        "scorers.mcp_style_readability.get_generator", return_value=_FakeLLM()
+        "scorers.mcp_readability.style_readability.get_generator", return_value=_FakeLLM()
     ):
         from evaluator import get_orchestrator
 
@@ -523,7 +547,7 @@ def test_endpoint_type_filter():
 def test_daily_run_tag_reaches_the_row():
     """A run the pipeline declares as daily is marked on every row it writes."""
     with patch(
-        "scorers.mcp_style_readability.get_generator", return_value=_FakeLLM()
+        "scorers.mcp_readability.style_readability.get_generator", return_value=_FakeLLM()
     ):
         from evaluator import get_orchestrator
 

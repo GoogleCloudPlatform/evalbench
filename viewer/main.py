@@ -2238,13 +2238,13 @@ def render_app_content():
 
                         product = get_val('experiment_config.product_name')
                         requester = get_val('experiment_config.experiment_config.guitar_requester')
+                        # Prefer pinned versions. agent_version is found at runtime.
                         cli_version = (
                             get_val('model_config.gemini_cli_version')
                             or get_val('model_config.claude_code_version')
                             or get_val('model_config.codex_cli_version')
+                            or get_val('model_config.agent_version')
                         )
-                        if not cli_version and get_val('model_config.generator') == 'agy_cli':
-                            cli_version = 'agy (latest)'
                         orchestrator = get_val('experiment_config.orchestrator')
                         eval_group = get_val('experiment_config.eval_group')
 

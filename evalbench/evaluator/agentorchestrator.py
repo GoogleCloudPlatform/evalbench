@@ -26,9 +26,13 @@ class AgentOrchestrator(Orchestrator):
         self.total_scoring_results = []
         self.reporting_total_evals_done = 0
         self.report_progress = report_progress
+        # Reporting writes this to configs.csv.
+        self.agent_version = None
 
     def evaluate(self, dataset: list[EvalGeminiCliRequest]):
-        evaluator = self._get_evaluator()
+        logging.info("Starting agent CLI evaluation")
+        evaluator = AgentEvaluator(self.config)
+        self.agent_version = evaluator.agent_version
         eval_outputs, scoring_results = evaluator.evaluate(
             dataset, self.job_id, self.run_time
         )

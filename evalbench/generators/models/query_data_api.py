@@ -4,6 +4,7 @@ import google.auth
 import google.auth.transport.requests
 import logging
 import requests
+import threading
 from typing import Dict, Any
 from google.api_core.exceptions import (
     ResourceExhausted,
@@ -92,9 +93,11 @@ class QueryDataAPIGenerator(QueryGenerator):
             or _DEFAULT_API_ENDPOINT
         )
 
-        # Initialize credentials cache
+        # Initialize credentials cache. Runner threads share this generator,
+        # so the lock serializes credential creation and refresh.
         self._credentials = None
         self._auth_request = None
+        self._credentials_lock = threading.Lock()
 
         # Initialize client
         # Authenticated via ADC automatically
@@ -103,18 +106,19 @@ class QueryDataAPIGenerator(QueryGenerator):
             client_options=client_options
         )
 
-    def _get_credentials(self):
-        """Retrieves and caches ADC credentials, refreshing only when expired."""
-        if self._credentials is None:
-            self._credentials, _ = google.auth.default(
-                scopes=["https://www.googleapis.com/auth/cloud-platform"]
-            )
-            self._auth_request = google.auth.transport.requests.Request()
+    def _get_access_token(self) -> str:
+        """Returns a valid ADC access token, refreshing only when expired."""
+        with self._credentials_lock:
+            if self._credentials is None:
+                self._credentials, _ = google.auth.default(
+                    scopes=["https://www.googleapis.com/auth/cloud-platform"]
+                )
+                self._auth_request = google.auth.transport.requests.Request()
 
-        if not self._credentials.valid or self._credentials.expired:
-            self._credentials.refresh(self._auth_request)
+            if not self._credentials.valid or self._credentials.expired:
+                self._credentials.refresh(self._auth_request)
 
-        return self._credentials
+            return self._credentials.token
 
     def generate_internal(self, prompt: str) -> Dict[str, Any]:
         """
@@ -169,7 +173,7 @@ class QueryDataAPIGenerator(QueryGenerator):
         missing from PyPI SDK protos.
         """
         logger = logging.getLogger(__name__)
-        credentials = self._get_credentials()
+        access_token = self._get_access_token()
 
         url = (
             f"https://{self.api_endpoint}/v1beta/projects/{self.project_id}"
@@ -185,7 +189,7 @@ class QueryDataAPIGenerator(QueryGenerator):
         }
 
         headers = {
-            "Authorization": f"Bearer {credentials.token}",
+            "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
         }
 

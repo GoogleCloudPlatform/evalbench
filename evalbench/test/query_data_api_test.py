@@ -1,3 +1,5 @@
+import concurrent.futures
+import time
 import unittest
 from unittest.mock import patch, MagicMock
 from generators.models.query_data_api import QueryDataAPIGenerator
@@ -322,6 +324,50 @@ class TestQueryDataAPIGenerator(unittest.TestCase):
         # google.auth.default should only be called ONCE due to credential caching
         mock_auth_default.assert_called_once()
         self.assertEqual(mock_requests.post.call_count, 3)
+
+    @patch('generators.models.query_data_api.requests')
+    @patch('generators.models.query_data_api.google.auth.default')
+    @patch('generators.models.query_data_api.gda')
+    def test_concurrent_rest_calls_share_one_refreshed_token(
+        self, mock_gda, mock_auth_default, mock_requests
+    ):
+        class SlowRefreshCredentials:
+            """Has no token until a slow refresh() completes."""
+
+            def __init__(self):
+                self.token = None
+                self.valid = False
+                self.expired = False
+                self.refresh_count = 0
+
+            def refresh(self, request):
+                self.refresh_count += 1
+                time.sleep(0.05)
+                self.token = "fresh-token"
+                self.valid = True
+
+        credentials = SlowRefreshCredentials()
+        mock_auth_default.return_value = (credentials, "project-id")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"generatedQuery": "SELECT 1"}
+        mock_requests.post.return_value = mock_resp
+
+        generator = QueryDataAPIGenerator(
+            {"project_id": "test-project", "use_rest_api": True}
+        )
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+            list(pool.map(generator.generate_internal, ["Prompt"] * 8))
+
+        auth_headers = [
+            call.kwargs["headers"]["Authorization"]
+            for call in mock_requests.post.call_args_list
+        ]
+        self.assertEqual(auth_headers, ["Bearer fresh-token"] * 8)
+        mock_auth_default.assert_called_once()
+        self.assertEqual(credentials.refresh_count, 1)
 
 
 if __name__ == "__main__":
