@@ -1,6 +1,7 @@
 import os
 import sys
 from unittest.mock import MagicMock, patch
+import pytest
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -224,3 +225,12 @@ def test_run_codex_cli_refreshes_token_with_recorded_scopes():
     ):
         generator._run_codex_cli(cli_cmd)
         mock_fetch.assert_called_once_with(scopes=generator._gcloud_mcp_scopes)
+
+
+def test_fetch_gcloud_access_token_rejects_unsafe_scopes():
+    generator = object.__new__(CodexCliGenerator)
+    generator.env = {}
+    with pytest.raises(AssertionError, match="Invalid or unsafe OAuth scope"):
+        generator._fetch_gcloud_access_token(
+            scopes=['$(whoami)']
+        )

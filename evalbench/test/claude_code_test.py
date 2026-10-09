@@ -3,6 +3,8 @@ import os
 import sys
 from unittest.mock import MagicMock, patch, ANY
 
+import pytest
+
 # Add parent directory to path so we can import generators
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -299,3 +301,19 @@ def test_fetch_gcloud_access_token_passes_scopes():
             "gcloud", "auth", "application-default", "print-access-token",
             "--scopes=https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/dfareporting",
         ]
+
+
+def test_headers_helper_rejects_unsafe_scopes():
+    with pytest.raises(AssertionError, match="Invalid or unsafe OAuth scope"):
+        ClaudeCodeGenerator._google_credentials_headers_helper(
+            scopes=['https://example.com"; rm -rf /; "']
+        )
+
+
+def test_fetch_gcloud_access_token_rejects_unsafe_scopes():
+    generator = object.__new__(ClaudeCodeGenerator)
+    generator.env = {}
+    with pytest.raises(AssertionError, match="Invalid or unsafe OAuth scope"):
+        generator._fetch_gcloud_access_token(
+            scopes=['$(whoami)']
+        )

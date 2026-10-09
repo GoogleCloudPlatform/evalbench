@@ -662,8 +662,6 @@ class CodexCliGenerator(AgentCliGenerator):
         """
         token_env = os.environ.copy()
         adc = self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
-        if not adc and os.path.exists("/etc/evalbench-sa-key/key.json"):
-            adc = "/etc/evalbench-sa-key/key.json"
         if adc and os.path.exists(adc):
             token_env["GOOGLE_APPLICATION_CREDENTIALS"] = adc
 
@@ -672,6 +670,10 @@ class CodexCliGenerator(AgentCliGenerator):
 
         commands = []
         if scopes:
+            for s in scopes:
+                assert re.fullmatch(r"[A-Za-z0-9_.:/-]+", s), (
+                    f"Invalid or unsafe OAuth scope: {s!r}"
+                )
             scopes_str = ",".join(scopes)
             commands.append(
                 [

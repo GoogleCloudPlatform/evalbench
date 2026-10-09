@@ -305,7 +305,7 @@ EvalBench accepts the **same MCP server config schema as Gemini CLI and Claude C
 | `httpUrl` | → `url` (TOML, streamable HTTP server) |
 | `headers` | → `http_headers` (TOML inline table) |
 | `authProviderType: google_credentials` | → mints an **ADC** token (`gcloud auth application-default print-access-token`, falling back to `gcloud auth print-access-token`) and passes it to Codex via `bearer_token_env_var` (env var `EVALBENCH_GCLOUD_MCP_TOKEN`). The generator re-mints a fresh token before **every turn** (each `codex exec` re-reads the env var), so it doesn't expire mid-suite. `X-Goog-User-Project` stays a static `http_headers` entry. Google API MCP endpoints reject the plain user token on tool calls — see [Troubleshooting](#mcp-server-fails-with-401-unauthorized-real-cloud-sql-endpoint). |
-| `oauth.scopes` | → forwarded as `--scopes` to `gcloud auth application-default print-access-token` when minting `bearer_token_env_var` (`EVALBENCH_GCLOUD_MCP_TOKEN`) |
+| `oauth.scopes` | → forwarded as `--scopes` to `gcloud auth application-default print-access-token` when minting `bearer_token_env_var` (`EVALBENCH_GCLOUD_MCP_TOKEN`). If the scoped token request fails, the generator falls back to an unscoped ADC token (see [Troubleshooting](#user-adc-and-non-default-oauth-scopes-403-forbidden-on-tool-call)). |
 | `command` / `args` / `env` / `cwd` (stdio) | → passed through as-is into a `[mcp_servers.NAME]` stdio block |
 
 ### HTTP MCP server (Cloud SQL Managed)
@@ -574,6 +574,17 @@ The injected token is missing, expired, the **wrong kind**, or your principal la
 - Your account / service account has the required IAM roles (e.g., `roles/cloudsql.admin`).
 - `X-Goog-User-Project` header points at a project that has the Cloud SQL Admin API enabled.
 - Token expiry is handled automatically: the generator mints a fresh ADC token into `EVALBENCH_GCLOUD_MCP_TOKEN` before every turn and Codex reads it via `bearer_token_env_var`, so long suites don't hit stale-token 401s. (Requires a Codex build that supports `bearer_token_env_var`; if yours doesn't, the token won't be applied — fall back to a static `http_headers` `Authorization`.)
+
+### User ADC and Non-Default OAuth Scopes (`403 Forbidden` on tool call)
+
+When using user credentials (via `gcloud auth application-default login`), `gcloud` only requests default scopes by default. If an MCP server specifies a non-default OAuth scope (e.g. DFA Reporting or Google Ads), `gcloud auth application-default print-access-token --scopes=...` will fail unless that scope was explicitly granted at login time.
+
+When the scoped request fails, the generator quietly falls back to an **unscoped ADC token**. The MCP server connects normally, but actual tool calls will subsequently fail with a confusing `403 Forbidden`.
+
+To resolve this with user ADC, re-authenticate and explicitly specify the required scopes:
+```bash
+gcloud auth application-default login --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/<scope>"
+```
 
 ### `Invalid TOML` when Codex starts
 

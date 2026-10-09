@@ -342,6 +342,10 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         """
         scoped_cmd = ""
         if scopes:
+            for s in scopes:
+                assert re.fullmatch(r"[A-Za-z0-9_.:/-]+", s), (
+                    f"Invalid or unsafe OAuth scope: {s!r}"
+                )
             scopes_str = ",".join(scopes)
             scoped_cmd = (
                 f'gcloud auth application-default print-access-token --scopes="{scopes_str}" 2>/dev/null || '
@@ -389,6 +393,10 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         # any MCP server that happens to accept it.
         commands = []
         if scopes:
+            for s in scopes:
+                assert re.fullmatch(r"[A-Za-z0-9_.:/-]+", s), (
+                    f"Invalid or unsafe OAuth scope: {s!r}"
+                )
             scopes_str = ",".join(scopes)
             commands.append(
                 [
