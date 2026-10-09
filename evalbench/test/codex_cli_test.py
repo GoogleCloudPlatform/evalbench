@@ -1,6 +1,7 @@
 import os
 import sys
 from unittest.mock import MagicMock, patch
+import pytest
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -127,3 +128,109 @@ def test_write_config_toml_escapes_plugin_id(monkeypatch, tmp_path):
     content = config_file.read_text()
     assert '[plugins."dak@evalbench-local-marketplace"]' in content
     assert '[plugins.clean_plugin]' in content
+
+
+def test_translate_mcp_config_forwards_oauth_scopes():
+    generator = object.__new__(CodexCliGenerator)
+    generator.env = {}
+    generator._gcloud_mcp_scopes = []
+
+    mcp_config = {
+        "httpUrl": "https://test-dfareporting.sandbox.googleapis.com/mcp",
+        "authProviderType": "google_credentials",
+        "oauth": {
+            "scopes": [
+                "https://www.googleapis.com/auth/cloud-platform",
+                "https://www.googleapis.com/auth/dfareporting",
+            ]
+        },
+        "headers": {
+            "X-Goog-User-Project": "my-project"
+        }
+    }
+
+    with patch.object(generator, '_fetch_gcloud_access_token', return_value="fake_token") as mock_fetch:
+        translated = generator._translate_mcp_config("dfareporting", mcp_config)
+
+        assert "oauth" not in translated
+        assert "authProviderType" not in translated
+        assert translated["url"] == "https://test-dfareporting.sandbox.googleapis.com/mcp"
+        assert translated["bearer_token_env_var"] == "EVALBENCH_GCLOUD_MCP_TOKEN"
+        assert generator.env["EVALBENCH_GCLOUD_MCP_TOKEN"] == "fake_token"
+        assert translated["http_headers"]["X-Goog-User-Project"] == "my-project"
+        assert generator._gcloud_mcp_scopes == [
+            "https://www.googleapis.com/auth/cloud-platform",
+            "https://www.googleapis.com/auth/dfareporting",
+        ]
+
+        mock_fetch.assert_called_once_with(scopes=[
+            "https://www.googleapis.com/auth/cloud-platform",
+            "https://www.googleapis.com/auth/dfareporting",
+        ])
+
+
+def test_fetch_gcloud_access_token_passes_scopes():
+    generator = object.__new__(CodexCliGenerator)
+    generator.env = {}
+
+    scopes = [
+        "https://www.googleapis.com/auth/cloud-platform",
+        "https://www.googleapis.com/auth/dfareporting",
+    ]
+
+    with patch('generators.models.codex_cli.subprocess.run') as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.stdout = "scoped_token_xyz\n"
+        mock_run.return_value = mock_proc
+
+        token = generator._fetch_gcloud_access_token(scopes=scopes)
+
+        assert token == "scoped_token_xyz"
+        first_call_cmd = mock_run.call_args_list[0][0][0]
+        assert first_call_cmd == [
+            "gcloud", "auth", "application-default", "print-access-token",
+            "--scopes=https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/dfareporting",
+        ]
+
+
+def test_run_codex_cli_refreshes_token_with_recorded_scopes():
+    generator = object.__new__(CodexCliGenerator)
+    generator.env = {}
+    generator._needs_gcloud_mcp_token = True
+    generator._gcloud_mcp_scopes = [
+        "https://www.googleapis.com/auth/cloud-platform",
+        "https://www.googleapis.com/auth/dfareporting",
+    ]
+    generator.json_flag = "--json"
+    generator.sandbox_mode = "danger-full-access"
+    generator.approval_mode = "never"
+    generator.model = None
+    generator.profile = None
+
+    cli_cmd = MagicMock()
+    cli_cmd.cli = "codex"
+    cli_cmd.resume = False
+    cli_cmd.session_id = None
+    cli_cmd.prompt = "test prompt"
+    cli_cmd.env = {}
+    cli_cmd.cwd = None
+
+    mock_completed = MagicMock()
+    mock_completed.stdout = ""
+    mock_completed.stderr = ""
+
+    with (
+        patch.object(generator, '_fetch_gcloud_access_token', return_value="refreshed_token") as mock_fetch,
+        patch.object(generator, '_execute_cli_command', return_value=(mock_completed, {})),
+    ):
+        generator._run_codex_cli(cli_cmd)
+        mock_fetch.assert_called_once_with(scopes=generator._gcloud_mcp_scopes)
+
+
+def test_fetch_gcloud_access_token_rejects_unsafe_scopes():
+    generator = object.__new__(CodexCliGenerator)
+    generator.env = {}
+    with pytest.raises(AssertionError, match="Invalid or unsafe OAuth scope"):
+        generator._fetch_gcloud_access_token(
+            scopes=['$(whoami)']
+        )

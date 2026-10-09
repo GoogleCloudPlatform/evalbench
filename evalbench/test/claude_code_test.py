@@ -3,6 +3,8 @@ import os
 import sys
 from unittest.mock import MagicMock, patch, ANY
 
+import pytest
+
 # Add parent directory to path so we can import generators
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -240,3 +242,78 @@ def test_extract_skills_strips_plugin_namespace():
 
     with patch.object(ClaudeCodeGenerator, '_get_installed_skills', return_value=set()):
         assert generator.extract_skills(stdout) == ["cloud-sql-postgres-admin"]
+
+
+def test_translate_mcp_config_forwards_oauth_scopes():
+    generator = object.__new__(ClaudeCodeGenerator)
+    generator.env = {}
+
+    mcp_config = {
+        "httpUrl": "https://test-dfareporting.sandbox.googleapis.com/mcp",
+        "authProviderType": "google_credentials",
+        "oauth": {
+            "scopes": [
+                "https://www.googleapis.com/auth/cloud-platform",
+                "https://www.googleapis.com/auth/dfareporting",
+            ]
+        },
+        "headers": {
+            "X-Goog-User-Project": "my-project"
+        }
+    }
+
+    with patch.object(generator, '_fetch_gcloud_access_token', return_value="fake_token") as mock_fetch:
+        translated = generator._translate_mcp_config("dfareporting", mcp_config)
+
+        assert "oauth" not in translated
+        assert "authProviderType" not in translated
+        assert translated["type"] == "http"
+        assert translated["url"] == "https://test-dfareporting.sandbox.googleapis.com/mcp"
+        assert translated["headers"]["Authorization"] == "Bearer fake_token"
+        assert translated["headers"]["X-Goog-User-Project"] == "my-project"
+        assert '--scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/dfareporting"' in translated["headersHelper"]
+
+        mock_fetch.assert_called_once_with(scopes=[
+            "https://www.googleapis.com/auth/cloud-platform",
+            "https://www.googleapis.com/auth/dfareporting",
+        ])
+
+
+def test_fetch_gcloud_access_token_passes_scopes():
+    generator = object.__new__(ClaudeCodeGenerator)
+    generator.env = {}
+
+    scopes = [
+        "https://www.googleapis.com/auth/cloud-platform",
+        "https://www.googleapis.com/auth/dfareporting",
+    ]
+
+    with patch('generators.models.claude_code.subprocess.run') as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.stdout = "scoped_token_xyz\n"
+        mock_run.return_value = mock_proc
+
+        token = generator._fetch_gcloud_access_token(scopes=scopes)
+
+        assert token == "scoped_token_xyz"
+        first_call_cmd = mock_run.call_args_list[0][0][0]
+        assert first_call_cmd == [
+            "gcloud", "auth", "application-default", "print-access-token",
+            "--scopes=https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/dfareporting",
+        ]
+
+
+def test_headers_helper_rejects_unsafe_scopes():
+    with pytest.raises(AssertionError, match="Invalid or unsafe OAuth scope"):
+        ClaudeCodeGenerator._google_credentials_headers_helper(
+            scopes=['https://example.com"; rm -rf /; "']
+        )
+
+
+def test_fetch_gcloud_access_token_rejects_unsafe_scopes():
+    generator = object.__new__(ClaudeCodeGenerator)
+    generator.env = {}
+    with pytest.raises(AssertionError, match="Invalid or unsafe OAuth scope"):
+        generator._fetch_gcloud_access_token(
+            scopes=['$(whoami)']
+        )
