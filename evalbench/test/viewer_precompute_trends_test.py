@@ -511,5 +511,72 @@ class CacheCorruptionRecoveryTest(unittest.TestCase):
         self.assertEqual(["run-0"], df["job_id"].tolist())
 
 
+class NewestFirstOrderingTest(unittest.TestCase):
+    """A backlog must not hide runs that finished most recently.
+
+    Run directories are UUIDs, so name order is random in time. After a cache
+    reset, today's CI runs sat behind ~49k older runs.
+    """
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.results_dir = self.temp_dir.name
+
+        patcher = patch.object(
+            precompute_trends, "get_results_dir", return_value=self.results_dir
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _make_run(self, name, mtime=None):
+        run_dir = os.path.join(self.results_dir, name)
+        os.makedirs(run_dir)
+        if mtime is not None:
+            summary = os.path.join(run_dir, "summary.csv")
+            with open(summary, "w") as f:
+                f.write("metric_name\n")
+            os.utime(summary, (mtime, mtime))
+
+    def test_orders_by_summary_mtime_descending(self):
+        self._make_run("aaa-old", mtime=1_000)
+        self._make_run("zzz-new", mtime=3_000)
+        self._make_run("mmm-mid", mtime=2_000)
+
+        ordered = precompute_trends.order_newest_first(
+            self.results_dir, ["aaa-old", "mmm-mid", "zzz-new"]
+        )
+
+        self.assertEqual(["zzz-new", "mmm-mid", "aaa-old"], ordered)
+
+    def test_runs_without_summary_sort_last(self):
+        self._make_run("in-progress")
+        self._make_run("done", mtime=1_000)
+
+        ordered = precompute_trends.order_newest_first(
+            self.results_dir, ["in-progress", "done"]
+        )
+
+        self.assertEqual(["done", "in-progress"], ordered)
+
+    def test_reversed_names_are_still_processed_newest_first(self):
+        # Name order is the opposite of completion order, as random UUIDs
+        # often are; processing must follow completion order.
+        for i in range(4):
+            self._make_run(f"run-{i}", mtime=1_000 + i * 100)
+        processed_in_order = []
+
+        def record(directory, _):
+            processed_in_order.append(directory)
+            return _row(directory)
+
+        with patch.object(precompute_trends, "BATCH_SIZE", 2), patch.object(
+            precompute_trends, "MAX_WORKERS", 1
+        ), patch.object(precompute_trends, "process_directory", side_effect=record):
+            precompute_trends.precompute()
+
+        self.assertEqual(["run-3", "run-2", "run-1", "run-0"], processed_in_order)
+
+
 if __name__ == "__main__":
     unittest.main()

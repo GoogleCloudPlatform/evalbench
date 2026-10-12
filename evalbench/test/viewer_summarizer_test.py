@@ -11,10 +11,14 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../v
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from viewer.summarizer import (
+    EVALS_MAX_CHARS,
+    EVALS_MAX_COLWIDTH,
+    EVALS_MAX_ROWS,
     SCORES_MAX_CHARS,
     SCORES_MAX_COLWIDTH,
     SCORES_MAX_ROWS,
     get_summarizer,
+    render_evals_for_prompt,
     render_scores_for_prompt,
     summarize_eval_scoring,
 )
@@ -240,6 +244,56 @@ class ScoresPromptBoundsTest(unittest.TestCase):
         # usual rough conversion, so stay an order of magnitude clear of it.
         self.assertLess(len(prompt), 400_000)
         self.assertIn("### Scores Data:", prompt)
+
+
+class EvalsPromptBoundsTest(unittest.TestCase):
+    """The evals.csv sample must stay small even when its cells are huge.
+
+    A production run had eight evals rows carrying ~78 MB conversation_history
+    and ~24 MB stdout cells. The unbounded to_string() render was 613 MB, which
+    OOM-killed the precompute loop on every pass and froze the dashboard.
+    """
+
+    def test_huge_conversation_history_is_bounded(self):
+        df = pd.DataFrame({
+            "id": list(range(8)),
+            "conversation_history": ["h" * 1_000_000] + ["[]"] * 7,
+            "stdout": ["s" * 400_000] * 8,
+        })
+
+        rendered = render_evals_for_prompt(df)
+
+        self.assertLessEqual(
+            len(rendered), EVALS_MAX_CHARS + len("\n... truncated ...")
+        )
+        self.assertLess(
+            len(rendered),
+            (EVALS_MAX_ROWS + 1) * EVALS_MAX_COLWIDTH * (len(df.columns) + 1),
+        )
+
+    @patch("viewer.summarizer.get_summarizer")
+    def test_the_prompt_sent_to_gemini_bounds_evals(self, mock_get_summarizer):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        pd.DataFrame({
+            "id": list(range(8)),
+            "conversation_history": ["h" * 2_000_000] * 8,
+        }).to_csv(os.path.join(temp_dir.name, "evals.csv"), index=False)
+
+        generator = MagicMock()
+        generator.vertex_model = "gemini-2.5-flash"
+        mock_get_summarizer.return_value = generator
+        generator.client.models.generate_content.return_value.text = "General Score: 90"
+
+        env = {k: v for k, v in os.environ.items() if k != "GOOGLE_API_KEY"}
+        with patch.dict(os.environ, env, clear=True):
+            result = summarize_eval_scoring(temp_dir.name)
+
+        self.assertEqual(result, "General Score: 90")
+        _, kwargs = generator.client.models.generate_content.call_args
+        prompt = kwargs["contents"]
+        self.assertLess(len(prompt), 100_000)
+        self.assertIn("### Evals Data", prompt)
 
 
 if __name__ == "__main__":
