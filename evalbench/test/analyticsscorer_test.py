@@ -1,6 +1,5 @@
-"""Unit tests for AnalyticsScorer (Conversational Analytics Data Results Rater in Evalbench)."""
+"""Unit tests for AnalyticsScorer (Data Results Rater in Evalbench)."""
 
-import json
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -18,25 +17,88 @@ class TestAnalyticsScorer(unittest.TestCase):
         mock_get_gen.return_value = MagicMock()
         scorer = AnalyticsScorer({"model_config": "model.yaml"}, global_models={})
         self.assertEqual(scorer.name, "analytics_scorer")
-        self.assertEqual(scorer.max_rows, 50)
+        self.assertEqual(scorer.max_data_result_entries, 50)
+        self.assertTrue(scorer.skip_llm_on_exact_match)
         self.assertEqual(scorer.query_label, "SQL Query")
 
     @patch("scorers.analyticsscorer.get_generator")
-    def test_render_data_truncation_yields_valid_json(self, mock_get_gen):
+    def test_render_data_truncation_uses_cell_budget(self, mock_get_gen):
         mock_get_gen.return_value = MagicMock()
         scorer = AnalyticsScorer(
-            {"model_config": "model.yaml", "max_rows": 3},
+            {"model_config": "model.yaml", "max_data_result_entries": 6},
             global_models={},
         )
+        # 10 rows x 2 columns = 20 cells > 6, so keep 6 // 2 = 3 rows.
         long_data = [{"id": i, "name": f"User_{i}"} for i in range(10)]
-        rendered = scorer._render_data(long_data)
-        self.assertIn("[Note: Displaying 3 of 10 total rows]", rendered)
+        rendered = scorer._format_data_result(long_data, "trial")
+        self.assertTrue(
+            rendered.startswith(
+                "(trial dataframe was truncated from 10 rows to 3 rows for display.) "
+            )
+        )
+        self.assertIn("User_2", rendered)
+        self.assertNotIn("User_3", rendered)
 
-        # Ensure the serialized JSON payload prefix is 100% valid parseable JSON
-        json_part = rendered.split("\n")[0]
-        parsed = json.loads(json_part)
-        self.assertEqual(len(parsed), 3)
-        self.assertEqual(parsed[0]["name"], "User_0")
+    @patch("scorers.analyticsscorer.get_generator")
+    def test_render_data_wide_result_keeps_at_least_one_row(self, mock_get_gen):
+        mock_get_gen.return_value = MagicMock()
+        scorer = AnalyticsScorer({"model_config": "model.yaml"}, global_models={})
+        wide_row = {f"c{i}": i for i in range(60)}
+        rendered = scorer._format_data_result([wide_row, wide_row], "golden")
+        self.assertTrue(
+            rendered.startswith(
+                "(golden dataframe was truncated from 2 rows to 1 rows for display.) "
+            )
+        )
+        self.assertIn("c59", rendered)
+
+    @patch("scorers.analyticsscorer.get_generator")
+    def test_render_data_keeps_duplicate_rows(self, mock_get_gen):
+        mock_get_gen.return_value = MagicMock()
+        scorer = AnalyticsScorer({"model_config": "model.yaml"}, global_models={})
+        rendered = scorer._format_data_result([{"a": 1}] * 3, "golden")
+        self.assertNotIn("truncated", rendered)
+        self.assertEqual([line.strip() for line in rendered.split("\n")[1:]], ["1", "1", "1"])
+
+    @patch("scorers.analyticsscorer.get_generator")
+    def test_render_trajectory_omits_data_block_when_empty(self, mock_get_gen):
+        mock_get_gen.return_value = MagicMock()
+        scorer = AnalyticsScorer({"model_config": "model.yaml"}, global_models={})
+        trajectory = scorer._render_trajectory("SELECT 1 WHERE FALSE", [], "trial")
+        self.assertIn('SQL Query:\n    "SELECT 1 WHERE FALSE"', trajectory)
+        self.assertNotIn("Data:", trajectory)
+
+        trajectory = scorer._render_trajectory("SELECT 1 AS x", [{"x": 1}], "trial")
+        self.assertIn(' Data:\n    " x\n 1"', trajectory)
+
+    @patch("scorers.analyticsscorer.get_generator")
+    def test_init_max_rows_is_ignored(self, mock_get_gen):
+        mock_get_gen.return_value = MagicMock()
+        with self.assertLogs(level="WARNING"):
+            scorer = AnalyticsScorer(
+                {"model_config": "model.yaml", "max_rows": 3}, global_models={}
+            )
+        self.assertEqual(scorer.max_data_result_entries, 50)
+
+    def test_parse_verdict_tolerates_markdown(self):
+        for response in (
+            "Reasoning.\n**VERDICT:** PASS",
+            "Reasoning.\nVERDICT: **PASS**",
+            "Reasoning.\n`VERDICT: PASS`",
+            "Reasoning.\nPASS",
+        ):
+            with self.subTest(response=response):
+                score, _ = AnalyticsScorer._parse_verdict(response)
+                self.assertEqual(score, 100.0)
+
+    def test_parse_verdict_prefers_final_line(self):
+        response = (
+            "Output `VERDICT: PASS` or `VERDICT: FAIL`.\n"
+            "Check 3: NO.\n"
+            "VERDICT: FAIL"
+        )
+        score, _ = AnalyticsScorer._parse_verdict(response)
+        self.assertEqual(score, 0.0)
 
     @patch("scorers.analyticsscorer.get_generator")
     def test_parse_verdict_pass(self, mock_get_gen):
@@ -76,24 +138,23 @@ class TestAnalyticsScorer(unittest.TestCase):
         self.assertIn("Could not parse valid VERDICT", log)
 
     @patch("scorers.analyticsscorer.get_generator")
-    def test_compare_golden_error(self, mock_get_gen):
+    def test_compare_golden_error_raises(self, mock_get_gen):
         mock_get_gen.return_value = MagicMock()
         scorer = AnalyticsScorer({"model_config": "model.yaml"}, global_models={})
 
-        score, log = scorer.compare(
-            nl_prompt="List users",
-            golden_query="SELECT * FROM users",
-            query_type="DQL",
-            golden_execution_result=[],
-            golden_eval_result="",
-            golden_error="Table not found",
-            generated_query="SELECT * FROM users",
-            generated_execution_result=[{"id": 1}],
-            generated_eval_result="",
-            generated_error="",
-        )
-        self.assertEqual(score, 0.0)
-        self.assertIn("Golden query failed to execute", log)
+        with self.assertRaisesRegex(ValueError, "Golden query failed to execute"):
+            scorer.compare(
+                nl_prompt="List users",
+                golden_query="SELECT * FROM users",
+                query_type="DQL",
+                golden_execution_result=[],
+                golden_eval_result="",
+                golden_error="Table not found",
+                generated_query="SELECT * FROM users",
+                generated_execution_result=[{"id": 1}],
+                generated_eval_result="",
+                generated_error="",
+            )
 
     @patch("scorers.analyticsscorer.get_generator")
     def test_compare_generated_error_with_empty_golden_data(self, mock_get_gen):
@@ -193,7 +254,55 @@ class TestAnalyticsScorer(unittest.TestCase):
         self.assertIn("How many active users are there?", called_prompt)
         self.assertIn("SELECT COUNT(*) AS active_cnt", called_prompt)
         self.assertIn("SELECT COUNT(id) AS total_active", called_prompt)
-        self.assertIn("VERDICT: PASS` or `VERDICT: FAIL", called_prompt)
+        self.assertIn("VERDICT: PASS\nVERDICT: FAIL", called_prompt)
+        self.assertIn("Check 4 - No Invalid Columns", called_prompt)
+        self.assertIn('     Data:\n    " active_cnt\n         42"', called_prompt)
+
+    @patch("scorers.analyticsscorer.get_generator")
+    def test_compare_empty_trial_trajectory_fails_without_llm(self, mock_get_gen):
+        mock_model = MagicMock()
+        mock_get_gen.return_value = mock_model
+        scorer = AnalyticsScorer({"model_config": "model.yaml"}, global_models={})
+
+        score, log = scorer.compare(
+            nl_prompt="List users",
+            golden_query="SELECT id FROM users",
+            query_type="DQL",
+            golden_execution_result=[{"id": 1}],
+            golden_eval_result="",
+            golden_error="",
+            generated_query="",
+            generated_execution_result=[],
+            generated_eval_result="",
+            generated_error="",
+        )
+        self.assertEqual(score, 0.0)
+        self.assertIn("trial trajectory is empty", log)
+        mock_model.generate.assert_not_called()
+
+    @patch("scorers.analyticsscorer.with_cache_execute", return_value=None)
+    @patch("scorers.analyticsscorer.get_cache_client")
+    @patch("scorers.analyticsscorer.get_generator")
+    def test_compare_cached_model_failure_raises(
+        self, mock_get_gen, mock_cache, unused_mock_with_cache
+    ):
+        mock_get_gen.return_value = MagicMock()
+        mock_cache.return_value = MagicMock()
+        scorer = AnalyticsScorer({"model_config": "model.yaml"}, global_models={})
+
+        with self.assertRaises(RuntimeError):
+            scorer.compare(
+                nl_prompt="Query",
+                golden_query="SELECT 1",
+                query_type="DQL",
+                golden_execution_result=[{"1": 1}],
+                golden_eval_result="",
+                golden_error="",
+                generated_query="SELECT 2",
+                generated_execution_result=[{"2": 2}],
+                generated_eval_result="",
+                generated_error="",
+            )
 
 
 if __name__ == "__main__":

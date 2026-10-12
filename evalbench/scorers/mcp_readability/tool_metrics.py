@@ -12,7 +12,7 @@ returned by ``McpToolsGenerator``:
 
 It is kept separate from the LLM judge so the metric logic stays deterministic
 and independently testable. It is a plug-and-play mcp_readability scorer (see
-``scorers.mcp_readability_scoring``): the orchestrator calls :meth:`run` with the
+``scorers.mcp_readability.scoring``): the orchestrator calls :meth:`run` with the
 per-endpoint context. Its binary summary metric is "within token budget".
 """
 
@@ -20,7 +20,7 @@ from collections.abc import Sequence
 import json
 from typing import Any
 
-from scorers.mcp_readability_scoring import EndpointContext, ScoreContribution
+from scorers.mcp_readability.scoring import EndpointContext, ScoreContribution
 
 # Rough chars-per-token heuristic for estimating a tool's token footprint.
 _CHARS_PER_TOKEN = 4

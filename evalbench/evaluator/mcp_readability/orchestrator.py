@@ -6,14 +6,14 @@ Flow per endpoint:
   2. Applicable exceptions (waivers) are gathered.
   3. Every scorer declared under ``scorers:`` in the run config is invoked with
      the shared per-endpoint context; each contributes result-row columns and a
-     binary summary score (see ``scorers.mcp_readability_scoring``).
+     binary summary score (see ``scorers.mcp_readability.scoring``).
   4. A result row is assembled from the base identity columns plus every
      scorer's contribution.
 
 The orchestrator is scorer-agnostic: it instantiates whatever scorers the run
-config declares (via ``SCORER_REGISTRY``) and merges their contributions. Adding
-a new scorer (e.g. conformance testing) needs only a registry entry and a
-run-config block -- no changes here.
+config declares (via ``scorers.mcp_readability.registry``) and merges their
+contributions. Adding a new scorer (e.g. conformance testing) needs only a
+registry entry and a run-config block -- no changes here.
 
 Failure handling is fail-fast: if any endpoint cannot be fetched or scored, the
 exception propagates and the whole job aborts with nothing persisted. There is no
@@ -35,23 +35,12 @@ import threading
 
 from evaluator.orchestrator import Orchestrator
 from generators.models import get_generator
-from scorers.mcp_fingerprint import tool_fingerprints
-from scorers.mcp_readability_scoring import EndpointContext
-from scorers.mcp_style_readability import McpStyleReadabilityScorer
-from scorers.mcp_tool_metrics import McpToolMetricsScorer
+from scorers.mcp_readability.fingerprint import tool_fingerprints
+from scorers.mcp_readability.registry import SCORER_REGISTRY
+from scorers.mcp_readability.scoring import EndpointContext
 from util.config import load_yaml_config
 
 from evaluator.mcp_readability import exceptions as exceptions_mod
-
-
-# Registered mcp_readability scorers, keyed by the name used under ``scorers:`` in
-# the run config (also each scorer's ``comparator`` in the summary). Add a new
-# scorer here plus a run-config block to extend the check -- the orchestrator
-# itself stays unchanged.
-SCORER_REGISTRY = {
-    "mcp_tool_metrics": McpToolMetricsScorer,
-    "mcp_style_readability": McpStyleReadabilityScorer,
-}
 
 
 # Allowed endpoint_type values (deployment channel / dashboard categorization).
