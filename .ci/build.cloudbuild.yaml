@@ -56,10 +56,11 @@ steps:
     allowFailure: true
     args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server:build-cache']
 
-  # Runs a real eval with _VAR_EVAL_CONFIG in the new image.
+  # Runs a real eval with _VAR_EVAL_CONFIG in the new image. Waits for
+  # unit-tests so that a commit with failed tests does not run the eval.
   - id: eval
     name: 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server:$COMMIT_SHA'
-    waitFor: ['build-image']
+    waitFor: ['build-image', 'unit-tests']
     dir: '/evalbench'
     args: ['/evalbench/evalbench/run.sh']
     env:
