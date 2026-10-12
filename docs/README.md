@@ -13,6 +13,12 @@ Reference documentation for [EvalBench](/README.md). Start with the [main README
 | [Antigravity CLI](/docs/agy_cli_agent_testing.md) | Setup and configuration for evaluating the Antigravity (agy) CLI. |
 | [Data agent spec](/docs/dataagent_spec.md) | ADKDataAgent support — multi-turn database agents with clarification turns. |
 
+## NL2SQL evaluations
+
+| Doc | Contents |
+|---|---|
+| [NL2SQL evaluations](/docs/nl2sql-evals.md) | How NL2SQL runs work, query types, database setup, scoring, and BigQuery experiment reports. |
+
 ## Configuration
 
 Every evaluation — agentic or NL2SQL — is driven by a run config that points at a dataset, an agent or model, its environment (tools or databases), and a set of scorers.

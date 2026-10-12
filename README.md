@@ -67,17 +67,28 @@ Every run is **sandboxed**: agents execute against an isolated home directory, s
 
 ## Getting started
 
-> *Note*: EvalBench requires Python 3.10 or higher and **uv** for dependency management. Agent evaluations additionally need the relevant CLI's runtime (for example, **Node.js and npm** for Gemini CLI) — see each agent's guide.
+> *Note*: EvalBench requires Python 3.10 or higher and [**uv**](https://docs.astral.sh/uv/getting-started/installation/). Agent evaluations also need each CLI's runtime (for example, **Node.js and npm** for Gemini CLI) — see each agent's guide.
 
-### 1. Clone and install
+### 1. Install
+
+**Option A — run with `uvx`, no clone needed.** EvalBench is published on PyPI as [`google-evalbench`](https://pypi.org/project/google-evalbench/). `uvx` downloads it into an isolated, cached environment and runs it in one step:
+
+```bash
+uvx google-evalbench --help
+uvx google-evalbench --experiment_config=path/to/run_config.yaml
+```
+
+Paths inside the run config (model config, evalset, and so on) are resolved relative to the current directory, so run the command from the folder that holds your config files. To pin a release, use `uvx google-evalbench@<version>`. To keep the command installed, run `uv tool install google-evalbench` and then call `google-evalbench --experiment_config=...` directly.
+
+**Option B — clone the repo.** Clone if you want to run the bundled examples under [datasets/](/datasets/) as-is (they reference other files in the repo), use the [viewer](#viewer), or contribute:
 
 ```bash
 git clone git@github.com:GoogleCloudPlatform/evalbench.git
 cd evalbench
-uv venv
-source .venv/bin/activate
 uv sync
 ```
+
+The examples below use the clone and `./evalbench/run.sh`, which wraps `uv run evalbench/evalbench.py --experiment_config="$EVAL_CONFIG"`.
 
 ### 2. Configure GCP authentication
 
@@ -117,7 +128,7 @@ export EVAL_CONFIG=datasets/bat/example_run_config.yaml
 ./evalbench/run.sh
 ```
 
-See [example_run_config.yaml](/datasets/bat/example_run_config.yaml) for the dataset, database, generation, and scorer settings used.
+See [example_run_config.yaml](/datasets/bat/example_run_config.yaml) for the dataset, database, generation, and scorer settings used, and the [NL2SQL guide](/docs/nl2sql-evals.md) for query types, database setup, and reporting.
 
 ---
 
@@ -149,20 +160,44 @@ LLM-judged scorers can optionally be given [tool access](/docs/judge_tools.md) i
 
 ---
 
-## Reporting and experiments
+## Reporting and dashboards
 
-Results can be stored as CSV or in BigQuery and visualized with built-in dashboards. With BigQuery reporting enabled in the run config, EvalBench supports quickly creating experiments and A/B testing improvements:
+Every run — agentic or NL2SQL — writes to the reporters enabled in the `reporting:` block of the run config:
 
-<img width="911" alt="Evalbench Reporting" src="https://github.com/user-attachments/assets/0881c43e-b359-472b-a7fd-e1fee6a9adf3" />
+```yaml
+reporting:
+  csv:
+    output_directory: 'results'
+  bigquery:
+    gcp_project_id: your_project_id_here
+  gcs_artifacts:
+    bucket: 'your-artifacts-bucket'
+```
 
-Results can be sliced to quantify improvements on specific segments — for example, specific databases or dialects:
+| Reporter | What you get |
+|---|---|
+| `csv` | A `results/<job_id>/` folder per run containing `configs.csv`, `evals.csv` (every scenario or eval item, including the full conversation and tool calls), `scores.csv` (one row per scorer per item, with the judge's explanation), and `summary.csv` (aggregate metrics). |
+| `bigquery` | The same tables in BigQuery for long-term storage, cross-run analysis, and A/B experiment comparison. |
+| `gcs_artifacts` | Each scenario's agent sandbox, zipped and uploaded to a GCS bucket so you can inspect exactly what the agent wrote and configured. |
 
-<img width="911" alt="Evalbench Reporting by Databases / Dialects" src="https://github.com/user-attachments/assets/e2172be1-045a-473d-92aa-304121843e7d" />
+### Viewer
 
-You can dig into the exact details of improvements and regressions, including highlighted changes, how they impacted the score, and an LLM-annotated explanation of the scoring changes when an LLM judge is used:
+The [viewer](/viewer/) is a local dashboard over your results directory, built for agent runs:
 
-<img width="911" alt="Evalbench Reporting Details" src="https://github.com/user-attachments/assets/861696b5-42f1-44c7-a7d0-710f7a32918f" />
-<br><br>
+- **Status** — an overview of the latest runs, per agent.
+- **List** — every run, with trajectory match, turn count, token usage, latency, goal completion, and an AI score. You can filter by product, dataset, or requester.
+- **Conversations** — step through each scenario turn by turn (simulated user and agent), with each scorer's result and explanation next to it.
+- **Charts** — metric trends across runs over time.
+- **Compare** — pick two runs and get a Gemini-generated comparison of metrics, errors, and tool-call trajectories.
+
+To run it from a cloned repo:
+
+```bash
+cd viewer
+RESULTS_DIR=../results uv run mesop main.py
+```
+
+For BigQuery experiment reports on NL2SQL runs, such as A/B comparisons and breakdowns by database and dialect, see the [NL2SQL guide](/docs/nl2sql-evals.md#bigquery-experiment-reports).
 
 ---
 
@@ -177,6 +212,7 @@ Full reference documentation lives in [docs/](/docs/README.md).
 | [Run config](/docs/configs/run-config.md) | The top-level YAML that drives every evaluation run |
 | [Model config](/docs/configs/model-config.md) | Generator and model selection, and generation settings |
 | [Scorers](/docs/scorers.md) | Every available scorer and its configuration options |
+| [NL2SQL evaluations](/docs/nl2sql-evals.md) | How NL2SQL runs work, query types, database setup, and BigQuery experiment reports |
 | [NL2SQL dataset format](/docs/configs/dataset-config.md) | Prompts, golden SQL, and eval queries |
 | [Database config](/docs/configs/db-config.md) | Connection details and supported dialects |
 | [Examples](/docs/examples/) | Runnable notebooks for SQLite, Cloud SQL, BigQuery, and Agent Runtime |
