@@ -294,7 +294,10 @@ def status_component():
         cache_file = os.path.join(results_dir, "trends_cache.csv")
         if os.path.exists(cache_file):
             try:
-                cache_df = pd.read_csv(cache_file)
+                cache_df = pd.read_csv(
+                    cache_file, usecols=lambda c: c != 'ai_summary'
+                )
+                cache_df = precompute_trends.filter_valid_cache_rows(cache_df)
                 for _, row in cache_df.iterrows():
                     data.append({
                         'AI Score': row['ai_score'] if 'ai_score' in row else None,
@@ -338,11 +341,13 @@ def status_component():
         if data:
             df = pd.DataFrame(data)
             # Filter out unknown products
-            df = df[df['Product'] != 'unknown']
+            df = df[df['Product'].notna() & (df['Product'] != 'unknown')]
 
             if not df.empty:
                 # Sort by Run Time descending to get the latest
-                df['Run Time'] = pd.to_datetime(df['Run Time'])
+                df['Run Time'] = pd.to_datetime(
+                    df['Run Time'], format='mixed', errors='coerce'
+                )
                 df = df.sort_values('Run Time', ascending=False, na_position='last')
 
                 # Group by Product and Dataset and take the first (latest)
@@ -597,6 +602,9 @@ def list_view_component(directories, results_dir):
                 if os.path.exists(cache_file):
                     try:
                         cache_df = pd.read_csv(cache_file)
+                        cache_df = precompute_trends.filter_valid_cache_rows(
+                            cache_df
+                        )
                         logging.info(f"Loaded {len(cache_df)} rows from trends cache.")
                         for _, row in cache_df.iterrows():
                             score = row['ai_score'] if 'ai_score' in row else 0.0

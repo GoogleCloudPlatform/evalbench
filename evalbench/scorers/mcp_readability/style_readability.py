@@ -18,12 +18,12 @@ import logging
 import re
 
 from generators.models import get_generator
-from scorers.mcp_fingerprint import (
+from scorers.mcp_readability.fingerprint import (
     canonical_exceptions,
     judge_fingerprint,
     sha256_text,
 )
-from scorers.mcp_readability_scoring import (
+from scorers.mcp_readability.scoring import (
     EndpointContext,
     SEVERITY_BADGES,
     ScoreContribution,

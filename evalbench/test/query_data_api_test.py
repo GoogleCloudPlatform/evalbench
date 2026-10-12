@@ -36,6 +36,95 @@ class TestQueryDataAPIGenerator(unittest.TestCase):
         )
 
     @patch('generators.models.query_data_api.gda')
+    def test_api_endpoint_accepts_google_hosts(self, mock_gda):
+        mock_gda.DataChatServiceClient = MagicMock()
+        for endpoint in [
+            "geminidataanalytics.googleapis.com",
+            "autopush-geminidataanalytics.googleapis.com",
+            "staging-geminidataanalytics.googleapis.com",
+            "us-central1.geminidataanalytics.googleapis.com",
+            "test-geminidataanalytics.sandbox.googleapis.com",
+            "autopush.geminidataanalytics.sandbox.googleapis.com",
+        ]:
+            with self.subTest(endpoint=endpoint):
+                generator = QueryDataAPIGenerator({
+                    "project_id": "p", "api_endpoint": endpoint,
+                })
+                self.assertEqual(generator.api_endpoint, endpoint)
+                mock_gda.DataChatServiceClient.assert_called_with(
+                    client_options={"api_endpoint": endpoint}
+                )
+
+    @patch('generators.models.query_data_api.gda')
+    def test_api_endpoint_is_normalized(self, mock_gda):
+        mock_gda.DataChatServiceClient = MagicMock()
+        generator = QueryDataAPIGenerator({
+            "project_id": "p",
+            "api_endpoint": "  Autopush-GeminiDataAnalytics.googleapis.com \n",
+        })
+        self.assertEqual(
+            generator.api_endpoint,
+            "autopush-geminidataanalytics.googleapis.com",
+        )
+
+    @patch('generators.models.query_data_api.gda')
+    def test_api_endpoint_rejects_untrusted_hosts(self, mock_gda):
+        mock_gda.DataChatServiceClient = MagicMock()
+        for endpoint in [
+            # Arbitrary hosts.
+            "attacker.example",
+            "localhost",
+            "169.254.169.254",
+            # Suffix spoofing / lookalikes.
+            "geminidataanalytics.googleapis.com.evil.example",
+            "evilgeminidataanalytics.googleapis.com",
+            "geminidataanalytics.googleapis.com.",
+            "geminidataanalytics-googleapis.com",
+            # Other Google APIs are still out of scope for this generator,
+            # including their sandbox frontends.
+            "sqladmin.googleapis.com",
+            "sandbox.googleapis.com",
+            "test-sqladmin.sandbox.googleapis.com",
+            "geminidataanalytics.sqladmin.sandbox.googleapis.com",
+            "geminidataanalytics-evil.sandbox.googleapis.com",
+            "geminidataanalytics.evil.googleapis.com",
+            # URL components that would break out of the f-string URL.
+            "https://geminidataanalytics.googleapis.com",
+            "geminidataanalytics.googleapis.com/evil",
+            "geminidataanalytics.googleapis.com:8443",
+            "geminidataanalytics.googleapis.com@attacker.example",
+            "attacker.example#geminidataanalytics.googleapis.com",
+            "attacker.example?geminidataanalytics.googleapis.com",
+            "geminidataanalytics.googleapis.com\n.attacker.example",
+            # Wrong types.
+            123,
+            ["geminidataanalytics.googleapis.com"],
+        ]:
+            with self.subTest(endpoint=endpoint):
+                with self.assertRaises(ValueError):
+                    QueryDataAPIGenerator({
+                        "project_id": "p", "api_endpoint": endpoint,
+                    })
+        # No client may be constructed for a rejected endpoint.
+        mock_gda.DataChatServiceClient.assert_not_called()
+
+    @patch('generators.models.query_data_api.requests')
+    @patch('generators.models.query_data_api.google.auth.default')
+    @patch('generators.models.query_data_api.gda')
+    def test_rest_path_never_reaches_untrusted_host(
+        self, mock_gda, mock_auth_default, mock_requests
+    ):
+        mock_gda.DataChatServiceClient = MagicMock()
+        with self.assertRaises(ValueError):
+            QueryDataAPIGenerator({
+                "project_id": "p",
+                "use_rest_api": True,
+                "api_endpoint": "attacker.example",
+            })
+        mock_auth_default.assert_not_called()
+        mock_requests.post.assert_not_called()
+
+    @patch('generators.models.query_data_api.gda')
     def test_generate_internal_success(self, mock_gda):
         mock_client_instance = MagicMock()
         mock_gda.DataChatServiceClient.return_value = mock_client_instance

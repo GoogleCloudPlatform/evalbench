@@ -41,7 +41,7 @@ Used for NL2SQL evaluations (DQL, DML, DDL). See the [NL2SQL dataset format](/do
 | `returned_sql` | Deterministic | Whether the generated output contains actual SQL rather than only comments or prose. |
 | `regexp_matcher` | Deterministic | Whether the generated query matches supplied regex patterns. |
 | `llmrater` | LLM | Uses an LLM to compare golden and generated execution results, scoring cases like mismatched column names or extra columns. Requires its own `model_config`. |
-| `analytics_scorer` | LLM | Conversational Analytics Data Results Rater. Uses an LLM judge with the full 11-point Conversational Analytics rubric to grade generated data against golden data. Requires `model_config`. |
+| `analytics_scorer` | LLM | Data Results Rater. Uses an LLM judge with a "Content/Data Results" rubric (4-check PASS/FAIL checklist with tolerated variations) to grade generated data against golden data. Requires `model_config`. |
 
 ### `regexp_matcher` options
 
@@ -64,8 +64,11 @@ Used for NL2SQL evaluations (DQL, DML, DDL). See the [NL2SQL dataset format](/do
 | Option | Default | Description |
 |---|---|---|
 | `model_config` | *required* | Path to the [model config](/docs/configs/model-config.md) for the rating LLM. |
-| `max_rows` | `50` | Maximum number of unique rows to render before truncation. |
+| `max_data_result_entries` | `50` | Maximum number of cells (rows x columns) rendered per data result; larger results are truncated to the first `max(1, max_data_result_entries // columns)` rows with a truncation note. Because the budget is in cells, wide results show fewer rows (e.g. 10 columns → 5 rows); the rubric tolerates truncation differences between golden and generated results. Replaces the former `max_rows` option. |
 | `query_label` | `"SQL Query"` | Label used when formatting the query block for evaluation. |
+| `skip_llm_on_exact_match` | `true` | Score 100 without calling the LLM when the generated and golden result sets match exactly. Set to `false` to always use the LLM judge, e.g. when prompts specify row ordering or column names, which set matching ignores. |
+
+A failed or empty golden reference is reported as a comparison error rather than a trial failure.
 
 ---
 
