@@ -16,8 +16,8 @@ from unittest.mock import patch
 
 from google.genai.types import FinishReason
 
-from scorers import mcp_style_readability
-from scorers.mcp_style_readability import (
+from scorers.mcp_readability import style_readability
+from scorers.mcp_readability.style_readability import (
     McpStyleReadabilityScorer,
     TruncatedResponseError,
 )
@@ -63,7 +63,7 @@ class GenerateTruncationTest(unittest.TestCase):
         cfg = {"model_config": "unused", "style_guide": self._tmp.name}
         cfg.update(config or {})
         with patch.object(
-            mcp_style_readability, "get_generator", return_value=model
+            style_readability, "get_generator", return_value=model
         ):
             return McpStyleReadabilityScorer(cfg, global_models=None)
 
@@ -74,7 +74,7 @@ class GenerateTruncationTest(unittest.TestCase):
         self.assertEqual(out, '{"ok": true}')
         self.assertEqual(
             model.last_config.max_output_tokens,
-            mcp_style_readability._MAX_OUTPUT_TOKENS,
+            style_readability._MAX_OUTPUT_TOKENS,
         )
         self.assertFalse(model.generate_called)
 

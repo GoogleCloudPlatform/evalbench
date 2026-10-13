@@ -410,5 +410,106 @@ class ProcessDirectoryTest(unittest.TestCase):
         )
 
 
+class CacheCorruptionRecoveryTest(unittest.TestCase):
+    """Tests for torn-write recovery and malformed-row filtering."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.results_dir = self.temp_dir.name
+
+        patcher = patch.object(
+            precompute_trends, "get_results_dir", return_value=self.results_dir
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _path(self, name):
+        return os.path.join(self.results_dir, name)
+
+    def test_torn_multiline_summary_at_eof_is_truncated_before_next_append(self):
+        """A killed write mid-quote must not fuse into the next batch's rows."""
+        for jid in ["run-0", "run-1", "run-2"]:
+            os.makedirs(os.path.join(self.results_dir, jid))
+
+        cache_file = self._path("trends_cache.csv")
+        r0 = _row("run-0")
+        r0["ai_summary"] = "General Score: 90\n### **Summary of Performance**\nGood."
+        r1 = _row("run-1")
+        r1["ai_summary"] = (
+            "General Score: 80\n\n### **Summary of Performance**\n"
+            "The agent demonstrated strong problem-solving, resulting in a score.\n"
+            "### **Key Successes**\n* Goal Completion (100%)"
+        )
+        pd.DataFrame([r0, r1]).to_csv(cache_file, index=False)
+
+        # Simulate a SIGKILL mid-flush inside run-1's quoted multiline summary
+        # (leaving an unclosed quote and no trailing newline), before
+        # processed_dirs.json recorded run-1.
+        with open(cache_file, "rb") as f:
+            raw = f.read()
+        cut = raw.index(b"The agent demonstrated") + 10
+        with open(cache_file, "wb") as f:
+            f.write(raw[:cut])
+        with open(self._path("processed_dirs.json"), "w") as f:
+            json.dump(["run-0"], f)
+
+        def make_row(d, _):
+            r = _row(d)
+            r["ai_summary"] = (
+                "General Score: 85\n\n### **Summary of Performance**\n"
+                "Line one, with commas, inside summary.\n"
+                "### **Key Failures**\n* None"
+            )
+            return r
+
+        with patch.object(
+            precompute_trends, "process_directory", side_effect=make_row
+        ):
+            precompute_trends.precompute()
+
+        df = pd.read_csv(cache_file)
+        self.assertCountEqual(["run-0", "run-1", "run-2"], df["job_id"].tolist())
+        # Every run_time in the resulting cache must parse as a valid timestamp.
+        parsed_times = pd.to_datetime(df["run_time"], format="mixed", errors="raise")
+        self.assertEqual(3, len(parsed_times))
+
+    def test_filter_valid_cache_rows_drops_spilled_markdown_lines(self):
+        df = pd.DataFrame([
+            _row("run-0"),
+            {
+                "run_time": "### **Summary of Performance**",
+                "requester": None,
+                "product": None,
+                "job_id": None,
+            },
+            {
+                "run_time": "The agent demonstrated strong problem-solving",
+                "requester": " despite a flaw",
+                "product": " resulting in a zero score",
+                "job_id": float("nan"),
+            },
+            {
+                **_row("run-1"),
+                "run_time": "unknown",
+            },
+        ])
+        filtered = precompute_trends.filter_valid_cache_rows(df)
+        self.assertEqual(["run-0", "run-1"], filtered["job_id"].tolist())
+
+    def test_trim_stale_summaries_purges_malformed_rows(self):
+        cache_file = self._path("trends_cache.csv")
+        r0 = _row("run-0")
+        pd.DataFrame([r0]).to_csv(cache_file, index=False)
+        with open(cache_file, "a") as f:
+            f.write("### **Summary of Performance**\n")
+            f.write("The agent demonstrated, a flaw, resulting in zero\n")
+
+        precompute_trends._trim_stale_summaries(self.results_dir, cache_file)
+
+        df = pd.read_csv(cache_file)
+        self.assertEqual(["run-0"], df["job_id"].tolist())
+
+
 if __name__ == "__main__":
     unittest.main()
