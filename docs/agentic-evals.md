@@ -1,6 +1,6 @@
 # Agentic Evaluations
 
-Beyond single-turn NL2SQL, EvalBench evaluates **agents** — coding CLIs and data agents that reason across multiple turns, call tools, and act on their environment.
+EvalBench evaluates **agents** — coding CLIs and data agents that reason across multiple turns, call tools, and act on their environment. Agentic evaluations share the same run config, scorer framework, and reporting as EvalBench's single-turn tasks such as NL2SQL.
 
 Each scenario starts from a prompt and is driven forward by an **LLM-based simulated user** that follows a `conversation_plan` until the goal is met, a terminal state is reached, or `max_turns` is exhausted. Every turn is captured — text, tool calls, parameters, latency, and tokens — and then scored.
 
