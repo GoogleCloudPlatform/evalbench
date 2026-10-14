@@ -3,7 +3,7 @@
 #
 # TRIGGER_ID and CHANNEL_NAME are placeholders, so this public file has no
 # project resource IDs. The live policy in evalbench-testing has the real
-# values. The build logs are in that project, so the policy must be there:
+# values:
 #   TRIGGER_ID    id of the trigger 'release-eval-server' (us-central1)
 #   CHANNEL_NAME  name of the notification channel 'EvalBench release'
 # To change the policy, fill in a copy of this file and run
