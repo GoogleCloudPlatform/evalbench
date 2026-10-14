@@ -1,0 +1,344 @@
+# PyPI publish pipeline for google-evalbench.
+#
+# release-please pushes a vX.Y.Z tag. A Cloud Build trigger runs this file
+# as a dedicated release service account. The build stages the wheel and
+# sdist in the OSS Exit Gate Artifact Registry, then uploads a manifest.
+# OSS Exit Gate verifies the files and publishes them to PyPI.
+#
+# The trigger sets _STAGING_PROJECT, _STAGING_REPO, and _MANIFEST_DIR, so
+# this public file has no project names.
+#
+# Each run prints one PYPI_RESULT line (pypi/lib.sh), and
+# pypi/alert_policy.yaml emails it. pypi/build_status_policy.yaml emails
+# every run that fails.
+#
+# Dry run: stage the files and stop before the manifest upload.
+#   gcloud builds triggers run pypi-publish --region=REGION --tag=vX.Y.Z \
+#     --substitutions=_DRY_RUN=true
+# Then delete the staged version (see the DRY_RUN result line).
+#
+# Use $$ for shell variables and $$(...). Cloud Build expands a single $.
+
+steps:
+
+  # Checks the tag, the version, and the commit. Stops the run if PyPI
+  # already has the version, so a rerun is safe.
+  - id: validate
+    name: 'ghcr.io/astral-sh/uv:python3.12-bookworm'
+    timeout: '420s'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -uo pipefail
+        . /workspace/.ci/pypi/lib.sh
+        STAGE=validate
+        GITHUB=https://github.com/GoogleCloudPlatform/evalbench
+        TAG="$TAG_NAME"
+        TAG_RE='^v[0-9]+\.[0-9]+\.[0-9]+$$'
+
+        if [[ -z "${_STAGING_PROJECT}" || -z "${_STAGING_REPO}" || -z "${_MANIFEST_DIR}" ]]; then
+          pypi_fail $$STAGE "_STAGING_PROJECT, _STAGING_REPO, or _MANIFEST_DIR is empty. Set them in the trigger substitutions."
+        fi
+
+        if [[ ! "$$TAG" =~ $$TAG_RE ]]; then
+          pypi_fail $$STAGE "The tag '$$TAG' does not match vX.Y.Z. Run this trigger only on a release tag."
+        fi
+        VERSION="$${TAG#v}"
+        echo "$$VERSION" > "$$PYPI_VERSION_FILE"
+
+        PYPROJECT_VERSION=$$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+        if [[ "$$PYPROJECT_VERSION" != "$$VERSION" ]]; then
+          pypi_fail $$STAGE "pyproject.toml has version '$$PYPROJECT_VERSION', but the tag is $$TAG."
+        fi
+
+        # A treeless clone has every commit and no file contents.
+        if ! timeout 300 git clone --quiet --filter=tree:0 --no-checkout \
+          "$$GITHUB.git" /tmp/evalbench; then
+          pypi_fail $$STAGE "git clone of $$GITHUB failed or took more than 300 s."
+        fi
+        if ! git -C /tmp/evalbench fetch --quiet --filter=tree:0 origin \
+          "refs/tags/$$TAG:refs/tags/$$TAG"; then
+          pypi_fail $$STAGE "Could not fetch the tag $$TAG from $$GITHUB."
+        fi
+        TAG_COMMIT=$$(git -C /tmp/evalbench rev-parse --verify --quiet \
+          "refs/tags/$$TAG^{commit}")
+        if [[ "$$TAG_COMMIT" != "$COMMIT_SHA" ]]; then
+          pypi_fail $$STAGE "On GitHub, $$TAG points to '$$TAG_COMMIT', not to the build commit $COMMIT_SHA."
+        fi
+        if ! git -C /tmp/evalbench merge-base --is-ancestor \
+          "$COMMIT_SHA" origin/main; then
+          pypi_fail $$STAGE "$COMMIT_SHA is not on main. Publish only tags on main."
+        fi
+
+        CODE=$$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+          "https://pypi.org/pypi/google-evalbench/$$VERSION/json")
+        case "$$CODE" in
+          200) pypi_stop SKIPPED $$STAGE "PyPI already has google-evalbench $$VERSION." ;;
+          404) ;;
+          *) pypi_fail $$STAGE "The PyPI JSON API returned HTTP $$CODE for google-evalbench $$VERSION." ;;
+        esac
+        echo "Publishing google-evalbench $$VERSION from $COMMIT_SHA"
+
+  # Stops if another run is active or if files are already staged. The
+  # manifest publishes every staged file, so stale files must not stay.
+  - id: preflight
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    waitFor: ['validate']
+    timeout: '180s'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -uo pipefail
+        . /workspace/.ci/pypi/lib.sh
+        skip_if_stopped
+        STAGE=preflight
+        AR=(--repository="${_STAGING_REPO}" --location=us --project="${_STAGING_PROJECT}")
+
+        # If the list call fails, continue.
+        if [[ -n "$TRIGGER_NAME" ]]; then
+          OTHERS=$$(gcloud builds list --ongoing --region="$LOCATION" \
+            --filter="substitutions.TRIGGER_NAME=$TRIGGER_NAME AND id!=$BUILD_ID" \
+            --format='value(id)' 2>/dev/null)
+          if [[ -n "$$OTHERS" ]]; then
+            pypi_fail $$STAGE "Another publish run is active: $$OTHERS"
+          fi
+        fi
+
+        # If the list call fails, continue. twine fails later on a conflict.
+        if ! PACKAGES=$$(gcloud artifacts packages list "$${AR[@]}" \
+          --format='value(name.basename())'); then
+          echo "Cannot list packages in ${_STAGING_REPO}. Continuing."
+          exit 0
+        fi
+        if ! grep -qx 'google-evalbench' <<< "$$PACKAGES"; then
+          echo "${_STAGING_REPO} has no staged google-evalbench files."
+          exit 0
+        fi
+        STAGED=$$(gcloud artifacts versions list --package=google-evalbench \
+          "$${AR[@]}" --format='value(name.basename())' | tr '\n' ' ')
+        if [[ -n "$${STAGED// /}" ]]; then
+          pypi_fail $$STAGE "${_STAGING_REPO} already has staged versions: $$STAGED. Delete each one: gcloud artifacts versions delete VERSION --package=google-evalbench $${AR[*]}"
+        fi
+        echo "${_STAGING_REPO} has no staged google-evalbench versions."
+
+  - id: build
+    name: 'ghcr.io/astral-sh/uv:python3.12-bookworm'
+    waitFor: ['preflight']
+    timeout: '600s'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -uo pipefail
+        . /workspace/.ci/pypi/lib.sh
+        skip_if_stopped
+        STAGE=build
+        VERSION=$$(cat "$$PYPI_VERSION_FILE")
+
+        rm -rf dist build
+        if ! uv build --out-dir dist; then
+          pypi_fail $$STAGE "uv build failed."
+        fi
+        if ! uvx twine check --strict dist/*; then
+          pypi_fail $$STAGE "twine check found invalid package metadata."
+        fi
+
+        # The manifest publishes everything in dist, so allow only 2 files.
+        for FILE in "google_evalbench-$$VERSION-py3-none-any.whl" \
+                    "google_evalbench-$$VERSION.tar.gz"; do
+          if [[ ! -f "dist/$$FILE" ]]; then
+            ls -l dist
+            pypi_fail $$STAGE "uv build did not make dist/$$FILE."
+          fi
+        done
+        if [[ $$(ls dist | wc -l) -ne 2 ]]; then
+          ls -l dist
+          pypi_fail $$STAGE "dist has more than the wheel and the sdist."
+        fi
+        sha256sum dist/*
+    env:
+      - 'UV_CACHE_DIR=/uv-cache'
+    volumes:
+      - name: 'uv-cache'
+        path: '/uv-cache'
+
+  # Same checks as .github/workflows/verify-package.yml, on the files that
+  # the stage step uploads.
+  - id: verify-dist
+    name: 'ghcr.io/astral-sh/uv:python3.12-bookworm'
+    waitFor: ['build']
+    timeout: '1200s'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -uo pipefail
+        . /workspace/.ci/pypi/lib.sh
+        skip_if_stopped
+        STAGE=verify-dist
+        VERSION=$$(cat "$$PYPI_VERSION_FILE")
+        WHEEL="/workspace/dist/google_evalbench-$$VERSION-py3-none-any.whl"
+        SDIST="/workspace/dist/google_evalbench-$$VERSION.tar.gz"
+
+        # /tmp, so the source tree cannot satisfy a missing import.
+        cd /tmp
+        for KIND in wheel sdist; do
+          FILE=$$WHEEL
+          [[ $$KIND == sdist ]] && FILE=$$SDIST
+          echo "===== import every module from the $$KIND ====="
+          uv venv --quiet "/tmp/$${KIND}check"
+          if ! VIRTUAL_ENV="/tmp/$${KIND}check" uv pip install "$$FILE"; then
+            pypi_fail $$STAGE "The $$KIND does not install in a clean environment."
+          fi
+          if ! "/tmp/$${KIND}check/bin/python" /workspace/.ci/verify_package.py; then
+            pypi_fail $$STAGE "Some modules do not import from the $$KIND."
+          fi
+        done
+
+        # absl exits 1 after it prints --help, so grep is the real check.
+        echo "===== check the CLI entry point ====="
+        HELP=$$(uvx --from "$$WHEEL" google-evalbench --help 2>&1 || true)
+        printf '%s\n' "$$HELP" | tail -20
+        if ! grep -q 'experiment_config' <<< "$$HELP"; then
+          pypi_fail $$STAGE "google-evalbench --help does not list experiment_config."
+        fi
+    env:
+      - 'UV_CACHE_DIR=/uv-cache'
+    volumes:
+      - name: 'uv-cache'
+        path: '/uv-cache'
+
+  # The keyring gets an Artifact Registry token for the build SA from the
+  # metadata server. Artifact Registry does not support --skip-existing.
+  - id: stage
+    name: 'ghcr.io/astral-sh/uv:python3.12-bookworm'
+    waitFor: ['verify-dist']
+    timeout: '300s'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -uo pipefail
+        . /workspace/.ci/pypi/lib.sh
+        skip_if_stopped
+        STAGE=stage
+        AR_URL="https://us-python.pkg.dev/${_STAGING_PROJECT}/${_STAGING_REPO}/"
+
+        if ! uvx --with keyrings.google-artifactregistry-auth twine upload \
+          --non-interactive --repository-url "$$AR_URL" dist/*; then
+          pypi_fail $$STAGE "twine upload to $$AR_URL failed. If the error is 409, delete the staged version and run again."
+        fi
+        echo "Staged in $$AR_URL:"
+        ls -l dist
+
+  - id: publish
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    waitFor: ['stage']
+    timeout: '120s'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -uo pipefail
+        . /workspace/.ci/pypi/lib.sh
+        skip_if_stopped
+        STAGE=publish
+        VERSION=$$(cat "$$PYPI_VERSION_FILE")
+        BUCKET="${_MANIFEST_DIR}"
+
+        if [[ "${_DRY_RUN}" == "true" ]]; then
+          pypi_stop DRY_RUN $$STAGE "Staged google-evalbench $$VERSION and uploaded no manifest. Delete the staged version before the next run: gcloud artifacts versions delete $$VERSION --package=google-evalbench --repository=${_STAGING_REPO} --location=us --project=${_STAGING_PROJECT}"
+        fi
+
+        # The name must be unique. The build ID links the manifest to this run.
+        MANIFEST="v$$VERSION-$BUILD_ID.json"
+        echo '{"publish_all": true}' > "/tmp/$$MANIFEST"
+        if ! gcloud storage cp "/tmp/$$MANIFEST" "$$BUCKET/$$MANIFEST"; then
+          pypi_fail $$STAGE "Could not upload the manifest to $$BUCKET. The files stay staged in ${_STAGING_REPO}."
+        fi
+        echo "Uploaded $$BUCKET/$$MANIFEST"
+
+  # OSS Exit Gate also emails the team when it receives the manifest and
+  # when the publish ends.
+  - id: verify-pypi
+    name: 'ghcr.io/astral-sh/uv:python3.12-bookworm'
+    waitFor: ['publish']
+    timeout: '2400s'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -uo pipefail
+        . /workspace/.ci/pypi/lib.sh
+        skip_if_stopped
+        STAGE=verify-pypi
+        VERSION=$$(cat "$$PYPI_VERSION_FILE")
+        DEADLINE=$$(( $$(date +%s) + ${_PYPI_WAIT_SECONDS} ))
+
+        echo "Waiting for google-evalbench $$VERSION on pypi.org"
+        while true; do
+          CODE=$$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+            "https://pypi.org/pypi/google-evalbench/$$VERSION/json")
+          [[ "$$CODE" == 200 ]] && break
+          if (( $$(date +%s) >= DEADLINE )); then
+            pypi_fail $$STAGE "google-evalbench $$VERSION is not on pypi.org after ${_PYPI_WAIT_SECONDS} s. Read the OSS Exit Gate email."
+          fi
+          echo "Not on pypi.org yet (HTTP $$CODE). Checking again in 60 s."
+          sleep 60
+        done
+
+        # The PyPI simple index can lag behind the JSON API.
+        cd /tmp
+        for ATTEMPT in 1 2 3 4 5; do
+          HELP=$$(uvx --no-cache --from "google-evalbench==$$VERSION" \
+            google-evalbench --help 2>&1 || true)
+          if grep -q 'experiment_config' <<< "$$HELP"; then
+            break
+          fi
+          if [[ $$ATTEMPT -eq 5 ]]; then
+            printf '%s\n' "$$HELP" | tail -20
+            pypi_fail $$STAGE "pypi.org has google-evalbench $$VERSION, but 'uvx --from google-evalbench==$$VERSION google-evalbench --help' fails."
+          fi
+          echo "uvx attempt $$ATTEMPT failed. Trying again in 60 s."
+          sleep 60
+        done
+
+  - id: notify-success
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    waitFor: ['verify-pypi']
+    timeout: '60s'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        . /workspace/.ci/pypi/lib.sh
+        skip_if_stopped
+        VERSION=$$(cat "$$PYPI_VERSION_FILE")
+        pypi_result SUCCESS notify-success "pypi.org serves google-evalbench $$VERSION: https://pypi.org/project/google-evalbench/$$VERSION/"
+
+substitutions:
+  # The trigger sets these 3 values. _STAGING_PROJECT and _STAGING_REPO are
+  # the OSS Exit Gate Artifact Registry (location us). _MANIFEST_DIR is the
+  # gs:// path for the publish manifests.
+  _STAGING_PROJECT: ''
+  _STAGING_REPO: ''
+  _MANIFEST_DIR: ''
+  # true: stage the files and upload no manifest.
+  _DRY_RUN: 'false'
+  _PYPI_WAIT_SECONDS: '1800'
+
+# Sum of the step timeouts.
+timeout: '5280s'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+  # lib.sh reads these to build the PYPI_RESULT line.
+  env:
+    - 'BUILD_ID=$BUILD_ID'
+    - 'COMMIT_SHA=$COMMIT_SHA'
+    - 'LOCATION=$LOCATION'
+    - 'PROJECT_ID=$PROJECT_ID'
+    - 'TAG_NAME=$TAG_NAME'
