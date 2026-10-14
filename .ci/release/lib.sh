@@ -47,6 +47,23 @@ log_problems() {
     | grep -n -A8 '^Traceback (most recent call last)' | head -80
 }
 
+# Prints "POD DIGEST" for each pod that is Running and not Terminating.
+# Skips Evicted pods, and old pods that stay Terminating after a rollout.
+#
+# Usage: serving_pods NAMESPACE SELECTOR CONTAINER
+serving_pods() {
+  kubectl get pods -n "$1" -l "$2" \
+    -o jsonpath="{range .items[*]}{.metadata.name}{'|'}{.status.phase}{'|'}{.metadata.deletionTimestamp}{'|'}{.status.containerStatuses[?(@.name=='$3')].imageID}{'\n'}{end}" \
+    | awk -F'|' '$2 == "Running" && $3 == "" && $4 != "" { sub(/^.*@/, "", $4); print $1, $4 }'
+}
+
+# Prints the unique digests from serving_pods.
+#
+# Usage: serving_digests NAMESPACE SELECTOR CONTAINER
+serving_digests() {
+  serving_pods "$1" "$2" "$3" | cut -d' ' -f2 | sort -u
+}
+
 # Points TAG at DIGEST. 'tags update' moves an existing tag without the
 # tags.delete permission. 'docker tags add' creates a new tag.
 #

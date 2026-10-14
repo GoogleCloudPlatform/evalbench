@@ -274,10 +274,7 @@ steps:
           release_fail $$STAGE "Cannot get credentials for evalbench-directpath-cluster."
         fi
 
-        RUNNING=$$(kubectl get pods -n "$$NAMESPACE" -l "$$SELECTOR" \
-          -o jsonpath="{range .items[*]}{.status.containerStatuses[?(@.name=='$$CONTAINER')].imageID}{'\n'}{end}" \
-          | sed -e 's#^.*://##' -e 's#^.*@##' \
-          | grep -v '^$$' | sort -u)
+        RUNNING=$$(serving_digests "$$NAMESPACE" "$$SELECTOR" "$$CONTAINER")
         COUNT=$$(echo "$$RUNNING" | grep -c .)
 
         if [[ "$$COUNT" -eq 0 ]]; then
@@ -327,13 +324,6 @@ steps:
           exit 0
         fi
 
-        running_digests() {
-          kubectl get pods -n "$$NAMESPACE" -l "$$SELECTOR" \
-            -o jsonpath="{range .items[*]}{.status.containerStatuses[?(@.name=='$$CONTAINER')].imageID}{'\n'}{end}" \
-            | sed -e 's#^.*://##' -e 's#^.*@##' \
-            | grep -v '^$$' | sort -u
-        }
-
         # Pin by digest, so a tag move cannot change the running image.
         pin() {
           kubectl set image "$$DEPLOYMENT" "$$CONTAINER=$$REPO@$$1" \
@@ -359,10 +349,11 @@ steps:
           rollback "The rollout did not complete within $$ROLLOUT_TIMEOUT."
         fi
 
-        # Old pods can stay Terminating for a few seconds after the rollout.
+        # serving_digests skips Terminating pods. An old pod can stay
+        # Terminating for more than 60 s after the rollout.
         echo "===== confirm the pods serve the new digest ====="
         for ATTEMPT in {1..20}; do
-          SERVING=$$(running_digests)
+          SERVING=$$(serving_digests "$$NAMESPACE" "$$SELECTOR" "$$CONTAINER")
           [[ "$$SERVING" == "$$NEW_DIGEST" ]] && break
           sleep 3
         done
@@ -373,8 +364,9 @@ steps:
 
         # The Deployment has no readiness probe, so Ready means only that the
         # process started. Ping is the real health check.
-        POD=$$(kubectl get pods -n "$$NAMESPACE" -l "$$SELECTOR" \
-          -o jsonpath='{.items[0].metadata.name}')
+        # items[0] can be an Evicted pod, so pick a serving pod.
+        POD=$$(serving_pods "$$NAMESPACE" "$$SELECTOR" "$$CONTAINER" \
+          | head -1 | cut -d' ' -f1)
         echo "===== gRPC health check on $$POD ====="
         if ! kubectl exec -n "$$NAMESPACE" "$$POD" -c "$$CONTAINER" -- \
           python /evalbench/.ci/release/wait_for_grpc.py --timeout 120; then
