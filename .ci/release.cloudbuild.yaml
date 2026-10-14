@@ -9,8 +9,9 @@
 # its own line. A step timeout or a cancel prints no line, so
 # build_status_policy.yaml emails every run that fails.
 #
-# $PROJECT_ID (evalbench-testing) runs the build and the Vertex AI calls.
-# _DEPLOY_PROJECT has the eval_server images and the GKE cluster.
+# $PROJECT_ID runs the build and the Vertex AI calls. _DEPLOY_PROJECT has
+# the eval_server images and the GKE cluster. The trigger sets
+# _DEPLOY_PROJECT, so this public file has no project names.
 #
 # Use $$ for shell variables and $$(...). Cloud Build expands a single $.
 
@@ -30,6 +31,9 @@ steps:
 
         if [[ -z "$COMMIT_SHA" || -z "$SHORT_SHA" ]]; then
           release_fail $$STAGE "COMMIT_SHA or SHORT_SHA is empty."
+        fi
+        if [[ -z "${_DEPLOY_PROJECT}" ]]; then
+          release_fail $$STAGE "_DEPLOY_PROJECT is empty. Set it in the trigger substitutions."
         fi
 
         # Stop if another run is active, because two runs race on GKE and
@@ -500,8 +504,9 @@ steps:
         release_result SUCCESS notify-success "GKE and Cloud Run serve $$(cat /workspace/release_tag.txt) ($$(cat /workspace/image_digest.txt))."
 
 substitutions:
-  # The project of the eval_server images and evalbench-directpath-cluster.
-  _DEPLOY_PROJECT: 'cloud-db-nl2sql'
+  # The project of the eval_server images and the GKE cluster. The trigger
+  # sets the value.
+  _DEPLOY_PROJECT: ''
   _EVAL_REGION: 'global'
   # The Build trigger took 15 to 26 min in 59 runs.
   _IMAGE_WAIT_SECONDS: '1800'

@@ -2,12 +2,11 @@
 # weekly release run.
 #
 # TRIGGER_ID and CHANNEL_NAME are placeholders, so this public file has no
-# project resource IDs. The live policy in evalbench-testing has the real
-# values:
+# project resource IDs. The live policy has the real values:
 #   TRIGGER_ID    id of the trigger 'release-eval-server' (us-central1)
 #   CHANNEL_NAME  name of the notification channel 'EvalBench release'
 # To change the policy, fill in a copy of this file and run
-# 'gcloud alpha monitoring policies update --project=evalbench-testing'.
+# 'gcloud alpha monitoring policies update' in the project of the trigger.
 # Do not create a duplicate.
 displayName: 'EvalBench eval_server release'
 combiner: OR
