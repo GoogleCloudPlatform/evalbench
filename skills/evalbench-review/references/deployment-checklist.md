@@ -82,12 +82,12 @@ Things that break the build or the image, in rough order of frequency:
 
 ## Paths that exist only in a container
 
-Two absolute paths are hardcoded in application code and satisfied entirely by
-mounts:
+Three absolute paths are hardcoded in application code:
 
 | Path | Defined at | GKE | Cloud Run | Local |
 |---|---|---|---|---|
-| `/tmp_sessions/` | `util/sessionmgr.py:8` (`SESSION_RESOURCES_PATH`) | PVC `evalbench-ssd-pvc`, `premium-rwo` SSD, 1000Gi | **not mounted** | created by Dockerfile |
+| `/tmp_sessions/` | `util/sessionmgr.py` (`SESSION_SANDBOX_PATH`) — agent `fake_home` sandboxes | PVC `evalbench-ssd-pvc`, `premium-rwo` SSD, 1000Gi | **not mounted** | created by Dockerfile |
+| `/var/lib/evalbench/sessions/` | `util/sessionmgr.py` (`SESSION_RESOURCES_PATH`) — client-uploaded configs, scenarios, rubrics, validators, `env_files` | container filesystem, on purpose (small, reaped after the session TTL) | **not mounted** | created by Dockerfile |
 | `/tmp_session_files` | `reporting/csv.py:13`, all `viewer/*` readers | GCS Fuse CSI, bucket `evalbench-sessions-cloud-db-nl2sql` | Cloud Storage volume, same bucket | created by Dockerfile |
 
 Agent sandboxes move with the runtime: when `sys.argv[0]` ends with
@@ -107,6 +107,10 @@ Rules:
 - The gcsfuse mount requires the pod annotation `gke-gcsfuse/volumes: "true"`;
   dropping it makes the pod fail to start.
 - Anything relying on `SESSION_RESOURCES_PATH` does not persist on Cloud Run.
+- `SESSION_RESOURCES_PATH` must never be an ancestor, descendant or sibling of
+  the sandbox root: the agent's cwd is `fake_home`, and anything reachable by a
+  relative path from there (rubrics, scenario JSON, validators) is an answer
+  key. Flag any change that stages client resources under `/tmp_sessions/`.
 
 ## GKE manifests
 

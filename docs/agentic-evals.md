@@ -56,7 +56,7 @@ Every run is sandboxed. Agents execute against an isolated fake home directory, 
 | Claude Code | `.venv/fake_home_claude/` |
 | Codex CLI | `.venv/fake_home_codex/` |
 
-Each generator writes its CLI's native configuration (`settings.json`, `config.toml`, `mcp_config.json`, and so on) into that sandbox and invokes the CLI with `HOME` pointed at it. In gRPC service mode, the sandbox is per-session at `/tmp_sessions/<session_id>/fake_home` instead.
+Each generator writes its CLI's native configuration (`settings.json`, `config.toml`, `mcp_config.json`, and so on) into that sandbox and invokes the CLI with `HOME` pointed at it. In gRPC service mode, the sandbox is per-session at `/tmp_sessions/<session_id>/fake_home` instead, and the files uploaded by the client (run and model configs, scenario JSON, rubrics, validator scripts, `env_files`) are staged on a separate tree, `/var/lib/evalbench/sessions/<session_id>/`. The two trees are deliberately not nested or adjacent: anything reachable from the sandbox by a relative path is visible to the agent under test, and the scenario and rubric files are the answer key.
 
 If a run leaves bad state behind, deleting the relevant fake home directory is a safe reset.
 

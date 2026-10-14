@@ -1,11 +1,23 @@
 import os
+import shutil
 from threading import Thread, Lock
 import logging
 import time
 from absl import app
 import uuid
 
-SESSION_RESOURCES_PATH = "/tmp_sessions/"
+# Where client-uploaded resources (run/model configs, scenario JSON, rubric
+# YAMLs, validator scripts, env_files) are staged per session. These are
+# evaluator-only: the agent must never be able to reach them. Keep this root
+# out of /tmp* and, above all, out of SESSION_SANDBOX_PATH -- the two trees
+# used to share `/tmp_sessions/<sid>/`, which put the rubrics and scenario
+# files one `ls ..` away from the agent's cwd.
+SESSION_RESOURCES_PATH = "/var/lib/evalbench/sessions/"
+
+# Where the agent CLIs get their per-session `fake_home` (HOME and default
+# cwd). Mounted on the session PVC in GKE. Nothing under this root is
+# secret; everything the agent needs is copied in by the generators.
+SESSION_SANDBOX_PATH = "/tmp_sessions/"
 
 
 class RWLock:
@@ -48,20 +60,30 @@ class SessionManager:
         reaper.start()
 
     def load_sessions_from_disk(self):
-        try:
-            if not os.path.exists(SESSION_RESOURCES_PATH):
-                return
-            for sid in os.listdir(SESSION_RESOURCES_PATH):
-                dir_path = os.path.join(SESSION_RESOURCES_PATH, sid)
-                if os.path.isdir(dir_path):
+        """Re-registers sessions left on disk so the reaper can expire them.
+
+        Both roots are scanned: the resources root lives on the container
+        filesystem, while the sandbox root is on the session PVC and is what
+        actually survives a pod restart (and holds the bulk of the disk).
+        """
+        for base in (SESSION_RESOURCES_PATH, SESSION_SANDBOX_PATH):
+            try:
+                if not os.path.exists(base):
+                    continue
+                for sid in os.listdir(base):
+                    dir_path = os.path.join(base, sid)
+                    if not os.path.isdir(dir_path) or sid in self.sessions:
+                        continue
                     mtime = os.path.getmtime(dir_path)
-                    logging.info(f"Loading session {sid} from disk with mtime {mtime}.")
+                    logging.info(
+                        f"Loading session {sid} from disk with mtime {mtime}.")
                     self.sessions[sid] = {
                         "create_ts": mtime,
                         "session_id": sid,
                     }
-        except Exception as e:
-            logging.error(f"Error loading sessions from disk: {e}")
+            except Exception as e:
+                logging.error(
+                    f"Error loading sessions from disk under {base}: {e}")
 
     def set_ttl(self, ttl):
         self.ttl = ttl
@@ -77,29 +99,29 @@ class SessionManager:
             self.lock.release_read()
 
     def write_resource_files(self, session_id, resources):
+        session_root = os.path.join(SESSION_RESOURCES_PATH, session_id)
+        # 0700 so that, once agent CLIs run as a non-root user, the tree is
+        # not even listable from the sandbox. Harmless until then.
+        os.makedirs(session_root, mode=0o700, exist_ok=True)
+        os.chmod(session_root, 0o700)
         for resource in resources:
-            full_path = os.path.join(
-                SESSION_RESOURCES_PATH, session_id, resource.address
-            )
+            full_path = os.path.join(session_root, resource.address)
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             with open(full_path, "wb") as f:
                 f.write(resource.content)
 
     def prune_resource_files(self, session_id):
-        path = os.path.join(SESSION_RESOURCES_PATH, session_id)
-        if not os.path.exists(path):
-            return
-        for root, dirs, files in os.walk(path, topdown=False):
-            for file in files:
-                file_path = os.path.join(root, file)
-                os.remove(file_path)
-            for dir in dirs:
-                dir_path = os.path.join(root, dir)
-                if os.path.islink(dir_path):
-                    os.unlink(dir_path)
-                else:
-                    os.rmdir(dir_path)
-        os.rmdir(path)
+        """Removes everything a session left on disk, in both roots."""
+        for base in (SESSION_RESOURCES_PATH, SESSION_SANDBOX_PATH):
+            path = os.path.join(base, session_id)
+            if not os.path.lexists(path):
+                continue
+            if os.path.islink(path):
+                os.unlink(path)
+                continue
+            # rmtree does not follow symlinks, so a skill linked from the
+            # sandbox into the resources tree is unlinked, not traversed.
+            shutil.rmtree(path, ignore_errors=True)
 
     def create_session(self, session_id):
         self.lock.acquire_write()

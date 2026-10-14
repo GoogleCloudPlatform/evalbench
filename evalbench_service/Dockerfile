@@ -41,7 +41,11 @@ RUN useradd -m -s /bin/bash claudeuser
 
 RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN uv run make proto -f ./Makefile
-RUN mkdir -p /tmp_session_files /tmp_sessions /evalbench/results
+# /tmp_sessions holds the agents' per-session sandboxes (PVC in GKE);
+# /var/lib/evalbench/sessions holds the evaluator-only resources (configs,
+# scenarios, rubrics, validators) that agents must not be able to reach from
+# their sandbox. Keep them on separate trees (see util/sessionmgr.py).
+RUN mkdir -p /tmp_session_files /tmp_sessions /var/lib/evalbench/sessions /evalbench/results
 RUN cp /evalbench/evalbench_service/supervisord_evalbench.conf /evalbench/supervisord_evalbench.conf
 RUN cp /evalbench/evalbench_service/supervisord_cloudrun.conf /evalbench/supervisord_cloudrun.conf
 RUN cp /evalbench/evalbench_service/supervisord_combined.conf /evalbench/supervisord_combined.conf
