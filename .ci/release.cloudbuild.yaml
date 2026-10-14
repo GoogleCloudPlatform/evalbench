@@ -9,9 +9,8 @@
 # its own line. A step timeout or a cancel prints no line, so
 # build_status_policy.yaml emails every run that fails.
 #
-# The trigger runs in evalbench-testing. $PROJECT_ID is the build project:
-# build logs and Vertex AI calls use it. _DEPLOY_PROJECT has the
-# eval_server images and the GKE cluster.
+# $PROJECT_ID (evalbench-testing) runs the build and the Vertex AI calls.
+# _DEPLOY_PROJECT has the eval_server images and the GKE cluster.
 #
 # Use $$ for shell variables and $$(...). Cloud Build expands a single $.
 
