@@ -8,7 +8,6 @@ import subprocess
 import precompute_trends
 import dataset_quality
 import run_index
-from run_index import list_run_directories
 from summarizer import summarize_eval_scoring
 from ai_comparer import compare_evals
 
