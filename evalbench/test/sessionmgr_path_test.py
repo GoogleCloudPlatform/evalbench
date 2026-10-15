@@ -77,6 +77,15 @@ def test_prune_rejects_traversal_session_id(session_root, manager, tmp_path):
     assert (victim / "keep.txt").exists()
 
 
+def test_load_sessions_skips_invalid_directory_names(session_root, manager):
+    manager.sessions = {}
+    (session_root / "valid_sid").mkdir()
+    for name in ["bad name", "bad$id", "abc\n", "a" * 129]:
+        (session_root / name).mkdir()
+    manager.load_sessions_from_disk()
+    assert set(manager.sessions) == {"valid_sid"}
+
+
 class TestGrpcRejectsBadInput(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self):
