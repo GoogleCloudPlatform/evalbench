@@ -60,6 +60,29 @@ def test_rejects_escaping_address(session_root, manager, address):
     assert not (session_root / "sid").exists()
 
 
+@pytest.mark.parametrize(
+    "addresses", [["a", "a/b"], ["a/b", "a"], ["a", "a/b/c"]])
+def test_rejects_conflicting_addresses(session_root, manager, addresses):
+    with pytest.raises(ValueError):
+        manager.write_resource_files(
+            "sid", [_resource(address) for address in addresses])
+    assert not (session_root / "sid").exists()
+
+
+@pytest.mark.parametrize(
+    "existing_dir, existing_file, address",
+    [("", "a", "a/b"), ("a", "a/b", "a")],
+)
+def test_rejects_conflict_with_existing_files(
+        session_root, manager, existing_dir, existing_file, address):
+    (session_root / "sid" / existing_dir).mkdir(parents=True, exist_ok=True)
+    (session_root / "sid" / existing_file).write_bytes(b"old")
+    with pytest.raises(ValueError):
+        manager.write_resource_files(
+            "sid", [_resource("ok.yaml"), _resource(address)])
+    assert not (session_root / "sid" / "ok.yaml").exists()
+
+
 def test_rejects_symlink_escape(session_root, manager, tmp_path):
     (session_root / "sid").mkdir()
     os.symlink(tmp_path, session_root / "sid" / "link")
@@ -117,20 +140,31 @@ class TestGrpcRejectsBadInput(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     e.exception.code(), grpc.StatusCode.INVALID_ARGUMENT)
 
-    async def test_eval_config_rejects_traversal_address(self):
+    async def test_eval_config_rejects_bad_addresses(self):
         from evalproto import eval_config_pb2
         from util import get_SessionManager
 
-        request = eval_config_pb2.EvalConfigRequest(
-            yaml_config=yaml.dump({"experiment_name": "x"}).encode("utf-8"),
-            resources=[eval_config_pb2.Google3Resources(
-                address="../../x", content=b"x")],
-        )
+        cases = {
+            "traversal": ["../../x"],
+            "conflict": ["a", "a/b"],
+        }
         try:
-            with self.assertRaises(grpc.aio.AioRpcError) as e:
-                await self.stub.EvalConfig(
-                    request, metadata=[("client-rpc-id", "traversaltest")])
-            self.assertEqual(
-                e.exception.code(), grpc.StatusCode.INVALID_ARGUMENT)
+            for name, addresses in cases.items():
+                with self.subTest(name):
+                    request = eval_config_pb2.EvalConfigRequest(
+                        yaml_config=yaml.dump(
+                            {"experiment_name": "x"}).encode("utf-8"),
+                        resources=[
+                            eval_config_pb2.Google3Resources(
+                                address=address, content=b"x")
+                            for address in addresses
+                        ],
+                    )
+                    with self.assertRaises(grpc.aio.AioRpcError) as e:
+                        await self.stub.EvalConfig(
+                            request,
+                            metadata=[("client-rpc-id", "traversaltest")])
+                    self.assertEqual(
+                        e.exception.code(), grpc.StatusCode.INVALID_ARGUMENT)
         finally:
             get_SessionManager().delete_session("traversaltest")

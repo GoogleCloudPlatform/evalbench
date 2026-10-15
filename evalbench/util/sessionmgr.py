@@ -38,6 +38,26 @@ def safe_resource_path(session_id, address) -> str:
     return full_path
 
 
+def _check_path_conflicts(session_id, paths):
+    """Raises ValueError if a path needs a file and a dir at the same place."""
+    base = os.path.realpath(os.path.join(SESSION_RESOURCES_PATH, session_id))
+    addresses = {full_path: resource.address for full_path, resource in paths}
+    for full_path, resource in paths:
+        if os.path.isdir(full_path):
+            raise ValueError(
+                f"Resource address is an existing directory: {resource.address!r}")
+        parent = os.path.dirname(full_path)
+        while parent != base:
+            if parent in addresses:
+                raise ValueError(
+                    f"Resource addresses conflict: {addresses[parent]!r} "
+                    f"and {resource.address!r}")
+            if os.path.lexists(parent) and not os.path.isdir(parent):
+                raise ValueError(
+                    f"Resource address has a file as a parent: {resource.address!r}")
+            parent = os.path.dirname(parent)
+
+
 class RWLock:
     def __init__(self):
         self.lock = Lock()
@@ -118,6 +138,7 @@ class SessionManager:
             (safe_resource_path(session_id, resource.address), resource)
             for resource in resources
         ]
+        _check_path_conflicts(session_id, paths)
         for full_path, resource in paths:
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             with open(full_path, "wb") as f:
