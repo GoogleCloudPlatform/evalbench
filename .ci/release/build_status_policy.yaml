@@ -11,8 +11,9 @@
 # A log-based policy has only one condition, so this alert is a separate
 # policy. TRIGGER_ID and CHANNEL_NAME are placeholders, as in
 # alert_policy.yaml. To create the policy, fill in a copy of this file and
-# run 'gcloud alpha monitoring policies create'.
-displayName: 'EvalBench weekly release build status'
+# run 'gcloud alpha monitoring policies create' in the project of the
+# trigger.
+displayName: 'EvalBench eval_server release build status'
 combiner: OR
 conditions:
   - displayName: 'Weekly release build failed'
