@@ -229,7 +229,7 @@ def get_color_for_pct(val_str):
 def on_load(e: me.LoadEvent):
     state = me.state(State)
     results_dir = get_results_dir()
-    directories = list_run_directories(results_dir)
+    directories = run_index.list_run_directories(results_dir)
 
     job_id = me.query_params.get("job_id") or me.query_params.get("jobid")
     if job_id and job_id in directories:
@@ -249,7 +249,7 @@ def on_load(e: me.LoadEvent):
 
 def status_component():
     results_dir = get_results_dir()
-    directories = list_run_directories(results_dir)
+    directories = run_index.list_run_directories(results_dir)
 
     with me.box(
         style=me.Style(
@@ -2047,7 +2047,7 @@ def render_app_content():
         results_dir = get_results_dir()
         logging.info(f"render_app_content: selected_directory='{state.selected_directory}', selected_evals='{state.selected_evals}', selected_main_tab='{state.selected_main_tab}'")
 
-        directories = list_run_directories(results_dir)
+        directories = run_index.list_run_directories(results_dir)
 
         def on_title_click(e: me.ClickEvent):
             state.selected_directory = ""
