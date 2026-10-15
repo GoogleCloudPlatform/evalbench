@@ -163,18 +163,21 @@ Under `evalbench_service/k8s/`: `namespace.yaml`, `pvc.yaml`, `ksa.yaml`,
 
 ## Cloud Build
 
-`cloudbuild.yaml` is a fuller gate than the GitHub Actions workflows:
+`.ci/build.cloudbuild.yaml` (the Build trigger, on push to `main`) is a fuller
+gate than the GitHub Actions workflows:
 
 1. `uv sync` + proto + `pytest evalbench/test` with `PYTHONPATH=evalbench:.`
    and `SKIP_CLOUD_TESTS=true` (which skips `bigtable_test.py` and
    `spanner_test.py` — so those get *less* coverage here, not more).
-2. `docker build -f evalbench_service/Dockerfile`.
+   This runs at the same time as step 2.
+2. `docker build -f evalbench_service/Dockerfile`, with `:build-cache` as
+   the layer cache.
 3. A **real eval run** inside the built image:
    `EVAL_CONFIG=datasets/bat/example_run_config.yaml`, `evalbench/run.sh`.
-4. `verifier/verify.py` against the shared `eval_results` volume.
+4. `.ci/verify_build.py` against the shared `eval_results` volume.
 
 So breaking `datasets/bat/example_run_config.yaml` or the thresholds in
-`verifier/verify.py` breaks the pipeline even with a green unit suite. Renaming
+`.ci/verify_build.py` breaks the pipeline even with a green unit suite. Renaming
 or removing a scorer key that config depends on is exactly this failure.
 
 ## What to run during a review
