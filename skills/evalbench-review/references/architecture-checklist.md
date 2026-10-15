@@ -171,7 +171,7 @@ makes shared mutable state the dominant risk:
 - A new dependency needs an edge in the `docs/architecture.md` graph and a real
   import under `evalbench/` — the graph is documented as "no unused deps".
 - New deps also affect `uv.lock`, the container build (`Makefile`,
-  `cloudbuild.yaml`) and the PyInstaller binary. A lockfile that wasn't
+  `.ci/build.cloudbuild.yaml`) and the PyInstaller binary. A lockfile that wasn't
   regenerated is a finding.
 
 ## Isolation
