@@ -176,7 +176,7 @@ gate than the GitHub Actions workflows:
    `EVAL_CONFIG=datasets/bat/example_run_config.yaml`, `evalbench/run.sh`.
 4. `.ci/verify_build.py` against the shared `eval_results` volume.
 
-So breaking `datasets/bat/example_run_config.yaml` or the thresholds in
+So breaking `datasets/bat/example_run_config.yaml` or the checks in
 `.ci/verify_build.py` breaks the pipeline even with a green unit suite. Renaming
 or removing a scorer key that config depends on is exactly this failure.
 
