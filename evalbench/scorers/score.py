@@ -255,6 +255,7 @@ def compare(
                 "id": eval_output_item["id"],
                 "generated_sql": eval_output_item["generated_sql"],
                 "generated_error": eval_output_item["generated_error"],
+                "golden_error": eval_output_item.get("golden_error"),
                 "dialects": eval_output_item["dialects"],
                 "database": eval_output_item["database"],
                 "job_id": eval_output_item["job_id"],

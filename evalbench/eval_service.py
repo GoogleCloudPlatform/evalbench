@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import pandas as pd
 from collections.abc import AsyncIterator
 from typing import AsyncGenerator
 
@@ -219,7 +220,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             # Offload blocking results processing to a thread pool
             logging.info("Offloading results processing to thread pool...")
             ctx = contextvars.copy_context()
-            summary = await loop.run_in_executor(
+            summary, item_scores = await loop.run_in_executor(
                 None,
                 ctx.run,
                 _process_results,
@@ -239,7 +240,11 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             )
 
             if config.get("summary_in_response"):
-                response = json.dumps({"job_id": job_id, "summary": summary})
+                response = json.dumps({
+                    "job_id": job_id,
+                    "summary": summary,
+                    "item_scores": item_scores,
+                })
             else:
                 response = f"{job_id}"
 
@@ -429,7 +434,8 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             logging.info(
                 "Offloading interactive results processing to thread pool...")
 
-            summary = await loop.run_in_executor(
+            # Per-item scores are not part of the interactive stream payload.
+            summary, _ = await loop.run_in_executor(
                 None,
                 ctx.run,
                 _process_results,
@@ -563,7 +569,8 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                     config.get("reporting") or {}, job_id, run_time
                 )
                 logging.info("Processing agent evaluation results...")
-                summary = await loop.run_in_executor(
+                # Per-item scores are not part of the agent stream payload.
+                summary, _ = await loop.run_in_executor(
                     None,
                     ctx.run,
                     _process_results,
@@ -758,4 +765,73 @@ def _process_results(
                 "p90": round(latencies.quantile(0.9), 2),
             }
 
-    return summary
+    item_scores = _build_item_scores(scores_df, num_trials)
+    return summary, item_scores
+
+
+def _is_blank(value) -> bool:
+    """True for None, NaN, pandas NA and empty strings.
+
+    scores_df columns such as id / generated_error / comparison_error are
+    cast to the pandas "string" dtype by analyzer.analyze_result, so missing
+    values there arrive as pd.NA rather than None or NaN.
+    """
+    if isinstance(value, str):
+        return value == ""
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        # Non-scalar values (lists, dicts) are never blank.
+        return False
+
+
+def _build_item_scores(scores_df, num_trials) -> dict:
+    """Collapses per-comparator score rows into a per-item dict.
+
+    Returns {item_id: {comparator: 0.0..1.0, "executable": 0|1,
+    "golden_failed": bool, "scorer_errors": [comparator, ...]}}. The summary
+    only carries run-level counts, so this is what lets a caller slice
+    results by dataset item (e.g. per prompt template) without re-reading
+    the scores table.
+
+    Only single-trial runs are supported: with num_trials > 1 the per-row ids
+    are "<id>_trial_<n>" and the headline is computed over trials, so a
+    per-item view is ambiguous. In that case an empty dict is returned.
+    """
+    if num_trials != 1 or scores_df is None or scores_df.empty:
+        return {}
+    if "id" not in scores_df.columns or "comparator" not in scores_df.columns:
+        return {}
+
+    item_scores: dict = {}
+    for _, row in scores_df.iterrows():
+        item_id = row.get("id")
+        if _is_blank(item_id):
+            continue
+        item_id = str(item_id)
+        comparator = row.get("comparator")
+        if _is_blank(comparator):
+            continue
+
+        entry = item_scores.get(item_id)
+        if entry is None:
+            entry = {
+                "executable": 0.0 if not _is_blank(
+                    row.get("generated_error")) else 1.0,
+                "golden_failed": not _is_blank(row.get("golden_error")),
+            }
+            item_scores[item_id] = entry
+
+        score = row.get("score")
+        if _is_blank(score):
+            entry[str(comparator)] = 0.0
+        else:
+            try:
+                entry[str(comparator)] = float(score) / 100.0
+            except (TypeError, ValueError):
+                entry[str(comparator)] = 0.0
+
+        if not _is_blank(row.get("comparison_error")):
+            entry.setdefault("scorer_errors", []).append(str(comparator))
+
+    return item_scores
