@@ -41,6 +41,7 @@ The file is a single JSON object with a `scenarios` array:
 | `kind` | Optional | Category label for grouping and reporting (e.g. `"tools"`). |
 | `work_dir` | Optional | Working directory the agent runs in. Relative paths resolve against the evalset file's own directory, and the directory is created if it doesn't exist. Use this for scenarios where the agent must read or write project files. |
 | `binary_rubric` | Optional | Array of pass/fail criteria evaluated by the `binary_rubric_scorer`. Each criterion is scored independently and reports as `binary_rubric_scorer_<index>`. |
+| `success_criteria` | Optional | Array of outcomes the agent must produce, judged by the `goal_completion` scorer. If set, the judge rules on each criterion in place of sub-goals split from `conversation_plan`, and the score is the share met. The simulated user does not see this field. |
 | `expected_skills` | Optional | List of skill names the agent is expected to activate. Used by the `skills_trajectory` scorer. |
 
 ## Important Notes

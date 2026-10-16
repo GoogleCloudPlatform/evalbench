@@ -124,7 +124,7 @@ All of these require a `model_config` pointing at the LLM that performs the eval
 
 | Scorer Key | Score Range | What it Measures |
 |---|---|---|
-| `goal_completion` | 0–100 | Whether the agent accomplished the `conversation_plan`'s intent. Returns 100 for PASS, 0 for FAIL. |
+| `goal_completion` | 0–100 | Whether the agent accomplished the `conversation_plan`'s intent. The judge rules on each sub-goal of the plan, or on each `success_criteria` item if the scenario sets them. The score is the share met, so a plan completed in part scores in part. |
 | `behavioral_metrics` | 0–100 | Hallucination rate and unnecessary-clarification rate in a single pass. Starts at 100 and penalizes 50 per hallucination and 20 per unnecessary clarification. |
 | `parameter_analysis` | 100 (qualitative) | Qualitative feedback on the arguments passed to each tool. Always scores 100 — the value is in the textual explanation. |
 | `binary_rubric_scorer` | 0–100 | Pass/fail against your own rubric criteria. |
@@ -132,6 +132,22 @@ All of these require a `model_config` pointing at the LLM that performs the eval
 `goal_completion`, `behavioral_metrics`, and `binary_rubric_scorer` accept `include_tool_calls` (default `false`), which adds the full tool-call record to the LLM's context instead of conversation text alone.
 
 `binary_rubric_scorer` reads its criteria from the scenario's `binary_rubric` array and emits one score per criterion, named `binary_rubric_scorer_<index>`. If a scenario declares no rubric, a single unindexed scorer runs instead.
+
+`goal_completion` also reads the optional `success_criteria` scenario field. This field keeps the grading criteria out of `conversation_plan`, which the simulated user follows. If `success_criteria` is set, the judge rules on each criterion in place of sub-goals split from the plan. The score is the share of criteria met. If a scenario does not declare the field, `goal_completion` splits `conversation_plan` into sub-goals as before.
+
+```json
+{
+  "id": "list-instances-01",
+  "starting_prompt": "List all Cloud SQL instances in my project",
+  "conversation_plan": "Ask the agent to list instances. If nl2code exists, ask for its state.",
+  "success_criteria": [
+    "The agent lists the Cloud SQL instances in the project",
+    "The agent reports the state of the nl2code instance"
+  ],
+  "expected_trajectory": ["cloud-sql__list_instances", "cloud-sql__get_instance"],
+  "max_turns": 4
+}
+```
 
 ---
 
