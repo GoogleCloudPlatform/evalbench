@@ -92,8 +92,8 @@ class TestGoalCompletionRate(unittest.TestCase):
 
     @patch('scorers.goalcompletionrate.get_generator')
     def test_survives_the_generator_response_sanitizer(self, mock_get_generator):
-        """sanitize_sql strips the Markdown fences off a Gemini response before
-        the scorer sees it; what is left still has to parse."""
+        """sanitize_sql strips the Markdown fences from a Gemini response
+        before the scorer reads it. The rest must still parse."""
         from util.sanitizer import sanitize_sql
 
         fenced = "```json\n" + json.dumps({
@@ -134,6 +134,158 @@ class TestGoalCompletionRate(unittest.TestCase):
         self.assertIn("No sub-goals", reason)
 
 
+def criterion_verdict(index, met, reasoning=""):
+    return {"index": index, "met": met, "reasoning": reasoning}
+
+
+class TestGoalCompletionCriteria(unittest.TestCase):
+    """The optional `success_criteria` scenario field."""
+
+    def score(self, mock_get_generator, response, **criteria):
+        """Scores one scenario against a mocked judge response.
+
+        Saves the prompt sent to the judge in self.prompt.
+        """
+        mock_model = MagicMock()
+        mock_model.generate.return_value = response
+        mock_get_generator.return_value = mock_model
+
+        scenario = {"conversation_plan": "List the instances, then validate state."}
+        scenario.update(criteria)
+        scorer = GoalCompletionRate(
+            {"model_config": "fake_config"}, global_models={})
+        result = scorer.compare(
+            nl_prompt="",
+            golden_query="",
+            query_type="",
+            golden_execution_result="",
+            golden_eval_result="",
+            golden_error="",
+            generated_query="",
+            generated_execution_result="",
+            generated_eval_result=json.dumps({
+                "conversation_history": "[]", "scenario": scenario}),
+            generated_error="",
+        )
+        self.prompt = mock_model.generate.call_args[0][0]
+        return result
+
+    @patch('scorers.goalcompletionrate.get_generator')
+    def test_scenario_without_criteria_keeps_the_plan_prompt(
+            self, mock_get_generator):
+        from scorers.prompt.goalcompletion import GOAL_COMPLETION_PROMPT
+
+        self.score(mock_get_generator, json.dumps(
+            {"sub_goals": [sub_goal("a", True)]}))
+
+        self.assertEqual(GOAL_COMPLETION_PROMPT.format(
+            conversation_plan="List the instances, then validate state.",
+            conversation_history="[]"), self.prompt)
+
+    @patch('scorers.goalcompletionrate.get_generator')
+    def test_success_criteria_replace_plan_sub_goals(self, mock_get_generator):
+        response = json.dumps({
+            "success_criteria": [
+                criterion_verdict(1, True, "listed them"),
+                criterion_verdict(2, False, "never checked"),
+                criterion_verdict(3, True, "reported it"),
+            ],
+        })
+
+        score, reason = self.score(
+            mock_get_generator, response,
+            success_criteria=["Lists the instances",
+                              "Reports the nl2code state",
+                              "States the instance count"])
+
+        self.assertEqual(66.7, score)
+        self.assertIn("1. Lists the instances", self.prompt)
+        self.assertIn("3. States the instance count", self.prompt)
+        self.assertNotIn("Break the plan into", self.prompt)
+        self.assertIn("2/3 success criteria met", reason)
+        self.assertIn("[UNMET] Reports the nl2code state — never checked",
+                      reason)
+
+    @patch('scorers.goalcompletionrate.get_generator')
+    def test_verdicts_pair_with_criteria_by_index_not_order(
+            self, mock_get_generator):
+        response = json.dumps({
+            "success_criteria": [
+                criterion_verdict(2, False, "second"),
+                criterion_verdict("1", True, "first"),
+            ],
+        })
+
+        score, reason = self.score(
+            mock_get_generator, response,
+            success_criteria=["first criterion", "second criterion"])
+
+        self.assertEqual(50.0, score)
+        self.assertIn("[MET] first criterion — first", reason)
+        self.assertIn("[UNMET] second criterion — second", reason)
+
+    @patch('scorers.goalcompletionrate.get_generator')
+    def test_missing_success_verdict_scores_0(self, mock_get_generator):
+        response = json.dumps(
+            {"success_criteria": [criterion_verdict(1, True)]})
+
+        score, reason = self.score(
+            mock_get_generator, response, success_criteria=["a", "b"])
+
+        self.assertEqual(0.0, score)
+        self.assertIn("No verdict for success criteria [2]", reason)
+
+    @patch('scorers.goalcompletionrate.get_generator')
+    def test_bare_string_is_one_criterion(self, mock_get_generator):
+        response = json.dumps(
+            {"success_criteria": [criterion_verdict(1, True)]})
+
+        score, _ = self.score(
+            mock_get_generator, response,
+            success_criteria="Lists the instances")
+
+        self.assertEqual(100.0, score)
+        self.assertIn("1. Lists the instances", self.prompt)
+
+    @patch('scorers.goalcompletionrate.get_generator')
+    def test_multi_line_criterion_stays_on_one_prompt_line(
+            self, mock_get_generator):
+        response = json.dumps(
+            {"success_criteria": [criterion_verdict(1, True)]})
+
+        self.score(mock_get_generator, response,
+                   success_criteria=["Lists the\n  instances"])
+
+        self.assertIn("1. Lists the instances\n", self.prompt)
+
+    @patch('scorers.goalcompletionrate.get_generator')
+    def test_blank_criteria_fall_back_to_plan_sub_goals(
+            self, mock_get_generator):
+        response = json.dumps({"sub_goals": [sub_goal("a", True)]})
+
+        score, reason = self.score(
+            mock_get_generator, response, success_criteria=["", "  ", None])
+
+        self.assertEqual(100.0, score)
+        self.assertIn("Break the plan into", self.prompt)
+        self.assertIn("1/1 sub-goals met", reason)
+
+    def test_criteria_prompt_survives_the_generator_response_sanitizer(self):
+        """The prompt asks for JSON that sanitize_sql leaves intact."""
+        from scorers.util import extract_json
+        from util.sanitizer import sanitize_sql
+
+        fenced = "```json\n" + json.dumps({
+            "success_criteria": [criterion_verdict(1, True, "it listed them")],
+            "summary": "Listed the instances.",
+        }, indent=2) + "\n```"
+
+        data = extract_json(sanitize_sql(fenced))
+
+        self.assertEqual(1, data["success_criteria"][0]["index"])
+        self.assertTrue(data["success_criteria"][0]["met"])
+
+
 EXPERIMENT_CONFIG = {
     "scorers": {"goal_completion": {"model_config": "fake_config"}}
 }
@@ -162,8 +314,8 @@ class TestPartialCreditRollup(unittest.TestCase):
         self.assertEqual(3, row["total_results_count"])
 
     def test_multi_trial_prompts_are_credited_their_worst_trial(self):
-        """Prompt-level rollup keeps the pessimistic min() every other metric
-        uses, so a prompt is credited the fraction its weakest trial earned."""
+        """Prompt-level rollup keeps the min() across trials that every other
+        metric uses. A prompt gets the fraction its weakest trial earned."""
         scores = [
             {"id": f"p{prompt}t{trial}", "prompt_id": f"p{prompt}",
              "comparator": "goal_completion", "score": score,

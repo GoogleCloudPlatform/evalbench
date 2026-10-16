@@ -695,8 +695,11 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
 
 
 def _summary_count(value) -> float | int:
-    """Keeps a result count whole where it is whole; partial-credit and
-    averaged metrics report a fraction that int() would truncate away."""
+    """Returns a result count without truncation.
+
+    Partial-credit and averaged metrics report a fractional count, which int()
+    truncates. A whole count stays an int.
+    """
     count = float(value)
     return int(count) if count.is_integer() else round(count, 2)
 

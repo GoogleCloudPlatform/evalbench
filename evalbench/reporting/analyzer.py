@@ -3,8 +3,8 @@
 import logging
 import pandas as pd
 
-# Metrics whose score is a fraction of a pass rather than a verdict. Counting
-# only exact 100s would roll a partly completed goal up as a flat failure.
+# Metrics that score a fraction of a pass, not a pass/fail verdict. The analyzer
+# sums their scores instead of counting exact 100s, so partial credit counts.
 PARTIAL_CREDIT_METRICS = ("goal_completion",)
 
 
