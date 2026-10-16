@@ -79,6 +79,44 @@ def get_results_dir():
     return results_dir_candidates[1]  # Fallback to default
 
 
+# Stat calls on the GCS FUSE mount are network round trips, so the ordering
+# pass fans them out. Only unprocessed directories are stat'ed, so once the
+# backlog is drained this is a handful of calls per pass.
+ORDER_STAT_WORKERS = int(os.environ.get("PRECOMPUTE_ORDER_STAT_WORKERS", 32))
+
+
+def _completion_time(results_dir, d):
+    """mtime of a run's summary.csv, or 0.0 if it has none or is unreadable."""
+    try:
+        return os.stat(os.path.join(results_dir, d, "summary.csv")).st_mtime
+    except OSError:
+        return 0.0
+
+
+def order_newest_first(results_dir, directories):
+    """Order run directories by completion time, most recent first.
+
+    The listing comes back in name order, and run directories are named by
+    UUID, so without this a backlog is drained in effectively random time
+    order. After the trends cache was reset that meant a run finished today
+    sat behind ~49k older runs (one Gemini call each) before it reached the
+    dashboard. Runs still in progress have no summary.csv yet and sort last;
+    they are skipped by process_directory anyway.
+    """
+    directories = list(directories)
+    if len(directories) <= 1:
+        return directories
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=ORDER_STAT_WORKERS) as executor:
+        times = list(
+            executor.map(lambda d: _completion_time(results_dir, d), directories)
+        )
+    order = sorted(range(len(directories)), key=lambda i: times[i], reverse=True)
+    return [directories[i] for i in order]
+
+
 class UnparsableRun(Exception):
     """A run whose CSVs are present but structurally unusable.
 
@@ -497,8 +535,11 @@ def precompute():
 
     all_directories = list_run_directories(results_dir, force=True)
 
-    # Filter for new directories
-    new_directories = [d for d in all_directories if d not in processed_dirs]
+    # Filter for new directories, newest first so fresh runs are not stuck
+    # behind a backlog.
+    new_directories = order_newest_first(
+        results_dir, [d for d in all_directories if d not in processed_dirs]
+    )
 
     total_new = len(new_directories)
     logging.info(f"Found {len(all_directories)} total directories. {total_new} are new.")

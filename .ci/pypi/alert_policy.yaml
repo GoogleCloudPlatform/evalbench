@@ -1,0 +1,49 @@
+# Log-based alert that emails the PYPI_RESULT line (lib.sh) of each PyPI
+# publish run.
+#
+# TRIGGER_ID and CHANNEL_NAME are placeholders, so this public file has no
+# project resource IDs:
+#   TRIGGER_ID    id of the trigger 'pypi-publish' (us-central1)
+#   CHANNEL_NAME  name of the notification channel 'EvalBench release'
+# The live policy exists. To change it, fill in a copy of this file and run
+# 'gcloud alpha monitoring policies update'.
+displayName: 'EvalBench PyPI publish'
+combiner: OR
+conditions:
+  - displayName: 'PyPI publish result'
+    conditionMatchedLog:
+      filter: >-
+        resource.type="build"
+        AND resource.labels.build_trigger_id="TRIGGER_ID"
+        AND textPayload:"PYPI_RESULT status="
+      labelExtractors:
+        status: 'REGEXP_EXTRACT(textPayload, "status=(\\S+)")'
+        stage: 'REGEXP_EXTRACT(textPayload, "stage=(\\S+)")'
+        tag: 'REGEXP_EXTRACT(textPayload, "tag=(\\S+)")'
+        version: 'REGEXP_EXTRACT(textPayload, "version=(\\S+)")'
+        commit: 'REGEXP_EXTRACT(textPayload, "commit=(\\S+)")'
+        # 'log' is a reserved label name.
+        build_log: 'REGEXP_EXTRACT(textPayload, "log=(\\S+)")'
+        detail: 'REGEXP_EXTRACT(textPayload, "detail=\"(.*)\"")'
+alertStrategy:
+  # 5 minutes is the minimum.
+  notificationRateLimit:
+    period: 300s
+  autoClose: 1800s
+documentation:
+  subject: 'EvalBench PyPI publish ${log.extracted_label.status}: ${log.extracted_label.tag}'
+  mimeType: text/markdown
+  content: |
+    **Status:** ${log.extracted_label.status}
+
+    **Detail:** ${log.extracted_label.detail}
+
+    **Stage:** ${log.extracted_label.stage}
+
+    **Version:** ${log.extracted_label.version}
+
+    **Commit:** ${log.extracted_label.commit}
+
+    **Build log:** ${log.extracted_label.build_log}
+notificationChannels:
+  - CHANNEL_NAME

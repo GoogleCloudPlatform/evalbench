@@ -7,7 +7,7 @@ import json
 import subprocess
 import precompute_trends
 import dataset_quality
-from run_index import list_run_directories
+import run_index
 from summarizer import summarize_eval_scoring
 from ai_comparer import compare_evals
 
@@ -229,7 +229,7 @@ def get_color_for_pct(val_str):
 def on_load(e: me.LoadEvent):
     state = me.state(State)
     results_dir = get_results_dir()
-    directories = list_run_directories(results_dir)
+    directories = run_index.list_run_directories(results_dir)
 
     job_id = me.query_params.get("job_id") or me.query_params.get("jobid")
     if job_id and job_id in directories:
@@ -249,7 +249,7 @@ def on_load(e: me.LoadEvent):
 
 def status_component():
     results_dir = get_results_dir()
-    directories = list_run_directories(results_dir)
+    directories = run_index.list_run_directories(results_dir)
 
     with me.box(
         style=me.Style(
@@ -2047,7 +2047,7 @@ def render_app_content():
         results_dir = get_results_dir()
         logging.info(f"render_app_content: selected_directory='{state.selected_directory}', selected_evals='{state.selected_evals}', selected_main_tab='{state.selected_main_tab}'")
 
-        directories = list_run_directories(results_dir)
+        directories = run_index.list_run_directories(results_dir)
 
         def on_title_click(e: me.ClickEvent):
             state.selected_directory = ""
@@ -2055,30 +2055,25 @@ def render_app_content():
             me.navigate("/")
 
         def on_clear_cache_click(e: me.ClickEvent):
-            results_dir = get_results_dir()
-            processed_dirs_file = os.path.join(results_dir, "processed_dirs.json")
-            trends_cache_file = os.path.join(results_dir, "trends_cache.csv")
-            filters_cache_file = os.path.join(results_dir, "filters_cache.json")
-
+            # Deliberately non-destructive. This used to delete
+            # processed_dirs.json, trends_cache.csv and filters_cache.json and
+            # start an unguarded precompute inside a web worker. One click
+            # threw away every precomputed row and forced a rebuild of tens
+            # of thousands of runs, one Gemini call each, which left the
+            # dashboard stale for days. The background precompute loop (under
+            # PrecomputeLease) already picks up new runs, so only drop the
+            # cached run listing so they show up in the run list immediately.
+            # For a deliberate full rebuild, use `make run-recompute-job`.
             try:
-                if os.path.exists(processed_dirs_file):
-                    os.remove(processed_dirs_file)
-                if os.path.exists(trends_cache_file):
-                    os.remove(trends_cache_file)
-                if os.path.exists(filters_cache_file):
-                    os.remove(filters_cache_file)
-
-                logging.info("Cleared precomputed files. Triggering precompute...")
-
                 run_index.invalidate()
-
-                import threading
-                threading.Thread(target=precompute_trends.precompute).start()
-
-                state.cache_cleared_message = "Cache cleared. Precompute triggered in background."
+                logging.info("Run listing cache invalidated from the UI.")
+                state.cache_cleared_message = (
+                    "Run list refreshed. Trends pick up new runs on the next "
+                    "background precompute pass."
+                )
             except Exception as ex:
-                logging.error(f"Error clearing cache: {ex}")
-                state.cache_cleared_message = f"Error clearing cache: {ex}"
+                logging.error(f"Error refreshing run list: {ex}")
+                state.cache_cleared_message = f"Error refreshing run list: {ex}"
 
         # Full-width header bar
         with me.box(
@@ -2145,7 +2140,7 @@ def render_app_content():
                     me.box(style=me.Style(width="8px", height="8px", border_radius="50%", background=cache_color))
                     me.text(f"Cache: {cache_status}", style=me.Style(font_weight="500", color="#94a3b8"))
                     me.button(
-                        "Clear Cache",
+                        "Refresh",
                         on_click=on_clear_cache_click,
                         style=me.Style(
                             color="transparent",
