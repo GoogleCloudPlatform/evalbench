@@ -11,8 +11,7 @@ PYPI_RESULT_PREFIX="PYPI_RESULT"
 # The validate step writes the package version here.
 PYPI_VERSION_FILE=/workspace/pypi_version.txt
 
-# A step that ends the run early writes its status here. The next steps
-# read it and exit 0.
+# A step that ends the run early writes its status here.
 PYPI_STOP_FILE=/workspace/pypi_stop.txt
 
 # Prints the result line of the run.

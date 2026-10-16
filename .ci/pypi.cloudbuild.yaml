@@ -2,23 +2,14 @@
 #
 # release-please pushes a vX.Y.Z tag. A Cloud Build trigger runs this file
 # as a dedicated release service account. The build stages the wheel and
-# sdist in the OSS Exit Gate Artifact Registry, then uploads a manifest.
-# OSS Exit Gate verifies the files and publishes them to PyPI.
+# sdist in the OSS Exit Gate Artifact Registry and uploads a manifest. OSS
+# Exit Gate then publishes them to PyPI.
 #
-# The trigger sets _STAGING_PROJECT, _STAGING_REPO, and _MANIFEST_DIR, so
-# this public file has no project names.
+# Each run prints one PYPI_RESULT line (pypi/lib.sh). pypi/alert_policy.yaml
+# emails it, and pypi/build_status_policy.yaml emails failed builds.
 #
-# Each run prints one PYPI_RESULT line (pypi/lib.sh), and
-# pypi/alert_policy.yaml emails it. pypi/build_status_policy.yaml emails
-# every run that fails.
-#
-# Dry run: stage the files and stop before the manifest upload.
-#   gcloud builds triggers run pypi-publish --region=REGION --tag=vX.Y.Z \
-#     --substitutions=_DRY_RUN=true
-# Then delete the staged version (see the DRY_RUN result line).
-#
-# The uv image, twine, and the keyring plugin have fixed versions, because
-# this build can publish to PyPI. Update them on purpose.
+# The uv image, twine, and the keyring plugin are pinned, because this build
+# can publish to PyPI.
 #
 # Use $$ for shell variables and $$(...). Cloud Build expands a single $.
 
@@ -86,8 +77,8 @@ steps:
         esac
         echo "Publishing google-evalbench $$VERSION from $COMMIT_SHA"
 
-  # Stops if another run is active or if files are already staged. The
-  # manifest publishes every staged file, so stale files must not stay.
+  # Stops if another run is active or if versions are already staged. The
+  # manifest publishes every staged version, so a failed list call fails.
   - id: preflight
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     waitFor: ['validate']
@@ -112,8 +103,6 @@ steps:
           fi
         fi
 
-        # The manifest publishes every staged version, so a failed list call
-        # fails the run.
         if ! PACKAGES=$$(gcloud artifacts packages list "$${AR[@]}" \
           --format='value(name.basename())'); then
           pypi_fail $$STAGE "Cannot list packages in ${_STAGING_REPO}. The build service account needs read access."
@@ -156,7 +145,7 @@ steps:
           pypi_fail $$STAGE "twine check found invalid package metadata."
         fi
 
-        # The manifest publishes everything in dist, so allow only 2 files.
+        # The stage step uploads all of dist, so allow only these 2 files.
         for FILE in "google_evalbench-$$VERSION-py3-none-any.whl" \
                     "google_evalbench-$$VERSION.tar.gz"; do
           if [[ ! -f "dist/$$FILE" ]]; then
@@ -277,7 +266,6 @@ steps:
   - id: verify-pypi
     name: 'ghcr.io/astral-sh/uv:0.9.30-python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248'
     waitFor: ['publish']
-    # _PYPI_WAIT_SECONDS plus up to 5 uvx attempts and 4 sleeps of 60 s.
     timeout: '2700s'
     entrypoint: 'bash'
     args:
@@ -332,15 +320,16 @@ steps:
         pypi_result SUCCESS notify-success "pypi.org serves google-evalbench $$VERSION: https://pypi.org/project/google-evalbench/$$VERSION/"
 
 substitutions:
-  # The trigger sets these 3 values. _STAGING_PROJECT and _STAGING_REPO are
-  # the OSS Exit Gate Artifact Registry (location us). _MANIFEST_DIR is the
-  # gs:// path for the publish manifests.
+  # The trigger sets these 3 values, so this public file has no project
+  # names. _STAGING_PROJECT and _STAGING_REPO name the OSS Exit Gate
+  # Artifact Registry repo (location us). _MANIFEST_DIR is the gs:// path
+  # for manifests.
   _STAGING_PROJECT: ''
   _STAGING_REPO: ''
   _MANIFEST_DIR: ''
   # true: stage the files and upload no manifest.
   _DRY_RUN: 'false'
-  # Keep _PYPI_WAIT_SECONDS at least 900 s below the verify-pypi timeout.
+  # Keep at least 900 s below the verify-pypi timeout for the uvx retries.
   _PYPI_WAIT_SECONDS: '1800'
   _TWINE_VERSION: '7.0.0'
   _KEYRING_VERSION: '1.1.2'

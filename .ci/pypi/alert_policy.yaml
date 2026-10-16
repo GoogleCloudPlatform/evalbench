@@ -5,9 +5,8 @@
 # project resource IDs:
 #   TRIGGER_ID    id of the trigger 'pypi-publish' (us-central1)
 #   CHANNEL_NAME  name of the notification channel 'EvalBench release'
-# To create the policy, fill in a copy of this file and run
-# 'gcloud alpha monitoring policies create'. To change it, run
-# 'gcloud alpha monitoring policies update'. Do not create a duplicate.
+# The live policy exists. To change it, fill in a copy of this file and run
+# 'gcloud alpha monitoring policies update'.
 displayName: 'EvalBench PyPI publish'
 combiner: OR
 conditions:

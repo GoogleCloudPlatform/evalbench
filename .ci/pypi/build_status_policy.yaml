@@ -1,17 +1,8 @@
-# Log-based alert that emails when a PyPI publish run fails.
+# Log-based alert that emails when a PyPI publish build ends with a non-zero
+# status. It covers failures that print no PYPI_RESULT line, for example a
+# step timeout. It does not cover a build that never starts.
 #
-# Cloud Build writes an audit entry when a build ends. Its status code is 1
-# for CANCELLED, 4 for TIMEOUT, 9 for FAILURE, and 13 for INTERNAL_ERROR. A
-# step timeout or a step image that does not pull gives code 9 and prints no
-# PYPI_RESULT line, so this policy also emails code 9. A failed step that
-# prints its PYPI_RESULT line sends a second email from alert_policy.yaml.
-#
-# Not covered: a build that never starts, for example an invalid config.
-#
-# A log-based policy has only one condition, so this alert is a separate
-# policy. TRIGGER_ID and CHANNEL_NAME are placeholders, as in
-# alert_policy.yaml. To create the policy, fill in a copy of this file and
-# run 'gcloud alpha monitoring policies create'.
+# TRIGGER_ID and CHANNEL_NAME are placeholders, as in alert_policy.yaml.
 displayName: 'EvalBench PyPI publish build status'
 combiner: OR
 conditions:
