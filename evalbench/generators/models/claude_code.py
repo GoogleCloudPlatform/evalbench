@@ -1,4 +1,5 @@
 from .agent_cli import AgentCliGenerator
+from . import mcp_client
 from .tool_naming import canonicalize_claude_tool_name
 import subprocess
 import os
@@ -290,7 +291,11 @@ class ClaudeCodeGenerator(AgentCliGenerator):
 
         # Translate `authProviderType: google_credentials` into Bearer header
         auth_provider = config.pop("authProviderType", None)
-        # Gemini-style `oauth.scopes` is ignored by Claude Code; drop it
+
+        # Gemini-style `oauth.scopes` is forwarded to gcloud, but the `oauth`
+        # block itself must be removed so Claude Code doesn't treat it as an
+        # interactive MCP OAuth 2.0 dynamic registration config.
+        scopes = mcp_client.extract_mcp_oauth_scopes(config)
         config.pop("oauth", None)
 
         if auth_provider == "google_credentials":
@@ -304,12 +309,12 @@ class ClaudeCodeGenerator(AgentCliGenerator):
             # Code's env), it prints nothing and Claude Code falls back to the
             # static header below.
             config.setdefault(
-                "headersHelper", self._google_credentials_headers_helper())
+                "headersHelper", self._google_credentials_headers_helper(scopes=scopes))
 
             # Baked static token: the initial value and the fallback for when
             # headersHelper can't run. headersHelper output takes precedence.
             if "Authorization" not in headers:
-                token = self._fetch_gcloud_access_token()
+                token = self._fetch_gcloud_access_token(scopes=scopes)
                 if token:
                     headers["Authorization"] = f"Bearer {token}"
                 else:
@@ -322,7 +327,9 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         return config
 
     @staticmethod
-    def _google_credentials_headers_helper() -> str:
+    def _google_credentials_headers_helper(
+        scopes: Optional[list[str]] = None,
+    ) -> str:
         """Shell command Claude Code executes on each MCP connection to mint a
         fresh Google bearer token.
 
@@ -333,13 +340,25 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         prints nothing (non-zero exit) when neither is available so Claude Code
         keeps using the baked static header.
         """
+        scoped_cmd = ""
+        if scopes:
+            for s in scopes:
+                assert re.fullmatch(r"[A-Za-z0-9_.:/-]+", s), (
+                    f"Invalid or unsafe OAuth scope: {s!r}"
+                )
+            scopes_str = ",".join(scopes)
+            scoped_cmd = (
+                f'gcloud auth application-default print-access-token --scopes="{scopes_str}" 2>/dev/null || '
+            )
         return (
-            'tok="$(gcloud auth application-default print-access-token '
+            f'tok="$({scoped_cmd}gcloud auth application-default print-access-token '
             '2>/dev/null || gcloud auth print-access-token 2>/dev/null)"; '
             '[ -n "$tok" ] && printf \'{"Authorization":"Bearer %s"}\' "$tok"'
         )
 
-    def _fetch_gcloud_access_token(self) -> str:
+    def _fetch_gcloud_access_token(
+        self, scopes: Optional[list[str]] = None
+    ) -> str:
         """Fetches a Google Cloud access token for MCP `google_credentials` auth.
 
         Prefers Application Default Credentials (``gcloud auth
@@ -372,10 +391,26 @@ class ClaudeCodeGenerator(AgentCliGenerator):
             token_env["GOOGLE_APPLICATION_CREDENTIALS"] = adc
         # ADC first (works for these endpoints); user token as a fallback for
         # any MCP server that happens to accept it.
-        commands = [
+        commands = []
+        if scopes:
+            for s in scopes:
+                assert re.fullmatch(r"[A-Za-z0-9_.:/-]+", s), (
+                    f"Invalid or unsafe OAuth scope: {s!r}"
+                )
+            scopes_str = ",".join(scopes)
+            commands.append(
+                [
+                    "gcloud",
+                    "auth",
+                    "application-default",
+                    "print-access-token",
+                    f"--scopes={scopes_str}",
+                ]
+            )
+        commands.extend([
             ["gcloud", "auth", "application-default", "print-access-token"],
             ["gcloud", "auth", "print-access-token"],
-        ]
+        ])
         for cmd in commands:
             try:
                 result = subprocess.run(
