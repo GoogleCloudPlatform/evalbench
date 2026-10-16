@@ -17,6 +17,9 @@
 #     --substitutions=_DRY_RUN=true
 # Then delete the staged version (see the DRY_RUN result line).
 #
+# The uv image, twine, and the keyring plugin have fixed versions, because
+# this build can publish to PyPI. Update them on purpose.
+#
 # Use $$ for shell variables and $$(...). Cloud Build expands a single $.
 
 steps:
@@ -24,7 +27,7 @@ steps:
   # Checks the tag, the version, and the commit. Stops the run if PyPI
   # already has the version, so a rerun is safe.
   - id: validate
-    name: 'ghcr.io/astral-sh/uv:python3.12-bookworm'
+    name: 'ghcr.io/astral-sh/uv:0.9.30-python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248'
     timeout: '420s'
     entrypoint: 'bash'
     args:
@@ -34,11 +37,14 @@ steps:
         . /workspace/.ci/pypi/lib.sh
         STAGE=validate
         GITHUB=https://github.com/GoogleCloudPlatform/evalbench
-        TAG="$TAG_NAME"
+        TAG="$$TAG_NAME"
         TAG_RE='^v[0-9]+\.[0-9]+\.[0-9]+$$'
 
         if [[ -z "${_STAGING_PROJECT}" || -z "${_STAGING_REPO}" || -z "${_MANIFEST_DIR}" ]]; then
           pypi_fail $$STAGE "_STAGING_PROJECT, _STAGING_REPO, or _MANIFEST_DIR is empty. Set them in the trigger substitutions."
+        fi
+        if [[ "${_DRY_RUN}" != "true" && "${_DRY_RUN}" != "false" ]]; then
+          pypi_fail $$STAGE "_DRY_RUN must be true or false, not '${_DRY_RUN}'."
         fi
 
         if [[ ! "$$TAG" =~ $$TAG_RE ]]; then
@@ -106,25 +112,30 @@ steps:
           fi
         fi
 
-        # If the list call fails, continue. twine fails later on a conflict.
+        # The manifest publishes every staged version, so a failed list call
+        # fails the run.
         if ! PACKAGES=$$(gcloud artifacts packages list "$${AR[@]}" \
           --format='value(name.basename())'); then
-          echo "Cannot list packages in ${_STAGING_REPO}. Continuing."
-          exit 0
+          pypi_fail $$STAGE "Cannot list packages in ${_STAGING_REPO}. The build service account needs read access."
         fi
-        if ! grep -qx 'google-evalbench' <<< "$$PACKAGES"; then
+        # Artifact Registry can store the name with - or _.
+        PACKAGE=$$(grep -xE 'google[-_]evalbench' <<< "$$PACKAGES" | head -1)
+        if [[ -z "$$PACKAGE" ]]; then
           echo "${_STAGING_REPO} has no staged google-evalbench files."
           exit 0
         fi
-        STAGED=$$(gcloud artifacts versions list --package=google-evalbench \
-          "$${AR[@]}" --format='value(name.basename())' | tr '\n' ' ')
-        if [[ -n "$${STAGED// /}" ]]; then
-          pypi_fail $$STAGE "${_STAGING_REPO} already has staged versions: $$STAGED. Delete each one: gcloud artifacts versions delete VERSION --package=google-evalbench $${AR[*]}"
+        if ! STAGED=$$(gcloud artifacts versions list --package="$$PACKAGE" \
+          "$${AR[@]}" --format='value(name.basename())'); then
+          pypi_fail $$STAGE "Cannot list versions of $$PACKAGE in ${_STAGING_REPO}."
+        fi
+        STAGED=$$(echo $$STAGED)
+        if [[ -n "$$STAGED" ]]; then
+          pypi_fail $$STAGE "${_STAGING_REPO} already has staged versions: $$STAGED. Delete each one: gcloud artifacts versions delete VERSION --package=$$PACKAGE $${AR[*]}"
         fi
         echo "${_STAGING_REPO} has no staged google-evalbench versions."
 
   - id: build
-    name: 'ghcr.io/astral-sh/uv:python3.12-bookworm'
+    name: 'ghcr.io/astral-sh/uv:0.9.30-python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248'
     waitFor: ['preflight']
     timeout: '600s'
     entrypoint: 'bash'
@@ -141,7 +152,7 @@ steps:
         if ! uv build --out-dir dist; then
           pypi_fail $$STAGE "uv build failed."
         fi
-        if ! uvx twine check --strict dist/*; then
+        if ! uvx twine==${_TWINE_VERSION} check --strict dist/*; then
           pypi_fail $$STAGE "twine check found invalid package metadata."
         fi
 
@@ -167,7 +178,7 @@ steps:
   # Same checks as .github/workflows/verify-package.yml, on the files that
   # the stage step uploads.
   - id: verify-dist
-    name: 'ghcr.io/astral-sh/uv:python3.12-bookworm'
+    name: 'ghcr.io/astral-sh/uv:0.9.30-python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248'
     waitFor: ['build']
     timeout: '1200s'
     entrypoint: 'bash'
@@ -213,7 +224,7 @@ steps:
   # The keyring gets an Artifact Registry token for the build SA from the
   # metadata server. Artifact Registry does not support --skip-existing.
   - id: stage
-    name: 'ghcr.io/astral-sh/uv:python3.12-bookworm'
+    name: 'ghcr.io/astral-sh/uv:0.9.30-python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248'
     waitFor: ['verify-dist']
     timeout: '300s'
     entrypoint: 'bash'
@@ -226,7 +237,8 @@ steps:
         STAGE=stage
         AR_URL="https://us-python.pkg.dev/${_STAGING_PROJECT}/${_STAGING_REPO}/"
 
-        if ! uvx --with keyrings.google-artifactregistry-auth twine upload \
+        if ! uvx --with "keyrings.google-artifactregistry-auth==${_KEYRING_VERSION}" \
+          "twine==${_TWINE_VERSION}" upload \
           --non-interactive --repository-url "$$AR_URL" dist/*; then
           pypi_fail $$STAGE "twine upload to $$AR_URL failed. If the error is 409, delete the staged version and run again."
         fi
@@ -263,9 +275,10 @@ steps:
   # OSS Exit Gate also emails the team when it receives the manifest and
   # when the publish ends.
   - id: verify-pypi
-    name: 'ghcr.io/astral-sh/uv:python3.12-bookworm'
+    name: 'ghcr.io/astral-sh/uv:0.9.30-python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248'
     waitFor: ['publish']
-    timeout: '2400s'
+    # _PYPI_WAIT_SECONDS plus up to 5 uvx attempts and 4 sleeps of 60 s.
+    timeout: '2700s'
     entrypoint: 'bash'
     args:
       - '-c'
@@ -327,10 +340,13 @@ substitutions:
   _MANIFEST_DIR: ''
   # true: stage the files and upload no manifest.
   _DRY_RUN: 'false'
+  # Keep _PYPI_WAIT_SECONDS at least 900 s below the verify-pypi timeout.
   _PYPI_WAIT_SECONDS: '1800'
+  _TWINE_VERSION: '7.0.0'
+  _KEYRING_VERSION: '1.1.2'
 
 # Sum of the step timeouts.
-timeout: '5280s'
+timeout: '5580s'
 
 options:
   logging: CLOUD_LOGGING_ONLY
