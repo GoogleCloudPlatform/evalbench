@@ -9,6 +9,10 @@
 # its own line. A step timeout or a cancel prints no line, so
 # build_status_policy.yaml emails every run that fails.
 #
+# $PROJECT_ID runs the build and the Vertex AI calls. _DEPLOY_PROJECT has
+# the eval_server images and the GKE cluster. The trigger sets
+# _DEPLOY_PROJECT, so this public file has no project names.
+#
 # Use $$ for shell variables and $$(...). Cloud Build expands a single $.
 
 steps:
@@ -28,6 +32,9 @@ steps:
         if [[ -z "$COMMIT_SHA" || -z "$SHORT_SHA" ]]; then
           release_fail $$STAGE "COMMIT_SHA or SHORT_SHA is empty."
         fi
+        if [[ -z "${_DEPLOY_PROJECT}" ]]; then
+          release_fail $$STAGE "_DEPLOY_PROJECT is empty. Set it in the trigger substitutions."
+        fi
 
         # Stop if another run is active, because two runs race on GKE and
         # :latest. If the list call fails, continue.
@@ -40,7 +47,7 @@ steps:
           fi
         fi
 
-        REPO="us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server"
+        REPO="us-central1-docker.pkg.dev/${_DEPLOY_PROJECT}/evalbench/eval_server"
         DEADLINE=$$(( $$(date +%s) + ${_IMAGE_WAIT_SECONDS} ))
         echo "Resolving $$REPO:$COMMIT_SHA"
         while true; do
@@ -84,7 +91,7 @@ steps:
 
         if ! gcloud container clusters get-credentials \
           evalbench-directpath-cluster \
-          --zone us-central1-c --project "$PROJECT_ID" > /dev/null 2>&1; then
+          --zone us-central1-c --project "${_DEPLOY_PROJECT}" > /dev/null 2>&1; then
           unavailable "no credentials for evalbench-directpath-cluster."
         fi
         OLD_DIGEST=$$(kubectl get pods -n evalbench-namespace \
@@ -100,8 +107,8 @@ steps:
         # version filter needs the full resource name.
         OLD_SHA=$$(gcloud artifacts tags list --package=eval_server \
           --repository=evalbench --location=us-central1 \
-          --project="$PROJECT_ID" \
-          --filter="version=projects/$PROJECT_ID/locations/us-central1/repositories/evalbench/packages/eval_server/versions/$$OLD_DIGEST" \
+          --project="${_DEPLOY_PROJECT}" \
+          --filter="version=projects/${_DEPLOY_PROJECT}/locations/us-central1/repositories/evalbench/packages/eval_server/versions/$$OLD_DIGEST" \
           --format='value(name.basename())' 2> /dev/null \
           | grep -E '^[0-9a-f]{40}$$' | head -1)
         if [[ -z "$$OLD_SHA" ]]; then
@@ -132,7 +139,7 @@ steps:
   #   3. The log scan: any ERROR, CRITICAL, or traceback in the server log
   #      fails the gate.
   - id: smoke-gate
-    name: 'us-central1-docker.pkg.dev/$PROJECT_ID/evalbench/eval_server:$COMMIT_SHA'
+    name: 'us-central1-docker.pkg.dev/${_DEPLOY_PROJECT}/evalbench/eval_server:$COMMIT_SHA'
     dir: '/evalbench'
     waitFor: ['resolve-release']
     timeout: '1200s'
@@ -270,7 +277,7 @@ steps:
 
         if ! gcloud container clusters get-credentials \
           evalbench-directpath-cluster \
-          --zone us-central1-c --project "$PROJECT_ID"; then
+          --zone us-central1-c --project "${_DEPLOY_PROJECT}"; then
           release_fail $$STAGE "Cannot get credentials for evalbench-directpath-cluster."
         fi
 
@@ -315,7 +322,7 @@ steps:
 
         if ! gcloud container clusters get-credentials \
           evalbench-directpath-cluster \
-          --zone us-central1-c --project "$PROJECT_ID"; then
+          --zone us-central1-c --project "${_DEPLOY_PROJECT}"; then
           release_fail $$STAGE "Cannot get credentials for evalbench-directpath-cluster."
         fi
 
@@ -497,6 +504,9 @@ steps:
         release_result SUCCESS notify-success "GKE and Cloud Run serve $$(cat /workspace/release_tag.txt) ($$(cat /workspace/image_digest.txt))."
 
 substitutions:
+  # The project of the eval_server images and the GKE cluster. The trigger
+  # sets the value.
+  _DEPLOY_PROJECT: ''
   _EVAL_REGION: 'global'
   # The Build trigger took 15 to 26 min in 59 runs.
   _IMAGE_WAIT_SECONDS: '1800'
