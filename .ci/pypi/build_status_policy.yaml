@@ -1,0 +1,43 @@
+# Log-based alert that emails when a PyPI publish build ends with a non-zero
+# status. It covers failures that print no PYPI_RESULT line, for example a
+# step timeout. It does not cover a build that never starts.
+#
+# TRIGGER_ID and CHANNEL_NAME are placeholders, as in alert_policy.yaml.
+displayName: 'EvalBench PyPI publish build status'
+combiner: OR
+conditions:
+  - displayName: 'PyPI publish build failed'
+    conditionMatchedLog:
+      filter: >-
+        logName:"cloudaudit.googleapis.com%2Factivity"
+        AND resource.type="build"
+        AND resource.labels.build_trigger_id="TRIGGER_ID"
+        AND protoPayload.methodName="google.devtools.cloudbuild.v1.CloudBuild.CreateBuild"
+        AND operation.last=true
+        AND protoPayload.status.code>0
+      labelExtractors:
+        code: 'EXTRACT(protoPayload.status.code)'
+alertStrategy:
+  # 5 minutes is the minimum.
+  notificationRateLimit:
+    period: 300s
+  autoClose: 1800s
+documentation:
+  subject: 'EvalBench PyPI publish build failed (code ${log.extracted_label.code})'
+  mimeType: text/markdown
+  content: |
+    **Status code:** ${log.extracted_label.code} (1 = CANCELLED, 4 = TIMEOUT, 9 = FAILURE, 13 = INTERNAL_ERROR)
+
+    The PyPI publish run failed.
+
+    1. Open the build log to see where the run stopped.
+    2. If the run stopped after the stage step, check the OSS Exit Gate
+       staging repository. Delete staged files before the next run.
+    3. If the run stopped after the publish step, read the OSS Exit Gate
+       emails.
+    4. Start the run again. If PyPI already has the version, the run stops
+       with status SKIPPED.
+
+    **Build log:** https://console.cloud.google.com/cloud-build/builds;region=us-central1/${resource.label.build_id}?project=${resource.label.project_id}
+notificationChannels:
+  - CHANNEL_NAME
