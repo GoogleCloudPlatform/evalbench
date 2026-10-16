@@ -11,6 +11,7 @@ import threading
 import time
 from typing import Optional, Union, Dict, List
 from util.context import rpc_id_var
+from util.sessionmgr import SESSION_SANDBOX_PATH
 
 
 _SECRET_MANAGER_PATH_RE = re.compile(
@@ -71,7 +72,7 @@ class CodexCliGenerator(AgentCliGenerator):
                 ctx_id = rpc_id_var.get()
                 session_id = ctx_id if ctx_id != "default" else "default"
             self.fake_home = os.path.join(
-                "/tmp_sessions", session_id, "fake_home")
+                SESSION_SANDBOX_PATH, session_id, "fake_home")
         else:
             self.fake_home = os.path.abspath(
                 os.path.join(".venv", "fake_home_codex"))

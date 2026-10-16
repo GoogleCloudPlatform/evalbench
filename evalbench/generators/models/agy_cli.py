@@ -13,6 +13,7 @@ import weakref
 from typing import Optional, Union, Dict, List
 from util.context import rpc_id_var
 from util.config import parse_timeout_seconds
+from util.sessionmgr import SESSION_SANDBOX_PATH
 
 # Agent version label, and its prefix in ``agy@<version>``. It is not a path.
 # The harness runs the per-session binary at self.agy_bin.
@@ -135,7 +136,7 @@ class AgyCliGenerator(AgentCliGenerator):
                 ctx_id = rpc_id_var.get()
                 session_id = ctx_id if ctx_id != "default" else "default"
             self.fake_home = os.path.join(
-                "/tmp_sessions", session_id, "fake_home"
+                SESSION_SANDBOX_PATH, session_id, "fake_home"
             )
         else:
             self.fake_home = os.path.abspath(
