@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.19.1](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.19.0...v1.19.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **viewer:** call list_run_directories via run_index ([aeba95c](https://github.com/GoogleCloudPlatform/evalbench/commit/aeba95cac7bea71ed1af1bf16ef50e9a6ac7d1bb))
+* **viewer:** unstick trends precompute and stop accidental cache wipes ([3cc50c3](https://github.com/GoogleCloudPlatform/evalbench/commit/3cc50c36eafa25294dc559e94aae36f48cee50b6))
+* **viewer:** unstick trends precompute and stop cache wipes ([a4ebf23](https://github.com/GoogleCloudPlatform/evalbench/commit/a4ebf2387ff41dc5114b45fdb0b09b3d9b8d1cb1))
+
 ## [1.19.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.18.0...v1.19.0) (2026-10-09)
 
 
