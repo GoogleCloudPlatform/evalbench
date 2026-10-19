@@ -138,11 +138,11 @@ class TestEvalbench(unittest.TestCase):
 
 
 class BigQueryReporter(MagicMock):
-    """A reporter whose class name the failure list reports."""
+    """Fake reporter. _store_reports names failed reporters by class name."""
 
 
 class CsvReporter(MagicMock):
-    """A reporter whose class name the failure list reports."""
+    """Fake reporter. _store_reports names failed reporters by class name."""
 
 
 class TestStoreReports(unittest.TestCase):

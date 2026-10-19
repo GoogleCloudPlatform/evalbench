@@ -50,7 +50,7 @@ flags.declare_key_flag('experiment_config')
 def _store_reports(
     reporters, config_df, results_df, scores_df, summary_scores_df
 ) -> list[str]:
-    """Stores the reports with every reporter.
+    """Writes the reports with each reporter.
 
     A failed reporter does not stop the others, so a BigQuery error still
     leaves the CSV output on disk.

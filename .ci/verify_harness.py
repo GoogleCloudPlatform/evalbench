@@ -17,9 +17,10 @@ conversational scenario would fail here spuriously.
 Every other scorer is liveness-checked only -- it ran, did not error, and
 returned a number. Gating on a judge's verdict would make the build flaky.
 
-If the run config has a `reporting.bigquery` block, the run's rows are read
-back from BigQuery and compared with the CSV output. A successful load job
-does not prove the values arrived intact, for example after a type cast.
+If the run config has a `reporting.bigquery` block, the check also reads the
+run back from BigQuery and compares it with the CSV output. A successful load
+job does not prove that the values arrived unchanged, for example after a type
+cast.
 """
 import argparse
 import csv
@@ -126,7 +127,8 @@ def check_bigquery(job_dir, csv_rows, bq_config):
     job_config = bigquery.QueryJobConfig(query_parameters=[
         bigquery.ScalarQueryParameter("job_id", "STRING", job_id)])
 
-    # SAFE_CAST reads the value whatever type autodetect gave the column.
+    # SAFE_CAST works with any column type that autodetect chose, for example
+    # STRING for `score`.
     scores_sql = (
         "SELECT comparator, CAST(id AS STRING) AS id, "
         "SAFE_CAST(score AS FLOAT64) AS score "
@@ -167,8 +169,8 @@ def check_bigquery(job_dir, csv_rows, bq_config):
             problems.append(f"BigQuery: no summary row for {metric}")
             continue
         bq_correct, bq_total = bq_summary[metric]
-        # bqstore rounds correct_results_count to INT64 before upload, so a
-        # partial-credit count such as 1.67 arrives as 2.
+        # bqstore rounds correct_results_count to INT64 before upload (1.67
+        # arrives as 2), so allow a difference of up to 0.5.
         if (bq_total != total or bq_correct is None
                 or abs(bq_correct - correct) > 0.5):
             problems.append(
