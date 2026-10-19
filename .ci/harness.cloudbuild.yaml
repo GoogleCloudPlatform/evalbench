@@ -99,8 +99,8 @@ steps:
     secretEnv: *skills_secrets
     volumes: *results_volume
 
-  # One run checks both channels. A failure in one channel still reports the
-  # other, and the log ends with one summary for all channels.
+  # One run checks both channels and prints one summary. If one channel
+  # fails, the run still checks the other.
   - id: verify
     name: 'evalbench-harness-ci'
     dir: '/evalbench'

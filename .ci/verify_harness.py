@@ -2,9 +2,9 @@
 """Gates a harness smoke build.
 
 evalbench.eval() exits 0 whenever a run completes, so the exit code alone
-cannot gate CI. A channel is a run config and its evalset. The defaults
-check every harness in the MCP-tools channel and in the skills channel. The
-output has one section for each channel and ends with one summary table.
+cannot gate CI. A channel is a run config and its evalset. By default, the
+script checks the MCP-tools and skills channels. It prints one section for
+each channel, then one summary table.
 
 Scorers in POSITIVE must report greater than zero. They swallow parse
 failures and return 0.0 with an explanation rather than raising, so a
@@ -18,10 +18,9 @@ conversational scenario would fail here spuriously.
 Every other scorer is liveness-checked only -- it ran, did not error, and
 returned a number. Gating on a judge's verdict would make the build flaky.
 
-If the run config has a `reporting.bigquery` block, the check also reads the
-run back from BigQuery and compares it with the CSV output. A successful load
-job does not prove that the values arrived unchanged, for example after a type
-cast.
+If the run config has a `reporting.bigquery` block, the check also compares
+the run's BigQuery rows with its CSV output. A load job can succeed and still
+change values, for example with a type cast.
 """
 import argparse
 import csv
@@ -131,7 +130,7 @@ def check_bigquery(job_dir, csv_rows, bq_config):
     """Compares the run's BigQuery rows with its CSV output.
 
     Returns:
-      A list of problems, and the number of values compared.
+      The problems and the number of values compared.
     """
     from google.cloud import bigquery
 
@@ -198,9 +197,8 @@ def check(harness, scenario_ids, config_path):
     """Checks the latest run of one harness in one channel.
 
     Returns:
-      A list of problems, the number of scorer checks, the number of BigQuery
-      comparisons, and the job ID. The job ID is None if the run wrote no
-      output.
+      The problems, the number of scorer checks, the number of BigQuery
+      comparisons, and the job ID (None if the run wrote no output).
     """
     config = run_config(harness, config_path)
     scorers = sorted(config.get("scorers") or {})
@@ -236,9 +234,8 @@ def check(harness, scenario_ids, config_path):
                     "read the harness output",
                 )
                 problem = f"{scorer}: {sid} reported 0 -- {reason}"
-                # The scorer's own explanation. For trajectory_matcher, it
-                # shows the expected and actual MCP tools, and the number of
-                # native tool calls that it dropped.
+                # comparison_logs gives the scorer's reason, for example the
+                # expected and actual MCP tools for trajectory_matcher.
                 if logs:
                     problem += ("\n  comparison_logs: "
                                 f"{' '.join(logs.split())[:300]}")
@@ -255,8 +252,8 @@ def check(harness, scenario_ids, config_path):
 def check_channel(name, config_path, evalset, harnesses):
     """Prints the section for one channel.
 
-    An error in the channel or in one harness gives a FAIL line, so the
-    other harnesses and channels still report.
+    An error becomes a FAIL line, so the script still checks the other
+    harnesses and channels.
 
     Returns:
       The harnesses that failed in the channel.
@@ -328,12 +325,12 @@ def main():
     parser.add_argument(
         "--channel", nargs=3, action="append", dest="channels",
         metavar=("NAME", "RUN_CONFIG", "EVALSET"),
-        help="a run config and its evalset to check. Repeat the flag for "
-             "each channel. Default: the MCP-tools and skills channels.")
+        help="a run config and its evalset to check. Repeat for each "
+             "channel. Default: the MCP-tools and skills channels.")
     parser.add_argument("--harnesses", nargs="+", default=DEFAULT_HARNESSES)
     args = parser.parse_args()
-    # With action="append", argparse adds to a default list instead of
-    # replacing it, so the default is applied here.
+    # argparse appends to a list default instead of replacing it, so apply
+    # the default here.
     channels = args.channels or DEFAULT_CHANNELS
     names = [name for name, _, _ in channels]
 
