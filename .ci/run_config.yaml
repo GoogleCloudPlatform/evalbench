@@ -26,3 +26,7 @@ scorers:
 reporting:
   csv:
     output_directory: !ENV results/ci/${CI_HARNESS}
+  # verify_harness.py reads these rows back and compares them with the CSV.
+  bigquery:
+    gcp_project_id: !ENV ${EVAL_GCP_PROJECT_ID}
+    dataset_id: evalbench_ci

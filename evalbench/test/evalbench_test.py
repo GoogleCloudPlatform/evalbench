@@ -137,5 +137,69 @@ class TestEvalbench(unittest.TestCase):
         mock_run_script.assert_called_once_with("teardown.sh", os.path.abspath("results/job123"), "teardown")
 
 
+class BigQueryReporter(MagicMock):
+    """A reporter whose class name the failure list reports."""
+
+
+class CsvReporter(MagicMock):
+    """A reporter whose class name the failure list reports."""
+
+
+class TestStoreReports(unittest.TestCase):
+
+    def test_failed_reporter_does_not_stop_the_others(self):
+        from evalbench.evalbench import _store_reports
+
+        bigquery = BigQueryReporter()
+        bigquery.store.side_effect = RuntimeError("403 Access Denied")
+        csv_reporter = CsvReporter()
+
+        failed = _store_reports(
+            [bigquery, csv_reporter], "configs", "results", "scores", "summary")
+
+        self.assertEqual(["BigQueryReporter"], failed)
+        self.assertEqual(4, csv_reporter.store.call_count)
+        csv_reporter.print_dashboard_links.assert_called_once()
+
+    def test_no_failures_returns_an_empty_list(self):
+        from evalbench.evalbench import _store_reports
+
+        self.assertEqual([], _store_reports(
+            [CsvReporter()], "configs", "results", "scores", "summary"))
+
+    @patch('evalbench.evalbench._store_reports',
+           return_value=["BigQueryReporter"])
+    @patch('evalbench.evalbench.load_json', return_value=[])
+    @patch('evalbench.evalbench.analyzer.analyze_result')
+    @patch('evalbench.evalbench.config_to_df')
+    @patch('evalbench.evalbench.get_orchestrator')
+    @patch('evalbench.evalbench.load_yaml_config')
+    @patch('evalbench.evalbench.load_dataset_from_json')
+    @patch('evalbench.evalbench.set_session_configs')
+    @patch('evalbench.evalbench.load_session_configs')
+    @patch('evalbench.evalbench.get_reporters')
+    def test_eval_fails_when_a_reporter_fails(
+            self, mock_get_reporters, mock_load_session, mock_set_session,
+            mock_load_dataset, mock_load_yaml, mock_get_orch,
+            mock_config_to_df, mock_analyze, mock_load_json, mock_store):
+        import pandas as pd
+
+        mock_load_yaml.return_value = {"dummy": "config"}
+        mock_set_session.side_effect = (
+            lambda session, parsed_config: session.update(
+                {"dataset_config": "fake_ds.json"}))
+        mock_load_session.return_value = ({}, [{}], {}, {})
+        mock_analyze.return_value = (pd.DataFrame(), pd.DataFrame())
+        mock_evaluator = MagicMock()
+        mock_evaluator.process.return_value = (
+            "job123", "10s", "results.json", "scores.json", None)
+        mock_get_orch.return_value = mock_evaluator
+
+        success = evalbench_eval("fake_config.yaml")
+
+        self.assertFalse(success)
+        mock_store.assert_called_once()
+
+
 if __name__ == '__main__':
     unittest.main()

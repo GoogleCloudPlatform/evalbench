@@ -118,6 +118,9 @@ steps:
           --evalset .ci/harness_skills.evalset.json \
           --harnesses agy_cli claude_code codex_cli || rc=1
         exit $$rc
+    # The run configs name the BigQuery project that verify reads back from.
+    env:
+      - 'EVAL_GCP_PROJECT_ID=${_EVAL_PROJECT}'
     volumes: *results_volume
 
 availableSecrets:

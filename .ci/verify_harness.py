@@ -16,6 +16,10 @@ conversational scenario would fail here spuriously.
 
 Every other scorer is liveness-checked only -- it ran, did not error, and
 returned a number. Gating on a judge's verdict would make the build flaky.
+
+If the run config has a `reporting.bigquery` block, the run's rows are read
+back from BigQuery and compared with the CSV output. A successful load job
+does not prove the values arrived intact, for example after a type cast.
 """
 import argparse
 import csv
@@ -88,6 +92,91 @@ def load_rows(job_dir):
     return rows
 
 
+def load_summary(job_dir):
+    """Returns {metric_name: (correct_results_count, total_results_count)}."""
+    path = os.path.join(job_dir, "summary.csv")
+    if not os.path.exists(path):
+        return {}
+    with open(path, newline="") as f:
+        return {
+            row["metric_name"]: (float(row["correct_results_count"]),
+                                 float(row["total_results_count"]))
+            for row in csv.DictReader(f)
+        }
+
+
+def _same_score(csv_score, bq_score):
+    if csv_score is None or bq_score is None:
+        return csv_score is None and bq_score is None
+    return math.isclose(csv_score, bq_score, rel_tol=1e-9, abs_tol=1e-9)
+
+
+def check_bigquery(job_dir, csv_rows, bq_config):
+    """Compares the run's BigQuery rows with its CSV output.
+
+    Returns:
+      A list of problems, and the number of values compared.
+    """
+    from google.cloud import bigquery
+
+    job_id = os.path.basename(job_dir)
+    project = bq_config["gcp_project_id"]
+    dataset = f"{project}.{bq_config.get('dataset_id') or 'evalbench'}"
+    client = bigquery.Client(project=project)
+    job_config = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter("job_id", "STRING", job_id)])
+
+    # SAFE_CAST reads the value whatever type autodetect gave the column.
+    scores_sql = (
+        "SELECT comparator, CAST(id AS STRING) AS id, "
+        "SAFE_CAST(score AS FLOAT64) AS score "
+        f"FROM `{dataset}.scores` WHERE job_id = @job_id")
+    summary_sql = (
+        "SELECT metric_name, "
+        "SAFE_CAST(correct_results_count AS FLOAT64) AS correct, "
+        "SAFE_CAST(total_results_count AS FLOAT64) AS total "
+        f"FROM `{dataset}.summary` WHERE job_id = @job_id")
+    try:
+        bq_scores = {}
+        for r in client.query(scores_sql, job_config=job_config).result():
+            bq_scores.setdefault((r.comparator, r.id), []).append(r.score)
+        bq_summary = {
+            r.metric_name: (r.correct, r.total)
+            for r in client.query(summary_sql, job_config=job_config).result()
+        }
+    except Exception as e:
+        return [f"BigQuery read-back from {dataset} failed: {e}"[:300]], 0
+
+    problems = []
+    for (scorer, sid), (score, _) in sorted(csv_rows.items()):
+        uploaded = bq_scores.pop((scorer, sid), [])
+        if not uploaded:
+            problems.append(f"BigQuery: no {scorer} row for {sid}")
+        elif len(uploaded) > 1:
+            problems.append(
+                f"BigQuery: {len(uploaded)} {scorer} rows for {sid}")
+        elif not _same_score(score, uploaded[0]):
+            problems.append(f"BigQuery: {scorer} on {sid} is {uploaded[0]}, "
+                            f"but the CSV has {score}")
+    for scorer, sid in sorted(bq_scores):
+        problems.append(f"BigQuery: {scorer} row for {sid} is not in the CSV")
+
+    csv_summary = load_summary(job_dir)
+    for metric, (correct, total) in sorted(csv_summary.items()):
+        if metric not in bq_summary:
+            problems.append(f"BigQuery: no summary row for {metric}")
+            continue
+        bq_correct, bq_total = bq_summary[metric]
+        # bqstore rounds correct_results_count to INT64 before upload, so a
+        # partial-credit count such as 1.67 arrives as 2.
+        if (bq_total != total or bq_correct is None
+                or abs(bq_correct - correct) > 0.5):
+            problems.append(
+                f"BigQuery: summary for {metric} is {bq_correct}/{bq_total}, "
+                f"but the CSV has {correct}/{total}")
+    return problems, len(csv_rows) + len(csv_summary)
+
+
 def check(harness, scenario_ids, config_path):
     config = run_config(harness, config_path)
     scorers = sorted(config.get("scorers") or {})
@@ -122,6 +211,12 @@ def check(harness, scenario_ids, config_path):
                     "read the harness output",
                 )
                 problems.append(f"{scorer}: {sid} reported 0 -- {reason}")
+
+    bq_config = config["reporting"].get("bigquery")
+    if bq_config:
+        bq_problems, bq_checked = check_bigquery(job_dir, rows, bq_config)
+        problems.extend(bq_problems)
+        checked += bq_checked
     return problems, checked, scorers
 
 
