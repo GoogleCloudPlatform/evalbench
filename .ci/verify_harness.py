@@ -2,8 +2,9 @@
 """Gates a harness smoke build.
 
 evalbench.eval() exits 0 whenever a run completes, so the exit code alone
-cannot gate CI. The defaults target the MCP-tools build; --run-config and
---evalset aim the same checks at the skills build.
+cannot gate CI. A channel is a run config and its evalset. The defaults
+check every harness in the MCP-tools channel and in the skills channel. The
+output has one section for each channel and ends with one summary table.
 
 Scorers in POSITIVE must report greater than zero. They swallow parse
 failures and return 0.0 with an explanation rather than raising, so a
@@ -28,12 +29,18 @@ import json
 import math
 import os
 import sys
+import textwrap
+import traceback
 
 from pyaml_env import parse_config
 
 DEFAULT_HARNESSES = ["agy_cli", "claude_code", "codex_cli"]
-DEFAULT_RUN_CONFIG = ".ci/run_config.yaml"
-DEFAULT_EVALSET = ".ci/harness_smoke.evalset.json"
+# (name, run config, evalset) for each channel.
+DEFAULT_CHANNELS = [
+    ("mcp", ".ci/run_config.yaml", ".ci/harness_smoke.evalset.json"),
+    ("skills", ".ci/skills_run_config.yaml",
+     ".ci/harness_skills.evalset.json"),
+]
 POSITIVE = {
     "trajectory_matcher",
     "skills_trajectory",
@@ -72,7 +79,7 @@ def latest_job_dir(output_dir):
 
 
 def load_rows(job_dir):
-    """Returns {(comparator, scenario_id): (score_or_None, error)}."""
+    """Returns {(comparator, scenario_id): (score_or_None, error, logs)}."""
     path = os.path.join(job_dir, "scores.csv")
     if not os.path.exists(path):
         return None
@@ -88,7 +95,9 @@ def load_rows(job_dir):
             except (KeyError, TypeError, ValueError):
                 score = None
             rows[(row.get("comparator"), row.get("id"))] = (
-                score, (row.get("comparison_error") or "").strip()
+                score,
+                (row.get("comparison_error") or "").strip(),
+                (row.get("comparison_logs") or "").strip(),
             )
     return rows
 
@@ -112,6 +121,12 @@ def _same_score(csv_score, bq_score):
     return math.isclose(csv_score, bq_score, rel_tol=1e-9, abs_tol=1e-9)
 
 
+def bigquery_dataset(bq_config):
+    """Returns the `project.dataset` that the run config uploads to."""
+    return (f"{bq_config['gcp_project_id']}."
+            f"{bq_config.get('dataset_id') or 'evalbench'}")
+
+
 def check_bigquery(job_dir, csv_rows, bq_config):
     """Compares the run's BigQuery rows with its CSV output.
 
@@ -122,7 +137,7 @@ def check_bigquery(job_dir, csv_rows, bq_config):
 
     job_id = os.path.basename(job_dir)
     project = bq_config["gcp_project_id"]
-    dataset = f"{project}.{bq_config.get('dataset_id') or 'evalbench'}"
+    dataset = bigquery_dataset(bq_config)
     client = bigquery.Client(project=project)
     job_config = bigquery.QueryJobConfig(query_parameters=[
         bigquery.ScalarQueryParameter("job_id", "STRING", job_id)])
@@ -150,7 +165,7 @@ def check_bigquery(job_dir, csv_rows, bq_config):
         return [f"BigQuery read-back from {dataset} failed: {e}"[:300]], 0
 
     problems = []
-    for (scorer, sid), (score, _) in sorted(csv_rows.items()):
+    for (scorer, sid), (score, _, _) in sorted(csv_rows.items()):
         uploaded = bq_scores.pop((scorer, sid), [])
         if not uploaded:
             problems.append(f"BigQuery: no {scorer} row for {sid}")
@@ -180,17 +195,25 @@ def check_bigquery(job_dir, csv_rows, bq_config):
 
 
 def check(harness, scenario_ids, config_path):
+    """Checks the latest run of one harness in one channel.
+
+    Returns:
+      A list of problems, the number of scorer checks, the number of BigQuery
+      comparisons, and the job ID. The job ID is None if the run wrote no
+      output.
+    """
     config = run_config(harness, config_path)
     scorers = sorted(config.get("scorers") or {})
     output_dir = config["reporting"]["csv"]["output_directory"]
 
     job_dir = latest_job_dir(output_dir)
     if job_dir is None:
-        return [f"no run output under {output_dir}"], 0, scorers
+        return [f"no run output under {output_dir}"], 0, 0, None
+    job_id = os.path.basename(job_dir)
 
     rows = load_rows(job_dir)
     if rows is None:
-        return [f"no scores.csv in {job_dir}"], 0, scorers
+        return [f"no scores.csv in {job_dir}"], 0, 0, job_id
 
     problems = []
     checked = 0
@@ -200,7 +223,7 @@ def check(harness, scenario_ids, config_path):
             if entry is None:
                 problems.append(f"{scorer}: no row for {sid}")
                 continue
-            score, error = entry
+            score, error, logs = entry
             checked += 1
             if error:
                 problems.append(f"{scorer}: errored on {sid} -- {error[:120]}")
@@ -212,47 +235,124 @@ def check(harness, scenario_ids, config_path):
                     "the agent called no tools, or the scorer could not "
                     "read the harness output",
                 )
-                problems.append(f"{scorer}: {sid} reported 0 -- {reason}")
+                problem = f"{scorer}: {sid} reported 0 -- {reason}"
+                # The scorer's own explanation. For trajectory_matcher, it
+                # shows the expected and actual MCP tools, and the number of
+                # native tool calls that it dropped.
+                if logs:
+                    problem += ("\n  comparison_logs: "
+                                f"{' '.join(logs.split())[:300]}")
+                problems.append(problem)
 
+    bq_checked = 0
     bq_config = config["reporting"].get("bigquery")
     if bq_config:
         bq_problems, bq_checked = check_bigquery(job_dir, rows, bq_config)
         problems.extend(bq_problems)
-        checked += bq_checked
-    return problems, checked, scorers
+    return problems, checked, bq_checked, job_id
+
+
+def check_channel(name, config_path, evalset, harnesses):
+    """Prints the section for one channel.
+
+    An error in the channel or in one harness gives a FAIL line, so the
+    other harnesses and channels still report.
+
+    Returns:
+      The harnesses that failed in the channel.
+    """
+    print(f"\n== {name}: {config_path} + {evalset} ==")
+    try:
+        scenario_ids = expected_scenario_ids(evalset)
+        config = run_config(harnesses[0], config_path)
+    except Exception:
+        print("  [FAIL] cannot read the channel")
+        print(textwrap.indent(traceback.format_exc().rstrip(), " " * 11))
+        return list(harnesses)
+
+    scorers = sorted(config.get("scorers") or {})
+    positive = [s for s in scorers if s in POSITIVE]
+    liveness = [s for s in scorers if s not in POSITIVE]
+    bq_config = (config.get("reporting") or {}).get("bigquery")
+    print(f"{len(scenario_ids)} scenarios: {', '.join(scenario_ids)}")
+    print(f"Must be > 0: {', '.join(positive) or 'none'}")
+    print("Liveness only (ran, no error, numeric score): "
+          f"{', '.join(liveness) or 'none'}")
+    if bq_config:
+        print(f"BigQuery: the rows in {bigquery_dataset(bq_config)} must "
+              "match the CSV output")
+    print()
+
+    failed = []
+    for harness in harnesses:
+        try:
+            problems, checked, bq_checked, job_id = check(
+                harness, scenario_ids, config_path)
+        except Exception:
+            problems, checked, bq_checked, job_id = (
+                ["the check crashed\n" + traceback.format_exc().rstrip()],
+                0, 0, None)
+        job = f" (job {job_id})" if job_id else ""
+        if problems:
+            failed.append(harness)
+            count = f"{len(problems)} problem{'s' if len(problems) > 1 else ''}"
+            print(f"  [FAIL] {harness:<12} {count}{job}")
+            for p in problems:
+                print(textwrap.indent(p, " " * 11))
+        else:
+            counts = f"{checked} scorer checks"
+            if bq_config:
+                counts += f", {bq_checked} BigQuery comparisons"
+            print(f"  [PASS] {harness:<12} {counts}{job}")
+    return failed
+
+
+def print_summary(channels, harnesses, failed):
+    """Prints a PASS or FAIL cell for each harness in each channel."""
+    first = max(len(h) for h in [*harnesses, "harness"]) + 2
+    widths = [max(len(c), 4) + 2 for c in channels]
+    print("\n== Summary ==")
+    header = "harness".ljust(first) + "".join(
+        c.ljust(w) for c, w in zip(channels, widths))
+    print(header.rstrip())
+    for harness in harnesses:
+        cells = ["FAIL" if c in failed.get(harness, []) else "PASS"
+                 for c in channels]
+        line = harness.ljust(first) + "".join(
+            s.ljust(w) for s, w in zip(cells, widths))
+        print(line.rstrip())
 
 
 def main():
     parser = argparse.ArgumentParser(description="Gates a harness build.")
-    parser.add_argument("--run-config", default=DEFAULT_RUN_CONFIG)
-    parser.add_argument("--evalset", default=DEFAULT_EVALSET)
+    parser.add_argument(
+        "--channel", nargs=3, action="append", dest="channels",
+        metavar=("NAME", "RUN_CONFIG", "EVALSET"),
+        help="a run config and its evalset to check. Repeat the flag for "
+             "each channel. Default: the MCP-tools and skills channels.")
     parser.add_argument("--harnesses", nargs="+", default=DEFAULT_HARNESSES)
     args = parser.parse_args()
+    # With action="append", argparse adds to a default list instead of
+    # replacing it, so the default is applied here.
+    channels = args.channels or DEFAULT_CHANNELS
+    names = [name for name, _, _ in channels]
 
-    scenario_ids = expected_scenario_ids(args.evalset)
-    print(f"Scenarios: {len(scenario_ids)} | "
-          f"Harnesses: {len(args.harnesses)}")
-    print(f"Must be > 0 where configured: {', '.join(sorted(POSITIVE))}")
-    print("All other scorers are liveness-checked (ran, no error, "
-          "numeric score)\n")
+    print(f"Harnesses: {', '.join(args.harnesses)}")
+    print(f"Channels: {', '.join(names)}")
 
-    failed = []
-    for harness in args.harnesses:
-        problems, checked, scorers = check(
-            harness, scenario_ids, args.run_config)
-        if problems:
-            failed.append(harness)
-            print(f"  [FAIL] {harness}")
-            for p in problems:
-                print(f"           {p}")
-        else:
-            print(f"  [PASS] {harness:<12} "
-                  f"{checked} checks across {len(scorers)} scorers")
+    failed = {}  # {harness: [channel, ...]}
+    for name, config_path, evalset in channels:
+        for harness in check_channel(
+                name, config_path, evalset, args.harnesses):
+            failed.setdefault(harness, []).append(name)
 
+    print_summary(names, args.harnesses, failed)
     if failed:
-        print(f"\nFAILED: {', '.join(failed)}")
+        print("\nFAILED: " + ", ".join(
+            f"{h} ({', '.join(failed[h])})"
+            for h in args.harnesses if h in failed))
         return 1
-    print("\nAll harnesses passed.")
+    print("\nAll harnesses passed in every channel.")
     return 0
 
 

@@ -99,8 +99,8 @@ steps:
     secretEnv: *skills_secrets
     volumes: *results_volume
 
-  # Both channels run in one step so a failure in either still reports the
-  # other.
+  # One run checks both channels. A failure in one channel still reports the
+  # other, and the log ends with one summary for all channels.
   - id: verify
     name: 'evalbench-harness-ci'
     dir: '/evalbench'
@@ -110,14 +110,11 @@ steps:
     args:
       - '-c'
       - |
-        rc=0
         uv run --no-sync python3 .ci/verify_harness.py \
-          --harnesses agy_cli claude_code codex_cli || rc=1
-        uv run --no-sync python3 .ci/verify_harness.py \
-          --run-config .ci/skills_run_config.yaml \
-          --evalset .ci/harness_skills.evalset.json \
-          --harnesses agy_cli claude_code codex_cli || rc=1
-        exit $$rc
+          --harnesses agy_cli claude_code codex_cli \
+          --channel mcp .ci/run_config.yaml .ci/harness_smoke.evalset.json \
+          --channel skills .ci/skills_run_config.yaml \
+            .ci/harness_skills.evalset.json
     # The run configs read the BigQuery project from this variable.
     env:
       - 'EVAL_GCP_PROJECT_ID=${_EVAL_PROJECT}'
