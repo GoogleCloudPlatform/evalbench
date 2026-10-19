@@ -55,6 +55,11 @@ ZERO_REASONS = {
     "trajectory_matcher": "none of the expected tools were called",
     "skills_trajectory": "none of the expected skills were activated",
 }
+# The Cloud Build log viewer hides blank lines, so separator lines mark the
+# sections. RULE starts a section. SUBRULE separates a channel's settings
+# from its results.
+RULE = "=" * 72
+SUBRULE = "  " + "-" * 70
 
 
 def expected_scenario_ids(evalset):
@@ -258,7 +263,8 @@ def check_channel(name, config_path, evalset, harnesses):
     Returns:
       The harnesses that failed in the channel.
     """
-    print(f"\n== {name}: {config_path} + {evalset} ==")
+    print(RULE)
+    print(f"Channel {name}: {config_path} + {evalset}")
     try:
         scenario_ids = expected_scenario_ids(evalset)
         config = run_config(harnesses[0], config_path)
@@ -271,14 +277,14 @@ def check_channel(name, config_path, evalset, harnesses):
     positive = [s for s in scorers if s in POSITIVE]
     liveness = [s for s in scorers if s not in POSITIVE]
     bq_config = (config.get("reporting") or {}).get("bigquery")
-    print(f"{len(scenario_ids)} scenarios: {', '.join(scenario_ids)}")
-    print(f"Must be > 0: {', '.join(positive) or 'none'}")
-    print("Liveness only (ran, no error, numeric score): "
+    print(f"  {len(scenario_ids)} scenarios: {', '.join(scenario_ids)}")
+    print(f"  Must be > 0: {', '.join(positive) or 'none'}")
+    print("  Liveness only (ran, no error, numeric score): "
           f"{', '.join(liveness) or 'none'}")
     if bq_config:
-        print(f"BigQuery: the rows in {bigquery_dataset(bq_config)} must "
+        print(f"  BigQuery: the rows in {bigquery_dataset(bq_config)} must "
               "match the CSV output")
-    print()
+    print(SUBRULE)
 
     failed = []
     for harness in harnesses:
@@ -308,14 +314,15 @@ def print_summary(channels, harnesses, failed):
     """Prints a PASS or FAIL cell for each harness in each channel."""
     first = max(len(h) for h in [*harnesses, "harness"]) + 2
     widths = [max(len(c), 4) + 2 for c in channels]
-    print("\n== Summary ==")
-    header = "harness".ljust(first) + "".join(
+    print(RULE)
+    print("Summary")
+    header = "  harness".ljust(first + 2) + "".join(
         c.ljust(w) for c, w in zip(channels, widths))
     print(header.rstrip())
     for harness in harnesses:
         cells = ["FAIL" if c in failed.get(harness, []) else "PASS"
                  for c in channels]
-        line = harness.ljust(first) + "".join(
+        line = f"  {harness}".ljust(first + 2) + "".join(
             s.ljust(w) for s, w in zip(cells, widths))
         print(line.rstrip())
 
@@ -345,11 +352,11 @@ def main():
 
     print_summary(names, args.harnesses, failed)
     if failed:
-        print("\nFAILED: " + ", ".join(
+        print("FAILED: " + ", ".join(
             f"{h} ({', '.join(failed[h])})"
             for h in args.harnesses if h in failed))
         return 1
-    print("\nAll harnesses passed in every channel.")
+    print("All harnesses passed in every channel.")
     return 0
 
 
