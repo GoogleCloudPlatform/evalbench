@@ -12,6 +12,7 @@ from generators.models import get_generator
 from generators.models.agent_cli import AgentCliGenerator
 from mp import mprunner
 from util.config import get_eval_case_timeout
+from util.sessionmgr import SESSION_RESOURCES_PATH
 from work.agentgenwork import AgentGenWork
 from evaluator.simulateduser import SimulatedUser
 from work.agentscorework import AgentScoreWork
@@ -127,14 +128,27 @@ class AgentEvaluator:
         accumulated_skills = []
         last_result = None
 
+        fake_home = getattr(self.generator, "fake_home", None)
+        session_id = self.config.get("session_id")
+        # Where client-uploaded files for this session live. In gRPC mode that
+        # is the (evaluator-only) resources root; locally there is no upload
+        # and the sandbox's parent is kept for backwards compatibility.
+        if session_id:
+            session_dir = os.path.join(SESSION_RESOURCES_PATH, session_id)
+        elif fake_home:
+            session_dir = os.path.dirname(fake_home)
+        else:
+            session_dir = None
+
         resolved_work_dir = scenario.get("resolved_work_dir")
+        if resolved_work_dir and fake_home:
+            resolved_work_dir = self._sandbox_work_dir(
+                resolved_work_dir, fake_home)
         if resolved_work_dir:
             os.makedirs(resolved_work_dir, exist_ok=True)
 
         # Copy declared env_files to fake_home
-        fake_home = getattr(self.generator, "fake_home", None)
-        if fake_home:
-            session_dir = os.path.dirname(fake_home)
+        if fake_home and session_dir:
             env_files = scenario.get("env_files", [])
             for env_file in env_files:
                 src_path = os.path.join(session_dir, "env_files", env_file)
@@ -270,6 +284,32 @@ class AgentEvaluator:
             job_id,
             metadata
         )
+
+    @staticmethod
+    def _sandbox_work_dir(resolved_work_dir: str, fake_home: str) -> str:
+        """Keeps the agent's cwd out of the evaluator-only resources tree.
+
+        A relative scenario ``work_dir`` resolves against the dataset file,
+        which in gRPC mode sits under ``SESSION_RESOURCES_PATH`` next to the
+        rubrics and scenario JSON. Such a directory is copied into the sandbox
+        (``<fake_home>/<basename>``) and the copy is used as cwd. Anything
+        outside the resources tree is returned unchanged.
+        """
+        resources_root = os.path.abspath(SESSION_RESOURCES_PATH)
+        work_dir = os.path.abspath(resolved_work_dir)
+        if os.path.commonpath([resources_root, work_dir]) != resources_root:
+            return resolved_work_dir
+
+        sandboxed = os.path.join(fake_home, os.path.basename(work_dir))
+        if os.path.isdir(work_dir) and not os.path.exists(sandboxed):
+            try:
+                shutil.copytree(work_dir, sandboxed)
+                logging.info(
+                    "Copied work_dir %s into sandbox at %s", work_dir, sandboxed)
+            except FileExistsError:
+                # A concurrent scenario in this session copied it first.
+                pass
+        return sandboxed
 
     def _log_cli_result(self, turn: int, max_turns: int, result: subprocess.CompletedProcess):
         generator_name = self.generator.name
