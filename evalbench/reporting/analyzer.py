@@ -331,3 +331,76 @@ def analyze_result(
         df[existing_cols] = df[existing_cols].astype("string")
 
     return df, summary_scores_df
+
+
+# Longest ``comparison_logs`` (the judge's reasoning) kept per scenario entry
+# in the response summary. Keeps a run with many LLM-scored scenarios well
+# under the gRPC message limits while preserving the explanation of a failure.
+SCENARIO_LOG_MAX_CHARS = 4000
+
+# Binary scorers report 100 for a pass (see ``metric_score`` in
+# ``analyze_result``); anything else is a failure or a non-binary measurement.
+_FULL_MARKS = 100
+
+
+def _json_scalar(value):
+    """Return ``value`` as a plain Python scalar, or None when it is missing."""
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        # Not a scalar (e.g. a list); pass it through unchanged.
+        return value
+    if hasattr(value, "item"):
+        # numpy scalar -> native Python type, so json.dumps accepts it.
+        return value.item()
+    return value
+
+
+def scenario_scores(
+    scores_df: pd.DataFrame, max_log_chars: int = SCENARIO_LOG_MAX_CHARS
+) -> list[dict]:
+    """Per-scenario scorer outcomes for the response summary.
+
+    Returns one JSON-serialisable dict per ``(id, comparator)`` row of the
+    scores dataframe, in dataframe order. Every entry carries ``id``,
+    ``comparator`` and ``score``; ``comparison_error`` and ``generated_error``
+    are added when set. ``comparison_logs`` is added, truncated to
+    ``max_log_chars``, only for rows that did not get full marks, so a clean
+    run stays small while every failure keeps the judge's reasoning.
+
+    Rows without a scenario ``id`` are skipped.
+    """
+    if scores_df is None or scores_df.empty or "id" not in scores_df.columns:
+        return []
+
+    entries = []
+    for _, row in scores_df.iterrows():
+        scenario_id = _json_scalar(row.get("id"))
+        if scenario_id is None or scenario_id == "":
+            continue
+        score = _json_scalar(row.get("score"))
+        if isinstance(score, float) and score.is_integer():
+            # pandas upcasts a column mixing binary (0/100) and measured
+            # (e.g. latency) scores to float; keep whole numbers as ints.
+            score = int(score)
+        entry = {
+            "id": str(scenario_id),
+            "comparator": _json_scalar(row.get("comparator")),
+            "score": score,
+        }
+        for column in ("comparison_error", "generated_error"):
+            text = _json_scalar(row.get(column))
+            if text is not None and text != "":
+                entry[column] = str(text)
+        logs = _json_scalar(row.get("comparison_logs"))
+        if logs is not None and logs != "" and score != _FULL_MARKS:
+            logs = str(logs)
+            if len(logs) > max_log_chars:
+                dropped = len(logs) - max_log_chars
+                logs = f"{logs[:max_log_chars]}... [truncated {dropped} chars]"
+            entry["comparison_logs"] = logs
+        entries.append(entry)
+    return entries

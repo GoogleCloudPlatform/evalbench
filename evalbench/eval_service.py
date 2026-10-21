@@ -749,6 +749,11 @@ def _process_results(
         summary["total"] = total
         summary["scores"][name] = correct
 
+    # Per-scenario outcomes, so a client that only sees this response (e.g. a
+    # CI log) can tell which scenarios failed which scorer, and why, without
+    # the viewer or the reporting store.
+    summary["scenario_scores"] = analyzer.scenario_scores(scores_df)
+
     # Add generation latency percentiles
     if "sql_generator_time" in results_df.columns:
         latencies = results_df["sql_generator_time"].dropna().astype(float)
