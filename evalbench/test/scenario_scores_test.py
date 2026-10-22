@@ -6,7 +6,11 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from reporting.analyzer import SCENARIO_LOG_MAX_CHARS, scenario_scores
+from reporting.analyzer import (
+    SCENARIO_LOG_MAX_CHARS,
+    fit_scenario_scores,
+    scenario_scores,
+)
 
 
 class TestScenarioScores(unittest.TestCase):
@@ -39,17 +43,26 @@ class TestScenarioScores(unittest.TestCase):
             ],
         )
 
-    def test_logs_only_attached_to_rows_without_full_marks(self):
+    def test_logs_only_attached_to_judged_rows_without_full_marks(self):
         df = pd.DataFrame([
             {"id": "s1", "comparator": "goal_completion", "score": 100,
              "comparison_logs": "PASS Reasoning: fine."},
             {"id": "s2", "comparator": "goal_completion", "score": 0,
              "comparison_logs": "FAIL Reasoning: tool call hit a rate limit."},
+            {"id": "s2", "comparator": "turn_count", "score": 1,
+             "comparison_logs": "Agent took 1 turns."},
+            {"id": "s2", "comparator": "end_to_end_latency", "score": 5013,
+             "comparison_logs": "End-to-End latency was 5013.0 ms."},
         ])
-        passed, failed = scenario_scores(df)
+        passed, failed, turns, latency = scenario_scores(df)
         self.assertNotIn("comparison_logs", passed)
         self.assertEqual(
             failed["comparison_logs"], "FAIL Reasoning: tool call hit a rate limit."
+        )
+        # Measured metrics never score 100; their one-liners only repeat the score.
+        self.assertEqual(turns, {"id": "s2", "comparator": "turn_count", "score": 1})
+        self.assertEqual(
+            latency, {"id": "s2", "comparator": "end_to_end_latency", "score": 5013}
         )
 
     def test_errors_are_attached_whenever_set(self):
@@ -118,6 +131,63 @@ class TestScenarioScores(unittest.TestCase):
         self.assertIsInstance(entries[0]["score"], int)
         self.assertIsInstance(entries[1]["score"], float)
         self.assertIsNone(entries[2]["score"])
+
+
+def _entries(num_scenarios, failing_ids=(), log="FAIL Reasoning: " + "x" * 200):
+    """A judged + a measured row per scenario, failures carrying logs."""
+    entries = []
+    for i in range(num_scenarios):
+        scenario_id = f"scenario-{i:05d}"
+        judged = {"id": scenario_id, "comparator": "goal_completion", "score": 100}
+        if scenario_id in failing_ids:
+            judged.update(score=0, comparison_logs=log)
+        entries.append(judged)
+        entries.append({"id": scenario_id, "comparator": "turn_count", "score": 2})
+    return entries
+
+
+class TestFitScenarioScores(unittest.TestCase):
+
+    def test_small_list_is_returned_unchanged(self):
+        entries = _entries(3, failing_ids={"scenario-00001"})
+        fitted, truncated = fit_scenario_scores(entries)
+        self.assertIs(fitted, entries)
+        self.assertFalse(truncated)
+
+    def test_over_budget_keeps_only_failures_with_their_logs(self):
+        entries = _entries(1000, failing_ids={"scenario-00007", "scenario-00042"})
+        budget = len(json.dumps(entries)) - 1
+        fitted, truncated = fit_scenario_scores(entries, max_bytes=budget)
+        self.assertTrue(truncated)
+        self.assertEqual([e["id"] for e in fitted], ["scenario-00007", "scenario-00042"])
+        self.assertTrue(all("comparison_logs" in e for e in fitted))
+        self.assertTrue(all(e["comparator"] == "goal_completion" for e in fitted))
+
+    def test_too_many_failures_drop_logs_then_truncate(self):
+        failing = {f"scenario-{i:05d}" for i in range(500)}
+        entries = _entries(500, failing_ids=failing)
+        failures_without_logs = [
+            {"id": e["id"], "comparator": e["comparator"], "score": e["score"]}
+            for e in entries if e["comparator"] == "goal_completion"
+        ]
+        slim_size = len(json.dumps(failures_without_logs))
+
+        fitted, truncated = fit_scenario_scores(entries, max_bytes=slim_size)
+        self.assertTrue(truncated)
+        self.assertEqual(fitted, failures_without_logs)
+
+        fitted, truncated = fit_scenario_scores(entries, max_bytes=slim_size // 2)
+        self.assertTrue(truncated)
+        self.assertLess(len(fitted), len(failures_without_logs))
+        self.assertGreater(len(fitted), 0)
+        self.assertEqual(fitted, failures_without_logs[:len(fitted)])
+        self.assertLessEqual(len(json.dumps(fitted)), slim_size // 2)
+
+    def test_budget_smaller_than_one_entry_returns_empty_list(self):
+        entries = _entries(2, failing_ids={"scenario-00000"})
+        fitted, truncated = fit_scenario_scores(entries, max_bytes=5)
+        self.assertEqual(fitted, [])
+        self.assertTrue(truncated)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,30 @@
 """Analyze accuracy result from dataframe."""
 
+import json
 import logging
 import pandas as pd
+
+# Metrics that measure rather than judge: their score is a quantity (turns,
+# milliseconds, tokens) or a 0-100 grade, so the summary reports an average
+# instead of a pass count. Everything else is binary and passes at 100.
+NON_BINARY_METRICS = [
+    "turn_count",
+    "agent_steps",
+    "end_to_end_latency",
+    "tool_call_latency",
+    "token_consumption",
+    "tokens_processed",
+    "effective_billed_tokens",
+    # 0-100 grades: matching against 100 would report every
+    # grade below it as a flat 0%.
+    "dataset_quality",
+    "tool_activation_faithfulness",
+    "discoverability_coverage",
+    "error_recovery_coverage",
+    "composition_coverage",
+    "cuj_diversity",
+    "skills_best_practices",
+]
 
 
 def _is_sub_comparator(comp: str, metric_name: str) -> bool:
@@ -164,25 +187,7 @@ def analyze_one_metric(
             correct_results_count = len(
                 df_metric[df_metric["score"] == metric_score])
 
-            non_binary_metrics = [
-                "turn_count",
-                "agent_steps",
-                "end_to_end_latency",
-                "tool_call_latency",
-                "token_consumption",
-                "tokens_processed",
-                "effective_billed_tokens",
-                # 0-100 grades: matching against 100 would report every
-                # grade below it as a flat 0%.
-                "dataset_quality",
-                "tool_activation_faithfulness",
-                "discoverability_coverage",
-                "error_recovery_coverage",
-                "composition_coverage",
-                "cuj_diversity",
-                "skills_best_practices",
-            ]
-            if metric_name in non_binary_metrics:
+            if metric_name in NON_BINARY_METRICS:
                 avg_val = (
                     df_metric["score"].mean()
                     if (not df_metric.empty and "score" in df_metric.columns)
@@ -334,12 +339,17 @@ def analyze_result(
 
 
 # Longest ``comparison_logs`` (the judge's reasoning) kept per scenario entry
-# in the response summary. Keeps a run with many LLM-scored scenarios well
-# under the gRPC message limits while preserving the explanation of a failure.
+# in the response summary.
 SCENARIO_LOG_MAX_CHARS = 4000
 
+# Upper bound on the JSON size of ``scenario_scores`` in the response. gRPC
+# clients receive at most 4 MB by default and a log entry holds 256 KB, so a
+# large NL2SQL run (thousands of items, several comparators each) must not be
+# allowed to grow the summary past this; see ``fit_scenario_scores``.
+SCENARIO_SCORES_MAX_BYTES = 256_000
+
 # Binary scorers report 100 for a pass (see ``metric_score`` in
-# ``analyze_result``); anything else is a failure or a non-binary measurement.
+# ``analyze_result``).
 _FULL_MARKS = 100
 
 
@@ -359,6 +369,18 @@ def _json_scalar(value):
     return value
 
 
+def _is_failure(entry: dict) -> bool:
+    """True for a judged (binary) scorer row that did not get full marks.
+
+    Measured metrics (``NON_BINARY_METRICS``) never equal 100 by design and
+    are not failures; their value is the score itself.
+    """
+    return (
+        entry.get("comparator") not in NON_BINARY_METRICS
+        and entry.get("score") != _FULL_MARKS
+    )
+
+
 def scenario_scores(
     scores_df: pd.DataFrame, max_log_chars: int = SCENARIO_LOG_MAX_CHARS
 ) -> list[dict]:
@@ -367,11 +389,13 @@ def scenario_scores(
     Returns one JSON-serialisable dict per ``(id, comparator)`` row of the
     scores dataframe, in dataframe order. Every entry carries ``id``,
     ``comparator`` and ``score``; ``comparison_error`` and ``generated_error``
-    are added when set. ``comparison_logs`` is added, truncated to
-    ``max_log_chars``, only for rows that did not get full marks, so a clean
-    run stays small while every failure keeps the judge's reasoning.
+    are added when set. ``comparison_logs`` (the judge's reasoning) is added,
+    truncated to ``max_log_chars``, only for judged scorers that did not get
+    full marks, so a clean run stays small while every failure keeps its
+    explanation. Measured metrics carry just their value.
 
-    Rows without a scenario ``id`` are skipped.
+    Rows without a scenario ``id`` are skipped. Use ``fit_scenario_scores``
+    to bound the size of the result before putting it in a response.
     """
     if scores_df is None or scores_df.empty or "id" not in scores_df.columns:
         return []
@@ -396,7 +420,7 @@ def scenario_scores(
             if text is not None and text != "":
                 entry[column] = str(text)
         logs = _json_scalar(row.get("comparison_logs"))
-        if logs is not None and logs != "" and score != _FULL_MARKS:
+        if logs is not None and logs != "" and _is_failure(entry):
             logs = str(logs)
             if len(logs) > max_log_chars:
                 dropped = len(logs) - max_log_chars
@@ -404,3 +428,36 @@ def scenario_scores(
             entry["comparison_logs"] = logs
         entries.append(entry)
     return entries
+
+
+def fit_scenario_scores(
+    entries: list[dict], max_bytes: int = SCENARIO_SCORES_MAX_BYTES
+) -> tuple[list[dict], bool]:
+    """Shrinks ``entries`` until their JSON form fits in ``max_bytes``.
+
+    Returns ``(entries, truncated)``. Degrades in steps that keep the most
+    useful information the longest: every entry; then only the failures (the
+    aggregate counts already say how many passed); then the failures without
+    ``comparison_logs``; finally the longest prefix of those that fits.
+    """
+    def size(items):
+        return len(json.dumps(items))
+
+    if size(entries) <= max_bytes:
+        return entries, False
+    failures = [e for e in entries if _is_failure(e)]
+    if size(failures) <= max_bytes:
+        return failures, True
+    slim = [
+        {k: v for k, v in e.items() if k != "comparison_logs"} for e in failures
+    ]
+    if size(slim) <= max_bytes:
+        return slim, True
+    kept, used = [], size([])
+    for entry in slim:
+        cost = size(entry) + len(", ")
+        if used + cost > max_bytes:
+            break
+        kept.append(entry)
+        used += cost
+    return kept, True
