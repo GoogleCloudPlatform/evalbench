@@ -35,8 +35,8 @@ class DataformWorkspaceManager:
         _record("setup_workspace", job_id, scenario_id, env_files_dir=env_files_dir)
         return "projects/p/locations/l/repositories/r/workspaces/w"
 
-    def teardown_workspace(self, workspace_uri):
-        _record("teardown_workspace", workspace_uri)
+    def teardown_workspace(self, workspace_uri, job_id):
+        _record("teardown_workspace", workspace_uri, job_id)
 '''
 
 # A quote in the value closes the Python string literal if the script pastes
@@ -79,7 +79,7 @@ def _run(script, workdir, session_dir, extra_env):
 
 
 def test_teardown_passes_state_file_content_as_data(workdir, tmp_path):
-    session_dir = tmp_path / "session"
+    session_dir = tmp_path / "job-123"
     session_dir.mkdir()
     state_file = session_dir / "target_workspace.txt"
     workspace_uri = "projects/p/locations/l/repositories/r/workspaces/" + _QUOTED
@@ -89,7 +89,7 @@ def test_teardown_passes_state_file_content_as_data(workdir, tmp_path):
 
     assert calls == [
         ["__init__", ["proj", "us-central1"], {}],
-        ["teardown_workspace", [workspace_uri], {}],
+        ["teardown_workspace", [workspace_uri, "job-123"], {}],
     ]
 
 
