@@ -28,6 +28,15 @@ SCORES_MAX_COLWIDTH = 500
 SCORES_MAX_ROWS = 500
 SCORES_MAX_CHARS = 200_000
 
+# evals.csv only contributes a sample to the prompt, but its cells carry whole
+# conversation_history / stdout blobs (tens of MB each in production). Left
+# unbounded, to_string() pads every row to the widest blob: one 115 MB
+# evals.csv rendered to a 613 MB string and OOM-killed the precompute loop on
+# every pass, so the trends cache stopped advancing.
+EVALS_MAX_ROWS = 5
+EVALS_MAX_COLWIDTH = SCORES_MAX_COLWIDTH
+EVALS_MAX_CHARS = 50_000
+
 
 def render_scores_for_prompt(scores_df):
     """Render scores.csv for the analyzer prompt within a bounded size."""
@@ -39,6 +48,16 @@ def render_scores_for_prompt(scores_df):
         body += f"\n... {omitted} further rows omitted ..."
     if len(body) > SCORES_MAX_CHARS:
         body = body[:SCORES_MAX_CHARS] + "\n... truncated ..."
+    return body
+
+
+def render_evals_for_prompt(evals_df):
+    """Render a bounded sample of evals.csv for the analyzer prompt."""
+    body = evals_df.head(EVALS_MAX_ROWS).to_string(
+        max_colwidth=EVALS_MAX_COLWIDTH
+    )
+    if len(body) > EVALS_MAX_CHARS:
+        body = body[:EVALS_MAX_CHARS] + "\n... truncated ..."
     return body
 
 
@@ -99,7 +118,8 @@ def summarize_eval_scoring(results_dir, dataset_name=None, model_config_path=Non
         return f"Error: evals.csv not found in {results_dir}"
 
     try:
-        evals_df = pd.read_csv(evals_path)
+        # Only a sample is rendered, so don't parse the rest of the file.
+        evals_df = pd.read_csv(evals_path, nrows=EVALS_MAX_ROWS)
         scores_df = pd.read_csv(scores_path) if os.path.exists(scores_path) else None
 
         # Read prompt from file
@@ -114,7 +134,7 @@ def summarize_eval_scoring(results_dir, dataset_name=None, model_config_path=Non
         prompt = prompt_instructions + "\n\n"
         prompt += "### Evals Data (Sample or Summary):\n"
         # Include first few rows or a summary of evals
-        prompt += evals_df.head(5).to_string() + "\n\n"
+        prompt += render_evals_for_prompt(evals_df) + "\n\n"
 
         if scores_df is not None:
             prompt += "### Scores Data:\n"
