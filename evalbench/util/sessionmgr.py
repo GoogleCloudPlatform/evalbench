@@ -1,4 +1,5 @@
 import os
+import re
 from threading import Thread, Lock
 import logging
 import time
@@ -6,6 +7,60 @@ from absl import app
 import uuid
 
 SESSION_RESOURCES_PATH = "/tmp_sessions/"
+
+# Session IDs come from client metadata and are used as directory names.
+_SESSION_ID_RE = re.compile(r"[A-Za-z0-9_.-]{1,128}")
+
+
+def validate_session_id(session_id) -> str:
+    """Returns session_id. Raises ValueError if it is unsafe as a dir name."""
+    if (
+        not isinstance(session_id, str)
+        or session_id in (".", "..")
+        or not _SESSION_ID_RE.fullmatch(session_id)
+    ):
+        raise ValueError(f"Invalid session_id: {session_id!r}")
+    return session_id
+
+
+def safe_resource_path(session_id, address) -> str:
+    """Returns the resource path. Raises ValueError if it is outside the session dir."""
+    base = os.path.realpath(
+        os.path.join(SESSION_RESOURCES_PATH, validate_session_id(session_id))
+    )
+    if not address or "\x00" in address or os.path.isabs(address):
+        raise ValueError(f"Invalid resource address: {address!r}")
+    # realpath resolves "../" and symlinks before the containment check.
+    full_path = os.path.realpath(os.path.join(base, address))
+    if full_path == base or os.path.commonpath([base, full_path]) != base:
+        raise ValueError(
+            f"Resource address escapes session directory: {address!r}")
+    return full_path
+
+
+def _check_path_conflicts(session_id, paths):
+    """Raises ValueError if a path needs a file and a dir at the same place."""
+    base = os.path.realpath(os.path.join(SESSION_RESOURCES_PATH, session_id))
+    addresses = {full_path: resource.address for full_path, resource in paths}
+    for full_path, resource in paths:
+        if os.path.isdir(full_path):
+            raise ValueError(
+                f"Resource address is an existing directory: {resource.address!r}")
+        parent = os.path.dirname(full_path)
+        while parent != base:
+            if parent == os.path.dirname(parent):
+                # Reached "/" without finding base. Fail closed, never spin.
+                raise ValueError(
+                    "Resource address escapes session directory: "
+                    f"{resource.address!r}")
+            if parent in addresses:
+                raise ValueError(
+                    f"Resource addresses conflict: {addresses[parent]!r} "
+                    f"and {resource.address!r}")
+            if os.path.lexists(parent) and not os.path.isdir(parent):
+                raise ValueError(
+                    f"Resource address has a file as a parent: {resource.address!r}")
+            parent = os.path.dirname(parent)
 
 
 class RWLock:
@@ -52,6 +107,12 @@ class SessionManager:
             if not os.path.exists(SESSION_RESOURCES_PATH):
                 return
             for sid in os.listdir(SESSION_RESOURCES_PATH):
+                try:
+                    validate_session_id(sid)
+                except ValueError:
+                    logging.warning(
+                        f"Skipping invalid session directory {sid!r} on disk.")
+                    continue
                 dir_path = os.path.join(SESSION_RESOURCES_PATH, sid)
                 if os.path.isdir(dir_path):
                     mtime = os.path.getmtime(dir_path)
@@ -77,16 +138,20 @@ class SessionManager:
             self.lock.release_read()
 
     def write_resource_files(self, session_id, resources):
-        for resource in resources:
-            full_path = os.path.join(
-                SESSION_RESOURCES_PATH, session_id, resource.address
-            )
+        # Validate all paths first so a bad resource causes no partial write.
+        paths = [
+            (safe_resource_path(session_id, resource.address), resource)
+            for resource in resources
+        ]
+        _check_path_conflicts(session_id, paths)
+        for full_path, resource in paths:
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             with open(full_path, "wb") as f:
                 f.write(resource.content)
 
     def prune_resource_files(self, session_id):
-        path = os.path.join(SESSION_RESOURCES_PATH, session_id)
+        path = os.path.join(
+            SESSION_RESOURCES_PATH, validate_session_id(session_id))
         if not os.path.exists(path):
             return
         for root, dirs, files in os.walk(path, topdown=False):
@@ -102,6 +167,7 @@ class SessionManager:
         os.rmdir(path)
 
     def create_session(self, session_id):
+        validate_session_id(session_id)
         self.lock.acquire_write()
         try:
             if session_id in self.sessions:

@@ -26,6 +26,7 @@ from util import get_SessionManager
 from util.scriptrunner import run_script
 import sys
 from util.sessionmgr import SESSION_RESOURCES_PATH
+from util.sessionmgr import validate_session_id
 from dataset.dataset import load_dataset_from_json
 
 # protoc generates flat imports in eval_service_pb2_grpc (e.g. import
@@ -60,6 +61,38 @@ class EmptyEvalResultError(Exception):
     not a server fault. Translated to gRPC FAILED_PRECONDITION."""
 
 
+def _abort_handler(
+    handler: Optional[grpc.RpcMethodHandler],
+    code: grpc.StatusCode,
+    details: str,
+) -> Optional[grpc.RpcMethodHandler]:
+    """Returns a handler of the same RPC kind as `handler` that aborts."""
+    if handler is None:
+        return None
+
+    async def _abort_unary_response(request_or_iterator, context):
+        await context.abort(code, details)
+
+    async def _abort_stream_response(request_or_iterator, context):
+        await context.abort(code, details)
+        yield  # Unreachable. Makes this function an async generator.
+
+    kwargs = dict(
+        request_deserializer=handler.request_deserializer,
+        response_serializer=handler.response_serializer,
+    )
+    if handler.request_streaming and handler.response_streaming:
+        return grpc.stream_stream_rpc_method_handler(
+            _abort_stream_response, **kwargs)
+    if handler.request_streaming:
+        return grpc.stream_unary_rpc_method_handler(
+            _abort_unary_response, **kwargs)
+    if handler.response_streaming:
+        return grpc.unary_stream_rpc_method_handler(
+            _abort_stream_response, **kwargs)
+    return grpc.unary_unary_rpc_method_handler(_abort_unary_response, **kwargs)
+
+
 class SessionManagerInterceptor(grpc.aio.ServerInterceptor):
     def __init__(self, tag: str, rpc_id: Optional[str] = None) -> None:
         self.tag = tag
@@ -72,11 +105,24 @@ class SessionManagerInterceptor(grpc.aio.ServerInterceptor):
         ],
         handler_call_details: grpc.HandlerCallDetails,
     ) -> grpc.RpcMethodHandler:
+        # Validate on every RPC. Do not depend on the inherited rpc_id_var.
         _metadata = dict(handler_call_details.invocation_metadata)
-        if rpc_id_var.get() == "default":
-            _metadata = dict(handler_call_details.invocation_metadata)
-            rpc_id_var.set(_metadata["client-rpc-id"])
-            SESSIONMANAGER.create_session(rpc_id_var.get())
+        client_rpc_id = _metadata.get("client-rpc-id")
+        try:
+            validate_session_id(client_rpc_id)
+        except ValueError:
+            logging.warning(
+                "Rejecting RPC %s: invalid client-rpc-id metadata %r",
+                handler_call_details.method,
+                client_rpc_id,
+            )
+            return _abort_handler(
+                await continuation(handler_call_details),
+                grpc.StatusCode.INVALID_ARGUMENT,
+                "Missing or invalid client-rpc-id metadata",
+            )
+        rpc_id_var.set(client_rpc_id)
+        SESSIONMANAGER.create_session(client_rpc_id)
         return await continuation(handler_call_details)
 
 
@@ -123,8 +169,12 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                     yaml_config, rpc_id_var.get(), resource_map)
                 resource.content = yaml.dump(yaml_config).encode("utf-8")
         session = SESSIONMANAGER.get_session(rpc_id_var.get())
-        SESSIONMANAGER.write_resource_files(
-            rpc_id_var.get(), request.resources)
+        try:
+            SESSIONMANAGER.write_resource_files(
+                rpc_id_var.get(), request.resources)
+        except ValueError as e:
+            logging.warning(f"EvalConfig rejected resources: {e}")
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(e))
         set_session_configs(session, experiment_config)
         session_id = rpc_id_var.get()
         return eval_response_pb2.EvalResponse(response="ack", session_id=session_id)
