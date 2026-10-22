@@ -105,25 +105,24 @@ class SessionManagerInterceptor(grpc.aio.ServerInterceptor):
         ],
         handler_call_details: grpc.HandlerCallDetails,
     ) -> grpc.RpcMethodHandler:
+        # Validate on every RPC. Do not depend on the inherited rpc_id_var.
         _metadata = dict(handler_call_details.invocation_metadata)
-        if rpc_id_var.get() == "default":
-            _metadata = dict(handler_call_details.invocation_metadata)
-            client_rpc_id = _metadata.get("client-rpc-id")
-            try:
-                validate_session_id(client_rpc_id)
-            except ValueError:
-                logging.warning(
-                    "Rejecting RPC %s: invalid client-rpc-id metadata %r",
-                    handler_call_details.method,
-                    client_rpc_id,
-                )
-                return _abort_handler(
-                    await continuation(handler_call_details),
-                    grpc.StatusCode.INVALID_ARGUMENT,
-                    "Missing or invalid client-rpc-id metadata",
-                )
-            rpc_id_var.set(client_rpc_id)
-            SESSIONMANAGER.create_session(rpc_id_var.get())
+        client_rpc_id = _metadata.get("client-rpc-id")
+        try:
+            validate_session_id(client_rpc_id)
+        except ValueError:
+            logging.warning(
+                "Rejecting RPC %s: invalid client-rpc-id metadata %r",
+                handler_call_details.method,
+                client_rpc_id,
+            )
+            return _abort_handler(
+                await continuation(handler_call_details),
+                grpc.StatusCode.INVALID_ARGUMENT,
+                "Missing or invalid client-rpc-id metadata",
+            )
+        rpc_id_var.set(client_rpc_id)
+        SESSIONMANAGER.create_session(client_rpc_id)
         return await continuation(handler_call_details)
 
 

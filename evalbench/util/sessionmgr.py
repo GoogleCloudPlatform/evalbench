@@ -48,6 +48,11 @@ def _check_path_conflicts(session_id, paths):
                 f"Resource address is an existing directory: {resource.address!r}")
         parent = os.path.dirname(full_path)
         while parent != base:
+            if parent == os.path.dirname(parent):
+                # Reached "/" without finding base. Fail closed, never spin.
+                raise ValueError(
+                    "Resource address escapes session directory: "
+                    f"{resource.address!r}")
             if parent in addresses:
                 raise ValueError(
                     f"Resource addresses conflict: {addresses[parent]!r} "

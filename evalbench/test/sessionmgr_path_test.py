@@ -1,7 +1,9 @@
 """Tests for session ID and resource path validation."""
 
+import importlib
 import os
 import sys
+import threading
 import unittest
 from types import SimpleNamespace
 
@@ -91,6 +93,25 @@ def test_rejects_symlink_escape(session_root, manager, tmp_path):
     assert not (tmp_path / "x").exists()
 
 
+def test_conflict_check_fails_closed_outside_session_dir(session_root):
+    # A path outside the session dir must raise. It must not loop forever.
+    outside = str(session_root.parent / "elsewhere" / "x")
+    errors = []
+
+    def check():
+        try:
+            sessionmgr._check_path_conflicts(
+                "sid", [(outside, _resource("x"))])
+        except ValueError as e:
+            errors.append(e)
+
+    thread = threading.Thread(target=check, daemon=True)
+    thread.start()
+    thread.join(timeout=5)
+    assert not thread.is_alive(), "_check_path_conflicts did not stop"
+    assert errors
+
+
 def test_prune_rejects_traversal_session_id(session_root, manager, tmp_path):
     victim = tmp_path / "victim"
     victim.mkdir()
@@ -107,6 +128,28 @@ def test_load_sessions_skips_invalid_directory_names(session_root, manager):
         (session_root / name).mkdir()
     manager.load_sessions_from_disk()
     assert set(manager.sessions) == {"valid_sid"}
+
+
+def _fail_makedirs(*args, **kwargs):
+    raise AssertionError(f"Unexpected os.makedirs{args}")
+
+
+@pytest.mark.parametrize("module_name, class_name", [
+    ("generators.models.gemini_cli", "GeminiCliGenerator"),
+    ("generators.models.claude_code", "ClaudeCodeGenerator"),
+    ("generators.models.codex_cli", "CodexCliGenerator"),
+    ("generators.models.agy_cli", "AgyCliGenerator"),
+])
+@pytest.mark.parametrize("session_id", ["../victim", "/etc", "a/b"])
+def test_cli_generator_rejects_unsafe_config_session_id(
+        monkeypatch, module_name, class_name, session_id):
+    # The client uploads the model config. Its session_id must not move
+    # fake_home out of the session directory.
+    generator_class = getattr(importlib.import_module(module_name), class_name)
+    monkeypatch.setattr(sys, "argv", ["/evalbench/eval_server.py"])
+    monkeypatch.setattr(os, "makedirs", _fail_makedirs)
+    with pytest.raises(ValueError):
+        generator_class({"session_id": session_id})
 
 
 class TestGrpcRejectsBadInput(unittest.IsolatedAsyncioTestCase):
@@ -139,6 +182,33 @@ class TestGrpcRejectsBadInput(unittest.IsolatedAsyncioTestCase):
                         eval_request_pb2.PingRequest(), metadata=metadata)
                 self.assertEqual(
                     e.exception.code(), grpc.StatusCode.INVALID_ARGUMENT)
+
+    async def test_rejects_invalid_client_rpc_id_if_rpc_id_var_is_set(self):
+        # The check must not depend on the rpc_id_var value that the RPC
+        # inherits. Only the context of this test changes.
+        from eval_service import EvalServicer, SessionManagerInterceptor
+        from evalproto import eval_request_pb2, eval_service_pb2_grpc
+        from util.context import rpc_id_var
+
+        rpc_id_var.set("preset")
+        server = grpc.aio.server(
+            interceptors=[SessionManagerInterceptor("SessionManagerInterceptor")]
+        )
+        eval_service_pb2_grpc.add_EvalServiceServicer_to_server(
+            EvalServicer(), server)
+        port = server.add_insecure_port("127.0.0.1:0")
+        await server.start()
+        try:
+            async with grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel:
+                stub = eval_service_pb2_grpc.EvalServiceStub(channel)
+                with self.assertRaises(grpc.aio.AioRpcError) as e:
+                    await stub.Ping(
+                        eval_request_pb2.PingRequest(),
+                        metadata=[("client-rpc-id", "../etc")])
+                self.assertEqual(
+                    e.exception.code(), grpc.StatusCode.INVALID_ARGUMENT)
+        finally:
+            await server.stop(grace=0)
 
     async def test_eval_config_rejects_bad_addresses(self):
         from evalproto import eval_config_pb2
