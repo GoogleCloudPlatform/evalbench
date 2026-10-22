@@ -47,6 +47,32 @@ _SUITE_CONFIG = flags.DEFINE_string(
 flags.declare_key_flag('experiment_config')
 
 
+def _store_reports(
+    reporters, config_df, results_df, scores_df, summary_scores_df
+) -> list[str]:
+    """Writes the reports with each reporter.
+
+    A failed reporter does not stop the others, so a BigQuery error still
+    leaves the CSV output on disk.
+
+    Returns:
+      The class names of the reporters that failed.
+    """
+    failed = []
+    for reporter in reporters:
+        name = type(reporter).__name__
+        try:
+            reporter.store(config_df, report.STORETYPE.CONFIGS)
+            reporter.store(results_df, report.STORETYPE.EVALS)
+            reporter.store(scores_df, report.STORETYPE.SCORES)
+            reporter.store(summary_scores_df, report.STORETYPE.SUMMARY)
+            reporter.print_dashboard_links()
+        except Exception:
+            logging.exception(f"{name} failed to store the reports.")
+            failed.append(name)
+    return failed
+
+
 def eval(experiment_config: str):
     config = None
     session_dir = None
@@ -161,15 +187,17 @@ def eval(experiment_config: str):
             summary_scores_df = None
 
         # Store the reports in specified outputs
-        for reporter in reporters:
-            reporter.store(config_df, report.STORETYPE.CONFIGS)
-            reporter.store(results_df, report.STORETYPE.EVALS)
-            reporter.store(scores_df, report.STORETYPE.SCORES)
-            reporter.store(summary_scores_df, report.STORETYPE.SUMMARY)
-            reporter.print_dashboard_links()
+        failed_reporters = _store_reports(
+            reporters, config_df, results_df, scores_df, summary_scores_df)
 
         print(f"Finished Job ID {job_id}")
 
+        if failed_reporters:
+            logging.error(
+                f"Evaluation for config '{display_config}' finished, but "
+                f"these reporters failed: {', '.join(failed_reporters)}"
+            )
+            return False
         return True
     except Exception as e:
         display_config = experiment_config

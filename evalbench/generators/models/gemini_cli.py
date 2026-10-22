@@ -9,6 +9,7 @@ import shutil
 import sys
 from typing import Optional, Union, Dict, List
 from util.context import rpc_id_var
+from util.sessionmgr import validate_session_id
 
 
 class CLICommand:
@@ -36,6 +37,7 @@ class GeminiCliGenerator(AgentCliGenerator):
             if not session_id:
                 ctx_id = rpc_id_var.get()
                 session_id = ctx_id if ctx_id != "default" else "default"
+            validate_session_id(session_id)
             self.fake_home = os.path.join("/tmp_sessions", session_id, "fake_home")
         else:
             self.fake_home = os.path.abspath(os.path.join(".venv", "fake_home"))
