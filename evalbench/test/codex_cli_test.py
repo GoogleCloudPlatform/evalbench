@@ -230,7 +230,7 @@ def test_run_codex_cli_refreshes_token_with_recorded_scopes():
 def test_fetch_gcloud_access_token_rejects_unsafe_scopes():
     generator = object.__new__(CodexCliGenerator)
     generator.env = {}
-    with pytest.raises(AssertionError, match="Invalid or unsafe OAuth scope"):
+    with pytest.raises(ValueError, match="Invalid or unsafe OAuth scope"):
         generator._fetch_gcloud_access_token(
             scopes=['$(whoami)']
         )

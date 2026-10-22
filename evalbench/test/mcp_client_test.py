@@ -7,6 +7,7 @@ from generators.models.mcp_client import (
     McpToolsError,
     auth_headers,
     extract_mcp_oauth_scopes,
+    validate_oauth_scopes,
 )
 
 
@@ -76,6 +77,47 @@ class ExtractMcpOauthScopesTest(unittest.TestCase):
             extract_mcp_oauth_scopes({"scopes": ["https://www.googleapis.com/auth/cloud-platform"]}),
             [],
         )
+
+    def test_invalid_scope_in_config_raises_value_error(self):
+        config = {
+            "oauth": {
+                "scopes": ['https://example.com"; rm -rf /; "']
+            }
+        }
+        with self.assertRaises(ValueError) as ctx:
+            extract_mcp_oauth_scopes(config)
+        self.assertIn("Invalid or unsafe OAuth scope", str(ctx.exception))
+
+
+class ValidateOauthScopesTest(unittest.TestCase):
+
+    def test_valid_scopes(self):
+        valid = [
+            "https://www.googleapis.com/auth/cloud-platform",
+            "https://www.googleapis.com/auth/dfareporting",
+            "openid",
+            "email",
+            "profile",
+        ]
+        self.assertEqual(validate_oauth_scopes(valid), valid)
+
+    def test_empty_scopes(self):
+        self.assertEqual(validate_oauth_scopes([]), [])
+
+    def test_unsafe_scopes_raise_value_error(self):
+        unsafe_scopes = [
+            'https://example.com"; rm -rf /; "',
+            '$(whoami)',
+            '`id`',
+            'scope with spaces',
+            'scope;echo bad',
+            'scope\nnewline',
+        ]
+        for unsafe in unsafe_scopes:
+            with self.subTest(unsafe=unsafe):
+                with self.assertRaises(ValueError) as ctx:
+                    validate_oauth_scopes([unsafe])
+                self.assertIn("Invalid or unsafe OAuth scope", str(ctx.exception))
 
 
 class AuthHeadersTest(unittest.TestCase):

@@ -670,10 +670,7 @@ class CodexCliGenerator(AgentCliGenerator):
 
         commands = []
         if scopes:
-            for s in scopes:
-                assert re.fullmatch(r"[A-Za-z0-9_.:/-]+", s), (
-                    f"Invalid or unsafe OAuth scope: {s!r}"
-                )
+            mcp_client.validate_oauth_scopes(scopes)
             scopes_str = ",".join(scopes)
             commands.append(
                 [
