@@ -9,6 +9,7 @@ import re
 import shutil
 import sys
 import tempfile
+import threading
 import weakref
 from typing import Optional, Union, Dict, List
 from util.context import rpc_id_var
@@ -23,11 +24,14 @@ AGY_INSTALL_URL = "https://antigravity.google/cli/install.sh"
 # Turns off agy's background self-update when exactly "true".
 _DISABLE_AUTO_UPDATE_ENV = "AGY_CLI_DISABLE_AUTO_UPDATE"
 
-# Longer than agy's own 10-minute download timeout.
-_AGY_UPDATE_TIMEOUT_S = 660
+# Limits how long `agy update` can delay startup. A timeout during the
+# download is safe: agy downloads to a staging file and replaces its binary
+# only after it verifies the download.
+_AGY_UPDATE_TIMEOUT_S = 120
 
 # agy binaries this process already installed or updated.
 _UPDATED_AGY_BINS: set[str] = set()
+_UPDATED_AGY_BINS_LOCK = threading.Lock()
 
 # Makes agy authenticate from Application Default Credentials
 # instead of its interactive OAuth login. See _setup_auth.
@@ -188,9 +192,11 @@ class AgyCliGenerator(AgentCliGenerator):
         """
         if os.path.exists(self.agy_bin) and os.access(self.agy_bin, os.X_OK):
             logging.info("agy binary already present at %s.", self.agy_bin)
-            if self.agy_bin not in _UPDATED_AGY_BINS:
-                self._update_agy()
-                _UPDATED_AGY_BINS.add(self.agy_bin)
+            # Generators built in parallel threads must not update twice.
+            with _UPDATED_AGY_BINS_LOCK:
+                if self.agy_bin not in _UPDATED_AGY_BINS:
+                    self._update_agy()
+                    _UPDATED_AGY_BINS.add(self.agy_bin)
             return
 
         env = self._merged_env()

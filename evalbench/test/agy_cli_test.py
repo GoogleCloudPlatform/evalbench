@@ -10,6 +10,7 @@ import pytest
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from generators.models import agy_cli
 from generators.models.agy_cli import AgyCliGenerator, CLICommand
 
 
@@ -51,6 +52,15 @@ def skip_agy_install(request):
         AgyCliGenerator, "_ensure_agy_installed", lambda self: None
     ):
         yield
+
+
+@pytest.fixture(autouse=True)
+def reset_updated_agy_bins():
+    """Clears the per-process record of updated agy binaries, so that no
+    test depends on another test's update."""
+    agy_cli._UPDATED_AGY_BINS.clear()
+    yield
+    agy_cli._UPDATED_AGY_BINS.clear()
 
 
 _REAL_RESOLVE_AGY_VERSION = AgyCliGenerator._resolve_agy_version
@@ -278,8 +288,9 @@ def test_existing_binary_is_updated_once_per_process(mock_run, sandbox):
 @pytest.mark.real_agy_install
 @pytest.mark.parametrize("failure", [
     MagicMock(returncode=1, stdout="", stderr="network down"),
-    subprocess.TimeoutExpired(cmd="agy update", timeout=660),
-], ids=["nonzero_exit", "timeout"])
+    subprocess.TimeoutExpired(cmd="agy update", timeout=120),
+    PermissionError(13, "Permission denied"),
+], ids=["nonzero_exit", "timeout", "oserror"])
 def test_failed_update_keeps_the_current_binary(
     mock_run, sandbox, caplog, failure,
 ):
