@@ -5,6 +5,15 @@ import pandas as pd
 import os
 
 
+def _format_count(value) -> str:
+    """Formats a result count, which is fractional for partial-credit metrics."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return f"{number:.0f}" if number.is_integer() else f"{number:.2f}"
+
+
 def dashboard_component(results_dir: str):
     me.text(
         "Dashboard Summary",
@@ -67,7 +76,7 @@ def dashboard_component(results_dir: str):
                     ),
                 )
                 me.text(
-                    f"{correct}/{total}",
+                    f"{_format_count(correct)}/{_format_count(total)}",
                     style=me.Style(
                         font_weight="700",
                         font_size="22px",
@@ -84,8 +93,14 @@ def dashboard_component(results_dir: str):
                     scores_df = pd.read_csv(scores_path)
                     gc_df = scores_df[scores_df['comparator'] == 'goal_completion']
                     if not gc_df.empty:
-                        total = len(gc_df)
-                        correct = len(gc_df[gc_df['score'] >= 100.0])
+                        # Same rollup as the analyzer: a prompt with several
+                        # trials counts its weakest one.
+                        if 'prompt_id' in gc_df.columns and gc_df['prompt_id'].notna().any():
+                            gc_scores = gc_df.groupby('prompt_id')['score'].min()
+                        else:
+                            gc_scores = gc_df['score']
+                        total = len(gc_scores)
+                        correct = round(gc_scores.sum() / 100.0, 4)
 
                         pct = (correct / total) * 100 if total > 0 else 0
                         color = (
@@ -116,7 +131,7 @@ def dashboard_component(results_dir: str):
                                 ),
                             )
                             me.text(
-                                f"{correct}/{total}",
+                                f"{_format_count(correct)}/{_format_count(total)}",
                                 style=me.Style(
                                     font_weight="700",
                                     font_size="22px",
