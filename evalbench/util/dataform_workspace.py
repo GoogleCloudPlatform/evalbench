@@ -158,6 +158,11 @@ class DataformWorkspaceManager:
             )
             raise
 
+    @staticmethod
+    def _repository_id(job_id: str) -> str:
+        """Returns the ID of the repository that setup_workspace creates."""
+        return f"evalbench-{job_id}"
+
     def setup_workspace(
         self,
         job_id: str,
@@ -165,7 +170,7 @@ class DataformWorkspaceManager:
         env_files_dir: str | None = None,
     ) -> str:
         """Dynamically creates a Dataform repository and workspace."""
-        repository_id = f"evalbench-{job_id}"
+        repository_id = self._repository_id(job_id)
         repository_path = self._create_repository(repository_id)
 
         workspace_id = scenario_id
@@ -243,10 +248,22 @@ class DataformWorkspaceManager:
             )
             raise
 
-    def teardown_workspace(self, workspace_uri: str) -> None:
-        """Deletes the parent Dataform repository and all child workspaces."""
+    def teardown_workspace(self, workspace_uri: str, job_id: str) -> None:
+        """Deletes the parent Dataform repository and all child workspaces.
+
+        Raises ValueError unless the URI is in this project and location and
+        names the repository of job_id. The URI comes from a client-writable file.
+        """
         workspace_uri_match = _WORKSPACE_RE.match(workspace_uri)
         if not workspace_uri_match:
             raise ValueError(f"Invalid workspace URI: {workspace_uri!r}")
         repository_id = workspace_uri_match.group(1)
+        if (
+            not workspace_uri.startswith(f"{self.parent}/repositories/")
+            or repository_id != self._repository_id(job_id)
+        ):
+            raise ValueError(
+                f"Workspace URI {workspace_uri!r} is not the repository of "
+                f"job {job_id!r} in {self.parent}"
+            )
         self._delete_repository(repository_id)
