@@ -133,21 +133,7 @@ All of these require a `model_config` pointing at the LLM that performs the eval
 
 `binary_rubric_scorer` reads its criteria from the scenario's `binary_rubric` array and emits one score per criterion, named `binary_rubric_scorer_<index>`. If a scenario declares no rubric, a single unindexed scorer runs instead.
 
-`goal_completion` also reads the optional `success_criteria` field of a scenario. Use it to list the outcomes that the judge grades. The simulated user follows `conversation_plan` and does not see this field. If the field is set, the judge grades each criterion. If the field is not set, the judge splits `conversation_plan` into sub-goals.
-
-```json
-{
-  "id": "list-instances-01",
-  "starting_prompt": "List all Cloud SQL instances in my project",
-  "conversation_plan": "Ask the agent to list instances. If nl2code exists, ask for its state.",
-  "success_criteria": [
-    "The agent lists the Cloud SQL instances in the project",
-    "The agent reports the state of the nl2code instance"
-  ],
-  "expected_trajectory": ["cloud-sql__list_instances", "cloud-sql__get_instance"],
-  "max_turns": 4
-}
-```
+`goal_completion` also reads the optional `success_criteria` field of a scenario. If the field is set, the judge grades each criterion. If the field is not set, the judge splits `conversation_plan` into sub-goals. The simulated user does not see this field. See [Example: with and without `success_criteria`](/docs/configs/agentic-dataset-config.md#example-with-and-without-success_criteria).
 
 ---
 
