@@ -494,7 +494,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                 db_configs,
             )
             logging.info(
-                f"Finished Interactive Job ID {job_id}. Summary: {summary}")
+                f"Finished Interactive Job ID {job_id}. Summary: {_summary_for_log(summary)}")
 
             # Send the final payload back to the client to close the stream cleanly.
             final_request = eval_request_pb2.EvalInputRequest()
@@ -506,7 +506,9 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                 conv_id = str(getattr(first_item, "id", ""))
                 if conv_id:
                     final_request.conversation_id = conv_id
-            logging.info(f"Yielding final summary payload: {final_request}")
+            logging.info(
+                "Yielding final summary payload for job %s (%d bytes)",
+                job_id, len(final_request.payload))
             yield final_request
 
         finally:
@@ -724,7 +726,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                 logging.info(
                     "Finished Agent Evaluation Job ID %s. Summary: %s",
                     job_id,
-                    summary,
+                    _summary_for_log(summary),
                 )
                 final_msg = eval_agent_pb2.AgentStreamMessage(
                     session_id=session_id,
@@ -742,6 +744,19 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                 "Cleaned up agent proxy queues for session %s",
                 session_id,
             )
+
+
+def _summary_for_log(summary):
+    """The summary with the per-scenario list replaced by its length.
+
+    The list is bounded but can still be hundreds of KB; the log line only
+    needs the aggregate scores.
+    """
+    if not isinstance(summary, dict) or "scenario_scores" not in summary:
+        return summary
+    short = dict(summary)
+    short["scenario_scores"] = f"<{len(summary['scenario_scores'])} entries>"
+    return short
 
 
 def _process_results(
@@ -798,6 +813,25 @@ def _process_results(
         correct = int(row.get("correct_results_count", 0))
         summary["total"] = total
         summary["scores"][name] = correct
+
+    # Per-scenario outcomes, so a client that only sees this response (e.g. a
+    # CI log) can tell which scenarios failed which scorer, and why, without
+    # the viewer or the reporting store. Bounded by SCENARIO_SCORES_MAX_BYTES
+    # so a large NL2SQL run cannot push the response past the gRPC message
+    # limit, and never allowed to fail the run.
+    if config.get("scenario_scores_in_response", True):
+        try:
+            entries, truncated = analyzer.fit_scenario_scores(
+                analyzer.scenario_scores(scores_df)
+            )
+            summary["scenario_scores"] = entries
+            if truncated:
+                summary["scenario_scores_truncated"] = True
+        except Exception:  # pylint: disable=broad-except
+            logging.warning(
+                "Could not attach per-scenario scores to the summary of job "
+                "%s; continuing without them.", job_id, exc_info=True,
+            )
 
     # Add generation latency percentiles
     if "sql_generator_time" in results_df.columns:
