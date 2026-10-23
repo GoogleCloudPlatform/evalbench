@@ -208,12 +208,19 @@ def process_directory(d, results_dir):
                     # largest allocation a batch makes.
                     columns = pd.read_csv(file_to_read, nrows=0).columns
                     if 'comparator' in columns and 'score' in columns:
-                        df = pd.read_csv(file_to_read, usecols=['comparator', 'score'])
+                        usecols = ['comparator', 'score']
+                        if 'prompt_id' in columns:
+                            usecols.append('prompt_id')
+                        df = pd.read_csv(file_to_read, usecols=usecols)
                         gc_scores = df[df['comparator'] == 'goal_completion']
                         if not gc_scores.empty:
-                            correct = len(gc_scores[gc_scores['score'] == 100.0])
-                            total = len(gc_scores)
-                            goal_completion = (correct / total) * 100 if total > 0 else 0.0
+                            # Same rollup as the analyzer: a prompt with
+                            # several trials counts its weakest one.
+                            if 'prompt_id' in gc_scores.columns and gc_scores['prompt_id'].notna().any():
+                                gc_scores = gc_scores.groupby('prompt_id')['score'].min()
+                            else:
+                                gc_scores = gc_scores['score']
+                            goal_completion = float(gc_scores.mean())
                             logging.info(f"Computed goal_completion from {os.path.basename(file_to_read)} for {d}: {goal_completion}")
                 except Exception as e:
                     logging.warning(f"Error reading {os.path.basename(file_to_read)} for {d}: {e}")

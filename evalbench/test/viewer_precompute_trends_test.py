@@ -396,6 +396,20 @@ class ProcessDirectoryTest(unittest.TestCase):
         self.assertEqual(50.0, res["goal_completion"])
         self.assertEqual([["comparator", "score"]], read_columns)
 
+    def test_goal_completion_fallback_counts_the_weakest_trial(self):
+        """Matches the analyzer: each prompt counts its weakest trial."""
+        self._write_summary(include_goal_completion=False)
+        self._write("scores.csv", pd.DataFrame([
+            {"comparator": "goal_completion", "prompt_id": "p1", "score": 100.0},
+            {"comparator": "goal_completion", "prompt_id": "p1", "score": 50.0},
+            {"comparator": "goal_completion", "prompt_id": "p2", "score": 100.0},
+            {"comparator": "goal_completion", "prompt_id": "p2", "score": 100.0},
+        ]))
+
+        res = precompute_trends.process_directory("run-0", self.results_dir)
+
+        self.assertEqual(75.0, res["goal_completion"])
+
     def test_a_scores_file_without_the_expected_columns_is_left_alone(self):
         self._write_summary(include_goal_completion=False)
         self._write("scores.csv", pd.DataFrame([{"something_else": 1}]))
