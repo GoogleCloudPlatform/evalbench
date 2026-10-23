@@ -9,9 +9,11 @@ import re
 import shutil
 import sys
 import tempfile
+import threading
 import weakref
 from typing import Optional, Union, Dict, List
 from util.context import rpc_id_var
+from util.sessionmgr import validate_session_id
 from util.config import parse_timeout_seconds
 
 # Agent version label, and its prefix in ``agy@<version>``. It is not a path.
@@ -19,6 +21,18 @@ from util.config import parse_timeout_seconds
 AGY_CLI = "agy"
 
 AGY_INSTALL_URL = "https://antigravity.google/cli/install.sh"
+
+# Turns off agy's background self-update when exactly "true".
+_DISABLE_AUTO_UPDATE_ENV = "AGY_CLI_DISABLE_AUTO_UPDATE"
+
+# Limits how long `agy update` can delay startup. A timeout during the
+# download is safe: agy downloads to a staging file and replaces its binary
+# only after it verifies the download.
+_AGY_UPDATE_TIMEOUT_S = 120
+
+# agy binaries this process already installed or updated.
+_UPDATED_AGY_BINS: set[str] = set()
+_UPDATED_AGY_BINS_LOCK = threading.Lock()
 
 # Makes agy authenticate from Application Default Credentials
 # instead of its interactive OAuth login. See _setup_auth.
@@ -95,6 +109,9 @@ class AgyCliGenerator(AgentCliGenerator):
         # binary.
         self._init_paths(querygenerator_config)
         self.env["HOME"] = self.fake_home
+        # Stop agy from replacing its binary mid-run. _ensure_agy_installed
+        # updates it once, before the version is read.
+        self.env.setdefault(_DISABLE_AUTO_UPDATE_ENV, "true")
         self._ensure_agy_installed()
         # The viewer shows this as the CLI version.
         self.agy_cli_version = self._resolve_agy_version()
@@ -134,6 +151,7 @@ class AgyCliGenerator(AgentCliGenerator):
             if not session_id:
                 ctx_id = rpc_id_var.get()
                 session_id = ctx_id if ctx_id != "default" else "default"
+            validate_session_id(session_id)
             self.fake_home = os.path.join(
                 "/tmp_sessions", session_id, "fake_home"
             )
@@ -168,24 +186,19 @@ class AgyCliGenerator(AgentCliGenerator):
         os.makedirs(self.config_dir, exist_ok=True)
 
     def _ensure_agy_installed(self):
-        """Installs the ``agy`` binary into this session's sandbox if absent.
+        """Installs agy into ``fake_home`` if absent, else updates it once
+        per process.
 
-        The binary lives under the per-session ``fake_home``
-        (``self.agy_bin``) rather than on the host PATH or baked into the
-        Docker image. Per-session keeps concurrent evals isolated: no install
-        race between sessions, and no shared binary that agy's background
-        self-update could swap mid-run -- which would otherwise skew the agent
-        version across a single batch.
-
-        The upstream installer skips the download when the binary already
-        exists, and we short-circuit on the same check, so a generator
-        re-constructed within a live session is a cheap stat.
+        Local runs reuse ``.venv/fake_home_agy``, so the binary is usually
+        present. In the gRPC service, each session has its own ``fake_home``.
         """
         if os.path.exists(self.agy_bin) and os.access(self.agy_bin, os.X_OK):
-            logging.info(
-                "agy binary already present at %s; skipping install.",
-                self.agy_bin,
-            )
+            logging.info("agy binary already present at %s.", self.agy_bin)
+            # Generators built in parallel threads must not update twice.
+            with _UPDATED_AGY_BINS_LOCK:
+                if self.agy_bin not in _UPDATED_AGY_BINS:
+                    self._update_agy()
+                    _UPDATED_AGY_BINS.add(self.agy_bin)
             return
 
         env = self._merged_env()
@@ -225,6 +238,33 @@ class AgyCliGenerator(AgentCliGenerator):
                 f"{self.agy_bin}."
             )
         logging.info("Installed agy into session sandbox at %s.", self.agy_bin)
+        # A fresh install is already the latest release.
+        _UPDATED_AGY_BINS.add(self.agy_bin)
+
+    def _update_agy(self):
+        """Runs `agy update`, which finishes before it returns.
+
+        Auto-update is off, so this is how a reused sandbox gets new
+        releases. On failure, the current binary stays.
+        """
+        try:
+            result = subprocess.run(
+                [self.agy_bin, "update"], env=self._merged_env(),
+                stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                timeout=_AGY_UPDATE_TIMEOUT_S, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as e:
+            logging.warning(
+                "agy update failed; keeping the current binary: %s", e)
+            return
+        output = _tail((result.stdout or "") + (result.stderr or ""), 500)
+        if result.returncode != 0:
+            logging.warning(
+                "agy update failed (rc=%s); keeping the current binary: %s",
+                result.returncode, output,
+            )
+            return
+        logging.info("agy update: %s", output.strip())
 
     def _resolve_agy_version(self) -> str:
         """Returns ``agy@<version>`` from ``agy --version``, or ``agy`` if the

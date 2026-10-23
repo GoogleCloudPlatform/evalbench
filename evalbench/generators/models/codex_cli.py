@@ -1,3 +1,4 @@
+from . import mcp_client
 from .agent_cli import AgentCliGenerator
 from .tool_naming import canonical_tool_name
 import subprocess
@@ -11,6 +12,7 @@ import threading
 import time
 from typing import Optional, Union, Dict, List
 from util.context import rpc_id_var
+from util.sessionmgr import validate_session_id
 
 
 _SECRET_MANAGER_PATH_RE = re.compile(
@@ -70,6 +72,7 @@ class CodexCliGenerator(AgentCliGenerator):
             if not session_id:
                 ctx_id = rpc_id_var.get()
                 session_id = ctx_id if ctx_id != "default" else "default"
+            validate_session_id(session_id)
             self.fake_home = os.path.join(
                 "/tmp_sessions", session_id, "fake_home")
         else:
@@ -123,6 +126,7 @@ class CodexCliGenerator(AgentCliGenerator):
         self.config_path = os.path.join(self.codex_config_dir, "config.toml")
         self.inline_mcp_servers = {}
         self.enabled_plugins = {}
+        self._gcloud_mcp_scopes = []
         self._setup()
 
     @staticmethod
@@ -607,6 +611,9 @@ class CodexCliGenerator(AgentCliGenerator):
         out: dict = {"url": url}
         headers = dict(config.get("headers") or {})
 
+        scopes = mcp_client.extract_mcp_oauth_scopes(config)
+        config.pop("oauth", None)
+
         auth_provider = config.get("authProviderType")
         if auth_provider == "google_credentials" and "Authorization" not in headers:
             # Supply the bearer token via `bearer_token_env_var` rather than a
@@ -618,7 +625,12 @@ class CodexCliGenerator(AgentCliGenerator):
             # stays a static header.
             out["bearer_token_env_var"] = self._GCLOUD_MCP_TOKEN_ENV
             self._needs_gcloud_mcp_token = True
-            token = self._fetch_gcloud_access_token()
+            if not hasattr(self, "_gcloud_mcp_scopes"):
+                self._gcloud_mcp_scopes = []
+            for s in scopes:
+                if s and s not in self._gcloud_mcp_scopes:
+                    self._gcloud_mcp_scopes.append(s)
+            token = self._fetch_gcloud_access_token(scopes=scopes)
             if token:
                 self.env[self._GCLOUD_MCP_TOKEN_ENV] = token  # initial value
             else:
@@ -630,7 +642,9 @@ class CodexCliGenerator(AgentCliGenerator):
             out["http_headers"] = headers
         return out
 
-    def _fetch_gcloud_access_token(self) -> str:
+    def _fetch_gcloud_access_token(
+        self, scopes: Optional[list[str]] = None
+    ) -> str:
         """Fetches a Google Cloud access token for MCP `google_credentials` auth.
 
         Prefers Application Default Credentials (``gcloud auth
@@ -652,10 +666,27 @@ class CodexCliGenerator(AgentCliGenerator):
         adc = self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
         if adc and os.path.exists(adc):
             token_env["GOOGLE_APPLICATION_CREDENTIALS"] = adc
-        commands = [
+
+        if scopes is None:
+            scopes = getattr(self, "_gcloud_mcp_scopes", None)
+
+        commands = []
+        if scopes:
+            mcp_client.validate_oauth_scopes(scopes)
+            scopes_str = ",".join(scopes)
+            commands.append(
+                [
+                    "gcloud",
+                    "auth",
+                    "application-default",
+                    "print-access-token",
+                    f"--scopes={scopes_str}",
+                ]
+            )
+        commands.extend([
             ["gcloud", "auth", "application-default", "print-access-token"],
             ["gcloud", "auth", "print-access-token"],
-        ]
+        ])
         for cmd in commands:
             try:
                 result = subprocess.run(
@@ -843,7 +874,9 @@ class CodexCliGenerator(AgentCliGenerator):
         # is a fresh process that re-reads `bearer_token_env_var`, so minting a
         # new ADC token here keeps it from expiring across a long suite.
         if getattr(self, "_needs_gcloud_mcp_token", False):
-            token = self._fetch_gcloud_access_token()
+            token = self._fetch_gcloud_access_token(
+                scopes=getattr(self, "_gcloud_mcp_scopes", None)
+            )
             if token:
                 env[self._GCLOUD_MCP_TOKEN_ENV] = token
 

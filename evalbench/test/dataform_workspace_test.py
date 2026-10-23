@@ -228,7 +228,7 @@ def test_teardown_workspace_success(
     mock_ws.name = f"{WORKSPACE_URI}"
     mock_client.list_workspaces.return_value = [mock_ws]
 
-    helper.teardown_workspace(WORKSPACE_URI)
+    helper.teardown_workspace(WORKSPACE_URI, "job-123")
     expected_repo = (
         f"projects/{PROJECT_ID}/locations/{LOCATION}/repositories/"
         "evalbench-job-123"
@@ -247,8 +247,25 @@ def test_teardown_workspace_invalid_uri(helper: DataformWorkspaceManager):
         "invalid/repo-id/workspaces/default"
     )
     with pytest.raises(ValueError) as exc_info:
-        helper.teardown_workspace(invalid_uri)
+        helper.teardown_workspace(invalid_uri, "job-123")
     assert "Invalid workspace URI" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("workspace_uri", [
+    # Another project (the same check covers another location).
+    "projects/other-project/locations/us-west4/repositories/"
+    "evalbench-job-123/workspaces/default",
+    # Another job's repository.
+    f"projects/{PROJECT_ID}/locations/{LOCATION}/repositories/"
+    "evalbench-other-job/workspaces/default",
+])
+def test_teardown_workspace_rejects_other_repository(
+    mock_client: MagicMock, helper: DataformWorkspaceManager, workspace_uri
+):
+    with pytest.raises(ValueError):
+        helper.teardown_workspace(workspace_uri, "job-123")
+    mock_client.list_workspaces.assert_not_called()
+    mock_client.delete_repository.assert_not_called()
 
 
 def test_setup_workspace_with_env_files_dir_success(

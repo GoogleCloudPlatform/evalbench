@@ -6,6 +6,7 @@ URL or command.
 """
 
 import functools
+import re
 
 import anyio
 
@@ -27,6 +28,42 @@ def _format_error(e: BaseException) -> str:
     return f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
 
 
+_OAUTH_SCOPE_PATTERN = re.compile(r"^[A-Za-z0-9_.:/-]+$")
+
+
+def validate_oauth_scopes(scopes: list[str]) -> list[str]:
+    """Validates that all OAuth scope strings contain only safe characters.
+
+    Raises:
+        ValueError: If any scope contains characters outside [A-Za-z0-9_.:/-].
+    """
+    for s in scopes:
+        if not _OAUTH_SCOPE_PATTERN.fullmatch(s):
+            raise ValueError(f"Invalid or unsafe OAuth scope: {s!r}")
+    return scopes
+
+
+def extract_mcp_oauth_scopes(server_config: dict) -> list[str]:
+    """Extracts and validates OAuth scopes from an MCP server config.
+
+    Accepts the canonical Gemini CLI schema:
+      oauth:
+        scopes:
+          - https://www.googleapis.com/auth/...
+
+    Raises:
+        ValueError: If any scope contains characters outside [A-Za-z0-9_.:/-].
+    """
+    oauth = server_config.get("oauth")
+    if not isinstance(oauth, dict):
+        return []
+    scopes = oauth.get("scopes")
+    if not isinstance(scopes, list):
+        return []
+    clean_scopes = [str(s).strip() for s in scopes if str(s).strip()]
+    return validate_oauth_scopes(clean_scopes)
+
+
 def auth_headers(server_config: dict) -> dict | None:
     """Build request headers for an MCP server (configured headers + auth).
 
@@ -39,7 +76,7 @@ def auth_headers(server_config: dict) -> dict | None:
         import google.auth
         import google.auth.transport.requests
 
-        scopes = (server_config.get("oauth") or {}).get("scopes")
+        scopes = extract_mcp_oauth_scopes(server_config)
         if not scopes:
             raise McpToolsError(
                 "google_credentials auth requires oauth.scopes on the MCP "
