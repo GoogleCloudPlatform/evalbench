@@ -37,6 +37,7 @@ from scorers.dataset_quality.composition import CompositionScorer
 from scorers.dataset_quality.context import (
     CATEGORY_DISCOVERABILITY,
     CATEGORY_TOOL_ACTIVATION,
+    DEFAULT_CUJ_FIELDS,
     DatasetQualityContext,
     SubScoreContribution,
     SubScorer,
@@ -643,6 +644,24 @@ class ProseSkillCoverageTest(unittest.TestCase):
         contribution = self._run([{"id": "c1", "expected_trajectory": ["alpha"]}])
 
         self.assertEqual(contribution.score, 0)
+
+
+class CujsJsonTest(unittest.TestCase):
+
+    def test_default_fields_include_success_criteria_when_set(self):
+        """A plan can leave outcomes to success_criteria, so the judges need
+        the field to see them."""
+        context = _context([
+            {"id": "c1", "conversation_plan": "p",
+             "success_criteria": ["The agent lists the instances"]},
+            {"id": "c2", "conversation_plan": "p"},
+        ], [])
+
+        cujs = json.loads(context.cujs_json(DEFAULT_CUJ_FIELDS))
+
+        self.assertEqual(["The agent lists the instances"],
+                         cujs[0]["success_criteria"])
+        self.assertNotIn("success_criteria", cujs[1])
 
 
 class CompositionScorerTest(unittest.TestCase):

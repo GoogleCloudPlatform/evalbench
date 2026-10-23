@@ -2,6 +2,8 @@
 ### Dataset / Eval Items
 ############################################################
 dataset_config: datasets/claude-code-tools/claude-code.evalset.json
+# Same scenarios, plus `success_criteria` for goal_completion to grade:
+# dataset_config: datasets/claude-code-tools/claude-code-extended.evalset.json
 dataset_format: agent-format
 
 # Orchestrator Configuration
