@@ -48,8 +48,8 @@ You are an expert evaluator assessing whether an AI agent accomplished the task 
 **Conversation History:** {conversation_history}
 
 ### Task
-The conversation plan states the goal of the whole conversation. The simulated user reads it
-to decide each next message. Score the agent, never the user.
+The conversation plan is the goal for the entire conversation that the simulated user follows to
+ask the next prompt. Score the agent, never the user.
 
 1. The success criteria are the complete list of outcomes to judge. Use the plan only as context.
    Do not add, drop, merge, or split criteria.
