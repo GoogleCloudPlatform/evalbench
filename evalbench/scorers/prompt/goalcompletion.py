@@ -6,9 +6,9 @@ You are an expert evaluator assessing whether an AI agent accomplished the task 
 **Conversation History:** {conversation_history}
 
 ### Task
-The conversation plan states the goal of the whole conversation. The simulated user reads it
-to decide each next message. The plan can describe the user's own messages and the outcomes
-the agent must produce. Score the agent, never the user.
+The conversation plan is the goal for the entire conversation that the simulated user follows to
+ask the next prompt. The plan can describe the user's own messages and the outcomes the agent
+must produce. Score the agent, never the user.
 
 1. List the outcomes the agent must produce. Use one sub-goal for each outcome.
    - If the plan describes a user message, the sub-goal is the agent outcome that the message
