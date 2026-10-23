@@ -37,7 +37,43 @@ Return ONLY a JSON object (no prose, no Markdown fences) with this exact shape. 
 }}
 """
 
-# JSON-mode schema for the prompt above. propertyOrdering matches the
+# Used in place of GOAL_COMPLETION_PROMPT when a scenario sets `success_criteria`.
+GOAL_COMPLETION_CRITERIA_PROMPT = """\
+You are an expert evaluator assessing whether an AI agent accomplished the task it was given.
+
+### Input Data
+**Conversation Plan (Goal):** {conversation_plan}
+**Success Criteria:**
+{success_criteria}
+**Conversation History:** {conversation_history}
+
+### Task
+The conversation plan states the goal of the whole conversation. The simulated user reads it
+to decide each next message. Score the agent, never the user.
+
+1. The success criteria are the complete list of outcomes to judge. Use the plan only as context.
+   Do not add, drop, merge, or split criteria.
+2. Judge each criterion on its own. Set `met` to true only if the conversation history shows that
+   the agent produced the outcome. An acknowledgment, a promise, or a description of how to do it
+   is not the outcome. Judge the outcome, not the steps the agent took.
+{evidence_rule}
+
+### Output Format
+Return ONLY a JSON object (no prose, no Markdown fences) with this exact shape. Write
+`reasoning` as plain prose. `index` is the number of the criterion in the list above.
+Return exactly one entry per criterion.
+
+{{
+  "success_criteria": [
+    {{"index": <criterion number>,
+      "reasoning": "<one sentence of evidence>",
+      "met": <true or false>}}
+  ],
+  "summary": "<what the agent did and did not accomplish>"
+}}
+"""
+
+# JSON-mode schemas for the prompts above. propertyOrdering matches the
 # template field order.
 GOAL_COMPLETION_SCHEMA = {
     "type": "OBJECT",
@@ -61,7 +97,29 @@ GOAL_COMPLETION_SCHEMA = {
     "propertyOrdering": ["sub_goals", "summary"],
 }
 
-# Rule 3 of the prompt. The history has tool calls only if the scorer sets
+GOAL_COMPLETION_CRITERIA_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "success_criteria": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "index": {"type": "INTEGER"},
+                    "reasoning": {"type": "STRING"},
+                    "met": {"type": "BOOLEAN"},
+                },
+                "required": ["index", "reasoning", "met"],
+                "propertyOrdering": ["index", "reasoning", "met"],
+            },
+        },
+        "summary": {"type": "STRING"},
+    },
+    "required": ["success_criteria", "summary"],
+    "propertyOrdering": ["success_criteria", "summary"],
+}
+
+# Rule 3 of both prompts. The history has tool calls only if the scorer sets
 # `include_tool_calls`.
 TEXT_ONLY_EVIDENCE_RULE = """\
 3. The history may be conversation text alone. Take the agent reporting an action as done as
@@ -78,16 +136,27 @@ TOOL_CALLS_EVIDENCE_RULE = """\
 def build_goal_completion_prompt(
     conversation_plan: str,
     conversation_history: str,
+    success_criteria: list[str],
     include_tool_calls: bool = False,
 ) -> str:
     """Builds the judge prompt for one scenario.
 
-    If `include_tool_calls` is set, the judge checks actions against the tool
-    calls in the history.
+    Returns GOAL_COMPLETION_CRITERIA_PROMPT if `success_criteria` is non-empty,
+    else GOAL_COMPLETION_PROMPT. If `include_tool_calls` is set, the judge
+    checks actions against the tool calls in the history.
     """
-    return GOAL_COMPLETION_PROMPT.format(
+    evidence_rule = (TOOL_CALLS_EVIDENCE_RULE if include_tool_calls
+                     else TEXT_ONLY_EVIDENCE_RULE)
+    if not success_criteria:
+        return GOAL_COMPLETION_PROMPT.format(
+            conversation_plan=conversation_plan,
+            conversation_history=conversation_history,
+            evidence_rule=evidence_rule,
+        )
+    return GOAL_COMPLETION_CRITERIA_PROMPT.format(
         conversation_plan=conversation_plan,
+        success_criteria="\n".join(
+            f"{i}. {c}" for i, c in enumerate(success_criteria, 1)),
         conversation_history=conversation_history,
-        evidence_rule=(TOOL_CALLS_EVIDENCE_RULE if include_tool_calls
-                       else TEXT_ONLY_EVIDENCE_RULE),
+        evidence_rule=evidence_rule,
     )
