@@ -3,6 +3,15 @@
 import logging
 import pandas as pd
 
+# Metrics that score a fraction of a pass, not a pass/fail verdict. The analyzer
+# sums their scores instead of counting exact 100s, so partial credit counts.
+PARTIAL_CREDIT_METRICS = ("goal_completion",)
+
+
+def _partial_credit_count(scores: pd.Series) -> float:
+    """Returns 0-100 scores as a pass count, rounded to remove float noise."""
+    return round(float(scores.sum()) / 100.0, 4)
+
 
 def _is_sub_comparator(comp: str, metric_name: str) -> bool:
     if comp == metric_name:
@@ -151,8 +160,11 @@ def analyze_one_metric(
         ):
             # Aggregate at prompt level
             prompt_scores = df_metric.groupby("prompt_id")["score"].min()
-            correct_results_count = len(
-                prompt_scores[prompt_scores == metric_score])
+            if metric_name in PARTIAL_CREDIT_METRICS:
+                correct_results_count = _partial_credit_count(prompt_scores)
+            else:
+                correct_results_count = len(
+                    prompt_scores[prompt_scores == metric_score])
             original_df_size = len(prompt_scores)
 
             if original_df_size == 0 and num_prompts is not None:
@@ -161,8 +173,6 @@ def analyze_one_metric(
             original_df_size = len(df_metric)
             if original_df_size == 0 and num_prompts is not None:
                 original_df_size = num_prompts
-            correct_results_count = len(
-                df_metric[df_metric["score"] == metric_score])
 
             non_binary_metrics = [
                 "turn_count",
@@ -212,8 +222,12 @@ def analyze_one_metric(
                     "total_results_count": original_df_size,
                 }
 
-            correct_results_count = len(
-                df_metric[df_metric["score"] == metric_score])
+            if metric_name in PARTIAL_CREDIT_METRICS:
+                correct_results_count = _partial_credit_count(
+                    df_metric["score"])
+            else:
+                correct_results_count = len(
+                    df_metric[df_metric["score"] == metric_score])
 
     percentage = (
         (correct_results_count / original_df_size * 100)
