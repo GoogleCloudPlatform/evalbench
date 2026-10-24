@@ -14,6 +14,7 @@ from google.cloud.spanner_admin_database_v1.types import DatabaseDialect
 
 from .db import DB
 from .util import (
+    rows_to_dicts,
     get_db_secret,
     with_cache_execute,
     DatabaseSchema,
@@ -171,7 +172,7 @@ class SpannerDB(DB):
                             rows = list(res)
                             fields = [
                                 f.name for f in res.fields] if res.fields else []
-                            result = [dict(zip(fields, row)) for row in rows]
+                            result = rows_to_dicts(fields, rows)
 
                         if eval_query:
                             res_eval = transaction.execute_sql(
@@ -179,8 +180,7 @@ class SpannerDB(DB):
                             rows_eval = list(res_eval)
                             fields_eval = [
                                 f.name for f in res_eval.fields] if res_eval.fields else []
-                            eval_result = [dict(zip(fields_eval, row))
-                                           for row in rows_eval]
+                            eval_result = rows_to_dicts(fields_eval, rows_eval)
                     except Exception as e:
                         error = str(e)
                     raise RollbackException()
@@ -200,7 +200,7 @@ class SpannerDB(DB):
                         rows = list(res)
                         fields = [
                             f.name for f in res.fields] if res.fields else []
-                        result = [dict(zip(fields, row)) for row in rows]
+                        result = rows_to_dicts(fields, rows)
 
                         if eval_query:
                             res_eval = snapshot.execute_sql(
@@ -208,8 +208,7 @@ class SpannerDB(DB):
                             rows_eval = list(res_eval)
                             fields_eval = [
                                 f.name for f in res_eval.fields] if res_eval.fields else []
-                            eval_result = [dict(zip(fields_eval, row))
-                                           for row in rows_eval]
+                            eval_result = rows_to_dicts(fields_eval, rows_eval)
                 except Exception as e:
                     error = str(e)
             return result, eval_result, error

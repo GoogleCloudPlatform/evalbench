@@ -7,6 +7,7 @@ from google.cloud.bigtable.data.execute_query import (
     QueryResultRow,
 )
 from .util import (
+    rows_to_dicts,
     get_db_secret,
     with_cache_execute,
     DatabaseSchema,
@@ -74,7 +75,9 @@ class BigtableDB(DB):
 
             row: QueryResultRow
             for row in execute_query_iterator:
-                result.append(dict(row.fields))
+                names = [name for name, _ in row.fields]
+                values = [value for _, value in row.fields]
+                result.extend(rows_to_dicts(names, [values]))
         except Exception as e:
             error = str(e)
 
