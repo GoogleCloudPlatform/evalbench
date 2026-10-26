@@ -33,6 +33,12 @@ class TestSqliteBridge(unittest.TestCase):
         self.assertEqual(results[0], {"id": 1, "name": "Alice"})
         self.assertEqual(results[1], {"id": 2, "name": "Bob"})
 
+    def test_get_sqlite_ground_truth_keeps_columns_that_share_a_name(self):
+        query = "SELECT a.name, b.name FROM users a JOIN users b ON b.id = a.id + 1"
+        results = get_sqlite_ground_truth(query, self.database_name, self.db_dir)
+
+        self.assertEqual(results, [{"name": "Alice", "name_1": "Bob"}])
+
     def test_get_sqlite_ground_truth_missing_db(self):
         # Database that does not exist should return empty list.
         results = get_sqlite_ground_truth(
