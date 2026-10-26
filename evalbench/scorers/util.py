@@ -147,7 +147,11 @@ def make_hashable(value):
         return tuple(make_hashable(v) for v in value)
     elif isinstance(value, dict):
         return frozenset((k, make_hashable(v)) for k, v in value.items())
-    return value
+    try:
+        hash(value)
+        return value
+    except TypeError:
+        return str(value)
 
 
 def filter_conversation_history_json(

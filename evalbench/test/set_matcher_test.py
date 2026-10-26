@@ -32,6 +32,35 @@ class TestSetMatcher(unittest.TestCase):
         self.assertEqual(score, 100)
         self.assertIsNone(err)
 
+    def test_sql_unhashable_cell_values(self):
+        """SQL rows containing unhashable cell values (e.g. protobuf Date) are hashed via str()."""
+        class UnhashableDate:
+            __hash__ = None
+
+            def __init__(self, year, month, day):
+                self.year = year
+                self.month = month
+                self.day = day
+
+            def __str__(self):
+                return f"year: {self.year}\nmonth: {self.month}\nday: {self.day}\n"
+
+        matcher = SetMatcher({})
+        golden = [{"dt": UnhashableDate(2025, 2, 1), "count": 3}]
+        generated = [{"dt": UnhashableDate(2025, 2, 1), "count": 3}]
+        score, err = matcher.compare(
+            None, None, None, golden, None, None, None, generated, None, None
+        )
+        self.assertEqual(score, 100)
+        self.assertIsNone(err)
+
+        mismatch = [{"dt": UnhashableDate(2025, 2, 2), "count": 3}]
+        score, err = matcher.compare(
+            None, None, None, golden, None, None, None, mismatch, None, None
+        )
+        self.assertEqual(score, 0)
+        self.assertIsNone(err)
+
     # --- Document / NoSQL Cases (Auto-detected) ---
 
     def test_doc_nested_dict_match(self):

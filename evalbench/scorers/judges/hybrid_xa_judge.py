@@ -16,6 +16,28 @@ from typing import List, Optional
 import pandas as pd
 
 
+def _unique_column_names(columns: list) -> list:
+    """Suffixes repeated column names so to_dict() keeps every column.
+
+    Same logic as databases.util.unique_column_names, kept here because this
+    script runs standalone with pandas as its only dependency.
+    """
+    taken = set(columns)
+    seen = set()
+    names = []
+    for column in columns:
+        name = column
+        if name in seen:
+            suffix = 1
+            while f"{column}_{suffix}" in taken:
+                suffix += 1
+            name = f"{column}_{suffix}"
+            taken.add(name)
+        seen.add(name)
+        names.append(name)
+    return names
+
+
 def get_sqlite_ground_truth(
     query: str,
     database: str,
@@ -28,9 +50,11 @@ def get_sqlite_ground_truth(
         return []
     conn = sqlite3.connect(sqlite_path)
     try:
-        return pd.read_sql_query(query, conn).to_dict(orient="records")
+        df = pd.read_sql_query(query, conn)
     finally:
         conn.close()
+    df.columns = _unique_column_names(list(df.columns))
+    return df.to_dict(orient="records")
 
 
 def compare_result_sets(df_bq: pd.DataFrame, df_sqlite: pd.DataFrame) -> bool:

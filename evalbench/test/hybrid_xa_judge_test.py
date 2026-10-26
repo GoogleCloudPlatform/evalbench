@@ -1,6 +1,9 @@
 from decimal import Decimal
 import io
 import json
+import os
+import sqlite3
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -62,6 +65,38 @@ class TestHybridXaJudge(unittest.TestCase):
             out_data = json.loads(mock_stdout.getvalue().strip())
             self.assertEqual(out_data["score"], 100.0)
             self.assertIn("PASS", out_data["reason"])
+
+    def test_hybrid_xa_judge_main_keeps_columns_that_share_a_name(self):
+        # The golden query returns two columns named "name": a prediction that
+        # carries both must pass, and one that drops a column must fail.
+        with tempfile.TemporaryDirectory() as db_dir:
+            conn = sqlite3.connect(os.path.join(db_dir, "f1.sqlite"))
+            conn.execute("CREATE TABLE users (id INT, name TEXT)")
+            conn.execute("INSERT INTO users VALUES (1, 'Alice'), (2, 'Bob')")
+            conn.commit()
+            conn.close()
+            for prediction, expected_score in [
+                ([{"first": "Alice", "second": "Bob"}], 100.0),
+                ([{"name": "Bob"}], 0.0),
+            ]:
+                input_data = {
+                    "database": "f1",
+                    "golden_query": (
+                        "SELECT a.name, b.name FROM users a "
+                        "JOIN users b ON b.id = a.id + 1"
+                    ),
+                    "generated_execution_result": prediction,
+                    "generated_error": None,
+                    "sqlite_db_dir": db_dir,
+                }
+                with (
+                    self.subTest(prediction=prediction),
+                    patch("sys.stdin", io.StringIO(json.dumps(input_data))),
+                    patch("sys.stdout", new_callable=io.StringIO) as mock_stdout,
+                ):
+                    main()
+                    out_data = json.loads(mock_stdout.getvalue().strip())
+                    self.assertEqual(out_data["score"], expected_score)
 
 
 if __name__ == "__main__":

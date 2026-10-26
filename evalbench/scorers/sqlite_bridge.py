@@ -5,6 +5,8 @@ import sqlite3
 
 import pandas as pd
 
+from databases.util import unique_column_names
+
 
 def get_sqlite_ground_truth(
     query: str,
@@ -18,6 +20,8 @@ def get_sqlite_ground_truth(
         return []
     conn = sqlite3.connect(sqlite_path)
     try:
-        return pd.read_sql_query(query, conn).to_dict(orient="records")
+        df = pd.read_sql_query(query, conn)
     finally:
         conn.close()
+    df.columns = unique_column_names(list(df.columns))
+    return df.to_dict(orient="records")
