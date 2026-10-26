@@ -104,4 +104,3 @@ def get_eval_executor() -> EvalExecutor:
             logging.info(
                 "Evaluation executor sized to %d concurrent evaluation(s)", size)
         return _EVAL_EXECUTOR
-
