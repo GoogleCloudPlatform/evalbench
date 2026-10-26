@@ -9,6 +9,7 @@ from .db import DB
 from google.cloud.sql.connector import Connector
 from util.auth import get_adc_user_email
 from .util import (
+    rows_to_dicts,
     get_db_secret,
     with_cache_execute,
     DatabaseSchema,
@@ -149,7 +150,7 @@ class MySQLDB(DB):
                 resultset = connection.execute(text(sub_query))
                 if resultset.returns_rows:
                     rows = resultset.fetchall()
-                    result.extend(r._asdict() for r in rows)
+                    result.extend(rows_to_dicts(resultset.keys(), rows))
         return result
 
     def batch_execute(self, commands: list[str]):
