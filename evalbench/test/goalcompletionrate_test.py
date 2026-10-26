@@ -100,18 +100,6 @@ class TestGoalCompletionRate(ScorerTestCase):
         self.assertIn("You have 2 instances: a and b.", self.prompt)
 
     @patch('scorers.goalcompletionrate.get_generator')
-    def test_judge_prompt_is_the_template(self, mock_get_generator):
-        from scorers.prompt.goalcompletion import (
-            GOAL_COMPLETION_PROMPT, TEXT_ONLY_EVIDENCE_RULE)
-
-        self.score(mock_get_generator, json.dumps(
-            {"sub_goals": [sub_goal("a", True)]}))
-
-        self.assertEqual(GOAL_COMPLETION_PROMPT.format(
-            conversation_plan=PLAN, conversation_history="[]",
-            evidence_rule=TEXT_ONLY_EVIDENCE_RULE), self.prompt)
-
-    @patch('scorers.goalcompletionrate.get_generator')
     def test_evidence_rule_follows_include_tool_calls(self, mock_get_generator):
         """With tool calls in the history, the judge must not trust an
         agent's own report of an action."""
@@ -134,6 +122,24 @@ class TestGoalCompletionRate(ScorerTestCase):
                 self.assertNotIn(unused, self.prompt)
                 self.assertEqual(include_tool_calls,
                                  "permission denied" in self.prompt)
+
+    @patch('scorers.goalcompletionrate.get_generator')
+    def test_history_without_tool_calls_uses_the_text_only_rule(
+            self, mock_get_generator):
+        """Some harnesses, such as agy_cli, record no tool calls, so there is
+        nothing to check the agent's report against."""
+        from scorers.prompt.goalcompletion import (
+            TEXT_ONLY_EVIDENCE_RULE, TOOL_CALLS_EVIDENCE_RULE)
+
+        history = json.dumps([{"user": "list my instances",
+                               "agent": json.dumps({"response": "Listed."})}])
+
+        self.score(mock_get_generator,
+                   json.dumps({"sub_goals": [sub_goal("a", True)]}),
+                   history=history, include_tool_calls=True)
+
+        self.assertIn(TEXT_ONLY_EVIDENCE_RULE, self.prompt)
+        self.assertNotIn(TOOL_CALLS_EVIDENCE_RULE, self.prompt)
 
     @patch('scorers.goalcompletionrate.get_generator')
     def test_reasoning_mentioning_pass_does_not_pass(self, mock_get_generator):
@@ -195,6 +201,24 @@ class TestGoalCompletionRate(ScorerTestCase):
         self.assertIn("Invalid JSON", reason)
 
     @patch('scorers.goalcompletionrate.get_generator')
+    def test_empty_plan_scores_0_without_calling_the_judge(
+            self, mock_get_generator):
+        mock_model = MagicMock(spec=["generate"])
+        mock_get_generator.return_value = mock_model
+        scorer = GoalCompletionRate(
+            {"model_config": "fake_config"}, global_models={})
+
+        score, reason = scorer.compare(
+            "", "", "", "", "", "", "", "",
+            json.dumps({"conversation_history": "[]",
+                        "scenario": {"conversation_plan": "  "}}),
+            "")
+
+        self.assertEqual(0.0, score)
+        self.assertIn("no conversation_plan", reason)
+        mock_model.generate.assert_not_called()
+
+    @patch('scorers.goalcompletionrate.get_generator')
     def test_response_without_sub_goals_scores_0(self, mock_get_generator):
         score, reason = self.score(
             mock_get_generator, json.dumps({"sub_goals": []}))
@@ -203,13 +227,42 @@ class TestGoalCompletionRate(ScorerTestCase):
         self.assertIn("No sub-goals", reason)
 
     @patch('scorers.goalcompletionrate.get_generator')
-    def test_judge_error_scores_0_without_raising(self, mock_get_generator):
-        """A judge outage must not stop the other scorers in the run."""
-        score, reason = self.score(
-            mock_get_generator, RuntimeError("quota exceeded"))
+    def test_judge_errors_raise(self, mock_get_generator):
+        """An error or an empty reply is a judge error, not a score of 0."""
+        for response in [RuntimeError("quota exceeded"), ""]:
+            with self.subTest(response=response):
+                with self.assertRaises(RuntimeError):
+                    self.score(mock_get_generator, response)
 
-        self.assertEqual(0.0, score)
-        self.assertIn("quota exceeded", reason)
+    @patch('scorers.goalcompletionrate.get_generator')
+    def test_judge_error_lands_in_comparison_error(self, mock_get_generator):
+        """score.py records the error and still runs the other scorers."""
+        from scorers import score as score_module
+
+        mock_model = MagicMock(spec=["generate"])
+        mock_model.generate.return_value = ""
+        mock_get_generator.return_value = mock_model
+        scenario = {"conversation_plan": PLAN}
+        item = {
+            "id": "s1", "nl_prompt": "", "golden_sql": "", "query_type": "",
+            "golden_result": "", "golden_error": None,
+            "generated_sql": "skipped", "generated_result": "",
+            "generated_error": None, "dialects": [], "database": "",
+            "job_id": "j1",
+            "eval_results": json.dumps({"conversation_history": "[]",
+                                        "scenario": scenario}),
+        }
+        results = []
+
+        score_module.compare(item, {"scorers": {
+            "goal_completion": {"model_config": "fake_config"},
+            "turn_count": {}}}, results, global_models={})
+
+        by_name = {r["comparator"]: r for r in results}
+        self.assertEqual(0, by_name["goal_completion"]["score"])
+        self.assertIn("empty response",
+                      str(by_name["goal_completion"]["comparison_error"]))
+        self.assertIn("turn_count", by_name)
 
 
 class _FakeGeminiJudge:
@@ -264,6 +317,8 @@ class TestGoalCompletionJsonMode(unittest.TestCase):
         judge.generate.assert_not_called()
         config = judge.calls[0]["config"]
         self.assertEqual("application/json", config.response_mime_type)
+        # The judge model's default limit, which older models accept.
+        self.assertIsNone(config.max_output_tokens)
         self.assertEqual(GOAL_COMPLETION_SCHEMA, config.response_schema)
         self.assertTrue(judge.calls[0]["contents"].startswith("BASE "))
         self.assertIn(PLAN, judge.calls[0]["contents"])
@@ -278,6 +333,16 @@ class TestGoalCompletionJsonMode(unittest.TestCase):
         self.assertEqual(100.0, score)
         judge.generate.assert_called_once()
         self.assertEqual([], judge.calls)
+
+    def test_json_mode_call_error_raises(self):
+        """generate_json logs the error and returns "", which must reach
+        score.py as a judge error."""
+        judge = _FakeGeminiJudge("")
+        judge._call_generate_content = MagicMock(
+            side_effect=RuntimeError("deadline exceeded"))
+
+        with self.assertRaisesRegex(RuntimeError, "empty response"):
+            self.run_scorer(judge)
 
     def test_json_mode_keeps_the_judge_rate_limit(self):
         judge = _FakeGeminiJudge(
@@ -327,6 +392,20 @@ class TestPartialCreditRollup(unittest.TestCase):
             metric="trajectory_matcher")
 
         self.assertEqual(1, row["correct_results_count"])
+
+    def test_named_goal_completion_scorers_get_partial_credit(self):
+        """Both forms that score.py accepts for a named scorer."""
+        from reporting.analyzer import analyze_result
+
+        for cfg in [{"type": "goal_completion", "model_config": "x"},
+                    {"goal_completion": {"model_config": "x"}}]:
+            with self.subTest(cfg=cfg):
+                _, summary_df = analyze_result(
+                    score_rows("my_goal", [100.0, 66.7, 0.0]),
+                    {"scorers": {"my_goal": cfg}})
+                row = summary_df.set_index("metric_name").loc["my_goal"]
+
+                self.assertEqual(1.667, row["correct_results_count"])
 
     def test_multi_trial_prompts_are_credited_their_worst_trial(self):
         """Prompt-level rollup keeps the min() across trials that every other

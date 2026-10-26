@@ -57,12 +57,14 @@ def supports_json_mode(model) -> bool:
             and callable(getattr(model, "_call_generate_content", None)))
 
 
-def generate_json(model, prompt: str, response_schema: dict | None = None) -> str:
+def generate_json(model, prompt: str, response_schema: dict | None = None,
+                  max_output_tokens: int | None = _MAX_OUTPUT_TOKENS) -> str:
     """Generate a model response as raw JSON text.
 
     Uses Gemini's native JSON mode via the underlying genai client, which bypasses
     ``GeminiGenerator.generate``'s SQL sanitizer (it corrupts JSON escapes). Only
-    non-Gemini models fall back to ``model.generate``.
+    non-Gemini models fall back to ``model.generate``. ``max_output_tokens=None``
+    uses the model's default limit.
     """
     if supports_json_mode(model):
         caller = model._call_generate_content
@@ -72,7 +74,7 @@ def generate_json(model, prompt: str, response_schema: dict | None = None) -> st
             config = types.GenerateContentConfig(
                 response_mime_type="application/json",
                 temperature=0,
-                max_output_tokens=_MAX_OUTPUT_TOKENS,
+                max_output_tokens=max_output_tokens,
                 response_schema=response_schema,
                 http_options=types.HttpOptions(timeout=_REQUEST_TIMEOUT_MS),
             )

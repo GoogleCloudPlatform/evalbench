@@ -61,18 +61,19 @@ GOAL_COMPLETION_SCHEMA = {
     "propertyOrdering": ["sub_goals", "summary"],
 }
 
-# Rule 3 of the prompt. The history has tool calls only if the scorer sets
-# `include_tool_calls`.
+# Rule 3 of the prompt. The scorer uses the tool-calls rule only if
+# `include_tool_calls` is set and the history records tool calls.
 TEXT_ONLY_EVIDENCE_RULE = """\
 3. The history may be conversation text alone. Take the agent reporting an action as done as
    evidence that it happened, and do not require or expect a record of the underlying tool
    calls. Whether the agent told the truth is scored elsewhere."""
 
 TOOL_CALLS_EVIDENCE_RULE = """\
-3. Agent turns include a `tool_calls` list with each call and its result. If an outcome needs an
-   action, such as creating or listing a resource, it is met only if a matching tool call
-   succeeded. The agent saying that it did the action is not enough. If an agent turn has no
-   `tool_calls` list, use what the agent reports in that turn."""
+3. Agent turns include a `tool_calls` list with each call, its parameters, and its result. If an
+   outcome needs an action, such as creating or listing a resource, it is met only if a tool call
+   did that action and succeeded. The call can be a dedicated tool, such as
+   `cloud-sql__list_instances`, or a generic one, such as `run_shell_command` with
+   `gcloud sql instances list`. The agent saying that it did the action is not enough."""
 
 
 def build_goal_completion_prompt(

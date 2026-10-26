@@ -8,6 +8,26 @@ import pandas as pd
 PARTIAL_CREDIT_METRICS = ("goal_completion",)
 
 
+def _partial_credit_names(scorers: dict) -> set[str]:
+    """Returns the metric names that score partial credit.
+
+    A named scorer counts if its `type`, or its nested config block, is a
+    partial-credit metric, the same two forms that scorers/score.py accepts.
+    """
+    names = set(PARTIAL_CREDIT_METRICS)
+    for key, cfg in (scorers.items() if isinstance(scorers, dict) else []):
+        if not isinstance(cfg, dict):
+            continue
+        target = cfg.get("type") or next(
+            (m for m in PARTIAL_CREDIT_METRICS if isinstance(cfg.get(m), dict)),
+            None)
+        if target in PARTIAL_CREDIT_METRICS:
+            names.add(key)
+            if cfg.get("scorer_name"):
+                names.add(cfg["scorer_name"])
+    return names
+
+
 def _partial_credit_count(scores: pd.Series) -> float:
     """Returns 0-100 scores as a pass count, rounded to remove float noise."""
     return round(float(scores.sum()) / 100.0, 4)
@@ -72,8 +92,15 @@ def analyze_one_metric(
     num_scorers: int = 1,
     num_prompts: int = None,
     num_trials: int = None,
+    partial_credit: bool | None = None,
 ) -> dict:
-    """Analyze one metric from dataframe with flexibility."""
+    """Analyze one metric from dataframe with flexibility.
+
+    `partial_credit` defaults to whether `metric_name` is in
+    PARTIAL_CREDIT_METRICS.
+    """
+    if partial_credit is None:
+        partial_credit = metric_name in PARTIAL_CREDIT_METRICS
     num_scorers = max(1, num_scorers)
 
     if num_prompts is not None:
@@ -160,7 +187,7 @@ def analyze_one_metric(
         ):
             # Aggregate at prompt level
             prompt_scores = df_metric.groupby("prompt_id")["score"].min()
-            if metric_name in PARTIAL_CREDIT_METRICS:
+            if partial_credit:
                 correct_results_count = _partial_credit_count(prompt_scores)
             else:
                 correct_results_count = len(
@@ -222,7 +249,7 @@ def analyze_one_metric(
                     "total_results_count": original_df_size,
                 }
 
-            if metric_name in PARTIAL_CREDIT_METRICS:
+            if partial_credit:
                 correct_results_count = _partial_credit_count(
                     df_metric["score"])
             else:
@@ -276,6 +303,7 @@ def analyze_result(
 
     scorers = experiment_config["scorers"]
     num_scorers = len(scorers)
+    partial_credit_names = _partial_credit_names(scorers)
     llm_metrics_list = [
         "goal_completion",
         "behavioral_metrics",
@@ -314,6 +342,7 @@ def analyze_result(
             num_scorers=num_scorers,
             num_prompts=num_prompts,
             num_trials=num_trials,
+            partial_credit=metric_name in partial_credit_names,
         )
         summary_scores.append(summary)
 
