@@ -6,6 +6,7 @@ import argparse
 import pandas as pd
 
 from run_index import list_run_directories
+from goal_completion_rollup import goal_completion_scores
 
 csv.field_size_limit(10**9)
 
@@ -212,14 +213,8 @@ def process_directory(d, results_dir):
                         if 'prompt_id' in columns:
                             usecols.append('prompt_id')
                         df = pd.read_csv(file_to_read, usecols=usecols)
-                        gc_scores = df[df['comparator'] == 'goal_completion']
+                        gc_scores = goal_completion_scores(df)
                         if not gc_scores.empty:
-                            # Same rollup as the analyzer: a prompt with
-                            # several trials counts its weakest one.
-                            if 'prompt_id' in gc_scores.columns and gc_scores['prompt_id'].notna().any():
-                                gc_scores = gc_scores.groupby('prompt_id')['score'].min()
-                            else:
-                                gc_scores = gc_scores['score']
                             goal_completion = float(gc_scores.mean())
                             logging.info(f"Computed goal_completion from {os.path.basename(file_to_read)} for {d}: {goal_completion}")
                 except Exception as e:

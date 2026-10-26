@@ -410,6 +410,21 @@ class ProcessDirectoryTest(unittest.TestCase):
 
         self.assertEqual(75.0, res["goal_completion"])
 
+    def test_goal_completion_fallback_counts_bad_scores_as_0(self):
+        """Matches the dashboard and the analyzer: a missing or non-numeric
+        score counts as 0 and does not abort the fallback."""
+        self._write_summary(include_goal_completion=False)
+        self._write("scores.csv", pd.DataFrame([
+            {"comparator": "goal_completion", "score": "100"},
+            {"comparator": "goal_completion", "score": None},
+            {"comparator": "goal_completion", "score": "N/A"},
+            {"comparator": "goal_completion", "score": "50"},
+        ]))
+
+        res = precompute_trends.process_directory("run-0", self.results_dir)
+
+        self.assertEqual(37.5, res["goal_completion"])
+
     def test_a_scores_file_without_the_expected_columns_is_left_alone(self):
         self._write_summary(include_goal_completion=False)
         self._write("scores.csv", pd.DataFrame([{"something_else": 1}]))

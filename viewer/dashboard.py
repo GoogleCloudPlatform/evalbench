@@ -4,6 +4,8 @@ import mesop as me
 import pandas as pd
 import os
 
+from goal_completion_rollup import goal_completion_scores
+
 
 def _format_count(value) -> str:
     """Formats a result count, which is fractional for partial-credit metrics."""
@@ -91,14 +93,8 @@ def dashboard_component(results_dir: str):
             if os.path.exists(scores_path):
                 try:
                     scores_df = pd.read_csv(scores_path)
-                    gc_df = scores_df[scores_df['comparator'] == 'goal_completion']
-                    if not gc_df.empty:
-                        # Same rollup as the analyzer: a prompt with several
-                        # trials counts its weakest one.
-                        if 'prompt_id' in gc_df.columns and gc_df['prompt_id'].notna().any():
-                            gc_scores = gc_df.groupby('prompt_id')['score'].min()
-                        else:
-                            gc_scores = gc_df['score']
+                    gc_scores = goal_completion_scores(scores_df)
+                    if not gc_scores.empty:
                         total = len(gc_scores)
                         correct = round(gc_scores.sum() / 100.0, 4)
 
