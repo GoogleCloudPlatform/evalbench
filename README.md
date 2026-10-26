@@ -180,6 +180,12 @@ reporting:
 | `bigquery` | The same tables in BigQuery for long-term storage, cross-run analysis, and A/B experiment comparison. |
 | `gcs_artifacts` | Each scenario's agent sandbox, zipped and uploaded to a GCS bucket so you can inspect exactly what the agent wrote and configured. |
 
+### Summary in the response
+
+Clients that drive the gRPC service get the aggregate scores back in the `Eval` response when the run config sets `summary_in_response: true` (interactive and agent streams always send it as their final message). The JSON payload is `{"job_id": ..., "summary": {...}}`, where `summary` holds `total` (scenarios), `scores` (passing count per scorer) and `scenario_scores`: one entry per scenario and scorer with `id`, `comparator` and `score`, plus `comparison_error` / `generated_error` when set and, for judged scorers that did not get full marks, the judge's `comparison_logs` (truncated to 4000 characters). That is enough for a CI job to print which scenarios failed and why without opening the viewer or querying the reporting store.
+
+`scenario_scores` is capped at 256 KB so a large run cannot push the response past the gRPC message limit: past that size it keeps only the failures, then drops their logs, then truncates the list, and sets `scenario_scores_truncated: true`. Set `scenario_scores_in_response: false` in the run config to leave it out entirely.
+
 ### Viewer
 
 The [viewer](/viewer/) is a local dashboard over your results directory, built for agent runs:
