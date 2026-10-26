@@ -63,10 +63,13 @@ class TestEvalExecutor(unittest.TestCase):
             held = executor.run(release.wait, 10)
             polled = await asyncio.wait_for(asyncio.to_thread(lambda: "polled"), 5)
             release.set()
-            await held
-            return polled
+            return polled, await held
 
-        self.assertEqual(asyncio.run(run()), "polled")
+        polled, released = asyncio.run(run())
+        self.assertEqual(polled, "polled")
+        # The held evaluation finished because it was released, not because
+        # its own 10s wait ran out.
+        self.assertTrue(released)
 
     def test_tracks_in_flight_and_warns_when_queued(self):
         executor = EvalExecutor("t", 1)
@@ -108,8 +111,8 @@ class TestGetEvalExecutor(unittest.TestCase):
         self.addCleanup(setattr, eval_executor, "_EVAL_EXECUTOR", None)
 
     def test_is_a_process_wide_singleton(self):
-        self.assertIs(eval_executor.get_eval_executor(),
-                      eval_executor.get_eval_executor())
+        first = eval_executor.get_eval_executor()
+        self.assertIs(eval_executor.get_eval_executor(), first)
 
     def test_is_sized_by_env(self):
         with patch.dict(os.environ, {"EVALBENCH_EVAL_THREADS": "64"}):
