@@ -3,13 +3,19 @@ kind: HorizontalPodAutoscaler
 metadata:
   name: evalbench-eval-server-deploy
   namespace: evalbench-namespace
+# Pinned to exactly one replica. The Deployment mounts a ReadWriteOnce PVC, so
+# a second pod can never attach it: with maxReplicas > 1 any scale-up left a
+# pod stuck Pending and the Deployment permanently Available=False (it sat
+# that way for 178 days). Kept rather than deleted so that `kubectl apply` of
+# this directory overwrites the live object instead of leaving the old bounds
+# in place.
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
     name: evalbench-eval-server-deploy
   minReplicas: 1
-  maxReplicas: 10
+  maxReplicas: 1
   metrics:
   - type: Resource
     resource:

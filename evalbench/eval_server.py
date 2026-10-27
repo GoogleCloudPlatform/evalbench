@@ -49,6 +49,7 @@ from absl import app
 from absl import flags
 import grpc
 import util
+from util import health
 from eval_service import EvalServicer
 from eval_service import SessionManagerInterceptor
 from evalproto import eval_service_pb2_grpc
@@ -69,6 +70,10 @@ async def _serve():
     """Starts the server."""
     logging.info("Starting server")
 
+    health_state = health.HealthState()
+    health_server = health.start_health_server(health_state)
+    heartbeat = asyncio.create_task(health.run_heartbeat(health_state))
+
     interceptors = [
         SessionManagerInterceptor("SessionManagerInterceptor"),
     ]
@@ -88,11 +93,16 @@ async def _serve():
     if bound_port == 0:
         raise RuntimeError(f"Failed to bind to port {PORT} on host {host}!")
     await server.start()
+    health_state.set_serving(True)
     logging.info("Server started")
 
     async def server_graceful_shutdown():
         logging.info("Starting graceful shutdown...")
+        health_state.set_serving(False)
         await server.stop(5)
+        heartbeat.cancel()
+        if health_server is not None:
+            health_server.shutdown()
 
     _cleanup_coroutines.append(server_graceful_shutdown())
     await server.wait_for_termination()
