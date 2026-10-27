@@ -284,7 +284,7 @@ EvalBench accepts the **same MCP server config schema as Gemini CLI** for HTTP s
 |---|---|
 | `httpUrl` | → `url` + auto-adds `type: "http"` |
 | `authProviderType: google_credentials` | → injects `Authorization: Bearer <ADC token>` (from `gcloud auth application-default print-access-token`, falling back to `gcloud auth print-access-token`) **and** sets a `headersHelper` so Claude Code re-mints a fresh ADC token on every connection (avoids ~1h expiry). Google API MCP endpoints reject the plain user token on tool calls — see [Troubleshooting](#mcp-tool-call-fails-with-incompatible-auth-server-does-not-support-dynamic-client-registration). |
-| `oauth.scopes` | (dropped — Claude Code doesn't use Gemini's OAuth delegation) |
+| `oauth.scopes` | → forwarded as `--scopes` to `gcloud auth application-default print-access-token` in both `headersHelper` and the initial static `Authorization` header. If the scoped token request fails, the generator falls back to an unscoped ADC token (see [Troubleshooting](#user-adc-and-non-default-oauth-scopes-403-forbidden-on-tool-call)). |
 | `headers` | → passed through as-is |
 | `command` / `args` (stdio) | → passed through as-is |
 
@@ -489,6 +489,17 @@ Usually a token problem (see the DCR entry above). Checklist:
 - Confirm your account has the required IAM roles (e.g., `roles/cloudsql.admin`).
 - Set the quota project header: `headers: { X-Goog-User-Project: <project> }`.
 - Verify directly: `curl -H "Authorization: Bearer $(gcloud auth application-default print-access-token)" -H "X-Goog-User-Project: <project>" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_instances","arguments":{"project":"<project>"}}}' https://sqladmin.googleapis.com/mcp`
+
+### User ADC and Non-Default OAuth Scopes (`403 Forbidden` on tool call)
+
+When using user credentials (via `gcloud auth application-default login`), `gcloud` only requests the default `cloud-platform` scopes by default. If an MCP server specifies a non-default OAuth scope (e.g. DFA Reporting or Google Ads), `gcloud auth application-default print-access-token --scopes=...` will fail unless that scope was explicitly granted at login time.
+
+When the scoped request fails, the generator quietly falls back to an **unscoped ADC token**. The MCP server connects normally, but actual tool calls will later fail with a confusing `403 Forbidden`.
+
+To resolve this with user ADC, re-authenticate and explicitly specify the required scopes:
+```bash
+gcloud auth application-default login --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/<scope>"
+```
 
 ### `npm exec` is slow on first run
 

@@ -1,5 +1,17 @@
 import json
-from scorers.util import filter_conversation_history_json
+from scorers.util import filter_conversation_history_json, make_hashable
+
+
+def test_make_hashable_unhashable_leaf():
+    class UnhashableObj:
+        __hash__ = None
+
+        def __str__(self):
+            return "unhashable-leaf"
+
+    result = make_hashable({"nested": [UnhashableObj(), 42]})
+    assert hash(result) is not None
+    assert ("nested", ("unhashable-leaf", 42)) in result
 
 
 def test_filter_conversation_history_json_without_tools():

@@ -10,6 +10,7 @@ import pytest
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from generators.models import agy_cli
 from generators.models.agy_cli import AgyCliGenerator, CLICommand
 
 
@@ -51,6 +52,15 @@ def skip_agy_install(request):
         AgyCliGenerator, "_ensure_agy_installed", lambda self: None
     ):
         yield
+
+
+@pytest.fixture(autouse=True)
+def reset_updated_agy_bins():
+    """Clears the per-process record of updated agy binaries, so that no
+    test depends on another test's update."""
+    agy_cli._UPDATED_AGY_BINS.clear()
+    yield
+    agy_cli._UPDATED_AGY_BINS.clear()
 
 
 _REAL_RESOLVE_AGY_VERSION = AgyCliGenerator._resolve_agy_version
@@ -222,19 +232,94 @@ def _local_agy_bin():
     )
 
 
-@pytest.mark.real_agy_install
-def test_ensure_agy_installed_skips_when_binary_present(mock_run, sandbox):
-    """An existing executable at the sandbox path short-circuits the install --
-    no download happens."""
+def _seed_agy_bin():
+    """Writes an executable at the local sandbox's agy path."""
     agy_bin = _local_agy_bin()
     os.makedirs(os.path.dirname(agy_bin), exist_ok=True)
     with open(agy_bin, "w") as f:
         f.write("#!/bin/sh\n")
     os.chmod(agy_bin, 0o755)
+    return agy_bin
+
+
+@pytest.mark.real_agy_install
+def test_ensure_agy_installed_updates_existing_binary(mock_run, sandbox):
+    """An existing binary is updated, not reinstalled."""
+    agy_bin = _seed_agy_bin()
 
     AgyCliGenerator({})
 
-    assert mock_run.call_count == 0
+    cmds = [list(c.args[0]) for c in mock_run.call_args_list]
+    assert cmds == [[agy_bin, "update"]]
+
+
+@pytest.mark.real_agy_install
+def test_existing_binary_is_updated_before_the_version_is_read(
+    mock_run, sandbox,
+):
+    """The version is read after the update."""
+    _seed_agy_bin()
+    order = []
+
+    def fake_run(cmd, *args, **kwargs):
+        order.append(cmd[1])
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    mock_run.side_effect = fake_run
+    with patch.object(AgyCliGenerator, "_resolve_agy_version",
+                      lambda self: order.append("--version") or "agy"):
+        AgyCliGenerator({})
+
+    assert order == ["update", "--version"]
+
+
+@pytest.mark.real_agy_install
+def test_existing_binary_is_updated_once_per_process(mock_run, sandbox):
+    """A generator built again in the same process skips the update."""
+    _seed_agy_bin()
+
+    AgyCliGenerator({})
+    AgyCliGenerator({})
+
+    cmds = [list(c.args[0]) for c in mock_run.call_args_list]
+    assert [cmd[1] for cmd in cmds] == ["update"]
+
+
+@pytest.mark.real_agy_install
+@pytest.mark.parametrize("failure", [
+    MagicMock(returncode=1, stdout="", stderr="network down"),
+    subprocess.TimeoutExpired(cmd="agy update", timeout=120),
+    PermissionError(13, "Permission denied"),
+], ids=["nonzero_exit", "timeout", "oserror"])
+def test_failed_update_keeps_the_current_binary(
+    mock_run, sandbox, caplog, failure,
+):
+    """A failed update is logged, not raised."""
+    _seed_agy_bin()
+    if isinstance(failure, Exception):
+        mock_run.side_effect = failure
+    else:
+        mock_run.return_value = failure
+
+    with caplog.at_level(logging.WARNING):
+        AgyCliGenerator({})
+
+    assert any("keeping the current binary" in r.getMessage()
+               for r in caplog.records)
+
+
+def test_auto_update_is_disabled_by_default(sandbox):
+    """agy must not replace its binary while the eval runs."""
+    generator = AgyCliGenerator({})
+
+    assert generator._merged_env()["AGY_CLI_DISABLE_AUTO_UPDATE"] == "true"
+
+
+def test_model_config_can_enable_auto_update(sandbox):
+    generator = AgyCliGenerator(
+        {"env": {"AGY_CLI_DISABLE_AUTO_UPDATE": "false"}})
+
+    assert generator._merged_env()["AGY_CLI_DISABLE_AUTO_UPDATE"] == "false"
 
 
 @pytest.mark.real_agy_install
@@ -261,6 +346,8 @@ def test_ensure_agy_installed_downloads_then_runs_installer(mock_run, sandbox):
     assert cmds[1][0] == "bash"
     assert cmds[1][cmds[1].index("--dir") + 1] == gen.bin_dir
     assert gen.agy_bin == agy_bin
+    # A fresh install is not updated.
+    assert len(cmds) == 2
 
 
 @pytest.mark.real_agy_install

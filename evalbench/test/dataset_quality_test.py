@@ -8,7 +8,7 @@ static sub-scorers and the skill catalog they grade against
 
 Not yet covered: the five LLM judge sub-scorers, ``synthesis.py``, ``render.py``,
 ``context.py``, the ``dataset-quality-format`` loader, and the viewer. The
-Gemini JSON-mode branch of ``llm.generate_json`` is also untested; every judge
+Gemini JSON-mode branch of ``scorers.util.generate_json`` is also untested; every judge
 call here takes the ``model.generate`` fallback.
 """
 
@@ -37,6 +37,7 @@ from scorers.dataset_quality.composition import CompositionScorer
 from scorers.dataset_quality.context import (
     CATEGORY_DISCOVERABILITY,
     CATEGORY_TOOL_ACTIVATION,
+    DEFAULT_CUJ_FIELDS,
     DatasetQualityContext,
     SubScoreContribution,
     SubScorer,
@@ -65,7 +66,7 @@ _TRAJECTORY_WEIGHT = TrajectoryCoverageScorer.default_weight
 class _StubModel:
     """Judge stand-in returning a canned response.
 
-    Deliberately not a ``MagicMock``: ``llm.generate_json`` branches on the
+    Deliberately not a ``MagicMock``: ``scorers.util.generate_json`` branches on the
     model having ``client`` and ``_call_generate_content``, which a mock
     auto-creates, silently routing the call down the Gemini JSON-mode path.
     """
@@ -643,6 +644,24 @@ class ProseSkillCoverageTest(unittest.TestCase):
         contribution = self._run([{"id": "c1", "expected_trajectory": ["alpha"]}])
 
         self.assertEqual(contribution.score, 0)
+
+
+class CujsJsonTest(unittest.TestCase):
+
+    def test_default_fields_include_success_criteria_when_set(self):
+        """A plan can leave outcomes to success_criteria, so the judges need
+        the field to see them."""
+        context = _context([
+            {"id": "c1", "conversation_plan": "p",
+             "success_criteria": ["The agent lists the instances"]},
+            {"id": "c2", "conversation_plan": "p"},
+        ], [])
+
+        cujs = json.loads(context.cujs_json(DEFAULT_CUJ_FIELDS))
+
+        self.assertEqual(["The agent lists the instances"],
+                         cujs[0]["success_criteria"])
+        self.assertNotIn("success_criteria", cujs[1])
 
 
 class CompositionScorerTest(unittest.TestCase):

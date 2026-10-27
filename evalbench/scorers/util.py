@@ -33,6 +33,66 @@ def extract_json(text: str) -> dict:
     raise ValueError("no JSON object found in model response")
 
 
+# Gemini 3.x draws reasoning tokens from the output budget, so a high cap keeps
+# thought tokens from starving the JSON answer (which otherwise finishes with
+# empty ``.text``).
+_MAX_OUTPUT_TOKENS = 65536
+
+# genai defaults to no request timeout, so a stalled call blocks its thread
+# forever. Generous enough for a whole-dataset thinking-model call, but bounded
+# so one bad request degrades to a dropped metric instead of hanging the run.
+_REQUEST_TIMEOUT_MS = 10 * 60 * 1000
+
+
+def _finish_reason(resp) -> str:
+    try:
+        return str(resp.candidates[0].finish_reason)
+    except (AttributeError, IndexError, TypeError):
+        return "unknown"
+
+
+def supports_json_mode(model) -> bool:
+    """Returns True if `model` exposes the genai client that JSON mode needs."""
+    return (getattr(model, "client", None) is not None
+            and callable(getattr(model, "_call_generate_content", None)))
+
+
+def generate_json(model, prompt: str, response_schema: dict | None = None,
+                  max_output_tokens: int | None = _MAX_OUTPUT_TOKENS) -> str:
+    """Generate a model response as raw JSON text.
+
+    Uses Gemini's native JSON mode via the underlying genai client, which bypasses
+    ``GeminiGenerator.generate``'s SQL sanitizer (it corrupts JSON escapes). Only
+    non-Gemini models fall back to ``model.generate``. ``max_output_tokens=None``
+    uses the model's default limit.
+    """
+    if supports_json_mode(model):
+        caller = model._call_generate_content
+        try:
+            from google.genai import types
+
+            config = types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0,
+                max_output_tokens=max_output_tokens,
+                response_schema=response_schema,
+                http_options=types.HttpOptions(timeout=_REQUEST_TIMEOUT_MS),
+            )
+            resp = caller(contents=prompt, config=config)
+        except Exception as e:
+            logging.warning("generate_json: JSON-mode generation failed (%s)", e)
+            return ""
+        text = getattr(resp, "text", None)
+        if text:
+            return text
+        logging.warning(
+            "generate_json: JSON-mode returned empty text (finish_reason=%s)",
+            _finish_reason(resp),
+        )
+        return ""
+    return model.generate(prompt)
+
+
 def with_cache_execute(
     prompt: str,
     model: str,
@@ -87,7 +147,11 @@ def make_hashable(value):
         return tuple(make_hashable(v) for v in value)
     elif isinstance(value, dict):
         return frozenset((k, make_hashable(v)) for k, v in value.items())
-    return value
+    try:
+        hash(value)
+        return value
+    except TypeError:
+        return str(value)
 
 
 def filter_conversation_history_json(
