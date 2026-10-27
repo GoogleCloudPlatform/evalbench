@@ -52,6 +52,17 @@ class TestViewerConversationsStatus(unittest.TestCase):
             failed, ["goal_completion: 0%", "trajectory_matcher: 50%"]
         )
 
+    def test_yellow_when_goal_completion_is_partial(self):
+        df = pd.DataFrame(
+            [
+                {"id": "eval_5", "comparator": "goal_completion", "score": 66.7, "unit": "%"},
+                {"id": "eval_5", "comparator": "trajectory_matcher", "score": 100.0, "unit": "%"},
+            ]
+        )
+        status, failed = _get_conversation_status(df, "eval_5")
+        self.assertEqual(status, "yellow")
+        self.assertEqual(failed, ["goal_completion: 67%"])
+
     def test_yellow_when_skills_or_other_metrics_below_100(self):
         df = pd.DataFrame(
             [
