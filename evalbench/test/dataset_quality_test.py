@@ -8,7 +8,7 @@ static sub-scorers and the skill catalog they grade against
 
 Not yet covered: the five LLM judge sub-scorers, ``synthesis.py``, ``render.py``,
 ``context.py``, the ``dataset-quality-format`` loader, and the viewer. The
-Gemini JSON-mode branch of ``llm.generate_json`` is also untested; every judge
+Gemini JSON-mode branch of ``scorers.util.generate_json`` is also untested; every judge
 call here takes the ``model.generate`` fallback.
 """
 
@@ -65,7 +65,7 @@ _TRAJECTORY_WEIGHT = TrajectoryCoverageScorer.default_weight
 class _StubModel:
     """Judge stand-in returning a canned response.
 
-    Deliberately not a ``MagicMock``: ``llm.generate_json`` branches on the
+    Deliberately not a ``MagicMock``: ``scorers.util.generate_json`` branches on the
     model having ``client`` and ``_call_generate_content``, which a mock
     auto-creates, silently routing the call down the Gemini JSON-mode path.
     """
