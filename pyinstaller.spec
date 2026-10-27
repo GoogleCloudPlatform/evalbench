@@ -14,7 +14,11 @@ def collect_dynamic_resources():
     packages_to_collect = [
         'google.auth',
         'google.adk',
-        'google.genai'
+        'google.genai',
+        # Without this entry, the binary crashes at startup. jsonschema
+        # imports rfc3987_syntax, which reads a .lark data file. PyInstaller
+        # does not bundle that file by itself.
+        'rfc3987_syntax',
     ]
     
     for pkg in packages_to_collect:

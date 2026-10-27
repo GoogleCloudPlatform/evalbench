@@ -88,6 +88,21 @@ jobs:
       - name: Build binary with PyInstaller
         run: uv run pyinstaller pyinstaller.spec
 
+      # A binary can build and still fail at startup, for example if a data
+      # file is not bundled.
+      - name: Smoke test the binary
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            BIN=dist/evalbench.exe
+          else
+            BIN=dist/evalbench
+          fi
+          # absl exits 1 after it prints --help, so the grep is the real check.
+          HELP_OUTPUT=$("$BIN" --help 2>&1 || true)
+          printf '%s\n' "$HELP_OUTPUT" | tail -n 20
+          echo "$HELP_OUTPUT" | grep -q "experiment_config"
+
       - name: Prepare distribution
         shell: bash
         run: |
