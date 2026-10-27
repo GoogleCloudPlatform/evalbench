@@ -17,6 +17,16 @@ name: Release
 on:
   release:
     types: [created]
+  # Build the binaries on PRs that can break the build, so a failure shows
+  # on the PR and not on release day. A PR run does not publish.
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'uv.lock'
+      - 'pyproject.toml'
+      - 'pyinstaller.spec'
+      - '.github/workflows/release.yml'
   workflow_dispatch:
     inputs:
       tag_name:
@@ -114,6 +124,7 @@ jobs:
 
   publish-release:
     needs: build-artifacts
+    if: github.event_name != 'pull_request'
     permissions:
       contents: write
     runs-on: ubuntu-latest
