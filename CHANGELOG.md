@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.20.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.19.0...v1.20.0) (2026-10-26)
+
+
+### Features
+
+* **models:** forward MCP OAuth scopes in claude_code and codex_cli generators ([421fe4c](https://github.com/GoogleCloudPlatform/evalbench/commit/421fe4c00a1e57fc5d4b01308dfd62aa41b69f4d))
+
+
+### Bug Fixes
+
+* **agy:** report and run the same agy version in local evals ([#666](https://github.com/GoogleCloudPlatform/evalbench/issues/666)) ([46004f0](https://github.com/GoogleCloudPlatform/evalbench/commit/46004f0cb809e7c93ec5337295647882f033aec3))
+* **security:** confine session resource writes to the session directory ([#657](https://github.com/GoogleCloudPlatform/evalbench/issues/657)) ([20111a6](https://github.com/GoogleCloudPlatform/evalbench/commit/20111a6eed189d4b757e879eadb6daaa3f75f692))
+* **security:** pass values to Python as data in Dataform scripts ([#672](https://github.com/GoogleCloudPlatform/evalbench/issues/672)) ([ffb2e26](https://github.com/GoogleCloudPlatform/evalbench/commit/ffb2e2653c2bf3d1d5be924ad20fdd1e64b0a46a))
+* stop dropping result columns that share a name ([abe3d07](https://github.com/GoogleCloudPlatform/evalbench/commit/abe3d074d046d00657cbacfed4a52e0aa257d571))
+* stop dropping result columns that share a name ([ff7265f](https://github.com/GoogleCloudPlatform/evalbench/commit/ff7265fc1e3a1bee78f330b32c0e59d557fbf52f))
+* **viewer:** call list_run_directories via run_index ([aeba95c](https://github.com/GoogleCloudPlatform/evalbench/commit/aeba95cac7bea71ed1af1bf16ef50e9a6ac7d1bb))
+* **viewer:** unstick trends precompute and stop accidental cache wipes ([3cc50c3](https://github.com/GoogleCloudPlatform/evalbench/commit/3cc50c36eafa25294dc559e94aae36f48cee50b6))
+* **viewer:** unstick trends precompute and stop cache wipes ([a4ebf23](https://github.com/GoogleCloudPlatform/evalbench/commit/a4ebf2387ff41dc5114b45fdb0b09b3d9b8d1cb1))
+
 ## [1.19.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.18.0...v1.19.0) (2026-10-09)
 
 

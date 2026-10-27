@@ -106,6 +106,41 @@ def generate_ddl(data, db_name, comments_data=None):
     return "".join(ddl_statements)
 
 
+def unique_column_names(columns) -> list:
+    """Returns the column names with a numeric suffix on each repeated name.
+
+    Row._asdict(), dict(zip(columns, row)) and DataFrame.to_dict(orient="records")
+    keep a single entry for a repeated column name (e.g. SELECT t1.name, t2.name),
+    dropping the other values. Suffixing the repeats keeps every column in order.
+    """
+    taken = set(columns)
+    seen = set()
+    names = []
+    for column in columns:
+        name = column
+        if name in seen:
+            suffix = 1
+            while f"{column}_{suffix}" in taken:
+                suffix += 1
+            name = f"{column}_{suffix}"
+            taken.add(name)
+        seen.add(name)
+        names.append(name)
+    return names
+
+
+def rows_to_dicts(columns, rows) -> list[dict]:
+    """Converts result rows to dicts, keeping columns that share a name."""
+    names = unique_column_names(columns)
+    return [dict(zip(names, row)) for row in rows]
+
+
+# Prefix of every cached result key. Change it whenever the format of the cached
+# rows changes, so results written by an older version are never read back.
+# "rows-v2:" keeps the columns that share a name (see rows_to_dicts).
+CACHE_KEY_PREFIX = "rows-v2:"
+
+
 def with_cache_execute(
     query: str,
     engine_url,
@@ -119,7 +154,7 @@ def with_cache_execute(
         logging.warning(f"Failed to format query: {query} with error: {e}")
 
     # Generate a hash of the query and database URL
-    query_hash = hashlib.sha256((query + str(engine_url)).encode()).hexdigest()
+    query_hash = CACHE_KEY_PREFIX + hashlib.sha256((query + str(engine_url)).encode()).hexdigest()
 
     # Attempt to retrieve from cache
     try:
