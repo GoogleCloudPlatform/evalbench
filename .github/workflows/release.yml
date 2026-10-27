@@ -44,10 +44,19 @@ jobs:
             platform_name: win32
             arch_name: x64
 
+    env:
+      # If no version is set, uv installs the newest CPython. Dependencies
+      # can lack wheels for a new CPython release, and then the build fails.
+      # All uv commands in this job read UV_PYTHON.
+      UV_PYTHON: "3.12"
+
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # A manual run with tag_name builds the source at that tag, not
+          # the source at the default branch.
+          ref: ${{ github.event.inputs.tag_name || github.ref }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -56,7 +65,7 @@ jobs:
           cache-dependency-glob: "uv.lock"
 
       - name: Set up Python
-        run: uv python install
+        run: uv python install ${{ env.UV_PYTHON }}
 
       - name: Install dependencies
         run: uv sync --frozen
