@@ -6,6 +6,7 @@ import argparse
 import pandas as pd
 
 from run_index import list_run_directories
+from goal_completion_rollup import goal_completion_scores
 
 csv.field_size_limit(10**9)
 
@@ -208,12 +209,13 @@ def process_directory(d, results_dir):
                     # largest allocation a batch makes.
                     columns = pd.read_csv(file_to_read, nrows=0).columns
                     if 'comparator' in columns and 'score' in columns:
-                        df = pd.read_csv(file_to_read, usecols=['comparator', 'score'])
-                        gc_scores = df[df['comparator'] == 'goal_completion']
+                        usecols = ['comparator', 'score']
+                        if 'prompt_id' in columns:
+                            usecols.append('prompt_id')
+                        df = pd.read_csv(file_to_read, usecols=usecols)
+                        gc_scores = goal_completion_scores(df)
                         if not gc_scores.empty:
-                            correct = len(gc_scores[gc_scores['score'] == 100.0])
-                            total = len(gc_scores)
-                            goal_completion = (correct / total) * 100 if total > 0 else 0.0
+                            goal_completion = float(gc_scores.mean())
                             logging.info(f"Computed goal_completion from {os.path.basename(file_to_read)} for {d}: {goal_completion}")
                 except Exception as e:
                     logging.warning(f"Error reading {os.path.basename(file_to_read)} for {d}: {e}")

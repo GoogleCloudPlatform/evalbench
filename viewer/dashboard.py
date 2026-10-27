@@ -4,6 +4,17 @@ import mesop as me
 import pandas as pd
 import os
 
+from goal_completion_rollup import goal_completion_scores
+
+
+def _format_count(value) -> str:
+    """Formats a result count, which is fractional for partial-credit metrics."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return f"{number:.0f}" if number.is_integer() else f"{number:.2f}"
+
 
 def dashboard_component(results_dir: str):
     me.text(
@@ -67,7 +78,7 @@ def dashboard_component(results_dir: str):
                     ),
                 )
                 me.text(
-                    f"{correct}/{total}",
+                    f"{_format_count(correct)}/{_format_count(total)}",
                     style=me.Style(
                         font_weight="700",
                         font_size="22px",
@@ -82,10 +93,10 @@ def dashboard_component(results_dir: str):
             if os.path.exists(scores_path):
                 try:
                     scores_df = pd.read_csv(scores_path)
-                    gc_df = scores_df[scores_df['comparator'] == 'goal_completion']
-                    if not gc_df.empty:
-                        total = len(gc_df)
-                        correct = len(gc_df[gc_df['score'] >= 100.0])
+                    gc_scores = goal_completion_scores(scores_df)
+                    if not gc_scores.empty:
+                        total = len(gc_scores)
+                        correct = round(gc_scores.sum() / 100.0, 4)
 
                         pct = (correct / total) * 100 if total > 0 else 0
                         color = (
@@ -116,7 +127,7 @@ def dashboard_component(results_dir: str):
                                 ),
                             )
                             me.text(
-                                f"{correct}/{total}",
+                                f"{_format_count(correct)}/{_format_count(total)}",
                                 style=me.Style(
                                     font_weight="700",
                                     font_size="22px",
