@@ -4,6 +4,7 @@ from scorers import comparator
 from generators.models import get_generator
 from util.rate_limit import rate_limit
 from .prompt.goalcompletion import (
+    GOAL_COMPLETION_CRITERIA_SCHEMA,
     GOAL_COMPLETION_SCHEMA,
     build_goal_completion_prompt,
 )
@@ -20,6 +21,53 @@ def _is_met(value: Any) -> bool:
     if isinstance(value, str):
         return value.strip().lower() == "true"
     return value is True
+
+
+def _criteria_list(value: Any) -> list[str]:
+    """Returns the non-blank items of the optional `success_criteria` field.
+
+    A bare string counts as one criterion. Whitespace inside a criterion
+    collapses to single spaces, so each criterion fits on one prompt line.
+    """
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        if value is not None:
+            logging.warning(
+                f"Ignored success_criteria that is not a list: {value!r}")
+        return []
+    criteria = []
+    for item in value:
+        if isinstance(item, str) and item.strip():
+            criteria.append(" ".join(item.split()))
+        elif item is not None:
+            logging.warning(
+                f"Ignored success criterion that is not a string: {item!r}")
+    return criteria
+
+
+def _match_verdicts(items: Any, count: int) -> Tuple[list, list]:
+    """Pairs the judge's verdicts with the criteria by 1-based `index`.
+
+    A verdict without an `index` takes its position in the list. If two
+    verdicts share an index, the first one is used.
+
+    Returns:
+      The verdicts in criteria order, and the 1-based numbers of the criteria
+      that have no verdict.
+    """
+    by_index = {}
+    for position, item in enumerate(items if isinstance(items, list) else [], 1):
+        if not isinstance(item, dict):
+            continue
+        try:
+            index = int(item.get("index", position))
+        except (TypeError, ValueError):
+            continue
+        if 1 <= index <= count:
+            by_index.setdefault(index, item)
+    missing = [i for i in range(1, count + 1) if i not in by_index]
+    return [by_index.get(i) for i in range(1, count + 1)], missing
 
 
 def _records_tool_calls(history: Any) -> bool:
@@ -48,8 +96,9 @@ class GoalCompletionRate(comparator.Comparator):
     """
     Evaluates whether the agent accomplished the conversation plan's intent.
 
-    The judge splits `conversation_plan` into sub-goals and rules on each one.
-    The score is the share of sub-goals the agent met.
+    The score is the share of goals the agent met. By default, the judge splits
+    `conversation_plan` into sub-goals. If the scenario sets the optional
+    `success_criteria` list, the judge rules on those criteria instead.
     """
 
     def __init__(self, config: dict, global_models):
@@ -117,12 +166,15 @@ class GoalCompletionRate(comparator.Comparator):
 
         scenario = context.get("scenario", {})
         conversation_plan = scenario.get("conversation_plan", "")
-        if not str(conversation_plan or "").strip():
-            return 0.0, "The scenario has no conversation_plan to grade."
+        success_criteria = _criteria_list(scenario.get("success_criteria"))
+        if not success_criteria and not str(conversation_plan or "").strip():
+            return 0.0, ("The scenario has no conversation_plan or "
+                         "success_criteria to grade.")
 
         prompt = build_goal_completion_prompt(
             conversation_plan=conversation_plan,
             conversation_history=formatted_history,
+            success_criteria=success_criteria,
             # With no tool calls to check, the judge must use the agent's report.
             include_tool_calls=(self.include_tool_calls
                                 and _records_tool_calls(history_list)),
@@ -130,7 +182,11 @@ class GoalCompletionRate(comparator.Comparator):
 
         # A judge error raises, so score.py records it in comparison_error and
         # the viewer shows it. It must not look like a judged score of 0.
-        response_text = self._generate(prompt, GOAL_COMPLETION_SCHEMA)
+        response_text = self._generate(
+            prompt,
+            GOAL_COMPLETION_CRITERIA_SCHEMA if success_criteria
+            else GOAL_COMPLETION_SCHEMA,
+        )
         if not response_text:
             raise RuntimeError(
                 "goal_completion judge returned an empty response (see logs)")
@@ -143,19 +199,33 @@ class GoalCompletionRate(comparator.Comparator):
             logging.error(f'GoalCompletionRate response unparsable: {e}')
             return 0.0, f"Invalid JSON in response: {response_text[:200]}"
 
-        goals = [
-            (sg.get("goal", ""), _is_met(sg.get("met")),
-             sg.get("reasoning", ""))
-            for sg in (data.get("sub_goals") or [])
-            if isinstance(sg, dict)
-        ]
-        if not goals:
-            return 0.0, f"No sub-goals returned: {response_text[:200]}"
+        if success_criteria:
+            verdicts, missing = _match_verdicts(
+                data.get("success_criteria"), len(success_criteria))
+            if missing:
+                return 0.0, (
+                    f"No verdict for success criteria {missing}: "
+                    f"{response_text[:200]}")
+            goals = [
+                (criterion, _is_met(v.get("met")), v.get("reasoning", ""))
+                for criterion, v in zip(success_criteria, verdicts)
+            ]
+            label = "success criteria"
+        else:
+            goals = [
+                (sg.get("goal", ""), _is_met(sg.get("met")),
+                 sg.get("reasoning", ""))
+                for sg in (data.get("sub_goals") or [])
+                if isinstance(sg, dict)
+            ]
+            if not goals:
+                return 0.0, f"No sub-goals returned: {response_text[:200]}"
+            label = "sub-goals"
 
         met_count = sum(1 for _, met, _ in goals if met)
         score = round(100.0 * met_count / len(goals), 1)
 
-        lines = [f"{met_count}/{len(goals)} sub-goals met."]
+        lines = [f"{met_count}/{len(goals)} {label} met."]
         for goal, met, reasoning in goals:
             status = "MET" if met else "UNMET"
             lines.append(f"[{status}] {goal} — {reasoning}")

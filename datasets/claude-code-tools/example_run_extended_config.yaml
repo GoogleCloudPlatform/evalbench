@@ -1,0 +1,51 @@
+############################################################
+### Dataset / Eval Items
+############################################################
+# Same as example_run_config.yaml, with a dataset that sets `success_criteria`.
+# goal_completion grades those criteria instead of sub-goals of the plan.
+dataset_config: datasets/claude-code-tools/claude-code-extended.evalset.json
+dataset_format: agent-format
+
+# Orchestrator Configuration
+# `agent` works for both Gemini CLI and Claude Code (alias of `geminicli`).
+orchestrator: agent
+model_config: datasets/model_configs/claude_code_model.yaml
+simulated_user_model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+
+# Concurrency: number of scenarios to run in parallel.
+# Set to 1 for sequential runs (easier to follow logs, avoids session conflicts).
+# Default is 10 (matches Gemini CLI).
+runners:
+  agent_runners: 1
+
+############################################################
+### Scorer Related Configs
+############################################################
+scorers:
+  # By default trajectory_matcher drops native/harness-internal tools
+  # (Read, Bash, Edit, ToolSearch, ...) from both expected and actual
+  # trajectories before scoring. Uncomment the block below to keep them
+  # and score native-tool usage too.
+  trajectory_matcher: {}
+  # trajectory_matcher:
+  #   filter_native_tools: false
+  goal_completion:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  behavioral_metrics:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  parameter_analysis:
+    model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
+  turn_count: {}
+  agent_steps: {}
+  end_to_end_latency: {}
+  tool_call_latency: {}
+  token_consumption: {}
+  tokens_processed: {}
+  effective_billed_tokens: {}
+
+############################################################
+### Reporting Related Configs
+############################################################
+reporting:
+  csv:
+    output_directory: 'results'
