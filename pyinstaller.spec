@@ -1,4 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
+import sys
+
 from PyInstaller.utils.hooks import copy_metadata, collect_all
 
 def collect_dynamic_resources():
@@ -69,7 +71,9 @@ exe = EXE(
     name='evalbench',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=True,
+    # On Windows, strip damages DLLs such as python3XX.dll, and the binary
+    # cannot start.
+    strip=sys.platform != 'win32',
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
