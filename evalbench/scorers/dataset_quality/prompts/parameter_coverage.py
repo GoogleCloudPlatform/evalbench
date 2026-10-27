@@ -23,9 +23,9 @@ tool -- i.e. the request cannot succeed as described unless that parameter is se
 - A required parameter is exercised whenever its tool is invoked (the call cannot be
   made without it). An optional parameter is exercised only when the scenario
   explicitly demands its behavior -- e.g. a filter, page size, enum choice, ordering,
-  or flag that the starting_prompt or conversation_plan calls for.
-- Judge from what the starting_prompt and conversation_plan actually demand, using
-  expected_trajectory to confirm which tools run. Do NOT assume an optional parameter
+  or flag that the starting_prompt, conversation_plan, or success_criteria calls for.
+- Judge from what the starting_prompt, conversation_plan, and success_criteria (if
+  present) actually demand, using expected_trajectory to confirm which tools run. Do NOT assume an optional parameter
   is used just because it exists; absence of any demand for it means it is NOT
   exercised by that CUJ.
 - The same CUJ may exercise several parameters (across one or more tools). List the
@@ -41,7 +41,8 @@ whose "required" lists the mandatory ones.
 {tool_schema}
 
 **CUJs (JSON list):** Each object has "id", "starting_prompt", "conversation_plan",
-and "expected_trajectory".
+and "expected_trajectory". Some also have "success_criteria", the outcomes the agent
+must produce.
 {cujs_json}
 
 ### Recommendations
