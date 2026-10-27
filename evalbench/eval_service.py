@@ -26,6 +26,7 @@ from util import get_SessionManager
 from util.scriptrunner import run_script
 import sys
 from util.sessionmgr import SESSION_RESOURCES_PATH
+from util.eval_executor import get_eval_executor
 from util.sessionmgr import validate_session_id
 from dataset.dataset import load_dataset_from_json
 
@@ -227,7 +228,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
 
             streaming_eval = session.get(
                 "streaming_eval", False) if session else False
-            loop = asyncio.get_event_loop()
+            executor = get_eval_executor()
 
             if streaming_eval:
                 evaluator = get_streaming_orchestrator(
@@ -243,8 +244,8 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                     )
                     ctx = contextvars.copy_context()
 
-                    task = loop.run_in_executor(
-                        None, ctx.run, evaluator.evaluate_item, eval_input
+                    task = executor.run(
+                        ctx.run, evaluator.evaluate_item, eval_input
                     )
                     tasks.append(task)
                 await asyncio.gather(*tasks)
@@ -256,9 +257,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                 logging.info(
                     "Batch eval mode: evaluating all items together...")
                 ctx = contextvars.copy_context()
-                await loop.run_in_executor(
-                    None, ctx.run, evaluator.evaluate, dataset
-                )
+                await executor.run(ctx.run, evaluator.evaluate, dataset)
 
             job_id, run_time, results_tf, scores_tf, multi_trial_scores_tf = evaluator.process()
             # Fallback to empty dict if reporting is present but null in YAML
@@ -269,8 +268,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             # Offload blocking results processing to a thread pool
             logging.info("Offloading results processing to thread pool...")
             ctx = contextvars.copy_context()
-            summary = await loop.run_in_executor(
-                None,
+            summary = await executor.run(
                 ctx.run,
                 _process_results,
                 reporters,
@@ -394,7 +392,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
 
         orchestrator = get_orchestrator(
             config, db_configs, setup_config, report_progress=True)
-        loop = asyncio.get_event_loop()
+        executor = get_eval_executor()
         ctx = contextvars.copy_context()
 
         try:
@@ -408,9 +406,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
 
             context.add_done_callback(_cleanup_on_drop)
 
-            eval_task = loop.run_in_executor(
-                None, ctx.run, orchestrator.evaluate, dataset
-            )
+            eval_task = executor.run(ctx.run, orchestrator.evaluate, dataset)
 
             async def read_from_client():
                 """Reads messages from the Google3 client stream."""
@@ -479,8 +475,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             logging.info(
                 "Offloading interactive results processing to thread pool...")
 
-            summary = await loop.run_in_executor(
-                None,
+            summary = await executor.run(
                 ctx.run,
                 _process_results,
                 reporters,
@@ -584,7 +579,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
         orchestrator = get_orchestrator(
             config, db_configs, setup_config, report_progress=True
         )
-        loop = asyncio.get_event_loop()
+        executor = get_eval_executor()
         ctx = contextvars.copy_context()
 
         try:
@@ -599,9 +594,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             context.add_done_callback(_cleanup_on_drop)
 
             async def run_eval_and_process():
-                await loop.run_in_executor(
-                    None, ctx.run, orchestrator.evaluate, dataset
-                )
+                await executor.run(ctx.run, orchestrator.evaluate, dataset)
                 (
                     job_id,
                     run_time,
@@ -613,8 +606,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                     config.get("reporting") or {}, job_id, run_time
                 )
                 logging.info("Processing agent evaluation results...")
-                summary = await loop.run_in_executor(
-                    None,
+                summary = await executor.run(
                     ctx.run,
                     _process_results,
                     reporters,
