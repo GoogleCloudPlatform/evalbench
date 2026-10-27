@@ -124,7 +124,7 @@ All of these require a `model_config` pointing at the LLM that performs the eval
 
 | Scorer Key | Score Range | What it Measures |
 |---|---|---|
-| `goal_completion` | 0–100 | The share of goals the agent met, rounded to one decimal. The judge splits `conversation_plan` into sub-goals and marks each one met or not met. In the summary, each scenario counts as its fraction of a pass, so the count can be a fraction, for example `1.67/3`. |
+| `goal_completion` | 0–100 | The share of goals the agent met, rounded to one decimal. The judge splits `conversation_plan` into sub-goals and marks each one met or not met. If the scenario sets `success_criteria`, the judge uses those criteria instead. In the summary, each scenario counts as its fraction of a pass, so the count can be a fraction, for example `1.67/3`. |
 | `behavioral_metrics` | 0–100 | Hallucination rate and unnecessary-clarification rate in a single pass. Starts at 100 and penalizes 50 per hallucination and 20 per unnecessary clarification. |
 | `parameter_analysis` | 100 (qualitative) | Qualitative feedback on the arguments passed to each tool. Always scores 100 — the value is in the textual explanation. |
 | `binary_rubric_scorer` | 0–100 | Pass/fail against your own rubric criteria. |
@@ -132,6 +132,8 @@ All of these require a `model_config` pointing at the LLM that performs the eval
 `goal_completion`, `behavioral_metrics`, and `binary_rubric_scorer` accept `include_tool_calls` (default `false`), which adds the full tool-call record to the LLM's context instead of conversation text alone. With it, `goal_completion` counts an action as done only if a tool call did it and succeeded. If the harness records no tool calls, the judge uses the agent's report.
 
 `binary_rubric_scorer` reads its criteria from the scenario's `binary_rubric` array and emits one score per criterion, named `binary_rubric_scorer_<index>`. If a scenario declares no rubric, a single unindexed scorer runs instead.
+
+`goal_completion` also reads the optional `success_criteria` field of a scenario. If the field is set, the judge grades each criterion. If the field is not set, the judge splits `conversation_plan` into sub-goals. The simulated user does not see this field. See [Example: with and without `success_criteria`](/docs/configs/agentic-dataset-config.md#example-with-and-without-success_criteria).
 
 ---
 

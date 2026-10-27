@@ -41,6 +41,7 @@ The file is a single JSON object with a `scenarios` array:
 | `kind` | Optional | Category label for grouping and reporting (e.g. `"tools"`). |
 | `work_dir` | Optional | Working directory the agent runs in. Relative paths resolve against the evalset file's own directory, and the directory is created if it doesn't exist. Use this for scenarios where the agent must read or write project files. |
 | `binary_rubric` | Optional | Array of pass/fail criteria evaluated by the `binary_rubric_scorer`. Each criterion is scored independently and reports as `binary_rubric_scorer_<index>`. |
+| `success_criteria` | Optional | Array of outcomes the agent must produce, judged by the `goal_completion` scorer. If set, the judge rules on each criterion and the score is the share met. If not set, the judge splits `conversation_plan` into sub-goals instead. The simulated user does not see this field. |
 | `expected_skills` | Optional | List of skill names the agent is expected to activate. Used by the `skills_trajectory` scorer. |
 
 ## Important Notes
@@ -105,5 +106,14 @@ A rubric-scored scenario with no expected tool trajectory:
   "max_turns": 5
 }
 ```
+
+### Example: with and without `success_criteria`
+
+Two Claude Code run configs use the same scenarios and scorers. Only the dataset is different.
+
+| Run config | Dataset | `goal_completion` grades |
+|---|---|---|
+| [example_run_config.yaml](/datasets/claude-code-tools/example_run_config.yaml) | [claude-code.evalset.json](/datasets/claude-code-tools/claude-code.evalset.json) | Sub-goals that the judge splits from `conversation_plan` |
+| [example_run_extended_config.yaml](/datasets/claude-code-tools/example_run_extended_config.yaml) | [claude-code-extended.evalset.json](/datasets/claude-code-tools/claude-code-extended.evalset.json) | The `success_criteria` of each scenario |
 
 See the [scorer reference](/docs/scorers.md#agentic-scorers) for what each scorer does with these fields.

@@ -12,6 +12,10 @@ def sub_goal(goal, met, reasoning=""):
     return {"goal": goal, "met": met, "reasoning": reasoning}
 
 
+def criterion_verdict(index, met, reasoning=""):
+    return {"index": index, "met": met, "reasoning": reasoning}
+
+
 class ScorerTestCase(unittest.TestCase):
     """Runs GoalCompletionRate against a mocked judge."""
 
@@ -91,13 +95,18 @@ class TestGoalCompletionRate(ScorerTestCase):
         """The judge cannot score a conversation it does not see."""
         history = json.dumps([{"user": "list my instances",
                                "agent": "You have 2 instances: a and b."}])
+        cases = [
+            ("plan", {}, {"sub_goals": [sub_goal("a", True)]}),
+            ("criteria", {"success_criteria": ["Lists the instances"]},
+             {"success_criteria": [criterion_verdict(1, True)]}),
+        ]
+        for mode, fields, response in cases:
+            with self.subTest(mode=mode):
+                self.score(mock_get_generator, json.dumps(response),
+                           history=history, **fields)
 
-        self.score(mock_get_generator,
-                   json.dumps({"sub_goals": [sub_goal("a", True)]}),
-                   history=history)
-
-        self.assertIn(PLAN, self.prompt)
-        self.assertIn("You have 2 instances: a and b.", self.prompt)
+                self.assertIn(PLAN, self.prompt)
+                self.assertIn("You have 2 instances: a and b.", self.prompt)
 
     @patch('scorers.goalcompletionrate.get_generator')
     def test_evidence_rule_follows_include_tool_calls(self, mock_get_generator):
@@ -110,18 +119,26 @@ class TestGoalCompletionRate(ScorerTestCase):
             {"response": "Listed them.", "tool_calls": [
                 {"tool_name": "cloud-sql__list_instances",
                  "status": "error", "response": "permission denied"}]})}])
-        response = json.dumps({"sub_goals": [sub_goal("a", True)]})
-        for include_tool_calls, used, unused in [
-                (False, TEXT_ONLY_EVIDENCE_RULE, TOOL_CALLS_EVIDENCE_RULE),
-                (True, TOOL_CALLS_EVIDENCE_RULE, TEXT_ONLY_EVIDENCE_RULE)]:
-            with self.subTest(include_tool_calls=include_tool_calls):
-                self.score(mock_get_generator, response, history=history,
-                           include_tool_calls=include_tool_calls)
+        modes = [
+            ("plan", {}, {"sub_goals": [sub_goal("a", True)]}),
+            ("criteria", {"success_criteria": ["Lists the instances"]},
+             {"success_criteria": [criterion_verdict(1, True)]}),
+        ]
+        for mode, fields, response in modes:
+            for include_tool_calls, used, unused in [
+                    (False, TEXT_ONLY_EVIDENCE_RULE, TOOL_CALLS_EVIDENCE_RULE),
+                    (True, TOOL_CALLS_EVIDENCE_RULE, TEXT_ONLY_EVIDENCE_RULE)]:
+                with self.subTest(mode=mode,
+                                  include_tool_calls=include_tool_calls):
+                    self.score(mock_get_generator, json.dumps(response),
+                               history=history,
+                               include_tool_calls=include_tool_calls,
+                               **fields)
 
-                self.assertIn(used, self.prompt)
-                self.assertNotIn(unused, self.prompt)
-                self.assertEqual(include_tool_calls,
-                                 "permission denied" in self.prompt)
+                    self.assertIn(used, self.prompt)
+                    self.assertNotIn(unused, self.prompt)
+                    self.assertEqual(include_tool_calls,
+                                     "permission denied" in self.prompt)
 
     @patch('scorers.goalcompletionrate.get_generator')
     def test_history_without_tool_calls_uses_the_text_only_rule(
@@ -265,6 +282,157 @@ class TestGoalCompletionRate(ScorerTestCase):
         self.assertIn("turn_count", by_name)
 
 
+class TestGoalCompletionCriteria(ScorerTestCase):
+    """The optional `success_criteria` scenario field."""
+
+    @patch('scorers.goalcompletionrate.get_generator')
+    def test_scenario_without_criteria_keeps_the_plan_prompt(
+            self, mock_get_generator):
+        from scorers.prompt.goalcompletion import (
+            GOAL_COMPLETION_PROMPT, TEXT_ONLY_EVIDENCE_RULE)
+
+        self.score(mock_get_generator, json.dumps(
+            {"sub_goals": [sub_goal("a", True)]}))
+
+        self.assertEqual(GOAL_COMPLETION_PROMPT.format(
+            conversation_plan=PLAN, conversation_history="[]",
+            evidence_rule=TEXT_ONLY_EVIDENCE_RULE), self.prompt)
+
+    @patch('scorers.goalcompletionrate.get_generator')
+    def test_success_criteria_replace_plan_sub_goals(self, mock_get_generator):
+        response = json.dumps({
+            "success_criteria": [
+                criterion_verdict(1, True, "listed them"),
+                criterion_verdict(2, False, "never checked"),
+                criterion_verdict(3, True, "reported it"),
+            ],
+        })
+
+        score, reason = self.score(
+            mock_get_generator, response,
+            success_criteria=["Lists the instances",
+                              "Reports the nl2code state",
+                              "States the instance count"])
+
+        self.assertEqual(66.7, score)
+        self.assertIn("1. Lists the instances", self.prompt)
+        self.assertIn("3. States the instance count", self.prompt)
+        self.assertNotIn("List the outcomes the agent must produce", self.prompt)
+        self.assertIn("2/3 success criteria met", reason)
+        self.assertIn("[UNMET] Reports the nl2code state — never checked",
+                      reason)
+
+    @patch('scorers.goalcompletionrate.get_generator')
+    def test_verdicts_pair_with_criteria_by_index_not_order(
+            self, mock_get_generator):
+        response = json.dumps({
+            "success_criteria": [
+                criterion_verdict(2, False, "second"),
+                criterion_verdict("1", True, "first"),
+            ],
+        })
+
+        score, reason = self.score(
+            mock_get_generator, response,
+            success_criteria=["first criterion", "second criterion"])
+
+        self.assertEqual(50.0, score)
+        self.assertIn("[MET] first criterion — first", reason)
+        self.assertIn("[UNMET] second criterion — second", reason)
+
+    @patch('scorers.goalcompletionrate.get_generator')
+    def test_missing_success_verdict_scores_0(self, mock_get_generator):
+        response = json.dumps(
+            {"success_criteria": [criterion_verdict(1, True)]})
+
+        score, reason = self.score(
+            mock_get_generator, response, success_criteria=["a", "b"])
+
+        self.assertEqual(0.0, score)
+        self.assertIn("No verdict for success criteria [2]", reason)
+
+    @patch('scorers.goalcompletionrate.get_generator')
+    def test_zero_based_indices_are_not_shifted(self, mock_get_generator):
+        """A judge that numbers from 0 gets an error, not verdicts paired
+        with the wrong criteria."""
+        response = json.dumps({
+            "success_criteria": [
+                criterion_verdict(0, True), criterion_verdict(1, False)],
+        })
+
+        score, reason = self.score(
+            mock_get_generator, response, success_criteria=["a", "b"])
+
+        self.assertEqual(0.0, score)
+        self.assertIn("No verdict for success criteria [2]", reason)
+
+    @patch('scorers.goalcompletionrate.get_generator')
+    def test_bare_string_is_one_criterion(self, mock_get_generator):
+        response = json.dumps(
+            {"success_criteria": [criterion_verdict(1, True)]})
+
+        score, _ = self.score(
+            mock_get_generator, response,
+            success_criteria="Lists the instances")
+
+        self.assertEqual(100.0, score)
+        self.assertIn("1. Lists the instances", self.prompt)
+
+    @patch('scorers.goalcompletionrate.get_generator')
+    def test_multi_line_criterion_stays_on_one_prompt_line(
+            self, mock_get_generator):
+        response = json.dumps(
+            {"success_criteria": [criterion_verdict(1, True)]})
+
+        self.score(mock_get_generator, response,
+                   success_criteria=["Lists the\n  instances"])
+
+        self.assertIn("1. Lists the instances\n", self.prompt)
+
+    @patch('scorers.goalcompletionrate.get_generator')
+    def test_criteria_without_a_plan_are_still_graded(self, mock_get_generator):
+        """The empty-plan early return applies only without criteria."""
+        response = json.dumps(
+            {"success_criteria": [criterion_verdict(1, True)]})
+
+        score, _ = self.score(
+            mock_get_generator, response, conversation_plan="",
+            success_criteria=["Lists the instances"])
+
+        self.assertEqual(100.0, score)
+
+    @patch('scorers.goalcompletionrate.get_generator')
+    def test_blank_criteria_fall_back_to_plan_sub_goals(
+            self, mock_get_generator):
+        response = json.dumps({"sub_goals": [sub_goal("a", True)]})
+
+        score, reason = self.score(
+            mock_get_generator, response, success_criteria=["", "  ", None])
+
+        self.assertEqual(100.0, score)
+        self.assertIn("List the outcomes the agent must produce", self.prompt)
+        self.assertIn("1/1 sub-goals met", reason)
+
+    @patch('scorers.goalcompletionrate.get_generator')
+    def test_criteria_response_survives_the_generator_response_sanitizer(
+            self, mock_get_generator):
+        from util.sanitizer import sanitize_sql
+
+        fenced = "```json\n" + json.dumps({
+            "success_criteria": [
+                criterion_verdict(1, True, "the agent listed them"),
+                criterion_verdict(2, False, "the agent never checked"),
+            ],
+            "summary": "Half the criteria were met.",
+        }, indent=2) + "\n```"
+
+        score, _ = self.score(
+            mock_get_generator, sanitize_sql(fenced),
+            success_criteria=["Lists the instances", "Reports the state"])
+
+        self.assertEqual(50.0, score)
+
+
 class _FakeGeminiJudge:
     """A judge with the genai surface that JSON mode needs."""
 
@@ -322,6 +490,21 @@ class TestGoalCompletionJsonMode(unittest.TestCase):
         self.assertEqual(GOAL_COMPLETION_SCHEMA, config.response_schema)
         self.assertTrue(judge.calls[0]["contents"].startswith("BASE "))
         self.assertIn(PLAN, judge.calls[0]["contents"])
+
+    def test_success_criteria_use_the_criteria_schema(self):
+        from scorers.prompt.goalcompletion import (
+            GOAL_COMPLETION_CRITERIA_SCHEMA)
+
+        judge = _FakeGeminiJudge(json.dumps({
+            "success_criteria": [criterion_verdict(1, True)],
+            "summary": "",
+        }))
+
+        score, _ = self.run_scorer(judge, success_criteria=["Lists them"])
+
+        self.assertEqual(100.0, score)
+        self.assertEqual(GOAL_COMPLETION_CRITERIA_SCHEMA,
+                         judge.calls[0]["config"].response_schema)
 
     def test_judge_with_tools_uses_generate(self):
         judge = _FakeGeminiJudge(
