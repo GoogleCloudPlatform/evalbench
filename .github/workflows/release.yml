@@ -51,18 +51,20 @@ jobs:
       UV_PYTHON: "3.12"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
           # A manual run with tag_name builds the source at that tag, not
           # the source at the default branch.
           ref: ${{ github.event.inputs.tag_name || github.ref }}
+          persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
+          # A cache from another workflow run could change the release
+          # binaries, so the release build does not use a cache.
+          enable-cache: false
 
       - name: Set up Python
         run: uv python install ${{ env.UV_PYTHON }}
@@ -101,7 +103,7 @@ jobs:
           Compress-Archive -Path * -DestinationPath ../${{ matrix.platform_name }}.${{ matrix.arch_name }}.evalbench.zip
 
       - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: binary-${{ matrix.platform_name }}-${{ matrix.arch_name }}
           path: |
@@ -117,7 +119,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: release-assets
           pattern: binary-*
@@ -125,7 +127,7 @@ jobs:
 
       - name: Upload Release Assets
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name != '')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ github.event.release.tag_name || github.event.inputs.tag_name }}
           files: release-assets/*
