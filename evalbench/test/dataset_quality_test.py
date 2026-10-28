@@ -49,6 +49,12 @@ from scorers.dataset_quality.grading import (
     letter_grade,
 )
 from scorers.dataset_quality.naming_distribution import NamingDistributionScorer
+from scorers.dataset_quality.prompts import (
+    composition_coverage,
+    cuj_path_classification,
+    error_recovery_coverage,
+    parameter_coverage,
+)
 from scorers.dataset_quality.prompts.composition_coverage import (
     KEY_MULTI_TOOL,
     KEY_SEQUENCE_DEPENDENCY,
@@ -665,10 +671,6 @@ class CujsJsonTest(unittest.TestCase):
 
     def test_prompts_that_receive_success_criteria_describe_it(self):
         """A judge ignores a field that its prompt does not mention."""
-        from scorers.dataset_quality.prompts import (
-            composition_coverage, cuj_path_classification,
-            error_recovery_coverage, parameter_coverage)
-
         for prompt in [composition_coverage.COMPOSITION_COVERAGE_PROMPT,
                        cuj_path_classification.CUJ_PATH_CLASSIFICATION_PROMPT,
                        error_recovery_coverage.ERROR_RECOVERY_COVERAGE_PROMPT,
