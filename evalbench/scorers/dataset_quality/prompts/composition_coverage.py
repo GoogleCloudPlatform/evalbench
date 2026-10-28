@@ -33,6 +33,8 @@ cross-skill data passing) working together to succeed?
 ### JUDGMENT 2 -- sequence_dependency_ids
 Does success require a SPECIFIC ORDER of operations -- tool A must happen before
 tool B, and doing them out of order would fail or produce a wrong result?
+- Judge from the starting_prompt, conversation_plan, and success_criteria (if
+  present), using expected_trajectory as a strong hint.
 - true: there is a real ordering constraint (e.g. create the table before inserting
   rows; check out the branch before editing; fetch an id before using it).
 - false: the tools are independent / order does not matter, or there is only one

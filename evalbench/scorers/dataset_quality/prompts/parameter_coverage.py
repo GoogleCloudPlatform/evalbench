@@ -25,9 +25,9 @@ tool -- i.e. the request cannot succeed as described unless that parameter is se
   explicitly demands its behavior -- e.g. a filter, page size, enum choice, ordering,
   or flag that the starting_prompt, conversation_plan, or success_criteria calls for.
 - Judge from what the starting_prompt, conversation_plan, and success_criteria (if
-  present) actually demand, using expected_trajectory to confirm which tools run. Do NOT assume an optional parameter
-  is used just because it exists; absence of any demand for it means it is NOT
-  exercised by that CUJ.
+  present) actually demand, using expected_trajectory to confirm which tools run.
+  Do NOT assume an optional parameter is used just because it exists; absence of
+  any demand for it means it is NOT exercised by that CUJ.
 - The same CUJ may exercise several parameters (across one or more tools). List the
   CUJ under every parameter it genuinely exercises.
 
