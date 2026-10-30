@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.22.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.21.0...v1.22.0) (2026-10-30)
+
+
+### Features
+
+* **dataset_quality:** tell judges about success_criteria ([#685](https://github.com/GoogleCloudPlatform/evalbench/issues/685)) ([1523a53](https://github.com/GoogleCloudPlatform/evalbench/commit/1523a532ff8ed583339d08cae9880f1d7634620e))
+
+
+### Bug Fixes
+
+* **dataset_quality:** don't count withheld data as Incomplete Result ([926c9cf](https://github.com/GoogleCloudPlatform/evalbench/commit/926c9cf983d8aca64159c00e1ba8bafddefbdb61))
+* **dataset_quality:** don't count withheld data as Incomplete Result ([1c40016](https://github.com/GoogleCloudPlatform/evalbench/commit/1c4001611ae3c31c07b370f695f0d080f178e7bf))
+* **gke:** add health probes and make the deploy single-pod safe ([0ce5185](https://github.com/GoogleCloudPlatform/evalbench/commit/0ce5185ca8f59090863547d55577511e4841a828))
+
 ## [1.21.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.20.0...v1.21.0) (2026-10-27)
 
 
