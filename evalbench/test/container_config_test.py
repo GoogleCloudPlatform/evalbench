@@ -186,9 +186,13 @@ class TestWorkerPoolRouter(unittest.TestCase):
 
     def test_releases_the_slot_when_the_body_raises(self):
         router = self._router(["a"], per_pool=1)
-        with self.assertRaises(RuntimeError):
+
+        def fail_while_holding_the_slot():
             with router.acquire():
                 raise RuntimeError("boom")
+
+        with self.assertRaises(RuntimeError):
+            fail_while_holding_the_slot()
         with router.acquire() as pool:
             self.assertEqual(pool.name, "a")
 
