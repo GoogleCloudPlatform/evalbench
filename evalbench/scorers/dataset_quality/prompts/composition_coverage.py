@@ -19,10 +19,11 @@ judge what each scenario ACTUALLY requires, not what it superficially resembles.
 ### JUDGMENT 1 -- multi_tool_ids
 Does the CUJ genuinely require MORE THAN ONE distinct tool (or a skill-plus-tool, or
 cross-skill data passing) working together to succeed?
-- Judge from what the starting_prompt and conversation_plan actually demand, using
-  expected_trajectory as a strong hint -- NOT from the trajectory list alone. A
-  trajectory may list several tools that the task does not truly require, or the same
-  tool repeated; treat repeats of one tool as single-tool.
+- Judge from what the starting_prompt, conversation_plan, and success_criteria (if
+  present) actually demand, using expected_trajectory as a strong hint -- NOT from
+  the trajectory list alone. A trajectory may list several tools that the task does
+  not truly require, or the same tool repeated; treat repeats of one tool as
+  single-tool.
 - true: the task's success depends on two or more DIFFERENT tools/skills
   contributing (e.g. read a file, then run a test; search, then summarize; produce
   data in one skill and consume it in another).
@@ -32,6 +33,8 @@ cross-skill data passing) working together to succeed?
 ### JUDGMENT 2 -- sequence_dependency_ids
 Does success require a SPECIFIC ORDER of operations -- tool A must happen before
 tool B, and doing them out of order would fail or produce a wrong result?
+- Judge from the starting_prompt, conversation_plan, and success_criteria (if
+  present), using expected_trajectory as a strong hint.
 - true: there is a real ordering constraint (e.g. create the table before inserting
   rows; check out the branch before editing; fetch an id before using it).
 - false: the tools are independent / order does not matter, or there is only one
@@ -45,7 +48,12 @@ When genuinely borderline on either judgment, answer false.
 **Available Tools:** {tool_names}
 
 **CUJs (JSON list):** Each object has "id", "starting_prompt", "conversation_plan",
-and "expected_trajectory".
+and "expected_trajectory". Some also have "success_criteria", the outcomes the agent
+must produce. Credit a criterion only if the agent can reach it from the
+starting_prompt and conversation_plan. A criterion is unreachable when it needs a
+value that the user never gives and the agent cannot look up (a tier, a disk size,
+a role name), or when it contradicts the request (e.g. "show only active items"
+when the user asks for every item). Ignore unreachable criteria.
 {cujs_json}
 
 ### Output Format

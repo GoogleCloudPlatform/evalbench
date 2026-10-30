@@ -49,6 +49,12 @@ from scorers.dataset_quality.grading import (
     letter_grade,
 )
 from scorers.dataset_quality.naming_distribution import NamingDistributionScorer
+from scorers.dataset_quality.prompts import (
+    composition_coverage,
+    cuj_path_classification,
+    error_recovery_coverage,
+    parameter_coverage,
+)
 from scorers.dataset_quality.prompts.composition_coverage import (
     KEY_MULTI_TOOL,
     KEY_SEQUENCE_DEPENDENCY,
@@ -662,6 +668,24 @@ class CujsJsonTest(unittest.TestCase):
         self.assertEqual(["The agent lists the instances"],
                          cujs[0]["success_criteria"])
         self.assertNotIn("success_criteria", cujs[1])
+
+    def test_prompts_that_receive_success_criteria_describe_it(self):
+        """A judge ignores a field that its prompt does not mention."""
+        for prompt in [composition_coverage.COMPOSITION_COVERAGE_PROMPT,
+                       cuj_path_classification.CUJ_PATH_CLASSIFICATION_PROMPT,
+                       error_recovery_coverage.ERROR_RECOVERY_COVERAGE_PROMPT,
+                       parameter_coverage.PARAMETER_COVERAGE_PROMPT]:
+            with self.subTest(prompt=prompt[:40]):
+                self.assertIn('"success_criteria"', prompt)
+
+    def test_prompts_ignore_unreachable_success_criteria(self):
+        """A criterion the user cannot lead the agent to must not raise a score."""
+        for prompt in [composition_coverage.COMPOSITION_COVERAGE_PROMPT,
+                       cuj_path_classification.CUJ_PATH_CLASSIFICATION_PROMPT,
+                       error_recovery_coverage.ERROR_RECOVERY_COVERAGE_PROMPT,
+                       parameter_coverage.PARAMETER_COVERAGE_PROMPT]:
+            with self.subTest(prompt=prompt[:40]):
+                self.assertIn("Ignore unreachable criteria.", prompt)
 
 
 class CompositionScorerTest(unittest.TestCase):
