@@ -61,7 +61,11 @@ on that tool.
 
 **CUJs (JSON list):** Each object has "id", "starting_prompt", "conversation_plan",
 and "expected_trajectory". Some also have "success_criteria", the outcomes the agent
-must produce.
+must produce. Credit a criterion only if the agent can reach it from the
+starting_prompt and conversation_plan. A criterion is unreachable when it needs a
+value that the user never gives and the agent cannot look up (a tier, a disk size,
+a role name), or when it contradicts the request (e.g. "show only active items"
+when the user asks for every item). Ignore unreachable criteria.
 {cujs_json}
 
 ### Recommendations

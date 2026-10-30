@@ -678,6 +678,15 @@ class CujsJsonTest(unittest.TestCase):
             with self.subTest(prompt=prompt[:40]):
                 self.assertIn('"success_criteria"', prompt)
 
+    def test_prompts_ignore_unreachable_success_criteria(self):
+        """A criterion the user cannot lead the agent to must not raise a score."""
+        for prompt in [composition_coverage.COMPOSITION_COVERAGE_PROMPT,
+                       cuj_path_classification.CUJ_PATH_CLASSIFICATION_PROMPT,
+                       error_recovery_coverage.ERROR_RECOVERY_COVERAGE_PROMPT,
+                       parameter_coverage.PARAMETER_COVERAGE_PROMPT]:
+            with self.subTest(prompt=prompt[:40]):
+                self.assertIn("Ignore unreachable criteria.", prompt)
+
 
 class CompositionScorerTest(unittest.TestCase):
     """Only the composable-surface gate; the judge itself is out of scope."""
