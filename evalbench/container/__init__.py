@@ -10,14 +10,21 @@ Layout::
     config.py       `containerization:` run-config block
     spec.py         the self-contained description of one eval case
     pool_router.py  round-robin placement across worker pools
+    backend.py      ContainerBackend interface + CaseResult
+    case_runner.py  the in-container entrypoint that runs one case
+    cancellation.py lets a cancelled RPC stop the cases it started
 """
 
+from container.backend import CaseResult, ContainerBackend, get_backend
 from container.config import ContainerizationConfig
 from container.pool_router import WorkerPoolRouter
 from container.spec import EvalCaseSpec
 
 __all__ = [
+    "CaseResult",
+    "ContainerBackend",
     "ContainerizationConfig",
     "EvalCaseSpec",
     "WorkerPoolRouter",
+    "get_backend",
 ]
