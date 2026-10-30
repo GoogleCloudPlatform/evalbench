@@ -30,8 +30,8 @@ judge what each scenario ACTUALLY exercises, not what it superficially resembles
 ### ERROR / RECOVERY MODES
 A CUJ exercises a mode when its scenario genuinely puts the agent in that failure
 situation and success depends on the agent detecting or recovering from it -- judged
-from the starting_prompt, conversation_plan, and expected_trajectory, NOT from
-surface wording.
+from the starting_prompt, conversation_plan, success_criteria (if present), and
+expected_trajectory, NOT from surface wording.
 - "Invalid Request": the call is rejected because of what it names or passes -- a
   resource that does not exist (bad id, wrong name, wrong project or region), or an
   argument that is missing, malformed, or out of range. The agent must recognize the
@@ -64,7 +64,12 @@ on that tool.
 {tool_catalog}
 
 **CUJs (JSON list):** Each object has "id", "starting_prompt", "conversation_plan",
-and "expected_trajectory".
+and "expected_trajectory". Some also have "success_criteria", the outcomes the agent
+must produce. Credit a criterion only if the agent can reach it from the
+starting_prompt and conversation_plan. A criterion is unreachable when it needs a
+value that the user never gives and the agent cannot look up (a tier, a disk size,
+a role name), or when it contradicts the request (e.g. "show only active items"
+when the user asks for every item). Ignore unreachable criteria.
 {cujs_json}
 
 ### Recommendations
