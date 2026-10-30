@@ -46,6 +46,10 @@ surface wording.
   needs -- an empty set, no match, a truncated or paginated page, or missing fields.
   The agent must notice the gap (page through, broaden the query, report that
   nothing was found) instead of treating what came back as the whole answer.
+- Not a mode: data that no tool returns by design (passwords, secrets, other PII),
+  or a part of the request the agent must decline. This is not a missing field, so
+  do not count that part toward "Incomplete Result" or any other mode. Judge the
+  rest of the CUJ as usual.
 
 A single CUJ may exercise several modes; list every mode it genuinely exercises.
 When genuinely borderline on whether a mode is exercised, do NOT list it.
