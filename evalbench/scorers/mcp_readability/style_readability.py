@@ -172,6 +172,58 @@ over from the previous review and will be discarded if you repeat them.
 """
 
 
+# Second-pass prompt to check whether baseline findings omitted on a re-judged
+# tool were fixed by the schema change or still apply.
+_RECONCILE_PROMPT = """You reviewed this MCP server's tools previously and
+reported the findings listed below. The tool definitions have since changed; the
+CURRENT man page is shown first. A fresh review of the changed tools did not
+repeat these findings, which means either the change fixed them or the fresh
+review simply failed to mention them.
+
+For each finding, decide against the CURRENT man page alone: does the problem it
+describes still exist?
+
+Judge only what the finding itself describes. Do not look for new problems, do
+not re-word the finding, and do not revisit its severity -- a finding you keep is
+restored exactly as it was written.
+
+### TOOLS (man page)
+{tools_markup}
+
+### FINDINGS TO RULE ON
+{findings}
+
+### OUTPUT
+Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
+{{
+  "verdicts": [
+    {{"finding_id": "<the id given above, copied exactly>",
+      "still_applies": <true if the problem is still present, false if the
+                        change fixed it or it no longer applies>,
+      "reason": "<one line of justification>"}}
+  ]
+}}
+Return exactly one verdict per finding listed above."""
+
+
+def _reconcile_payload(
+    missing: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Flatten unreported baseline findings for the reconciliation prompt."""
+    return [
+        {
+            "finding_id": finding.get("finding_id", ""),
+            "tool": entry["tool"],
+            "rule_id": finding.get("rule_id", ""),
+            "locator": finding.get("locator", ""),
+            "title": finding.get("title", ""),
+            "message": finding.get("message", ""),
+        }
+        for entry in missing
+        for finding in entry["findings"]
+    ]
+
+
 class McpStyleReadabilityScorer:
     """Scores a tools spec against the MCP style guide using an LLM."""
 
@@ -243,14 +295,21 @@ class McpStyleReadabilityScorer:
                 ),
             )
 
-        feedback = self._merged_feedback(decision, judged, tool_order)
+        restored, reconciled = self._reconcile_dropped(decision, judged, context)
+
+        feedback = self._merged_feedback(
+            decision,
+            judged,
+            tool_order,
+            restored=restored,
+        )
         logging.info(
             "mcp_readability: %s judged %s (%s): %d findings, %d model call(s)",
             context.product_name,
             decision.mode,
             decision.change_reason,
             feedback["p0_issues"] + feedback["p1_issues"] + feedback["p2_issues"],
-            1 if decision.needs_model_call else 0,
+            (1 if decision.needs_model_call else 0) + (1 if reconciled else 0),
         )
 
         p0 = feedback["p0_issues"]
@@ -307,14 +366,77 @@ class McpStyleReadabilityScorer:
             "exceptions": canonical_exceptions(context.exceptions),
         }
 
+    def _reconcile_dropped(
+        self,
+        decision: cf.Decision,
+        judged: dict[str, Any] | None,
+        context: EndpointContext,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Re-check baseline findings that a re-judged tool omitted."""
+        missing = cf.unreported_findings(decision, judged)
+        if not missing:
+            return [], False
+        verdicts = self.reconcile(context.man_page, missing)
+        restored = []
+        for entry in missing:
+            kept = [
+                finding
+                for finding in entry["findings"]
+                if verdicts.get(finding.get("finding_id"), True)
+            ]
+            if kept:
+                restored.append({"tool": entry["tool"], "findings": kept})
+        return restored, True
+
+    def reconcile(self, tools_markup: str, missing: list[dict]) -> dict[str, bool]:
+        """Ask the judge whether each omitted finding still applies.
+
+        Returns ``finding_id -> still_applies``. Returns an empty dict on error
+        so the caller keeps all findings under review.
+        """
+        prompt = _RECONCILE_PROMPT.format(
+            tools_markup=tools_markup or "(no tools)",
+            findings=json.dumps(_reconcile_payload(missing), indent=2),
+        )
+        try:
+            data = self._extract_json(self._generate(prompt))
+        except Exception as e:
+            logging.warning(
+                "mcp_style_readability: reconciliation pass failed (%s); "
+                "keeping every finding it was asked to rule on.",
+                e,
+            )
+            return {}
+
+        raw_verdicts = data.get("verdicts")
+        if not isinstance(raw_verdicts, list):
+            return {}
+        verdicts = {}
+        for verdict in raw_verdicts:
+            if not isinstance(verdict, dict):
+                continue
+            finding_id = str(verdict.get("finding_id", "")).strip()
+            if not finding_id:
+                continue
+            applies = verdict.get("still_applies") is not False
+            verdicts[finding_id] = applies
+            if not applies:
+                logging.info(
+                    "mcp_readability: finding %s ruled resolved: %s",
+                    finding_id,
+                    str(verdict.get("reason", "")).strip() or "(no reason)",
+                )
+        return verdicts
+
     def _merged_feedback(
         self,
         decision: cf.Decision,
         judged: dict[str, Any] | None,
         tool_order: list[str],
+        restored: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Merge carried and fresh findings and recompute severity counts."""
-        merged = cf.merge_feedback(decision, judged, tool_order)
+        merged = cf.merge_feedback(decision, judged, tool_order, restored)
         entries = merged["findings_by_tool"]
         cf.mint_finding_ids(entries)
         counts = _severity_counts(
