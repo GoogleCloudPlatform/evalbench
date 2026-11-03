@@ -45,6 +45,22 @@ class _RecordingModel:
         return json.dumps(self.payloads[min(self.calls, len(self.payloads)) - 1])
 
 
+def _resolved(contribution, *tools):
+    """A reconciliation response ruling these tools' findings fixed."""
+    by_tool = _by_tool(contribution)
+    return {
+        "verdicts": [
+            {
+                "finding_id": finding["finding_id"],
+                "still_applies": False,
+                "reason": "the schema change fixed it",
+            }
+            for tool in tools
+            for finding in by_tool.get(tool, [])
+        ]
+    }
+
+
 def _focus_lines(model):
     """The prompt's scope line, naming the tools the judge must report on."""
     return [
@@ -212,14 +228,15 @@ class PartialRunTest(unittest.TestCase):
                     ),
                 ],
                 "summary": "New summary.",
-            }
+            },
+            _resolved(self.first, "create_instance"),
         )
         contribution = _run(
             _scorer(model),
             self._changed_tools(),
             baseline=_baseline_from(self.first, self.tools),
         )
-        self.assertEqual(model.calls, 1)
+        self.assertEqual(model.calls, 2)
         self.assertEqual(
             contribution.row_fields["mcp_readability_feedback_mode"],
             cf.MODE_PARTIAL,
@@ -360,7 +377,8 @@ class PartialRunTest(unittest.TestCase):
                             _entry("general", _finding("P1", "Inconsistent Naming"))
                         ],
                         "summary": "s",
-                    }
+                    },
+                    _resolved(first, "general"),
                 )
             ),
             self.tools + [_tool("delete_instance")],
@@ -462,6 +480,39 @@ class CrossToolFindingsTest(unittest.TestCase):
         focus = _focus_lines(model)
         self.assertNotIn("general", focus[0])
 
+    def test_an_omitted_general_is_resolved_only_once_the_second_pass_says_so(self):
+        before = _by_tool(self.first)["general"][0]["finding_id"]
+        contribution = _run(
+            _scorer(
+                _RecordingModel(
+                    {"readability_score": 60, "findings_by_tool": [],
+                     "summary": "s"},
+                    _resolved(self.first, "general"),
+                )
+            ),
+            self.tools + [_tool("c")],
+            baseline=_baseline_from(self.first, self.tools),
+        )
+        self.assertNotIn("general", _by_tool(contribution))
+        self.assertIn(before, _provenance(contribution)["resolved_finding_ids"])
+
+    def test_an_omitted_general_survives_when_the_second_pass_upholds_it(self):
+        model = self._obedient_judge()
+        contribution = _run(
+            _scorer(model),
+            self.tools + [_tool("c")],
+            baseline=_baseline_from(self.first, self.tools),
+        )
+        self.assertEqual(model.calls, 2)
+        self.assertEqual(
+            [
+                finding["rule_id"]
+                for finding in _by_tool(contribution)["general"]
+            ],
+            ["Tool Count Limits"],
+        )
+        self.assertEqual(_provenance(contribution)["resolved_finding_ids"], [])
+
     def test_a_fresh_general_still_wins_when_the_judge_provides_one(self):
         model = _RecordingModel(
             {
@@ -470,7 +521,8 @@ class CrossToolFindingsTest(unittest.TestCase):
                     _entry("general", _finding("P1", "Inconsistent Naming"))
                 ],
                 "summary": "s",
-            }
+            },
+            _resolved(self.first, "general"),
         )
         contribution = _run(
             _scorer(model),
@@ -688,6 +740,141 @@ def _provenance(contribution):
     return json.loads(
         contribution.row_fields["mcp_readability_feedback_provenance_json"]
     )
+
+
+class _FailingReconciler(_RecordingModel):
+    """A judge whose reconciliation call fails."""
+
+    def generate(self, prompt):
+        response = super().generate(prompt)
+        if self.calls > 1:
+            raise RuntimeError("reconciliation unavailable")
+        return response
+
+
+class ReconciliationTest(unittest.TestCase):
+    """Second-pass reconciliation over findings a re-judged tool omitted."""
+
+    def setUp(self):
+        self.tools = [_tool("a"), _tool("b")]
+        self.first = _run(
+            _scorer(
+                _RecordingModel(
+                    {
+                        "readability_score": 60,
+                        "findings_by_tool": [
+                            _entry(
+                                "b",
+                                _finding(
+                                    "P1",
+                                    "Tool Names",
+                                    title="verb missing",
+                                    locator="name",
+                                ),
+                            )
+                        ],
+                        "summary": "s",
+                    }
+                )
+            ),
+            self.tools,
+        )
+        self.edited = [_tool("a"), _tool("b", "Rewritten.")]
+
+    def _silent_judge(self, *rest):
+        return _RecordingModel(
+            {"readability_score": 90, "findings_by_tool": [], "summary": "s"},
+            *rest,
+        )
+
+    def _rerun(self, model, tools=None):
+        return _run(
+            _scorer(model),
+            tools or self.edited,
+            baseline=_baseline_from(self.first, self.tools),
+        )
+
+    def test_a_dropped_finding_is_restored_with_its_original_wording(self):
+        model = self._silent_judge()
+        contribution = self._rerun(model)
+        self.assertEqual(model.calls, 2)
+        self.assertEqual(
+            [finding["title"] for finding in _by_tool(contribution)["b"]],
+            ["verb missing"],
+        )
+
+    def test_no_second_pass_when_the_judge_repeated_everything(self):
+        model = _RecordingModel(
+            {
+                "readability_score": 90,
+                "findings_by_tool": [
+                    _entry(
+                        "b",
+                        _finding(
+                            "P1", "Tool Names", title="verb missing",
+                            locator="name",
+                        ),
+                    )
+                ],
+                "summary": "s",
+            }
+        )
+        self._rerun(model)
+        self.assertEqual(model.calls, 1)
+
+    def test_an_unchanged_endpoint_still_makes_no_model_call(self):
+        model = self._silent_judge()
+        self._rerun(model, tools=self.tools)
+        self.assertEqual(model.calls, 0)
+
+    def test_a_failed_second_pass_keeps_every_finding(self):
+        contribution = self._rerun(_FailingReconciler({
+            "readability_score": 90, "findings_by_tool": [], "summary": "s",
+        }))
+        self.assertEqual(
+            [finding["title"] for finding in _by_tool(contribution)["b"]],
+            ["verb missing"],
+        )
+
+    def test_a_finding_ruled_fixed_is_dropped_and_reported_resolved(self):
+        before = _by_tool(self.first)["b"][0]["finding_id"]
+        contribution = self._rerun(
+            self._silent_judge(_resolved(self.first, "b"))
+        )
+        self.assertNotIn("b", _by_tool(contribution))
+        self.assertIn(before, _provenance(contribution)["resolved_finding_ids"])
+
+    def test_a_surviving_finding_is_not_reworded_by_the_rejudge(self):
+        model = _RecordingModel(
+            {
+                "readability_score": 90,
+                "findings_by_tool": [
+                    _entry(
+                        "b",
+                        _finding(
+                            "P1", "Tool Names",
+                            title="the judge phrased it differently",
+                            locator="name",
+                        ),
+                    )
+                ],
+                "summary": "s",
+            }
+        )
+        contribution = self._rerun(model)
+        self.assertEqual(model.calls, 1)
+        self.assertEqual(
+            [finding["title"] for finding in _by_tool(contribution)["b"]],
+            ["verb missing"],
+        )
+
+    def test_the_second_pass_is_asked_only_about_the_dropped_finding(self):
+        model = self._silent_judge()
+        self._rerun(model)
+        self.assertIn(
+            _by_tool(self.first)["b"][0]["finding_id"], model.prompts[1]
+        )
+        self.assertIn("still_applies", model.prompts[1])
 
 
 if __name__ == "__main__":
