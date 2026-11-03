@@ -473,17 +473,29 @@ class McpStyleReadabilityScorer:
             f"<h3>MCP Tool Readability Review — {title}</h3>",
         ]
 
+        provenance = feedback.get("provenance") or {}
+        banner = _provenance_banner(feedback)
+        if banner:
+            parts.append(
+                "<p class='mcp-provenance'><b>Change tracking:</b> "
+                f"{esc(banner)}</p>"
+            )
+
         summary = str(feedback.get("summary", "")).strip()
         if summary:
             parts.append(f"<p><b>Summary:</b> {esc(summary)}</p>")
 
+        tool_provenance = provenance.get("tool_provenance") or {}
         by_tool = _clean_findings_by_tool(feedback.get("findings_by_tool"))
         if not by_tool:
             parts.append("<p><i>No findings</i></p>")
         for entry in by_tool:
             items = entry["findings"]
+            marker = _TOOL_MARKERS.get(tool_provenance.get(entry["tool"]), "")
+            suffix = f" · {esc(marker)}" if marker else ""
             parts.append(
-                f"<h4>{esc(entry['tool'])} — {severity_tally(items)}</h4>"
+                f"<h4>{esc(entry['tool'])} — {severity_tally(items)}"
+                f"{suffix}</h4>"
             )
             parts.append("<ul>")
             for f in items:
@@ -524,6 +536,132 @@ class McpStyleReadabilityScorer:
 
         parts.append("</div>")
         return "".join(parts)
+
+
+# Per-tool heading suffix.
+_TOOL_MARKERS = {
+    "carried": "unchanged since the previous review",
+    "rejudged": "re-judged (schema changed)",
+    "new": "new tool",
+}
+
+
+def _tools(count: int) -> str:
+    """Pluralize a tool count for the banner."""
+    return f"{count} tool" if count == 1 else f"{count} tools"
+
+
+def _provenance_banner(feedback: dict[str, Any]) -> str:
+    """Build a one-sentence banner explaining why this report differs."""
+    provenance = feedback.get("provenance") or {}
+    mode = provenance.get("mode")
+    if not mode:
+        return ""
+
+    reason = provenance.get("change_reason", "")
+    since = _date_of(provenance.get("baseline_timestamp", ""))
+    since_clause = f" since {since}" if since else ""
+    previous = provenance.get("previous_finding_count", 0)
+    current = provenance.get("finding_count", 0)
+    new = len(provenance.get("new_finding_ids") or [])
+    resolved = len(provenance.get("resolved_finding_ids") or [])
+    net = (
+        f" Net {previous} → {current} ({new} new, {resolved} resolved)."
+        if previous or current
+        else ""
+    )
+
+    if mode == cf.MODE_CARRIED:
+        tally = severity_tally(
+            [
+                f
+                for entry in _clean_findings_by_tool(
+                    feedback.get("findings_by_tool")
+                )
+                for f in entry["findings"]
+            ]
+        )
+        return (
+            f"Unchanged{since_clause}. No tool schema changes; findings carried "
+            f"forward verbatim. {tally} — identical to the previous run."
+        )
+
+    if mode == cf.MODE_PARTIAL:
+        rejudged = provenance.get("rejudged_tools") or []
+        added = provenance.get("added_tools") or []
+        removed = provenance.get("removed_tools") or []
+        carried = provenance.get("carried_tools") or []
+        changed = rejudged + added
+        total = len(changed) + len(carried)
+        detail = []
+        if rejudged:
+            detail.append(f"Re-judged: {', '.join(rejudged)}.")
+        if added:
+            detail.append(f"Added: {', '.join(added)}.")
+        if removed:
+            detail.append(f"Removed: {', '.join(removed)}.")
+        if carried:
+            detail.append(
+                f"Carried forward unchanged: {_tools(len(carried))}."
+            )
+        return (
+            f"{len(changed)} of {_tools(total)} changed{since_clause}. "
+            + " ".join(detail)
+            + net
+        )
+
+    if reason == cf.NO_BASELINE:
+        return (
+            "No previous review to compare against; this is the first recorded "
+            "run for this endpoint."
+        )
+    if reason == cf.ENDPOINT_IDENTITY_CHANGED:
+        return (
+            "This endpoint's identity changed, so its previous review could "
+            "not be matched to it."
+        )
+
+    changes = provenance.get("component_changes") or {}
+    reasons = {
+        cf.MODEL_CHANGED: (
+            f"Judge model changed{since_clause}"
+            f"{_transition(changes.get('judge_model'))}."
+        ),
+        cf.STYLE_GUIDE_CHANGED: f"The style guide changed{since_clause}.",
+        cf.WAIVERS_CHANGED: f"Waived rules changed{since_clause}.",
+        cf.PROMPT_CHANGED: f"The review prompt changed{since_clause}.",
+        cf.BASELINE_EXPIRED: (
+            f"The previous review{since_clause} has aged out and was "
+            "re-derived from scratch."
+        ),
+        cf.FORCED_REFRESH: "A full re-review was requested for this run.",
+        cf.BASELINE_UNAVAILABLE: (
+            f"The previous review{since_clause} could not be read or compared, "
+            "so every tool was re-judged."
+        ),
+    }
+    if reason in reasons:
+        caveat = (
+            " All tools were re-judged, so count changes below may reflect the "
+            "judge rather than your tools."
+        )
+        return f"{reasons[reason]}{caveat}{net}"
+    return f"Every tool was re-judged ({reason})."
+
+
+def _transition(change: dict[str, Any] | None) -> str:
+    """Render a recorded component change as " (a → b)", else an empty string."""
+    if not change:
+        return ""
+    before, after = change.get("from"), change.get("to")
+    if before in (None, "") or after in (None, ""):
+        return ""
+    return f" ({before} → {after})"
+
+
+def _date_of(timestamp: str) -> str:
+    """Return just the date part of an ISO-8601 timestamp."""
+    return str(timestamp or "").split("T")[0]
 
 
 def _tool_names(tools: Sequence[Any] | None) -> list[str]:

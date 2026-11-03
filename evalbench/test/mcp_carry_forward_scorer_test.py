@@ -161,6 +161,18 @@ class UnchangedEndpointTest(unittest.TestCase):
             second.row_fields["mcp_readability_change_reason"], cf.UNCHANGED
         )
 
+    def test_banner_states_the_report_is_identical(self):
+        first = _run(_scorer(_RecordingModel(self.payload)), self.tools)
+        second = _run(
+            _scorer(_RecordingModel(self.payload)),
+            self.tools,
+            baseline=_baseline_from(first, self.tools),
+        )
+        html = second.row_fields["mcp_readability_llm_feedback_html"]
+        self.assertIn("Unchanged since 2026-09-09", html)
+        self.assertIn("identical to the previous run", html)
+        self.assertIn("unchanged since the previous review", html)
+
 
 class PartialRunTest(unittest.TestCase):
     """Only changed tools are re-judged; the rest keep their findings."""
@@ -601,9 +613,8 @@ class ChangeReasonTest(unittest.TestCase):
         self.assertEqual(provenance["previous_finding_count"], 1)
         self.assertEqual(provenance["new_finding_ids"], [])
         self.assertEqual(provenance["resolved_finding_ids"], [])
-        self.assertEqual(
-            provenance["baseline_timestamp"], "2026-09-09T00:00:00Z"
-        )
+        html = contribution.row_fields["mcp_readability_llm_feedback_html"]
+        self.assertIn("2026-09-09", html)
 
     def test_a_baseline_without_components_is_not_called_a_first_run(self):
         baseline = _baseline_from(self.first, self.tools)
@@ -616,6 +627,9 @@ class ChangeReasonTest(unittest.TestCase):
             contribution.row_fields["mcp_readability_change_reason"],
             cf.BASELINE_UNAVAILABLE,
         )
+        html = contribution.row_fields["mcp_readability_llm_feedback_html"]
+        self.assertNotIn("first recorded run", html)
+        self.assertIn("could not be read or compared", html)
 
     def test_override_reasons_force_a_full_judge(self):
         for reason in (
@@ -636,6 +650,21 @@ class ChangeReasonTest(unittest.TestCase):
                     contribution.row_fields["mcp_readability_change_reason"],
                     reason,
                 )
+
+    def test_model_change_banner_names_both_models(self):
+        scorer = _scorer(_RecordingModel(self.payload))
+        scorer.judge_model = "gemini-2.5-pro"
+        contribution = _run(
+            scorer, self.tools, baseline=_baseline_from(self.first, self.tools)
+        )
+        html = contribution.row_fields["mcp_readability_llm_feedback_html"]
+        self.assertIn("Judge model changed", html)
+        self.assertIn("fake-model", html)
+        self.assertIn("gemini-2.5-pro", html)
+
+    def test_first_run_says_there_is_no_previous_review(self):
+        html = self.first.row_fields["mcp_readability_llm_feedback_html"]
+        self.assertIn("No previous review", html)
 
 
 def _findings(contribution):
