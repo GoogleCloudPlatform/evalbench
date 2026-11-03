@@ -12,12 +12,15 @@ defensively so a slightly malformed response degrades to an ERROR row rather tha
 crashing the run.
 """
 
+from collections.abc import Sequence
 import html
 import json
 import logging
 import re
+from typing import Any
 
 from generators.models import get_generator
+from scorers.mcp_readability import carry_forward as cf
 from scorers.mcp_readability.fingerprint import (
     canonical_exceptions,
     judge_fingerprint,
@@ -58,6 +61,8 @@ Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
     {{"tool": "<tool name, or 'general'>",
       "findings": [
         {{"severity": "P0|P1|P2", "rule_id": "<string>",
+          "locator": "<the parameter path this is about, or 'description' /
+                      'name' when it is about the tool itself; omit if none>",
           "title": "<short one-line summary>", "message": "<what is wrong>",
           "suggestion": "<how to fix>"}}
       ]}}
@@ -149,11 +154,80 @@ rule would otherwise have been violated, note that in the waived entry.
 )
 
 
-# Bumped by hand whenever a prompt edit should count as a judge change. The sha
-# of PROMPT_TEMPLATE is fingerprinted alongside it as a backstop, so forgetting
-# to bump this is safe. The constant exists to let a semantic change be declared
-# even when the text is untouched.
+# Bumped by hand to declare a semantic prompt change even when the text is
+# untouched. The sha of PROMPT_TEMPLATE is fingerprinted as a backstop.
 PROMPT_VERSION = "1"
+
+
+# Appended only for a partial run, and only to save output tokens: the filter in
+# scorers.mcp_readability.carry_forward is what provides the guarantee. The full
+# man page is still supplied, since severity calibration needs the whole surface.
+_FOCUS_CLAUSE = """
+### SCOPE OF THIS REVIEW
+Only these tools have changed since the last review: {focus_tools}
+Read the whole man page above for context -- your severity calibration must
+account for the entire tool surface -- but emit "findings_by_tool" entries ONLY
+for the tools listed on this line. Findings for every other tool are carried
+over from the previous review and will be discarded if you repeat them.
+"""
+
+
+# The second pass. A dropped finding is ambiguous: either the change fixed it,
+# or the judge did not mention it. Asking for a verdict per finding rather than
+# a rewrite keeps the pass from reintroducing wording churn.
+_RECONCILE_PROMPT = """You reviewed this MCP server's tools previously and
+reported the findings listed below. The tool definitions have since changed; the
+CURRENT man page is shown first. A fresh review of the changed tools did not
+repeat these findings, which means either the change fixed them or the fresh
+review simply failed to mention them.
+
+For each finding, decide against the CURRENT man page alone: does the problem it
+describes still exist?
+
+Judge only what the finding itself describes. Do not look for new problems, do
+not re-word the finding, and do not revisit its severity -- a finding you keep is
+restored exactly as it was written.
+
+### TOOLS (man page)
+{tools_markup}
+
+### FINDINGS TO RULE ON
+{findings}
+
+### OUTPUT
+Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
+{{
+  "verdicts": [
+    {{"finding_id": "<the id given above, copied exactly>",
+      "still_applies": <true if the problem is still present, false if the
+                        change fixed it or it no longer applies>,
+      "reason": "<one line of justification>"}}
+  ]
+}}
+Return exactly one verdict per finding listed above."""
+
+
+def _reconcile_payload(
+    missing: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Flatten the findings under review into what the second pass needs.
+
+    Carries the id (the model must echo it back), the tool, and enough of the
+    finding to recognise the problem. Suggestion is left out: the pass rules on
+    whether the problem exists, not on how it would be fixed.
+    """
+    return [
+        {
+            "finding_id": finding.get("finding_id", ""),
+            "tool": entry["tool"],
+            "rule_id": finding.get("rule_id", ""),
+            "locator": finding.get("locator", ""),
+            "title": finding.get("title", ""),
+            "message": finding.get("message", ""),
+        }
+        for entry in missing
+        for finding in entry["findings"]
+    ]
 
 
 class McpStyleReadabilityScorer:
@@ -172,6 +246,9 @@ class McpStyleReadabilityScorer:
         "mcp_readability_style_guide_sha",
         "mcp_readability_prompt_version",
         "mcp_readability_judge_model",
+        "mcp_readability_feedback_mode",
+        "mcp_readability_change_reason",
+        "mcp_readability_feedback_provenance_json",
     ]
 
     def __init__(self, config: dict, global_models):
@@ -200,23 +277,64 @@ class McpStyleReadabilityScorer:
     def run(self, context: EndpointContext) -> ScoreContribution:
         """Evaluate one endpoint: judge the man page, pass iff no P0 findings.
 
-        The judge fingerprint is recorded but not acted on: nothing compares it
-        to a previous run yet.
+        Re-judges only what changed. When the tool surface and every judge input
+        are unchanged since the baseline, the previous findings are returned
+        verbatim and the model is never called; see
+        scorers.mcp_readability.carry_forward for the invariant this upholds.
+
+        A re-judged tool can still lose a finding to nothing more than the
+        judge's non-determinism, which would read as the team having fixed it.
+        Those are collected and put to a second pass that rules on each one, so
+        the only findings that disappear are the ones a model has said are gone.
         """
+        baseline_context = getattr(context, "baseline", None)
         components = self._judge_components(context)
         fingerprint, components = judge_fingerprint(components)
-        feedback = self.evaluate(
-            tools_markup=context.man_page,
-            style_guide=self.style_guide,
-            product_name=context.product_name,
-            exceptions=context.exceptions,
+        decision = cf.decide_with_components(
+            baseline_context, fingerprint, components
         )
-        p0 = int(feedback.get("p0_issues", 0))
+        tool_order = list(
+            (baseline_context.tool_fingerprints if baseline_context else {})
+            or _tool_names(context.tools)
+        )
+
+        judged = None
+        if decision.needs_model_call:
+            judged = self.evaluate(
+                tools_markup=context.man_page,
+                style_guide=self.style_guide,
+                product_name=context.product_name,
+                exceptions=context.exceptions,
+                focus_tools=(
+                    decision.tools_to_report
+                    if decision.mode == cf.MODE_PARTIAL
+                    else None
+                ),
+            )
+
+        restored, reconciled = self._reconcile_dropped(decision, judged, context)
+
+        feedback = self._merged_feedback(
+            decision,
+            judged,
+            tool_order,
+            restored=restored,
+        )
+        logging.info(
+            "mcp_readability: %s judged %s (%s): %d findings, %d model call(s)",
+            context.product_name,
+            decision.mode,
+            decision.change_reason,
+            feedback["p0_issues"] + feedback["p1_issues"] + feedback["p2_issues"],
+            (1 if decision.needs_model_call else 0) + (1 if reconciled else 0),
+        )
+
+        p0 = feedback["p0_issues"]
         return ScoreContribution(
             row_fields={
                 "mcp_readability_p0_issues": p0,
-                "mcp_readability_p1_issues": int(feedback.get("p1_issues", 0)),
-                "mcp_readability_p2_issues": int(feedback.get("p2_issues", 0)),
+                "mcp_readability_p1_issues": feedback["p1_issues"],
+                "mcp_readability_p2_issues": feedback["p2_issues"],
                 "mcp_readability_score": int(feedback.get("readability_score", 0)),
                 # Both feedback columns omit the readability score on purpose;
                 # only the numeric metric column above carries it.
@@ -233,16 +351,22 @@ class McpStyleReadabilityScorer:
                 "mcp_readability_style_guide_sha": self.style_guide_sha,
                 "mcp_readability_prompt_version": PROMPT_VERSION,
                 "mcp_readability_judge_model": self.judge_model,
+                "mcp_readability_feedback_mode": decision.mode,
+                "mcp_readability_change_reason": decision.change_reason,
+                "mcp_readability_feedback_provenance_json": json.dumps(
+                    feedback.get("provenance") or {}, sort_keys=True
+                ),
             },
             score=100 if p0 == 0 else 0,
             logs=(
                 f"p0_issues={p0}, "
-                f"readability_score={feedback.get('readability_score', 0)}"
+                f"readability_score={feedback.get('readability_score', 0)}, "
+                f"mode={decision.mode}, reason={decision.change_reason}"
             ),
         )
 
-    def _judge_components(self, context: EndpointContext) -> dict:
-        """Every judge input other than the tools themselves.
+    def _judge_components(self, context: EndpointContext) -> dict[str, Any]:
+        """Return every judge input other than the tools themselves.
 
         Kept as a dict rather than a bare hash so a mismatch can name the
         component that changed, which is what turns an unexplained count swing
@@ -259,12 +383,124 @@ class McpStyleReadabilityScorer:
             "exceptions": canonical_exceptions(context.exceptions),
         }
 
+    def _reconcile_dropped(
+        self,
+        decision: cf.Decision,
+        judged: dict[str, Any] | None,
+        context: EndpointContext,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Rule on baseline findings a re-judged tool stopped reporting.
+
+        Returns the findings that still apply, and whether a model call was
+        made. Empty and False on every path that has nothing ambiguous to
+        settle, which is the common case: a carried run, or a re-judged tool
+        that repeated everything it said last time.
+        """
+        missing = cf.unreported_findings(decision, judged)
+        if not missing:
+            return [], False
+        verdicts = self.reconcile(context.man_page, missing)
+        restored = []
+        for entry in missing:
+            # An id the model did not rule on is kept, for the same reason a
+            # failed call keeps everything.
+            kept = [
+                finding
+                for finding in entry["findings"]
+                if verdicts.get(finding.get("finding_id"), True)
+            ]
+            if kept:
+                restored.append({"tool": entry["tool"], "findings": kept})
+        return restored, True
+
+    def reconcile(self, tools_markup: str, missing: list[dict]) -> dict[str, bool]:
+        """Ask whether each dropped finding still applies to the current schema.
+
+        Returns finding_id -> still_applies. The pass emits booleans rather than
+        prose precisely so it cannot reword anything: a finding it keeps is
+        restored exactly as the baseline wrote it.
+
+        Any failure -- API error, unparseable response -- yields an empty map,
+        which the caller reads as "keep everything". Silently dropping a live
+        finding understates the surface and looks like the team fixed something
+        they did not; keeping a fixed one is visible and clears on the next
+        schema change.
+        """
+        prompt = _RECONCILE_PROMPT.format(
+            tools_markup=tools_markup or "(no tools)",
+            findings=json.dumps(_reconcile_payload(missing), indent=2),
+        )
+        try:
+            data = self._extract_json(self._generate(prompt))
+        except Exception as e:
+            logging.warning(
+                "mcp_style_readability: reconciliation pass failed (%s); "
+                "keeping every finding it was asked to rule on.",
+                e,
+            )
+            return {}
+
+        verdicts = {}
+        for verdict in data.get("verdicts") or []:
+            if not isinstance(verdict, dict):
+                continue
+            finding_id = str(verdict.get("finding_id", "")).strip()
+            if not finding_id:
+                continue
+            applies = bool(verdict.get("still_applies", True))
+            verdicts[finding_id] = applies
+            if not applies:
+                logging.info(
+                    "mcp_readability: finding %s ruled resolved: %s",
+                    finding_id,
+                    str(verdict.get("reason", "")).strip() or "(no reason)",
+                )
+        return verdicts
+
+    def _merged_feedback(
+        self,
+        decision: cf.Decision,
+        judged: dict[str, Any] | None,
+        tool_order: list[str],
+        restored: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Merge carried and fresh findings, then recount from the result.
+
+        Counts are recomputed over the merged findings so they always match
+        what is rendered, however the findings were sourced.
+        """
+        merged = cf.merge_feedback(decision, judged, tool_order, restored)
+        entries = merged["findings_by_tool"]
+        # Carried findings already have ids and keep them; only fresh ones are
+        # minted, which is what makes finding identity stable across runs.
+        cf.mint_finding_ids(entries)
+        counts = _severity_counts(
+            [finding for entry in entries for finding in entry["findings"]]
+        )
+        if decision.mode == cf.MODE_CARRIED and decision.baseline is not None:
+            # _public_feedback strips the score from the JSON column, so it is
+            # restored from the numeric metric column instead.
+            score = decision.baseline.readability_score
+        else:
+            score = _safe_int((judged or {}).get("readability_score"))
+        return {
+            "readability_score": score,
+            "p0_issues": counts["P0"],
+            "p1_issues": counts["P1"],
+            "p2_issues": counts["P2"],
+            "findings_by_tool": entries,
+            "waived": merged["waived"],
+            "summary": merged["summary"],
+            "provenance": cf.build_provenance(decision, entries),
+        }
+
     def evaluate(
         self,
         tools_markup: str,
         style_guide: str,
         product_name: str,
         exceptions: list[dict] | None = None,
+        focus_tools: list[str] | None = None,
     ) -> dict:
         """Run the LLM readability check and return a normalized feedback dict."""
         prompt = PROMPT_TEMPLATE.format(
@@ -273,6 +509,8 @@ class McpStyleReadabilityScorer:
             tools_markup=tools_markup or "(no tools)",
             exceptions=json.dumps(exceptions or [], indent=2),
         )
+        if focus_tools:
+            prompt += _FOCUS_CLAUSE.format(focus_tools=", ".join(focus_tools))
         raw = self._generate(prompt)
         return self._parse(raw)
 
@@ -351,6 +589,9 @@ class McpStyleReadabilityScorer:
         """Normalize the model output into a stable feedback dict."""
         data = self._extract_json(raw)
         by_tool = _clean_findings_by_tool(data.get("findings_by_tool"))
+        # Minted here because a carried finding keeps the id it was born
+        # with, so every generation that can be carried needs one.
+        cf.mint_finding_ids(by_tool)
         counts = _severity_counts(
             [f for entry in by_tool for f in entry["findings"]]
         )
@@ -368,11 +609,13 @@ class McpStyleReadabilityScorer:
     def to_html(feedback: dict, product_name: str = "") -> str:
         """Render feedback as a human-readable HTML fragment.
 
-        Leads with the overall summary, renders the judge's per-tool findings
-        lists in the order it returned them, and ends with the allowed exceptions
-        (waived rules) and their reasons. It deliberately omits any numeric
-        readability score -- the intent is review notes an engineer can act on,
-        not a grade.
+        Leads with a provenance banner and the overall summary, renders the
+        per-tool findings in man-page order with the cross-tool general entry
+        first, and ends with the allowed exceptions (waived rules) and their
+        reasons. That order is the one the judge is asked for, now enforced
+        rather than assumed, since a partial run assembles entries from two
+        sources. No numeric readability score is shown: the intent is review
+        notes an engineer can act on, not a grade.
 
         HTML (rather than Markdown) because this column is surfaced in a
         dashboard that renders it as HTML. All model-supplied text is escaped.
@@ -387,17 +630,31 @@ class McpStyleReadabilityScorer:
             f"<h3>MCP Tool Readability Review — {title}</h3>",
         ]
 
+        # Before the summary: the first question about a changed number is
+        # "why".
+        provenance = feedback.get("provenance") or {}
+        banner = _provenance_banner(feedback)
+        if banner:
+            parts.append(
+                "<p class='mcp-provenance'><b>Change tracking:</b> "
+                f"{esc(banner)}</p>"
+            )
+
         summary = str(feedback.get("summary", "")).strip()
         if summary:
             parts.append(f"<p><b>Summary:</b> {esc(summary)}</p>")
 
+        tool_provenance = provenance.get("tool_provenance") or {}
         by_tool = _clean_findings_by_tool(feedback.get("findings_by_tool"))
         if not by_tool:
             parts.append("<p><i>No findings</i></p>")
         for entry in by_tool:
             items = entry["findings"]
+            marker = _TOOL_MARKERS.get(tool_provenance.get(entry["tool"]), "")
+            suffix = f" · {esc(marker)}" if marker else ""
             parts.append(
-                f"<h4>{esc(entry['tool'])} — {severity_tally(items)}</h4>"
+                f"<h4>{esc(entry['tool'])} — {severity_tally(items)}"
+                f"{suffix}</h4>"
             )
             parts.append("<ul>")
             for f in items:
@@ -438,6 +695,147 @@ class McpStyleReadabilityScorer:
 
         parts.append("</div>")
         return "".join(parts)
+
+
+# Per-tool heading suffix, so "not re-judged" is distinguishable from
+# "re-judged and scored the same".
+_TOOL_MARKERS = {
+    "carried": "unchanged since the previous review",
+    "rejudged": "re-judged (schema changed)",
+    "new": "new tool",
+}
+
+
+def _tools(count: int) -> str:
+    """Pluralize a tool count for the banner."""
+    return f"{count} tool" if count == 1 else f"{count} tools"
+
+
+def _provenance_banner(feedback: dict[str, Any]) -> str:
+    """Build a one-sentence banner explaining why this report differs."""
+    provenance = feedback.get("provenance") or {}
+    mode = provenance.get("mode")
+    if not mode:
+        return ""
+
+    reason = provenance.get("change_reason", "")
+    since = _date_of(provenance.get("baseline_timestamp", ""))
+    since_clause = f" since {since}" if since else ""
+    previous = provenance.get("previous_finding_count", 0)
+    current = provenance.get("finding_count", 0)
+    new = len(provenance.get("new_finding_ids") or [])
+    resolved = len(provenance.get("resolved_finding_ids") or [])
+    net = (
+        f" Net {previous} → {current} ({new} new, {resolved} resolved)."
+        if previous or current
+        else ""
+    )
+
+    if mode == cf.MODE_CARRIED:
+        tally = severity_tally(
+            [
+                f
+                for entry in _clean_findings_by_tool(
+                    feedback.get("findings_by_tool")
+                )
+                for f in entry["findings"]
+            ]
+        )
+        return (
+            f"Unchanged{since_clause}. No tool schema changes; findings carried "
+            f"forward verbatim. {tally} — identical to the previous run."
+        )
+
+    if mode == cf.MODE_PARTIAL:
+        rejudged = provenance.get("rejudged_tools") or []
+        added = provenance.get("added_tools") or []
+        removed = provenance.get("removed_tools") or []
+        carried = provenance.get("carried_tools") or []
+        changed = rejudged + added
+        total = len(changed) + len(carried)
+        detail = []
+        if rejudged:
+            detail.append(f"Re-judged: {', '.join(rejudged)}.")
+        if added:
+            detail.append(f"Added: {', '.join(added)}.")
+        if removed:
+            detail.append(f"Removed: {', '.join(removed)}.")
+        if carried:
+            detail.append(
+                f"Carried forward unchanged: {_tools(len(carried))}."
+            )
+        return (
+            f"{len(changed)} of {_tools(total)} changed{since_clause}. "
+            + " ".join(detail)
+            + net
+        )
+
+    if reason == cf.NO_BASELINE:
+        return (
+            "No previous review to compare against; this is the first recorded "
+            "run for this endpoint."
+        )
+
+    caveat = (
+        " All tools were re-judged, so count changes below may reflect the "
+        "judge rather than your tools."
+    )
+    changes = provenance.get("component_changes") or {}
+    if reason == cf.MODEL_CHANGED:
+        return (
+            f"Judge model changed{since_clause}"
+            f"{_transition(changes.get('judge_model'))}.{caveat}{net}"
+        )
+    if reason == cf.STYLE_GUIDE_CHANGED:
+        return f"The style guide changed{since_clause}.{caveat}{net}"
+    if reason == cf.WAIVERS_CHANGED:
+        return (
+            f"Waived rules changed{since_clause}.{caveat}{net}"
+        )
+    if reason == cf.PROMPT_CHANGED:
+        return f"The review prompt changed{since_clause}.{caveat}{net}"
+    if reason == cf.BASELINE_EXPIRED:
+        return (
+            f"The previous review{since_clause} has aged out and was "
+            f"re-derived from scratch.{caveat}{net}"
+        )
+    if reason == cf.FORCED_REFRESH:
+        return f"A full re-review was requested for this run.{caveat}{net}"
+    if reason == cf.ENDPOINT_IDENTITY_CHANGED:
+        return (
+            "This endpoint's identity changed, so its previous review could "
+            "not be matched to it."
+        )
+    if reason == cf.BASELINE_UNAVAILABLE:
+        return (
+            f"The previous review{since_clause} could not be read or compared, "
+            f"so every tool was re-judged.{caveat}{net}"
+        )
+    return f"Every tool was re-judged ({reason})."
+
+
+def _transition(change: dict[str, Any] | None) -> str:
+    """Render a recorded component change as " (a → b)", else an empty string."""
+    if not change or change.get("from") in (None, "") or change.get("to") in (
+        None,
+        "",
+    ):
+        return ""
+    return f" ({change['from']} → {change['to']})"
+
+
+def _date_of(timestamp: str) -> str:
+    """Return just the date part of an ISO-8601 timestamp."""
+    return str(timestamp or "").split("T")[0]
+
+
+def _tool_names(tools: Sequence[Any] | None) -> list[str]:
+    """Return the man-page order of tool names, skipping unnamed tools."""
+    return [
+        name
+        for name in (getattr(tool, "name", "") for tool in tools or [])
+        if name
+    ]
 
 
 def _judge_model_name(model_config_path: str) -> str:
@@ -495,13 +893,17 @@ def _severity_counts(findings: list) -> dict[str, int]:
 
 
 def _public_feedback(feedback: dict) -> dict:
-    """The feedback dict as persisted to the JSON column: no readability score.
+    """The feedback dict as persisted to the JSON column.
 
-    Keeps every structured field a human or downstream tool needs (findings,
-    counts, waived rules, summary) while dropping the numeric score so neither
-    feedback column reports a grade.
+    Drops the numeric score so neither feedback column reports a grade, and
+    provenance because it has its own column. The HTML is rendered before this
+    strip, so the banner still has it.
     """
-    return {k: v for k, v in feedback.items() if k != "readability_score"}
+    return {
+        k: v
+        for k, v in feedback.items()
+        if k not in ("readability_score", "provenance")
+    }
 
 
 def _safe_int(value) -> int:
