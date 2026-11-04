@@ -1,5 +1,7 @@
 import json
 import subprocess
+import threading
+import time
 import types
 from unittest.mock import MagicMock, patch
 
@@ -100,18 +102,27 @@ def test_invalid_scenario_num_trials_raises(make_evaluator):
 @patch("evaluator.agentevaluator.SimulatedUser")
 def test_trials_run_one_after_another(mock_sim_user, make_evaluator):
     evaluator = make_evaluator(num_trials=2, agent_runners=4)
-    order = []
+    events = []
+    lock = threading.Lock()
 
     def fake_process_scenario(scenario, eval_result, *args):
-        order.append(scenario["trial_index"])
+        with lock:
+            events.append(scenario["trial_index"])
+        # Hold one trial 0 scenario. Without a barrier between trials, the
+        # free runners start trial 1 before this scenario ends.
+        if scenario["id"] == "a_trial_0":
+            time.sleep(0.2)
         eval_result.agent_results.append({"eval_id": scenario["id"]})
+        with lock:
+            events.append(scenario["trial_index"])
 
     evaluator.process_scenario = fake_process_scenario
     dataset = [_item({"scenarios": [{"id": "a"}]}),
                _item({"scenarios": [{"id": "b"}]})]
     eval_outputs, _ = evaluator._evaluate_agent_cli(dataset, "job1", None)
 
-    assert order == [0, 0, 1, 1]
+    # Every start and end of trial 0 comes before any start of trial 1.
+    assert events == [0, 0, 0, 0, 1, 1, 1, 1]
     assert sorted(o["eval_id"] for o in eval_outputs) == [
         "a_trial_0", "a_trial_1", "b_trial_0", "b_trial_1"]
 

@@ -95,6 +95,9 @@ class AgentEvaluator:
         self.agentrunner = mprunner.MPRunner(self.agent_runners)
         try:
             # Trials run one after another. Each trial runs the full suite.
+            # All trials of a scenario use the same generator fake_home and
+            # the same work_dir. Concurrent trials of one scenario would
+            # write to the same files.
             for trial_index in range(self.num_trials):
                 items = [self._trial_item(item, trial_index) for item in dataset]
                 outputs, scores = self._run_items(
