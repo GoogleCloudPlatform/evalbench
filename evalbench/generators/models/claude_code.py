@@ -16,6 +16,9 @@ import uuid
 from util.context import rpc_id_var
 from util.sessionmgr import validate_session_id
 
+# Session sandboxes under eval_server.py. The volume is shared across sessions.
+SESSIONS_ROOT = "/tmp_sessions"
+
 
 class CLICommand:
     def __init__(self, cli, prompt, env=None, resume=False, session_id=None, allowedTools=None, cwd=None):
@@ -38,14 +41,15 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         self.real_home = os.environ.get("HOME", os.path.expanduser("~"))
 
         # If running via eval_server.py (gRPC), use session-specific path in shared volume
-        if sys.argv[0].endswith("eval_server.py"):
+        self._shared_sandbox = sys.argv[0].endswith("eval_server.py")
+        if self._shared_sandbox:
             session_id = querygenerator_config.get("session_id")
             if not session_id:
                 ctx_id = rpc_id_var.get()
                 session_id = ctx_id if ctx_id != "default" else "default"
             validate_session_id(session_id)
             self.fake_home = os.path.join(
-                "/tmp_sessions", session_id, "fake_home")
+                SESSIONS_ROOT, session_id, "fake_home")
         else:
             self.fake_home = os.path.abspath(
                 os.path.join(".venv", "fake_home_claude"))
@@ -117,9 +121,12 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                     # Local dev: copy the whole gcloud config dir so fresh
                     # `gcloud auth login` credentials (credentials.db,
                     # access_tokens.db, ADC) are available to skill scripts.
+                    # Skipped on the eval server: its sandbox volume is shared
+                    # across sessions, so it must not hold credentials. There,
+                    # gcloud uses the metadata server.
                     real_gcloud_dir = os.path.join(
                         self.real_home, ".config", "gcloud")
-                    if os.path.exists(real_gcloud_dir):
+                    if not self._shared_sandbox and os.path.exists(real_gcloud_dir):
                         os.makedirs(os.path.dirname(fake_gcloud_dir), exist_ok=True)
                         if os.path.exists(fake_gcloud_dir):
                             shutil.rmtree(fake_gcloud_dir)
