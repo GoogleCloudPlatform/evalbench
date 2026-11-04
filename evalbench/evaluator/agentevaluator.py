@@ -16,8 +16,30 @@ from work.agentgenwork import AgentGenWork
 from evaluator.simulateduser import SimulatedUser
 from work.agentscorework import AgentScoreWork
 import json
+import re
 import subprocess
 from typing import Dict
+
+
+# Quota and server errors in agent CLI stderr. The tool under test cannot
+# cause these, so the trial is unscored instead of failed. Status codes must
+# follow a word such as "HTTP" or "error", so a traceback line number such as
+# "line 503" does not match.
+_INFRA_ERROR_RE = re.compile(
+    r"\b(?:HTTP|[Ss]tatus|[Cc]ode|[Ee]rror)\b\D{0,10}\b(?:429|50[0234])\b"
+    r"|Too Many Requests|RESOURCE_EXHAUSTED|UNAVAILABLE"
+    r"|Internal Server Error|Service Unavailable"
+    r"|[Qq]uota[^\n]{0,40}exceeded|exceeded[^\n]{0,40}quota")
+
+
+def _infra_error(result: Any) -> str | None:
+    """Returns an error message if the agent CLI failed on quota or a server error."""
+    returncode = getattr(result, "returncode", 0)
+    stderr = getattr(result, "stderr", "") or ""
+    # 124 is a timeout, which counts as a failure.
+    if returncode in (0, 124) or not _INFRA_ERROR_RE.search(stderr):
+        return None
+    return f"Agent infrastructure error (exit {returncode}): {stderr.strip()[-500:]}"
 
 
 class AgentEvaluator:
@@ -162,6 +184,7 @@ class AgentEvaluator:
             else self.eval_case_timeout_seconds
         )
         last_result = None
+        generated_error = None
 
         for turn in range(max_turns):
             remaining_timeout_seconds = None
@@ -241,13 +264,27 @@ class AgentEvaluator:
                 "agent": result.stdout
             })
 
+            generated_error = _infra_error(result)
+            if generated_error:
+                logging.error(generated_error)
+                break
+
             if turn < max_turns - 1:
                 if simulated_user:
-                    next_response = simulated_user.get_next_response(
-                        conversation_plan,
-                        conversation_history,
-                        result.stdout
-                    )
+                    try:
+                        next_response = simulated_user.get_next_response(
+                            conversation_plan,
+                            conversation_history,
+                            result.stdout
+                        )
+                    except Exception as e:
+                        generated_error = f"Simulated user error: {e}"
+                        logging.error(generated_error)
+                        break
+                    if not str(next_response or "").strip():
+                        generated_error = "Simulated user returned an empty reply."
+                        logging.error(generated_error)
+                        break
                     if "TERMINATE" in next_response:
                         logging.info("Simulated user terminated conversation.")
                         break
@@ -268,7 +305,8 @@ class AgentEvaluator:
             accumulated_skills,
             eval_result,
             job_id,
-            metadata
+            metadata,
+            generated_error,
         )
 
     def _log_cli_result(self, turn: int, max_turns: int, result: subprocess.CompletedProcess):
@@ -289,7 +327,8 @@ class AgentEvaluator:
         accumulated_skills: List[str],
         eval_result: Any,
         job_id: str,
-        metadata: Dict[str, Any]
+        metadata: Dict[str, Any],
+        generated_error: str | None = None,
     ):
         """Finalizes the scenario by scoring and appending results."""
         timed_out = (
@@ -305,7 +344,7 @@ class AgentEvaluator:
             "returncode": getattr(last_result, "returncode", 0),
             "timed_out": timed_out,
             "prompt_generator_error": None,
-            "generated_error": None,
+            "generated_error": generated_error,
             "sql_generator_error": None,
             "golden_error": None,
             "generated_sql": "skipped",
