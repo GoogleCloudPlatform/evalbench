@@ -1,4 +1,5 @@
 from typing import Any, List
+import copy
 import datetime
 import concurrent.futures
 import logging
@@ -18,6 +19,15 @@ from work.agentscorework import AgentScoreWork
 import json
 import subprocess
 from typing import Dict
+
+
+def _check_num_trials(value: Any, source: str) -> int:
+    """Returns value. Raises ValueError unless it is an integer of 1 or more."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(
+            f"num_trials in {source} must be an integer of 1 or more, "
+            f"got {value!r}")
+    return value
 
 
 class AgentEvaluator:
@@ -49,6 +59,8 @@ class AgentEvaluator:
 
         runner_config = self.config.get("runners", {})
         self.agent_runners = runner_config.get("agent_runners", 10)
+        self.num_trials = _check_num_trials(
+            self.config.get("num_trials", 1), "the run config")
 
     def evaluate(
         self,
@@ -82,32 +94,92 @@ class AgentEvaluator:
 
         self.agentrunner = mprunner.MPRunner(self.agent_runners)
         try:
-            for item in dataset:
-                simulated_user = SimulatedUser(self.config)
-                work = AgentGenWork(
-                    processor=self.process_scenario,
-                    eval_result=item,
-                    job_id=job_id,
-                    metadata=metadata,
-                    simulated_user=simulated_user
-                )
-                self.agentrunner.execute_work(work)
-
-            for future in concurrent.futures.as_completed(self.agentrunner.futures):
-                try:
-                    item = future.result()
-                except Exception as e:
-                    logging.exception(f"Agent eval case failed: {e}")
-                    continue
-
-                if hasattr(item, "agent_results"):
-                    eval_outputs.extend(item.agent_results)
-                if hasattr(item, "scoring_results"):
-                    scoring_results.extend(item.scoring_results)
+            # Trials run one after another. Each trial runs the full suite.
+            for trial_index in range(self.num_trials):
+                items = [self._trial_item(item, trial_index) for item in dataset]
+                outputs, scores = self._run_items(
+                    [item for item in items if item is not None],
+                    job_id, metadata)
+                eval_outputs.extend(outputs)
+                scoring_results.extend(scores)
 
             return eval_outputs, scoring_results
         finally:
             self.agentrunner.shutdown()
+
+    def _run_items(
+        self, items: List[Any], job_id: str, metadata: Dict[str, Any]
+    ) -> tuple[List[Any], List[Any]]:
+        """Runs the items concurrently and returns their eval and score rows."""
+        eval_outputs: List[Any] = []
+        scoring_results: List[Any] = []
+        first_future = len(self.agentrunner.futures)
+        for item in items:
+            simulated_user = SimulatedUser(self.config)
+            work = AgentGenWork(
+                processor=self.process_scenario,
+                eval_result=item,
+                job_id=job_id,
+                metadata=metadata,
+                simulated_user=simulated_user
+            )
+            self.agentrunner.execute_work(work)
+
+        for future in concurrent.futures.as_completed(
+                self.agentrunner.futures[first_future:]):
+            try:
+                item = future.result()
+            except Exception as e:
+                logging.exception(f"Agent eval case failed: {e}")
+                continue
+
+            if hasattr(item, "agent_results"):
+                eval_outputs.extend(item.agent_results)
+            if hasattr(item, "scoring_results"):
+                scoring_results.extend(item.scoring_results)
+
+        return eval_outputs, scoring_results
+
+    def _trial_item(self, item: Any, trial_index: int) -> Any:
+        """Returns the item for one trial, or None if no scenario runs in it.
+
+        Scenario ids become `<id>_trial_<k>`. With one trial, the item is unchanged.
+        """
+        if self.num_trials == 1:
+            return item
+
+        eval_set = json.loads(item.payload)
+        scenarios = eval_set.get("scenarios", [eval_set])
+        trial_scenarios = []
+        for scenario in scenarios:
+            scenario_trials = _check_num_trials(
+                scenario.get("num_trials", self.num_trials),
+                f"scenario {scenario['id']}")
+            if scenario_trials > self.num_trials and trial_index == 0:
+                logging.warning(
+                    "Scenario %s sets num_trials=%s, above the run value %s. "
+                    "Using %s.", scenario["id"], scenario_trials,
+                    self.num_trials, self.num_trials)
+            if trial_index >= scenario_trials:
+                continue
+            scenario["prompt_id"] = scenario["id"]
+            scenario["trial_index"] = trial_index
+            scenario["id"] = f"{scenario['id']}_trial_{trial_index}"
+            trial_scenarios.append(scenario)
+
+        if not trial_scenarios:
+            return None
+        if "scenarios" in eval_set:
+            eval_set["scenarios"] = trial_scenarios
+        else:
+            eval_set = trial_scenarios[0]
+
+        trial_item = copy.copy(item)
+        trial_item.payload = json.dumps(eval_set)
+        # Each trial collects its own results.
+        trial_item.agent_results = []
+        trial_item.scoring_results = []
+        return trial_item
 
     def process_scenario(
         self,
@@ -318,6 +390,9 @@ class AgentEvaluator:
             "metadata": metadata,
             "fake_home": self.generator.fake_home if hasattr(self.generator, "fake_home") else None
         }
+        if "trial_index" in scenario:
+            eval_output_data["prompt_id"] = scenario["prompt_id"]
+            eval_output_data["trial_index"] = scenario["trial_index"]
 
         score_work = AgentScoreWork(
             config=self.config,
