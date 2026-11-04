@@ -281,10 +281,6 @@ class AgentEvaluator:
                         generated_error = f"Simulated user error: {e}"
                         logging.error(generated_error)
                         break
-                    if not str(next_response or "").strip():
-                        generated_error = "Simulated user returned an empty reply."
-                        logging.error(generated_error)
-                        break
                     if "TERMINATE" in next_response:
                         logging.info("Simulated user terminated conversation.")
                         break

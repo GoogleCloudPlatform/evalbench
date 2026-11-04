@@ -71,13 +71,16 @@ def test_infra_error_stops_the_conversation(run_scenario):
     simulated_user.get_next_response.assert_not_called()
 
 
-@pytest.mark.parametrize("reply, expected", [
-    (RuntimeError("model down"), "Simulated user error: model down"),
-    ("   ", "Simulated user returned an empty reply."),
-], ids=["raises", "empty_reply"])
-def test_simulated_user_problem_is_recorded(run_scenario, reply, expected):
-    error, _ = run_scenario(_result(0), reply)
-    assert error == expected
+def test_simulated_user_error_is_recorded(run_scenario):
+    error, _ = run_scenario(_result(0), RuntimeError("model down"))
+    assert error == "Simulated user error: model down"
+
+
+def test_empty_simulated_user_reply_continues(run_scenario):
+    """The noop simulated user of proxy flows returns "" by design."""
+    error, simulated_user = run_scenario(_result(0), "")
+    assert error is None
+    assert simulated_user.get_next_response.call_count == 2
 
 
 def test_normal_run_has_no_error(run_scenario):
