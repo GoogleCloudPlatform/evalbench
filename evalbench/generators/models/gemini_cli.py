@@ -13,13 +13,15 @@ from util.sessionmgr import validate_session_id
 
 
 class CLICommand:
-    def __init__(self, cli, prompt, env=None, resume=False, yolo=True, cwd=None):
+    def __init__(self, cli, prompt, env=None, resume=False, yolo=True, cwd=None,
+                 session_id=None):
         self.cli = cli
         self.prompt = prompt
         self.env = env if env else {}
         self.resume = resume
         self.yolo = yolo
         self.cwd = cwd
+        self.session_id = session_id
 
 
 class GeminiCliGenerator(AgentCliGenerator):
@@ -846,8 +848,11 @@ class GeminiCliGenerator(AgentCliGenerator):
             cli_cmd.cli,
             "--",
         ]
-        if cli_cmd.resume:
-            command.append("--resume")
+        # Resume session: `--resume <session_id>` takes the UUID as its value.
+        # A bare `--resume` loads the latest session in the working directory,
+        # which can belong to another scenario when scenarios run concurrently.
+        if cli_cmd.resume and cli_cmd.session_id:
+            command.extend(["--resume", cli_cmd.session_id])
         if cli_cmd.yolo:
             command.append("--yolo")
 
@@ -1110,4 +1115,5 @@ class GeminiCliGenerator(AgentCliGenerator):
 
         if env:
             merged_env.update(env)
-        return CLICommand(cli=cli, prompt=prompt, env=merged_env, resume=resume, cwd=cwd)
+        return CLICommand(cli=cli, prompt=prompt, env=merged_env, resume=resume,
+                          session_id=session_id, cwd=cwd)
