@@ -364,8 +364,11 @@ def test_resume_uses_session_id(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("resume, session_id", [
     (True, None),
+    (True, ""),
+    (True, "   "),
+    (True, "-bad-flag"),
     (False, "abc"),
-], ids=["no_session_id", "first_turn"])
+], ids=["none_id", "empty_id", "blank_id", "flag_like_id", "first_turn"])
 def test_no_resume_unless_resume_and_session_id_are_set(
     tmp_path, monkeypatch, resume, session_id,
 ):

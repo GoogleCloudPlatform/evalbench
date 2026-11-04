@@ -851,8 +851,9 @@ class GeminiCliGenerator(AgentCliGenerator):
         # Resume session: `--resume <session_id>` takes the UUID as its value.
         # A bare `--resume` loads the latest session in the working directory,
         # which can belong to another scenario when scenarios run concurrently.
-        if cli_cmd.resume and cli_cmd.session_id:
-            command.extend(["--resume", cli_cmd.session_id])
+        session_id = (cli_cmd.session_id or "").strip()
+        if cli_cmd.resume and session_id and not session_id.startswith("-"):
+            command.extend(["--resume", session_id])
         if cli_cmd.yolo:
             command.append("--yolo")
 
