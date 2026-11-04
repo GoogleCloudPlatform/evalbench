@@ -362,11 +362,12 @@ def test_resume_uses_session_id(tmp_path, monkeypatch):
     assert args[args.index("--resume") + 1] == session_id
 
 
-def test_resume_without_session_id_starts_new_session(tmp_path, monkeypatch):
-    args = _cli_args(tmp_path, monkeypatch, resume=True, session_id=None)
-    assert "--resume" not in args
-
-
-def test_first_turn_has_no_resume(tmp_path, monkeypatch):
-    args = _cli_args(tmp_path, monkeypatch, resume=False, session_id="abc")
+@pytest.mark.parametrize("resume, session_id", [
+    (True, None),
+    (False, "abc"),
+], ids=["no_session_id", "first_turn"])
+def test_no_resume_unless_resume_and_session_id_are_set(
+    tmp_path, monkeypatch, resume, session_id,
+):
+    args = _cli_args(tmp_path, monkeypatch, resume=resume, session_id=session_id)
     assert "--resume" not in args
