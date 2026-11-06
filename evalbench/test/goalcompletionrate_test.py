@@ -211,37 +211,31 @@ class TestGoalCompletionRate(ScorerTestCase):
         self.assertEqual(50.0, score)
 
     @patch('scorers.goalcompletionrate.get_generator')
-    def test_unparsable_response_scores_0(self, mock_get_generator):
-        score, reason = self.score(mock_get_generator, "PASS, looks good")
-
-        self.assertEqual(0.0, score)
-        self.assertIn("Invalid JSON", reason)
+    def test_unparsable_response_raises(self, mock_get_generator):
+        with self.assertRaisesRegex(RuntimeError, "Invalid JSON"):
+            self.score(mock_get_generator, "PASS, looks good")
 
     @patch('scorers.goalcompletionrate.get_generator')
-    def test_empty_plan_scores_0_without_calling_the_judge(
+    def test_empty_plan_raises_without_calling_the_judge(
             self, mock_get_generator):
         mock_model = MagicMock(spec=["generate"])
         mock_get_generator.return_value = mock_model
         scorer = GoalCompletionRate(
             {"model_config": "fake_config"}, global_models={})
 
-        score, reason = scorer.compare(
-            "", "", "", "", "", "", "", "",
-            json.dumps({"conversation_history": "[]",
-                        "scenario": {"conversation_plan": "  "}}),
-            "")
+        with self.assertRaisesRegex(ValueError, "no conversation_plan"):
+            scorer.compare(
+                "", "", "", "", "", "", "", "",
+                json.dumps({"conversation_history": "[]",
+                            "scenario": {"conversation_plan": "  "}}),
+                "")
 
-        self.assertEqual(0.0, score)
-        self.assertIn("no conversation_plan", reason)
         mock_model.generate.assert_not_called()
 
     @patch('scorers.goalcompletionrate.get_generator')
-    def test_response_without_sub_goals_scores_0(self, mock_get_generator):
-        score, reason = self.score(
-            mock_get_generator, json.dumps({"sub_goals": []}))
-
-        self.assertEqual(0.0, score)
-        self.assertIn("No sub-goals", reason)
+    def test_response_without_sub_goals_raises(self, mock_get_generator):
+        with self.assertRaisesRegex(RuntimeError, "No sub-goals"):
+            self.score(mock_get_generator, json.dumps({"sub_goals": []}))
 
     @patch('scorers.goalcompletionrate.get_generator')
     def test_judge_errors_raise(self, mock_get_generator):
@@ -341,15 +335,14 @@ class TestGoalCompletionCriteria(ScorerTestCase):
         self.assertIn("[UNMET] second criterion — second", reason)
 
     @patch('scorers.goalcompletionrate.get_generator')
-    def test_missing_success_verdict_scores_0(self, mock_get_generator):
+    def test_missing_success_verdict_raises(self, mock_get_generator):
         response = json.dumps(
             {"success_criteria": [criterion_verdict(1, True)]})
 
-        score, reason = self.score(
-            mock_get_generator, response, success_criteria=["a", "b"])
-
-        self.assertEqual(0.0, score)
-        self.assertIn("No verdict for success criteria [2]", reason)
+        with self.assertRaisesRegex(
+                RuntimeError, r"No verdict for success criteria \[2\]"):
+            self.score(
+                mock_get_generator, response, success_criteria=["a", "b"])
 
     @patch('scorers.goalcompletionrate.get_generator')
     def test_zero_based_indices_are_not_shifted(self, mock_get_generator):
@@ -360,11 +353,10 @@ class TestGoalCompletionCriteria(ScorerTestCase):
                 criterion_verdict(0, True), criterion_verdict(1, False)],
         })
 
-        score, reason = self.score(
-            mock_get_generator, response, success_criteria=["a", "b"])
-
-        self.assertEqual(0.0, score)
-        self.assertIn("No verdict for success criteria [2]", reason)
+        with self.assertRaisesRegex(
+                RuntimeError, r"No verdict for success criteria \[2\]"):
+            self.score(
+                mock_get_generator, response, success_criteria=["a", "b"])
 
     @patch('scorers.goalcompletionrate.get_generator')
     def test_bare_string_is_one_criterion(self, mock_get_generator):
