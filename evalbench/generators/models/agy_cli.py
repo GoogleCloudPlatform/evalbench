@@ -1,4 +1,5 @@
 from .agent_cli import AgentCliGenerator
+from . import mcp_client
 from .tool_naming import canonicalize_agy_tool_name, parse_agy_mcp_tool_call
 import subprocess
 import os
@@ -117,6 +118,7 @@ class AgyCliGenerator(AgentCliGenerator):
         self.agy_cli_version = self._resolve_agy_version()
         self._setup_auth()
 
+        self._scoped_mcp_servers: dict[str, list[str]] = {}
         self.setup_config = querygenerator_config.get("setup", {})
         if self.setup_config:
             self._setup_tools()
@@ -804,25 +806,158 @@ class AgyCliGenerator(AgentCliGenerator):
             logging.info("Removing stale MCP server configuration: %s", stale)
             del existing[stale]
         for server_name, config in mcp_servers_config.items():
-            existing[server_name] = self._translate_mcp_config(dict(config))
+            existing[server_name] = self._translate_mcp_config(
+                server_name, dict(config)
+            )
             logging.info("Configured MCP server: %s", server_name)
 
         with open(self.mcp_config_path, "w") as f:
             json.dump(current_config, f, indent=2)
 
-    @staticmethod
-    def _translate_mcp_config(config: dict) -> dict:
+    def _translate_mcp_config(self, server_name: str, config: dict) -> dict:
         """Normalizes a cross-harness MCP server config into agy's schema.
 
         Maps the common gemini-style ``httpUrl`` alias to ``serverUrl``, agy's
         native field. ``serverUrl`` and ``url`` are accepted by agy
-        directly and need no translation. Other fields like
-        ``authProviderType``, ``oauth.scopes``, and stdio fields pass through
-        natively.
+        directly and need no translation.
+
+        When ``authProviderType: google_credentials`` is paired with
+        ``oauth.scopes``, agy's built-in ADC provider ignores ``oauth.scopes``
+        and hardcodes the ``cloud-platform`` scope. In that case, we mint a
+        scoped Bearer token via ``gcloud`` and inject it into
+        ``headers.Authorization`` (which overrides agy's built-in token header
+        while preserving ``x-goog-user-project`` and skipping OAuth discovery).
         """
         if "httpUrl" in config and "serverUrl" not in config:
             config["serverUrl"] = config.pop("httpUrl")
+
+        scopes = mcp_client.extract_mcp_oauth_scopes(config)
+        if scopes:
+            oauth_block = config.get("oauth")
+            if isinstance(oauth_block, dict):
+                oauth_block = dict(oauth_block)
+                oauth_block.pop("scopes", None)
+                if oauth_block:
+                    config["oauth"] = oauth_block
+                else:
+                    config.pop("oauth", None)
+
+            if config.get("authProviderType") == "google_credentials":
+                headers = dict(config.get("headers") or {})
+                if "Authorization" not in headers:
+                    if not hasattr(self, "_scoped_mcp_servers"):
+                        self._scoped_mcp_servers = {}
+                    self._scoped_mcp_servers[server_name] = scopes
+                    token = self._fetch_gcloud_access_token(scopes=scopes)
+                    if token:
+                        headers["Authorization"] = f"Bearer {token}"
+                        config["headers"] = headers
+                    else:
+                        logging.warning(
+                            "MCP server '%s' requires google_credentials with "
+                            "scopes %s, but failed to fetch an access token "
+                            "via gcloud.",
+                            server_name,
+                            scopes,
+                        )
+
         return config
+
+    def _fetch_gcloud_access_token(
+        self, scopes: Optional[list[str]] = None
+    ) -> str:
+        """Fetches a Google Cloud access token for scoped MCP `google_credentials` auth."""
+        token_env = os.environ.copy()
+        impersonate_sa = self.env.get(
+            "CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT"
+        ) or token_env.get("CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT")
+        if impersonate_sa:
+            token_env["CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT"] = (
+                impersonate_sa
+            )
+        adc = self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
+        if impersonate_sa:
+            if os.path.exists("/etc/evalbench-sa-key/key.json"):
+                token_env["GOOGLE_APPLICATION_CREDENTIALS"] = (
+                    "/etc/evalbench-sa-key/key.json"
+                )
+            else:
+                token_env.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
+        elif adc and os.path.exists(adc):
+            token_env["GOOGLE_APPLICATION_CREDENTIALS"] = adc
+
+        commands = []
+        if scopes:
+            mcp_client.validate_oauth_scopes(scopes)
+            scopes_str = ",".join(scopes)
+            commands.append(
+                [
+                    "gcloud",
+                    "auth",
+                    "application-default",
+                    "print-access-token",
+                    f"--scopes={scopes_str}",
+                ]
+            )
+        commands.extend(
+            [
+                ["gcloud", "auth", "application-default", "print-access-token"],
+                ["gcloud", "auth", "print-access-token"],
+            ]
+        )
+        for cmd in commands:
+            try:
+                result = subprocess.run(
+                    cmd,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    env=token_env,
+                )
+                token = result.stdout.strip()
+                if token:
+                    return token
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                continue
+        return ""
+
+    def _refresh_scoped_mcp_tokens(self) -> None:
+        """Refreshes Bearer tokens in mcp_config.json for scoped MCP servers."""
+        scoped_servers = getattr(self, "_scoped_mcp_servers", None)
+        if not scoped_servers or not os.path.exists(self.mcp_config_path):
+            return
+        try:
+            with open(self.mcp_config_path, "r") as f:
+                cfg = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return
+
+        mcp_servers = cfg.get("mcpServers")
+        if not isinstance(mcp_servers, dict):
+            return
+
+        updated = False
+        for server_name, scopes in scoped_servers.items():
+            server_cfg = mcp_servers.get(server_name)
+            if not isinstance(server_cfg, dict):
+                continue
+            token = self._fetch_gcloud_access_token(scopes=scopes)
+            if token:
+                headers = dict(server_cfg.get("headers") or {})
+                headers["Authorization"] = f"Bearer {token}"
+                server_cfg["headers"] = headers
+                updated = True
+
+        if updated:
+            try:
+                with open(self.mcp_config_path, "w") as f:
+                    json.dump(cfg, f, indent=2)
+            except OSError as e:
+                logging.warning(
+                    "Failed to refresh scoped MCP token in %s: %s",
+                    self.mcp_config_path,
+                    e,
+                )
 
     def _merged_env(self, extra: dict | None = None) -> dict:
         """Returns the process environment overlaid with the generator's
@@ -915,6 +1050,7 @@ class AgyCliGenerator(AgentCliGenerator):
             )
 
     def _run_agy_cli(self, cli_cmd: CLICommand, timeout_seconds=None):
+        self._refresh_scoped_mcp_tokens()
         env = self._merged_env(cli_cmd.env)
         # Registered via --add-dir below, fake_home fallback included: without
         # that, a scenario with no work_dir writes to <appDataDir>/scratch
