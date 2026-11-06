@@ -1287,7 +1287,9 @@ def test_translate_mcp_config_maps_httpurl_to_serverurl():
     """The gemini-style ``httpUrl`` alias is rewritten to agy's ``serverUrl``
     (left untranslated, agy ignores it and attaches a transportless server
     with zero tools)."""
-    out = AgyCliGenerator._translate_mcp_config({"httpUrl": "https://x/mcp"})
+    generator = object.__new__(AgyCliGenerator)
+    generator.env = {}
+    out = generator._translate_mcp_config("test", {"httpUrl": "https://x/mcp"})
 
     assert out == {"serverUrl": "https://x/mcp"}
 
@@ -1295,8 +1297,11 @@ def test_translate_mcp_config_maps_httpurl_to_serverurl():
 def test_translate_mcp_config_does_not_clobber_existing_serverurl():
     """When ``serverUrl`` is already present, the canonical value wins and
     the ``httpUrl`` alias is not mapped over it."""
-    out = AgyCliGenerator._translate_mcp_config(
-        {"httpUrl": "https://alias/mcp", "serverUrl": "https://canonical/mcp"}
+    generator = object.__new__(AgyCliGenerator)
+    generator.env = {}
+    out = generator._translate_mcp_config(
+        "test",
+        {"httpUrl": "https://alias/mcp", "serverUrl": "https://canonical/mcp"},
     )
 
     assert out["serverUrl"] == "https://canonical/mcp"
@@ -1304,17 +1309,205 @@ def test_translate_mcp_config_does_not_clobber_existing_serverurl():
 
 def test_translate_mcp_config_passes_native_fields_through_unchanged():
     """stdio fields and other native agy schema keys pass through verbatim --
-    no Bearer-token injection or field rewriting (unlike claude_code)."""
+    no Bearer-token injection or field rewriting when no custom oauth.scopes
+    are configured."""
+    generator = object.__new__(AgyCliGenerator)
+    generator.env = {}
     cfg = {
         "command": "npx",
         "args": ["-y", "server"],
         "env": {"K": "V"},
         "authProviderType": "google_credentials",
-        "oauth": {"scopes": ["a", "b"]},
+        "oauth": {"clientId": "my-client"},
         "headers": {"X": "Y"},
     }
 
-    assert AgyCliGenerator._translate_mcp_config(dict(cfg)) == cfg
+    assert generator._translate_mcp_config("test", dict(cfg)) == cfg
+
+
+def test_translate_mcp_config_forwards_oauth_scopes():
+    """Because agy ignores oauth.scopes and hardcodes the cloud-platform scope
+    for google_credentials, _translate_mcp_config mints a scoped Bearer token
+    via gcloud and injects it into headers.Authorization."""
+    generator = object.__new__(AgyCliGenerator)
+    generator.env = {}
+    generator._scoped_mcp_servers = {}
+
+    mcp_config = {
+        "httpUrl": "https://colaboratory.googleapis.com/mcp",
+        "authProviderType": "google_credentials",
+        "oauth": {
+            "scopes": [
+                "https://www.googleapis.com/auth/cloud-platform",
+                "https://www.googleapis.com/auth/colaboratory",
+            ]
+        },
+        "headers": {
+            "X-Goog-User-Project": "my-project"
+        },
+    }
+
+    with patch.object(
+        generator, "_fetch_gcloud_access_token", return_value="fake_scoped_token"
+    ) as mock_fetch:
+        translated = generator._translate_mcp_config("colab-mcp", mcp_config)
+
+        assert "oauth" not in translated
+        assert translated["authProviderType"] == "google_credentials"
+        assert translated["serverUrl"] == "https://colaboratory.googleapis.com/mcp"
+        assert translated["headers"]["Authorization"] == "Bearer fake_scoped_token"
+        assert translated["headers"]["X-Goog-User-Project"] == "my-project"
+        assert generator._scoped_mcp_servers["colab-mcp"] == [
+            "https://www.googleapis.com/auth/cloud-platform",
+            "https://www.googleapis.com/auth/colaboratory",
+        ]
+
+        mock_fetch.assert_called_once_with(
+            scopes=[
+                "https://www.googleapis.com/auth/cloud-platform",
+                "https://www.googleapis.com/auth/colaboratory",
+            ]
+        )
+
+
+def test_fetch_gcloud_access_token_passes_scopes():
+    generator = object.__new__(AgyCliGenerator)
+    generator.env = {}
+
+    scopes = [
+        "https://www.googleapis.com/auth/cloud-platform",
+        "https://www.googleapis.com/auth/colaboratory",
+    ]
+
+    with patch("generators.models.agy_cli.subprocess.run") as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.stdout = "scoped_token_xyz\n"
+        mock_run.return_value = mock_proc
+
+        token = generator._fetch_gcloud_access_token(scopes=scopes)
+
+        assert token == "scoped_token_xyz"
+        first_call_cmd = mock_run.call_args_list[0][0][0]
+        assert first_call_cmd == [
+            "gcloud",
+            "auth",
+            "application-default",
+            "print-access-token",
+            "--scopes=https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/colaboratory",
+        ]
+
+
+def test_fetch_gcloud_access_token_uses_gke_key_when_impersonating(monkeypatch):
+    generator = object.__new__(AgyCliGenerator)
+    generator.env = {
+        "GOOGLE_APPLICATION_CREDENTIALS": "/tmp_sessions/impersonated_adc.json",
+        "CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT": (
+            "evalbench-runner@onemcp-evalviewer-dev.iam.gserviceaccount.com"
+        ),
+    }
+
+    monkeypatch.setattr(
+        "generators.models.agy_cli.os.path.exists",
+        lambda p: p in (
+            "/tmp_sessions/impersonated_adc.json",
+            "/etc/evalbench-sa-key/key.json",
+        ),
+    )
+
+    with patch("generators.models.agy_cli.subprocess.run") as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.stdout = "impersonated_scoped_token\n"
+        mock_run.return_value = mock_proc
+
+        token = generator._fetch_gcloud_access_token(
+            scopes=["https://www.googleapis.com/auth/colaboratory"]
+        )
+
+        assert token == "impersonated_scoped_token"
+        called_env = mock_run.call_args_list[0].kwargs["env"]
+        assert (
+            called_env["CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT"]
+            == "evalbench-runner@onemcp-evalviewer-dev.iam.gserviceaccount.com"
+        )
+        assert (
+            called_env["GOOGLE_APPLICATION_CREDENTIALS"]
+            == "/etc/evalbench-sa-key/key.json"
+        )
+
+
+def test_fetch_gcloud_access_token_unsets_adc_when_impersonating_on_workload_identity(
+    monkeypatch,
+):
+    generator = object.__new__(AgyCliGenerator)
+    generator.env = {
+        "GOOGLE_APPLICATION_CREDENTIALS": "/tmp_sessions/impersonated_adc.json",
+        "CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT": (
+            "evalbench-runner@onemcp-evalviewer-dev.iam.gserviceaccount.com"
+        ),
+    }
+
+    monkeypatch.setattr(
+        "generators.models.agy_cli.os.path.exists",
+        lambda p: p == "/tmp_sessions/impersonated_adc.json",
+    )
+
+    with patch("generators.models.agy_cli.subprocess.run") as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.stdout = "wi_impersonated_scoped_token\n"
+        mock_run.return_value = mock_proc
+
+        token = generator._fetch_gcloud_access_token(
+            scopes=["https://www.googleapis.com/auth/colaboratory"]
+        )
+
+        assert token == "wi_impersonated_scoped_token"
+        called_env = mock_run.call_args_list[0].kwargs["env"]
+        assert (
+            called_env["CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT"]
+            == "evalbench-runner@onemcp-evalviewer-dev.iam.gserviceaccount.com"
+        )
+        assert "GOOGLE_APPLICATION_CREDENTIALS" not in called_env
+
+
+def test_run_agy_cli_refreshes_scoped_mcp_token(mock_run, sandbox):
+    generator = AgyCliGenerator({})
+    generator._scoped_mcp_servers = {
+        "colab-mcp": ["https://www.googleapis.com/auth/colaboratory"]
+    }
+    initial_cfg = {
+        "mcpServers": {
+            "colab-mcp": {
+                "serverUrl": "https://colaboratory.googleapis.com/mcp",
+                "authProviderType": "google_credentials",
+                "headers": {
+                    "Authorization": "Bearer old_token",
+                    "X-Goog-User-Project": "my-project",
+                },
+            }
+        }
+    }
+    with open(generator.mcp_config_path, "w") as f:
+        json.dump(initial_cfg, f)
+
+    with patch.object(
+        generator, "_fetch_gcloud_access_token", return_value="refreshed_token"
+    ) as mock_fetch:
+        generator._run_agy_cli(CLICommand(generator.agy_bin, "hi"))
+
+        mock_fetch.assert_called_once_with(
+            scopes=["https://www.googleapis.com/auth/colaboratory"]
+        )
+
+    with open(generator.mcp_config_path, "r") as f:
+        updated_cfg = json.load(f)
+    assert (
+        updated_cfg["mcpServers"]["colab-mcp"]["headers"]["Authorization"]
+        == "Bearer refreshed_token"
+    )
+    assert (
+        updated_cfg["mcpServers"]["colab-mcp"]["headers"]["X-Goog-User-Project"]
+        == "my-project"
+    )
 
 
 def test_run_passes_configured_model_flag(mock_run, sandbox):
