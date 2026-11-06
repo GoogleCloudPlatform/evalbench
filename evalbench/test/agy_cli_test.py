@@ -1486,51 +1486,67 @@ def test_shell_exported_adc_is_used(sandbox, monkeypatch, tmp_path):
     assert generator.adc_path == str(key)
 
 
-def test_gke_secret_mount_supplies_adc(sandbox, monkeypatch, tmp_path):
-    """When no other ADC file exists, the mounted GKE key is used."""
+def test_metadata_quota_project_from_configured_project(sandbox, monkeypatch):
+    """With the metadata server, env.GOOGLE_CLOUD_PROJECT becomes the quota
+    project, the same project the credential-file path uses."""
     _remove_adc(sandbox)
-    key = tmp_path / "key.json"
-    key.write_text(json.dumps(
-        {"type": "service_account", "quota_project_id": "cloud-db-nl2sql"}
-    ))
-    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+    monkeypatch.delenv("GOOGLE_CLOUD_QUOTA_PROJECT", raising=False)
 
-    generator = AgyCliGenerator({})
+    generator = AgyCliGenerator(
+        {"env": {"GOOGLE_CLOUD_PROJECT": "quota-proj"}})
 
-    assert generator.env["GOOGLE_APPLICATION_CREDENTIALS"] == str(key)
-    assert generator.adc_path == str(key)
+    assert generator.adc_path is None
+    assert generator.env["GOOGLE_CLOUD_QUOTA_PROJECT"] == "quota-proj"
 
 
-def test_gke_secret_mount_is_not_copied_into_sandbox(sandbox, monkeypatch, tmp_path):
-    """The key is read in place. Copying it would spread a private key onto
-    the shared session PVC for no gain -- agy reads the absolute path."""
+def test_metadata_quota_project_from_config_is_kept(sandbox, monkeypatch):
+    """A quota project set in the model config wins over GOOGLE_CLOUD_PROJECT."""
     _remove_adc(sandbox)
-    key = tmp_path / "key.json"
-    key.write_text(json.dumps(
-        {"type": "service_account", "quota_project_id": "cloud-db-nl2sql"}
-    ))
-    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+    monkeypatch.delenv("GOOGLE_CLOUD_QUOTA_PROJECT", raising=False)
+
+    generator = AgyCliGenerator({"env": {
+        "GOOGLE_CLOUD_PROJECT": "cloud-db-nl2sql",
+        "GOOGLE_CLOUD_QUOTA_PROJECT": "quota-proj",
+    }})
+
+    assert generator.env["GOOGLE_CLOUD_QUOTA_PROJECT"] == "quota-proj"
+
+
+def test_metadata_quota_project_from_shell_is_kept(sandbox, monkeypatch):
+    """A shell-exported quota project reaches agy through the merged env, so
+    the harness does not override it."""
+    _remove_adc(sandbox)
+    monkeypatch.setenv("GOOGLE_CLOUD_QUOTA_PROJECT", "quota-proj")
+
+    generator = AgyCliGenerator(
+        {"env": {"GOOGLE_CLOUD_PROJECT": "cloud-db-nl2sql"}})
+
+    assert "GOOGLE_CLOUD_QUOTA_PROJECT" not in generator.env
+    assert (generator._merged_env()["GOOGLE_CLOUD_QUOTA_PROJECT"]
+            == "quota-proj")
+
+
+def test_metadata_quota_project_unset_without_project(sandbox, monkeypatch):
+    """With no configured project, agy keeps its default: the metadata
+    project."""
+    _remove_adc(sandbox)
+    monkeypatch.delenv("GOOGLE_CLOUD_QUOTA_PROJECT", raising=False)
 
     generator = AgyCliGenerator({})
 
-    staged = os.path.join(
-        generator.fake_home, ".config", "gcloud",
-        "application_default_credentials.json",
-    )
-    assert not os.path.exists(staged)
+    assert "GOOGLE_CLOUD_QUOTA_PROJECT" not in generator.env
 
 
-def test_host_adc_wins_over_gke_secret_mount(sandbox, monkeypatch, tmp_path):
-    """Local dev keeps using the developer's own ADC even if the GKE path
-    happens to exist on the machine."""
-    key = tmp_path / "key.json"
-    key.write_text('{"type": "service_account"}')
-    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+def test_credential_file_does_not_set_metadata_quota_project(sandbox, monkeypatch):
+    """With a credential file, agy reads only its quota_project_id, so the
+    harness does not add GOOGLE_CLOUD_QUOTA_PROJECT."""
+    monkeypatch.delenv("GOOGLE_CLOUD_QUOTA_PROJECT", raising=False)
 
-    generator = AgyCliGenerator({})
+    generator = AgyCliGenerator(
+        {"env": {"GOOGLE_CLOUD_PROJECT": "cloud-db-nl2sql"}})
 
-    assert generator.adc_path != str(key)
-    assert generator.adc_path.startswith(str(sandbox))
+    assert generator.adc_path is not None
+    assert "GOOGLE_CLOUD_QUOTA_PROJECT" not in generator.env
 
 
 @pytest.mark.real_agy_probe
@@ -1565,7 +1581,7 @@ def test_quota_project_injected_when_credential_lacks_it(sandbox, monkeypatch, t
     _remove_adc(sandbox)
     key = tmp_path / "key.json"
     key.write_text('{"type": "service_account", "project_id": "other-proj"}')
-    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(key))
 
     generator = AgyCliGenerator({"env": {"GOOGLE_CLOUD_PROJECT": "cloud-db-nl2sql"}})
 
@@ -1584,7 +1600,7 @@ def test_quota_project_falls_back_to_credential_project_id(sandbox, monkeypatch,
     _remove_adc(sandbox)
     key = tmp_path / "key.json"
     key.write_text('{"type": "service_account", "project_id": "cloud-db-nl2sql"}')
-    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(key))
 
     generator = AgyCliGenerator({})
 
@@ -1599,7 +1615,7 @@ def test_unresolvable_quota_project_is_fatal(sandbox, monkeypatch, tmp_path):
     _remove_adc(sandbox)
     key = tmp_path / "key.json"
     key.write_text('{"type": "service_account"}')
-    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(key))
 
     with pytest.raises(RuntimeError, match="no quota_project_id"):
         AgyCliGenerator({})
@@ -1633,7 +1649,7 @@ def test_augmented_credential_stays_off_the_session_sandbox(sandbox, monkeypatch
     _remove_adc(sandbox)
     key = tmp_path / "key.json"
     key.write_text('{"type": "service_account", "project_id": "cloud-db-nl2sql"}')
-    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(key))
 
     generator = AgyCliGenerator({})
 
@@ -1649,7 +1665,7 @@ def test_augmented_credential_is_removed_with_the_generator(
     _remove_adc(sandbox)
     key = tmp_path / "key.json"
     key.write_text('{"type": "service_account", "project_id": "cloud-db-nl2sql"}')
-    monkeypatch.setattr("generators.models.agy_cli.GKE_SA_KEY_PATH", str(key))
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(key))
 
     generator = AgyCliGenerator({})
     augmented = generator.adc_path

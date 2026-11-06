@@ -16,6 +16,9 @@ import uuid
 from util.context import rpc_id_var
 from util.sessionmgr import validate_session_id
 
+# Session sandboxes under eval_server.py. The volume is shared across sessions.
+SESSIONS_ROOT = "/tmp_sessions"
+
 
 class CLICommand:
     def __init__(self, cli, prompt, env=None, resume=False, session_id=None, allowedTools=None, cwd=None):
@@ -38,14 +41,15 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         self.real_home = os.environ.get("HOME", os.path.expanduser("~"))
 
         # If running via eval_server.py (gRPC), use session-specific path in shared volume
-        if sys.argv[0].endswith("eval_server.py"):
+        self._shared_sandbox = sys.argv[0].endswith("eval_server.py")
+        if self._shared_sandbox:
             session_id = querygenerator_config.get("session_id")
             if not session_id:
                 ctx_id = rpc_id_var.get()
                 session_id = ctx_id if ctx_id != "default" else "default"
             validate_session_id(session_id)
             self.fake_home = os.path.join(
-                "/tmp_sessions", session_id, "fake_home")
+                SESSIONS_ROOT, session_id, "fake_home")
         else:
             self.fake_home = os.path.abspath(
                 os.path.join(".venv", "fake_home_claude"))
@@ -94,55 +98,53 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                 if vertex_region:
                     self.env["CLOUD_ML_REGION"] = vertex_region
 
-                # Skip ADC setup if Service Account key is available
-                if not os.path.exists("/etc/evalbench-sa-key/key.json"):
-                    fake_gcloud_dir = os.path.join(
-                        self.fake_home, ".config", "gcloud")
+                # Without an ADC file, Claude uses the metadata server.
+                fake_gcloud_dir = os.path.join(
+                    self.fake_home, ".config", "gcloud")
 
-                    # If GOOGLE_APPLICATION_CREDENTIALS is already set (e.g.,
-                    # Cloud Run mounts ADC at a specific path), copy that single
-                    # file into the fake home and point the env var at it.
-                    explicit_adc = self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
-                    if (
-                        explicit_adc
-                        and os.path.exists(explicit_adc)
-                        and not explicit_adc.startswith("/etc/")
-                    ):
-                        os.makedirs(fake_gcloud_dir, exist_ok=True)
-                        fake_adc_path = os.path.join(
-                            fake_gcloud_dir, "application_default_credentials.json")
-                        if os.path.abspath(explicit_adc) != os.path.abspath(fake_adc_path):
-                            shutil.copy2(explicit_adc, fake_adc_path)
-                        self.env["GOOGLE_APPLICATION_CREDENTIALS"] = fake_adc_path
-                    else:
-                        # Local dev: copy the whole gcloud config dir so fresh
-                        # `gcloud auth login` credentials (credentials.db,
-                        # access_tokens.db, ADC) are available to skill scripts.
-                        real_gcloud_dir = os.path.join(
-                            self.real_home, ".config", "gcloud")
-                        if os.path.exists(real_gcloud_dir):
-                            os.makedirs(os.path.dirname(fake_gcloud_dir), exist_ok=True)
-                            if os.path.exists(fake_gcloud_dir):
-                                shutil.rmtree(fake_gcloud_dir)
-                            try:
-                                shutil.copytree(
-                                    real_gcloud_dir, fake_gcloud_dir,
-                                    ignore=shutil.ignore_patterns('logs', '*.db-wal'),
-                                )
-                                logging.info(
-                                    f"Copied gcloud config from {real_gcloud_dir} to {fake_gcloud_dir}")
-                            except (OSError, PermissionError) as e:
-                                logging.warning(f"Could not copy gcloud directory: {e}")
-                        fake_adc_path = os.path.join(
-                            fake_gcloud_dir, "application_default_credentials.json")
-                        if os.path.exists(fake_adc_path) and "GOOGLE_APPLICATION_CREDENTIALS" not in self.env:
-                            self.env["GOOGLE_APPLICATION_CREDENTIALS"] = fake_adc_path
-
-                    if "CLOUDSDK_CONFIG" not in self.env:
-                        self.env["CLOUDSDK_CONFIG"] = fake_gcloud_dir
+                # If GOOGLE_APPLICATION_CREDENTIALS is already set (e.g.,
+                # Cloud Run mounts ADC at a specific path), copy that single
+                # file into the fake home and point the env var at it.
+                explicit_adc = self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
+                if (
+                    explicit_adc
+                    and os.path.exists(explicit_adc)
+                    and not explicit_adc.startswith("/etc/")
+                ):
+                    os.makedirs(fake_gcloud_dir, exist_ok=True)
+                    fake_adc_path = os.path.join(
+                        fake_gcloud_dir, "application_default_credentials.json")
+                    if os.path.abspath(explicit_adc) != os.path.abspath(fake_adc_path):
+                        shutil.copy2(explicit_adc, fake_adc_path)
+                    self.env["GOOGLE_APPLICATION_CREDENTIALS"] = fake_adc_path
                 else:
-                    # Explicitly set GOOGLE_APPLICATION_CREDENTIALS for Claude if secret is mounted
-                    self.env["GOOGLE_APPLICATION_CREDENTIALS"] = "/etc/evalbench-sa-key/key.json"
+                    # Local dev: copy the whole gcloud config dir so fresh
+                    # `gcloud auth login` credentials (credentials.db,
+                    # access_tokens.db, ADC) are available to skill scripts.
+                    # Skipped on the eval server: there gcloud uses the
+                    # metadata server, so the host config is not needed.
+                    real_gcloud_dir = os.path.join(
+                        self.real_home, ".config", "gcloud")
+                    if not self._shared_sandbox and os.path.exists(real_gcloud_dir):
+                        os.makedirs(os.path.dirname(fake_gcloud_dir), exist_ok=True)
+                        if os.path.exists(fake_gcloud_dir):
+                            shutil.rmtree(fake_gcloud_dir)
+                        try:
+                            shutil.copytree(
+                                real_gcloud_dir, fake_gcloud_dir,
+                                ignore=shutil.ignore_patterns('logs', '*.db-wal'),
+                            )
+                            logging.info(
+                                f"Copied gcloud config from {real_gcloud_dir} to {fake_gcloud_dir}")
+                        except (OSError, PermissionError) as e:
+                            logging.warning(f"Could not copy gcloud directory: {e}")
+                    fake_adc_path = os.path.join(
+                        fake_gcloud_dir, "application_default_credentials.json")
+                    if os.path.exists(fake_adc_path) and "GOOGLE_APPLICATION_CREDENTIALS" not in self.env:
+                        self.env["GOOGLE_APPLICATION_CREDENTIALS"] = fake_adc_path
+
+                if "CLOUDSDK_CONFIG" not in self.env:
+                    self.env["CLOUDSDK_CONFIG"] = fake_gcloud_dir
 
         # Copy Claude Code auth credentials from real home to fake home so the
         # CLI can authenticate in the sandboxed environment. Restricted to a
@@ -380,7 +382,7 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         The token is fetched with the host environment (real HOME / gcloud
         config), NOT the sandboxed fake HOME -- gcloud must find the
         developer's / host's credentials. An explicit service-account or ADC
-        file (Cloud Run / mounted SA key) is honored if one was configured, but
+        file (for example on Cloud Run) is honored if one was configured, but
         HOME is never overridden (doing so points gcloud at the empty
         fake-home config and both commands fail).
         """
