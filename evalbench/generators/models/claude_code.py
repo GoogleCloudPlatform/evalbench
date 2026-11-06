@@ -121,9 +121,8 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                     # Local dev: copy the whole gcloud config dir so fresh
                     # `gcloud auth login` credentials (credentials.db,
                     # access_tokens.db, ADC) are available to skill scripts.
-                    # Skipped on the eval server: its sandbox volume is shared
-                    # across sessions, so it must not hold credentials. There,
-                    # gcloud uses the metadata server.
+                    # Skipped on the eval server: there gcloud uses the
+                    # metadata server, so the host config is not needed.
                     real_gcloud_dir = os.path.join(
                         self.real_home, ".config", "gcloud")
                     if not self._shared_sandbox and os.path.exists(real_gcloud_dir):

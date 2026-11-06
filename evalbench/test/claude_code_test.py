@@ -337,12 +337,12 @@ def _vertex_generator(tmp_path, monkeypatch, server_mode):
         {"model": "claude-opus-4-6", "use_vertex": True, "session_id": "s1"})
 
 
-def test_eval_server_keeps_gcloud_credentials_off_the_shared_sandbox(
+def test_eval_server_does_not_copy_host_gcloud_config(
     tmp_path, monkeypatch
 ):
-    """On the eval server the session sandbox is a shared volume, so the
-    host's gcloud credentials are not copied there and no ADC file is set.
-    Claude and gcloud then use the metadata server."""
+    """On the eval server the host's gcloud config is not copied into the
+    session sandbox and no ADC file is set. Claude and gcloud use the
+    metadata server."""
     generator = _vertex_generator(tmp_path, monkeypatch, server_mode=True)
 
     fake_gcloud = os.path.join(generator.fake_home, ".config", "gcloud")
