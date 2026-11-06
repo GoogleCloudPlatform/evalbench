@@ -382,7 +382,7 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         The token is fetched with the host environment (real HOME / gcloud
         config), NOT the sandboxed fake HOME -- gcloud must find the
         developer's / host's credentials. An explicit service-account or ADC
-        file (Cloud Run / mounted SA key) is honored if one was configured, but
+        file (for example on Cloud Run) is honored if one was configured, but
         HOME is never overridden (doing so points gcloud at the empty
         fake-home config and both commands fail).
         """
