@@ -143,8 +143,8 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                     if os.path.exists(fake_adc_path) and "GOOGLE_APPLICATION_CREDENTIALS" not in self.env:
                         self.env["GOOGLE_APPLICATION_CREDENTIALS"] = fake_adc_path
 
-                if "CLOUDSDK_CONFIG" not in self.env:
-                    self.env["CLOUDSDK_CONFIG"] = fake_gcloud_dir
+                    if "CLOUDSDK_CONFIG" not in self.env:
+                        self.env["CLOUDSDK_CONFIG"] = fake_gcloud_dir
 
         # Copy Claude Code auth credentials from real home to fake home so the
         # CLI can authenticate in the sandboxed environment. Restricted to a
@@ -312,8 +312,23 @@ class ClaudeCodeGenerator(AgentCliGenerator):
             # helper can't produce a token (gcloud/ADC unavailable in Claude
             # Code's env), it prints nothing and Claude Code falls back to the
             # static header below.
+            impersonate_sa = self.env.get(
+                "CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT"
+            )
+            adc_env_prefix = ""
+            if impersonate_sa:
+                if os.path.exists("/etc/evalbench-sa-key/key.json"):
+                    adc_env_prefix = (
+                        'GOOGLE_APPLICATION_CREDENTIALS="/etc/evalbench-sa-key/key.json" '
+                    )
+                else:
+                    adc_env_prefix = "env -u GOOGLE_APPLICATION_CREDENTIALS "
             config.setdefault(
-                "headersHelper", self._google_credentials_headers_helper(scopes=scopes))
+                "headersHelper",
+                self._google_credentials_headers_helper(
+                    scopes=scopes, adc_env_prefix=adc_env_prefix
+                ),
+            )
 
             # Baked static token: the initial value and the fallback for when
             # headersHelper can't run. headersHelper output takes precedence.
@@ -333,6 +348,7 @@ class ClaudeCodeGenerator(AgentCliGenerator):
     @staticmethod
     def _google_credentials_headers_helper(
         scopes: Optional[list[str]] = None,
+        adc_env_prefix: str = "",
     ) -> str:
         """Shell command Claude Code executes on each MCP connection to mint a
         fresh Google bearer token.
@@ -349,10 +365,10 @@ class ClaudeCodeGenerator(AgentCliGenerator):
             mcp_client.validate_oauth_scopes(scopes)
             scopes_str = ",".join(scopes)
             scoped_cmd = (
-                f'gcloud auth application-default print-access-token --scopes="{scopes_str}" 2>/dev/null || '
+                f'{adc_env_prefix}gcloud auth application-default print-access-token --scopes="{scopes_str}" 2>/dev/null || '
             )
         return (
-            f'tok="$({scoped_cmd}gcloud auth application-default print-access-token '
+            f'tok="$({scoped_cmd}{adc_env_prefix}gcloud auth application-default print-access-token '
             '2>/dev/null || gcloud auth print-access-token 2>/dev/null)"; '
             '[ -n "$tok" ] && printf \'{"Authorization":"Bearer %s"}\' "$tok"'
         )
@@ -387,8 +403,22 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         fake-home config and both commands fail).
         """
         token_env = os.environ.copy()
+        impersonate_sa = self.env.get(
+            "CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT"
+        )
+        if impersonate_sa:
+            token_env["CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT"] = (
+                impersonate_sa
+            )
         adc = self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
-        if adc and os.path.exists(adc):
+        if impersonate_sa:
+            if os.path.exists("/etc/evalbench-sa-key/key.json"):
+                token_env["GOOGLE_APPLICATION_CREDENTIALS"] = (
+                    "/etc/evalbench-sa-key/key.json"
+                )
+            else:
+                token_env.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
+        elif adc and os.path.exists(adc):
             token_env["GOOGLE_APPLICATION_CREDENTIALS"] = adc
         # ADC first (works for these endpoints); user token as a fallback for
         # any MCP server that happens to accept it.
