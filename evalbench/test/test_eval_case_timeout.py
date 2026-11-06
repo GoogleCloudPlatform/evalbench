@@ -77,6 +77,7 @@ class TestAgentEvaluatorTimeout(unittest.TestCase):
     @patch("evaluator.agentevaluator.get_generator")
     def test_agent_evaluator_initializes_timeout(self, mock_get_generator):
         mock_generator = MagicMock(spec=AgentCliGenerator)
+        mock_generator.model_api_error.return_value = None
         mock_generator.name = "mock_agent_cli"
         mock_generator.version = "1.0"
         mock_get_generator.return_value = mock_generator
@@ -99,6 +100,7 @@ class TestAgentEvaluatorTimeout(unittest.TestCase):
     @patch("evaluator.agentevaluator.get_generator")
     def test_process_scenario_times_out_multi_turn(self, mock_get_generator):
         mock_generator = MagicMock(spec=AgentCliGenerator)
+        mock_generator.model_api_error.return_value = None
         mock_generator.name = "mock_agent_cli"
         mock_generator.version = "1.0"
         mock_generator.fake_home = "/tmp/fake_home"
@@ -154,6 +156,7 @@ class TestAgentEvaluatorTimeout(unittest.TestCase):
     @patch("evaluator.agentevaluator.get_generator")
     def test_process_scenario_times_out_before_turn_1(self, mock_get_generator):
         mock_generator = MagicMock(spec=AgentCliGenerator)
+        mock_generator.model_api_error.return_value = None
         mock_generator.name = "mock_agent_cli"
         mock_generator.version = "1.0"
         mock_get_generator.return_value = mock_generator
@@ -189,6 +192,7 @@ class TestAgentEvaluatorTimeout(unittest.TestCase):
     @patch("evaluator.agentevaluator.get_generator")
     def test_process_scenario_scenario_level_timeout_override(self, mock_get_generator):
         mock_generator = MagicMock(spec=AgentCliGenerator)
+        mock_generator.model_api_error.return_value = None
         mock_generator.name = "mock_agent_cli"
         mock_generator.version = "1.0"
         mock_generator.fake_home = "/tmp/fake_home"
@@ -236,6 +240,7 @@ class TestAgentEvaluatorTimeout(unittest.TestCase):
     @patch("evaluator.agentevaluator.get_generator")
     def test_process_scenario_records_timeout_error_in_result(self, mock_get_generator):
         mock_generator = MagicMock(spec=AgentCliGenerator)
+        mock_generator.model_api_error.return_value = None
         mock_generator.name = "mock_agent_cli"
         mock_generator.version = "1.0"
         mock_generator.fake_home = "/tmp/fake_home"
@@ -309,6 +314,7 @@ class TestAgentEvaluatorTimeout(unittest.TestCase):
     @patch("evaluator.agentevaluator.get_generator")
     def test_evaluate_agent_cli_returns_job_id_and_outputs_on_timeout(self, mock_get_generator, mock_sim_user):
         mock_generator = MagicMock(spec=AgentCliGenerator)
+        mock_generator.model_api_error.return_value = None
         mock_generator.name = "mock_agent_cli"
         mock_generator.version = "1.0"
         mock_generator.fake_home = "/tmp/fake_home"

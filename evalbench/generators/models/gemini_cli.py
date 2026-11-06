@@ -11,6 +11,14 @@ from typing import Optional, Union, Dict, List
 from util.context import rpc_id_var
 from util.sessionmgr import validate_session_id
 
+# Quota and server errors in a Gemini "[API Error: ...]" message. A bare
+# "quota" does not match, because a missing quota project is a config error.
+_GEMINI_QUOTA_OR_SERVER_RE = re.compile(
+    r"\b(?:429|500|502|503|504)\b|RESOURCE_EXHAUSTED|UNAVAILABLE|\bINTERNAL\b"
+    r"|DEADLINE_EXCEEDED|quota exceeded|exceeded[^\n]{0,40}quota|exhausted"
+    r"|rate limit|too many requests|overloaded",
+    re.IGNORECASE)
+
 
 class CLICommand:
     def __init__(self, cli, prompt, env=None, resume=False, yolo=True, cwd=None,
@@ -1043,6 +1051,28 @@ class GeminiCliGenerator(AgentCliGenerator):
     @property
     def version(self) -> str:
         return self.gemini_cli_version
+
+    def model_api_error(self, result: subprocess.CompletedProcess) -> Optional[str]:
+        """Returns the final API error if it is a quota or server error.
+
+        On failure, stdout is the raw stream-json. Gemini CLI formats fatal
+        model errors as "[API Error: ...]". Tool errors and retry logs use
+        other formats.
+        """
+        for line in reversed((result.stdout or "").splitlines()):
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict) or event.get("type") != "result":
+                continue
+            if event.get("status") != "error":
+                return None
+            message = str((event.get("error") or {}).get("message", ""))
+            if message.startswith("[API Error:") and _GEMINI_QUOTA_OR_SERVER_RE.search(message):
+                return message
+            return None
+        return None
 
     def parse_response(self, stdout: str) -> dict:
         if not stdout:

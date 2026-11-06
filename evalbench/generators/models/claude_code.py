@@ -945,6 +945,16 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                     # Assistant message with content blocks
                     message = event.get("message", {})
                     content_blocks = message.get("content", [])
+                    if event.get("error") and not event.get("parent_tool_use_id"):
+                        # Set when the API call fails, e.g. "rate_limit".
+                        # A subagent error is skipped, because the main
+                        # agent receives it as a tool result and continues.
+                        final_obj["api_error"] = {
+                            "type": event["error"],
+                            "message": "".join(
+                                b.get("text", "") for b in content_blocks
+                                if isinstance(b, dict)),
+                        }
                     for block in content_blocks:
                         if not isinstance(block, dict):
                             continue
@@ -1165,6 +1175,16 @@ class ClaudeCodeGenerator(AgentCliGenerator):
     @property
     def version(self) -> str:
         return self.claude_code_version
+
+    def model_api_error(self, result: subprocess.CompletedProcess) -> Optional[str]:
+        """Returns the API error for "rate_limit" or "server_error" (any 5xx)."""
+        try:
+            api_error = json.loads(result.stdout or "{}").get("api_error") or {}
+        except (json.JSONDecodeError, AttributeError):
+            return None
+        if api_error.get("type") in ("rate_limit", "server_error"):
+            return api_error.get("message") or api_error["type"]
+        return None
 
     def parse_response(self, stdout: str) -> dict:
         if not stdout:

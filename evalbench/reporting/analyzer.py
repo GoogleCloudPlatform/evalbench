@@ -220,8 +220,7 @@ def analyze_one_metric(
                 "skills_best_practices",
             ]
             if metric_name in non_binary_metrics:
-                # Scorers return 0 for a trial with a generated_error, such as
-                # an agent quota error. Leave those rows out of the average.
+                # Error rows score 0. Leave them out of the average.
                 if "generated_error" in df_metric.columns:
                     df_metric = df_metric[
                         df_metric["generated_error"].isna()

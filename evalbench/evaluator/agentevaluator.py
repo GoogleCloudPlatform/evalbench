@@ -10,36 +10,34 @@ import threading
 from dataset.evalgeminicliinput import EvalGeminiCliRequest
 from generators.models import get_generator
 from generators.models.agent_cli import AgentCliGenerator
+from generators.models.noop_agent import NoopAgentGenerator
+from generators.models.passthrough import NOOPGenerator
 from mp import mprunner
 from util.config import get_eval_case_timeout
 from work.agentgenwork import AgentGenWork
 from evaluator.simulateduser import SimulatedUser
 from work.agentscorework import AgentScoreWork
 import json
-import re
 import subprocess
 from typing import Dict
 
 
-# Quota and server errors in agent CLI stderr. The tool under test cannot
-# cause these, so the trial is unscored instead of failed. Status codes must
-# follow a word such as "HTTP" or "error", so a traceback line number such as
-# "line 503" does not match.
-_INFRA_ERROR_RE = re.compile(
-    r"\b(?:HTTP|[Ss]tatus|[Cc]ode|[Ee]rror)\b\D{0,10}\b(?:429|50[0234])\b"
-    r"|Too Many Requests|RESOURCE_EXHAUSTED|UNAVAILABLE"
-    r"|Internal Server Error|Service Unavailable"
-    r"|[Qq]uota[^\n]{0,40}exceeded|exceeded[^\n]{0,40}quota")
-
-
-def _infra_error(result: Any) -> str | None:
-    """Returns an error message if the agent CLI failed on quota or a server error."""
+def _infra_error(generator: AgentCliGenerator, result: Any) -> str | None:
+    """Returns an error message if the model API hit a quota or server error."""
     returncode = getattr(result, "returncode", 0)
-    stderr = getattr(result, "stderr", "") or ""
     # 124 is a timeout, which counts as a failure.
-    if returncode in (0, 124) or not _INFRA_ERROR_RE.search(stderr):
+    if returncode == 124:
         return None
-    return f"Agent infrastructure error (exit {returncode}): {stderr.strip()[-500:]}"
+    api_error = generator.model_api_error(result)
+    if not api_error:
+        return None
+    return f"Agent infrastructure error (exit {returncode}): {api_error.strip()[-500:]}"
+
+
+def _is_noop(simulated_user: SimulatedUser) -> bool:
+    """Returns True if the simulated user returns an empty reply by design."""
+    return isinstance(simulated_user.model_generator,
+                      (NOOPGenerator, NoopAgentGenerator))
 
 
 class AgentEvaluator:
@@ -264,7 +262,7 @@ class AgentEvaluator:
                 "agent": result.stdout
             })
 
-            generated_error = _infra_error(result)
+            generated_error = _infra_error(self.generator, result)
             if generated_error:
                 logging.error(generated_error)
                 break
@@ -277,6 +275,12 @@ class AgentEvaluator:
                             conversation_history,
                             result.stdout
                         )
+                        # QueryGenerator.generate returns "" when out of quota.
+                        # ClaudeGenerator returns None on any error.
+                        if (not str(next_response or "").strip()
+                                and not _is_noop(simulated_user)):
+                            raise RuntimeError(
+                                "empty reply from the simulated user model")
                     except Exception as e:
                         generated_error = f"Simulated user error: {e}"
                         logging.error(generated_error)
