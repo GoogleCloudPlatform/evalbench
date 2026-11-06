@@ -167,14 +167,8 @@ Specifies the generator, model label, execution timeouts, and environment:
 | `generator` | Yes | Must be `agy_cli` |
 | `model` | Optional | Model label (e.g. `"Gemini 3.1 Pro (Low)"` or `"Gemini 3.5 Flash (Medium)"`). Omit to use agy's default. |
 | `timeout` | Optional | CLI turn timeout string (e.g. `"20m"`, passed to `--print-timeout`). Defaults to 5m. |
-| `env` | Optional | Environment block passed to agy. Set `GOOGLE_CLOUD_PROJECT` (see below). |
+| `env` | Optional | Environment block passed to agy. `GOOGLE_CLOUD_PROJECT` sets agy's quota project. See [Authentication](#authentication--supported-models). |
 | `setup` | Optional | Tool setup block for `mcp_servers`, `skills`, or `fake_mcp_servers`. |
-
-> [!IMPORTANT]
-> **Quota project:** With a credential file, agy reads its project only from
-> the file's `quota_project_id`. If the file has none, EvalBench adds
-> `env.GOOGLE_CLOUD_PROJECT`, or else the key's `project_id`. Without a
-> credential file, agy uses the metadata server's project.
 
 ---
 
@@ -212,7 +206,9 @@ agy resolves ADC in the standard order:
 1. The file in `GOOGLE_APPLICATION_CREDENTIALS`, or the gcloud ADC file
    (`gcloud auth application-default login`).
 2. The metadata server (Cloud Build, GCE, GKE Workload Identity). agy takes
-   the quota project from the metadata project.
+   the quota project from `GOOGLE_CLOUD_QUOTA_PROJECT`. If it is not set,
+   EvalBench sets it from `env.GOOGLE_CLOUD_PROJECT`. If neither is set, agy
+   uses the metadata project.
 
 If a credential file has no `quota_project_id`, EvalBench adds one from
 `env.GOOGLE_CLOUD_PROJECT` or the key's `project_id`. Without it, the model
