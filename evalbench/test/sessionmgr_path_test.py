@@ -91,6 +91,30 @@ def test_rejects_symlink_escape(session_root, manager, tmp_path):
     assert not (tmp_path / "x").exists()
 
 
+def test_prune_removes_symlink_but_keeps_target(session_root, manager):
+    """A session entry that is a symlink is unlinked, not walked."""
+    target = session_root / "aaaa"
+    target.mkdir()
+    (target / "keep.txt").write_text("x")
+    os.symlink(target, session_root / "bbbb")
+
+    manager.prune_resource_files("bbbb")
+
+    assert not os.path.lexists(session_root / "bbbb")
+    assert (target / "keep.txt").exists()
+
+
+def test_load_sessions_skips_symlinked_entries(session_root, manager):
+    target = session_root / "aaaa"
+    target.mkdir()
+    os.symlink(target, session_root / "bbbb")
+    manager.sessions = {}
+
+    manager.load_sessions_from_disk()
+
+    assert set(manager.sessions) == {"aaaa"}
+
+
 def test_conflict_check_fails_closed_outside_session_dir(session_root):
     # A path outside the session dir must raise. It must not loop forever.
     outside = str(session_root.parent / "elsewhere" / "x")

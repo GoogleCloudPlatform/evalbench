@@ -114,7 +114,7 @@ class SessionManager:
                         f"Skipping invalid session directory {sid!r} on disk.")
                     continue
                 dir_path = os.path.join(SESSION_RESOURCES_PATH, sid)
-                if os.path.isdir(dir_path):
+                if os.path.isdir(dir_path) and not os.path.islink(dir_path):
                     mtime = os.path.getmtime(dir_path)
                     logging.info(f"Loading session {sid} from disk with mtime {mtime}.")
                     self.sessions[sid] = {
@@ -152,6 +152,11 @@ class SessionManager:
     def prune_resource_files(self, session_id):
         path = os.path.join(
             SESSION_RESOURCES_PATH, validate_session_id(session_id))
+        if os.path.islink(path):
+            # Remove the link only. Walking it would empty another
+            # session, and rmdir on a link raises NotADirectoryError.
+            os.unlink(path)
+            return
         if not os.path.exists(path):
             return
         for root, dirs, files in os.walk(path, topdown=False):
