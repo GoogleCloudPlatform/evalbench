@@ -24,6 +24,9 @@ _GEMINI_QUOTA_OR_SERVER_RE = re.compile(
     r"|retry attempts exhausted|resource (?:has been )?exhausted"
     r"|rate limit|too many requests|overloaded)")
 
+# Gemini CLI quota error classes, from the result event's `error.type`.
+_GEMINI_QUOTA_ERROR_TYPES = ("TerminalQuotaError", "RetryableQuotaError")
+
 
 class CLICommand:
     def __init__(self, cli, prompt, env=None, resume=False, yolo=True, cwd=None,
@@ -1073,8 +1076,11 @@ class GeminiCliGenerator(AgentCliGenerator):
                 continue
             if event.get("status") != "error":
                 return None
-            message = str((event.get("error") or {}).get("message", ""))
-            if message.startswith("[API Error:") and _GEMINI_QUOTA_OR_SERVER_RE.search(message):
+            error = event.get("error") or {}
+            message = str(error.get("message", ""))
+            if message.startswith("[API Error:") and (
+                    error.get("type") in _GEMINI_QUOTA_ERROR_TYPES
+                    or _GEMINI_QUOTA_OR_SERVER_RE.search(message)):
                 return message
             return None
         return None
