@@ -7,6 +7,7 @@ import pandas as pd
 
 from run_index import list_run_directories
 from goal_completion_rollup import goal_completion_scores
+from paths import get_results_dir
 
 csv.field_size_limit(10**9)
 
@@ -58,26 +59,6 @@ def _is_recent(run_time, days=AI_SUMMARY_CACHE_DAYS):
         # Cannot be aged out safely, so treat as old and let the sidecar serve it.
         return False
     return ts >= pd.Timestamp.now() - pd.Timedelta(days=days)
-
-
-def get_results_dir():
-    # Try to read from environment variable
-    res_dir = os.environ.get("RESULTS_DIR")
-    if res_dir:
-        return res_dir
-
-    # Check multiple locations for results directory
-    results_dir_candidates = [
-        "/tmp_session_files/results",
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), "results"),
-        os.path.join(os.getcwd(), "results"),
-    ]
-
-    for candidate in results_dir_candidates:
-        if os.path.exists(candidate) and os.path.isdir(candidate):
-            return candidate
-
-    return results_dir_candidates[1]  # Fallback to default
 
 
 # Stat calls on the GCS FUSE mount are network round trips, so the ordering
