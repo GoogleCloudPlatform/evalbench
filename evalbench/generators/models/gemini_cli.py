@@ -11,13 +11,19 @@ from typing import Optional, Union, Dict, List
 from util.context import rpc_id_var
 from util.sessionmgr import validate_session_id
 
-# Quota and server errors in a Gemini "[API Error: ...]" message. A bare
-# "quota" does not match, because a missing quota project is a config error.
+# Quota and server errors in a Gemini "[API Error: ...]" message.
+# - A status code counts only after its label, as in '"code":429' or
+#   "status: 503". A bare number can be part of another error, such as
+#   "limit of 500 items".
+# - A status name counts only in upper case, because "unavailable" and
+#   "internal" are also plain words.
+# - A bare "quota" does not match, because a missing quota project is a
+#   config error.
 _GEMINI_QUOTA_OR_SERVER_RE = re.compile(
-    r"\b(?:429|500|502|503|504)\b|RESOURCE_EXHAUSTED|UNAVAILABLE|\bINTERNAL\b"
-    r"|DEADLINE_EXCEEDED|quota exceeded|exceeded[^\n]{0,40}quota|exhausted"
-    r"|rate limit|too many requests|overloaded",
-    re.IGNORECASE)
+    r'(?:"code":\s*|\b[Ss]tatus:?\s+)(?:429|500|502|503|504)\b'
+    r"|\b(?:RESOURCE_EXHAUSTED|UNAVAILABLE|INTERNAL|DEADLINE_EXCEEDED)\b"
+    r"|(?i:quota exceeded|exceeded[^\n]{0,40}quota|exhausted|rate limit"
+    r"|too many requests|overloaded)")
 
 
 class CLICommand:

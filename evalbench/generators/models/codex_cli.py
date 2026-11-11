@@ -22,9 +22,14 @@ _SECRET_MANAGER_URL_PREFIX = "secret_manager://"
 
 # Quota and server errors in a Codex `turn.failed` message. "at capacity" is
 # CodexErr::ServerOverloaded and "high demand" is CodexErr::InternalServerError.
+# - A status code counts only after "status", as in "unexpected status 503".
+#   A bare number can be part of another error, such as "at most 500 items".
+# - "stream disconnected before completion: Incomplete response returned" is
+#   a stop by the model, such as a content filter. It is not a server error.
 _CODEX_QUOTA_OR_SERVER_RE = re.compile(
-    r"\b(?:429|500|502|503|504)\b|quota|usage limit|rate limit"
-    r"|too many requests|stream disconnected before completion"
+    r"\bstatus:?\s+(?:429|500|502|503|504)\b|quota|usage limit|rate limit"
+    r"|too many requests"
+    r"|stream disconnected before completion(?!: Incomplete response returned)"
     r"|at capacity|high demand",
     re.IGNORECASE)
 

@@ -947,16 +947,20 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                     # Assistant message with content blocks
                     message = event.get("message", {})
                     content_blocks = message.get("content", [])
-                    if event.get("error") and not event.get("parent_tool_use_id"):
-                        # Set when the API call fails, e.g. "rate_limit".
+                    if not event.get("parent_tool_use_id"):
+                        # Only the last main-agent message counts. A later
+                        # message without an error means the run recovered.
                         # A subagent error is skipped, because the main
                         # agent receives it as a tool result and continues.
-                        final_obj["api_error"] = {
-                            "type": event["error"],
-                            "message": "".join(
-                                b.get("text", "") for b in content_blocks
-                                if isinstance(b, dict)),
-                        }
+                        final_obj.pop("api_error", None)
+                        if event.get("error"):
+                            # Set when the API call fails, e.g. "rate_limit".
+                            final_obj["api_error"] = {
+                                "type": event["error"],
+                                "message": "".join(
+                                    b.get("text", "") for b in content_blocks
+                                    if isinstance(b, dict)),
+                            }
                     for block in content_blocks:
                         if not isinstance(block, dict):
                             continue

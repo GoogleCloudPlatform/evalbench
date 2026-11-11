@@ -59,9 +59,17 @@ def _gemini_result(status, message=None, stderr=""):
                     "(Status: PERMISSION_DENIED)]"), False),
     (_gemini_result("success", stderr="Attempt 1 failed with status 429. "
                     "Retrying with backoff..."), False),
+    (_gemini_result("error", '[API Error: {"error":{"code":400,"message":'
+                    '"The input exceeds the limit of 500 items",'
+                    '"status":"INVALID_ARGUMENT"}}]'), False),
+    (_gemini_result("error", "[API Error: Model gemini-x is unavailable in "
+                    "region us-central1. Check the model name.]"), False),
+    (_gemini_result("error", "[API Error: Invalid internal reference in the "
+                    "tool schema.]"), False),
 ], ids=["quota_429", "server_503", "daily_quota", "deadline_exceeded",
         "tool_error", "invalid_argument", "quota_project_missing",
-        "retry_log_then_success"])
+        "retry_log_then_success", "number_500_in_a_400_error",
+        "unavailable_as_a_word", "internal_as_a_word"])
 def test_gemini_model_api_error(result, is_infra):
     error = _bare(GeminiCliGenerator).model_api_error(result)
     assert bool(error) == is_infra
@@ -90,6 +98,26 @@ def _claude_api_error(category, text):
 def test_claude_model_api_error(events, is_infra):
     generator, result = _claude_result(*events)
     assert bool(generator.model_api_error(result)) == is_infra
+
+
+def test_claude_api_error_is_cleared_when_the_run_recovers():
+    generator, result = _claude_result(
+        _claude_api_error("rate_limit", "API Error: Request rejected (429)"),
+        {"type": "assistant",
+         "message": {"content": [{"type": "text", "text": "Done."}]}},
+        {"type": "result", "subtype": "success", "is_error": False})
+    assert generator.model_api_error(result) is None
+
+
+def test_claude_subagent_message_does_not_clear_the_api_error():
+    subagent_message = {
+        "type": "assistant", "parent_tool_use_id": "toolu_task",
+        "message": {"content": [{"type": "text", "text": "Subagent text."}]}}
+    generator, result = _claude_result(
+        subagent_message,
+        _claude_api_error("rate_limit", "API Error: Request rejected (429)"),
+        subagent_message)
+    assert generator.model_api_error(result)
 
 
 def test_claude_subagent_api_error_is_ignored():
@@ -130,8 +158,19 @@ def _codex_result(*events):
       {"type": "turn.completed", "usage": {}}], False),
     ([{"type": "turn.failed", "error": {"message": "context window exceeded"}}],
      False),
+    ([{"type": "turn.failed", "error": {"message": "stream disconnected before "
+                                        "completion: Incomplete response "
+                                        "returned, reason: content_filter"}}],
+     False),
+    ([{"type": "turn.failed", "error": {"message": "stream disconnected before "
+                                        "completion: connection reset"}}],
+     True),
+    ([{"type": "turn.failed", "error": {"message": "unexpected status 400 Bad "
+                                        "Request: array too long, expected at "
+                                        "most 500 items"}}], False),
 ], ids=["retry_limit_429", "unexpected_503", "quota", "server_overloaded",
-        "internal_server_error", "retry_then_success", "context_window"])
+        "internal_server_error", "retry_then_success", "context_window",
+        "content_filter", "stream_disconnected", "number_500_in_a_400_error"])
 def test_codex_model_api_error(events, is_infra):
     generator, result = _codex_result(*events)
     assert bool(generator.model_api_error(result)) == is_infra
