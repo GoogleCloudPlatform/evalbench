@@ -948,10 +948,9 @@ class ClaudeCodeGenerator(AgentCliGenerator):
                     message = event.get("message", {})
                     content_blocks = message.get("content", [])
                     if not event.get("parent_tool_use_id"):
-                        # Only the last main-agent message counts. A later
-                        # message without an error means the run recovered.
-                        # A subagent error is skipped, because the main
-                        # agent receives it as a tool result and continues.
+                        # Only the last main-agent message counts. A
+                        # subagent error is skipped, because the main agent
+                        # receives it as a tool result and continues.
                         final_obj.pop("api_error", None)
                         if event.get("error"):
                             # Set when the API call fails, e.g. "rate_limit".

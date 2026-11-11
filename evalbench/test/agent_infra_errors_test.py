@@ -66,10 +66,18 @@ def _gemini_result(status, message=None, stderr=""):
                     "region us-central1. Check the model name.]"), False),
     (_gemini_result("error", "[API Error: Invalid internal reference in the "
                     "tool schema.]"), False),
+    (_gemini_result("error", "[API Error: You have exhausted your capacity on "
+                    "this model.]"), True),
+    (_gemini_result("error", "[API Error: Retry attempts exhausted]"), True),
+    (_gemini_result("error", "[API Error: Resource exhausted. Please try "
+                    "again later.]"), True),
+    (_gemini_result("error", "[API Error: The context window is exhausted. "
+                    "Start a new session.]"), False),
 ], ids=["quota_429", "server_503", "daily_quota", "deadline_exceeded",
         "tool_error", "invalid_argument", "quota_project_missing",
         "retry_log_then_success", "number_500_in_a_400_error",
-        "unavailable_as_a_word", "internal_as_a_word"])
+        "unavailable_as_a_word", "internal_as_a_word", "capacity_exhausted",
+        "retries_exhausted", "resource_exhausted", "context_window_exhausted"])
 def test_gemini_model_api_error(result, is_infra):
     error = _bare(GeminiCliGenerator).model_api_error(result)
     assert bool(error) == is_infra
