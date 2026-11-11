@@ -5,6 +5,7 @@ import concurrent.futures
 import logging
 import os
 import shutil
+import tempfile
 import time
 import threading
 
@@ -15,6 +16,7 @@ from mp import mprunner
 from util.config import get_eval_case_timeout
 from work.agentgenwork import AgentGenWork
 from evaluator.simulateduser import SimulatedUser
+from evaluator.trialsnapshot import TrialSnapshot, check_resettable
 from work.agentscorework import AgentScoreWork
 import json
 import subprocess
@@ -93,12 +95,22 @@ class AgentEvaluator:
         }
 
         self.agentrunner = mprunner.MPRunner(self.agent_runners)
+        snapshot = None
         try:
-            # Trials run one after another. Each trial runs the full suite.
-            # All trials of a scenario use the same generator fake_home and
-            # the same work_dir. Concurrent trials of one scenario would
-            # write to the same files.
+            # Trials run one after another, and each trial runs the full
+            # suite. They share the generator's fake_home and each scenario's
+            # work_dir, so concurrent trials would write to the same files.
+            # The snapshot puts these directories back before each trial
+            # after the first, so a trial does not see the files of an
+            # earlier one.
+            if self.num_trials > 1:
+                snapshot = TrialSnapshot(
+                    getattr(self.generator, "fake_home", None),
+                    self._work_dirs_to_reset(dataset))
+                snapshot.save()
             for trial_index in range(self.num_trials):
+                if trial_index > 0:
+                    snapshot.restore()
                 items = [self._trial_item(item, trial_index) for item in dataset]
                 outputs, scores = self._run_items(
                     [item for item in items if item is not None],
@@ -109,6 +121,41 @@ class AgentEvaluator:
             return eval_outputs, scoring_results
         finally:
             self.agentrunner.shutdown()
+            if snapshot is not None:
+                snapshot.remove()
+
+    def _work_dirs_to_reset(self, dataset: List[Any]) -> List[str]:
+        """Returns the work dirs of the scenarios that run in more than one trial.
+
+        Raises ValueError if the reset of a work dir would delete a directory
+        that must stay.
+        """
+        # A reset deletes everything in a work dir, so a work dir must not be
+        # one of these directories or contain one.
+        protected = [os.path.expanduser("~"), os.getcwd(), tempfile.gettempdir()]
+        fake_home = getattr(self.generator, "fake_home", None)
+        if fake_home:
+            protected.append(fake_home)
+        dataset_config = self.config.get("dataset_config")
+        if isinstance(dataset_config, str):
+            # A work_dir of "." is the directory of the evalset file.
+            protected.append(os.path.dirname(os.path.abspath(dataset_config)))
+
+        work_dirs = []
+        for item in dataset:
+            eval_set = json.loads(item.payload)
+            for scenario in eval_set.get("scenarios", [eval_set]):
+                work_dir = scenario.get("resolved_work_dir")
+                if work_dir and self._scenario_num_trials(scenario) > 1:
+                    check_resettable(work_dir, protected)
+                    work_dirs.append(work_dir)
+        return work_dirs
+
+    def _scenario_num_trials(self, scenario: Dict[str, Any]) -> int:
+        """Returns the scenario's own num_trials, or the run value if it has none."""
+        return _check_num_trials(
+            scenario.get("num_trials", self.num_trials),
+            f"scenario {scenario['id']}")
 
     def _run_items(
         self, items: List[Any], job_id: str, metadata: Dict[str, Any]
@@ -155,9 +202,7 @@ class AgentEvaluator:
         scenarios = eval_set.get("scenarios", [eval_set])
         trial_scenarios = []
         for scenario in scenarios:
-            scenario_trials = _check_num_trials(
-                scenario.get("num_trials", self.num_trials),
-                f"scenario {scenario['id']}")
+            scenario_trials = self._scenario_num_trials(scenario)
             if scenario_trials > self.num_trials and trial_index == 0:
                 logging.warning(
                     "Scenario %s sets num_trials=%s, above the run value %s. "
