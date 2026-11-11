@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import tempfile
 import threading
 import time
 import types
@@ -260,6 +261,25 @@ def test_unsafe_work_dir_raises_before_any_trial(make_evaluator, tmp_path):
 
     evaluator.process_scenario.assert_not_called()
     assert sorted(os.listdir(tmp_path)) == ["dataset", "fake_home"]
+
+
+@pytest.mark.parametrize(
+    "protected", ["user_home", "run_dir", "temp_dir", "fake_home"])
+def test_work_dir_that_is_a_protected_directory_raises(
+    make_evaluator, tmp_path, monkeypatch, protected
+):
+    # Stand-ins for the real directories. The test only runs the check, so a
+    # broken check deletes nothing.
+    for name in ("user_home", "run_dir", "temp_dir"):
+        (tmp_path / name).mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path / "user_home"))
+    monkeypatch.chdir(tmp_path / "run_dir")
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "temp_dir"))
+    scenario = {"id": "a", "resolved_work_dir": str(tmp_path / protected)}
+    evaluator = make_evaluator(num_trials=2)
+
+    with pytest.raises(ValueError, match="of scenario a cannot be reset"):
+        evaluator._work_dirs_to_reset([_item({"scenarios": [scenario]})])
 
 
 def test_unsafe_work_dir_is_allowed_with_one_trial(make_evaluator, tmp_path):

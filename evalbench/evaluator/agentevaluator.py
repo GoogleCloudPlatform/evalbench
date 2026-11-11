@@ -147,7 +147,7 @@ class AgentEvaluator:
             for scenario in eval_set.get("scenarios", [eval_set]):
                 work_dir = scenario.get("resolved_work_dir")
                 if work_dir and self._scenario_num_trials(scenario) > 1:
-                    check_resettable(work_dir, protected)
+                    check_resettable(scenario["id"], work_dir, protected)
                     work_dirs.append(work_dir)
         return work_dirs
 

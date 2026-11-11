@@ -1,4 +1,5 @@
 import os
+import shutil
 import stat
 from unittest.mock import patch
 
@@ -123,6 +124,18 @@ def test_links_stay_links_and_their_targets_are_not_touched(home, tmp_path):
     assert _files(outside) == {"SKILL.md": "skill"}
 
 
+def test_pipes_are_not_copied(home):
+    os.mkfifo(home / "agent.pipe")
+    snapshot = TrialSnapshot(str(home), [])
+    snapshot.save()
+
+    (home / "agent.pipe").unlink()
+    snapshot.restore()
+
+    assert not (home / "agent.pipe").exists()
+    assert (home / ".gemini" / "settings.json").read_text() == "setup"
+
+
 def test_restore_removes_read_only_directories(home):
     snapshot = TrialSnapshot(str(home), [])
     snapshot.save()
@@ -155,6 +168,20 @@ def test_restore_after_remove_changes_nothing(home):
 
     (home / "result.sql").write_text("select 1")
     snapshot.restore()
+
+    assert (home / "result.sql").exists()
+    assert (home / ".gemini" / "settings.json").read_text() == "setup"
+
+
+def test_restore_without_the_copy_raises_and_deletes_nothing(home, tmp_path):
+    snapshot = TrialSnapshot(str(home), [])
+    snapshot.save()
+    (snapshot_dir,) = _snapshot_dirs(tmp_path)
+    shutil.rmtree(snapshot_dir)
+
+    (home / "result.sql").write_text("select 1")
+    with pytest.raises(FileNotFoundError, match="Nothing was reset"):
+        snapshot.restore()
 
     assert (home / "result.sql").exists()
     assert (home / ".gemini" / "settings.json").read_text() == "setup"
@@ -197,8 +224,10 @@ def test_check_resettable(tmp_path):
     (dataset_dir / "workspaces" / "dbt").mkdir(parents=True)
     protected = [str(dataset_dir)]
 
-    check_resettable(str(dataset_dir / "workspaces" / "dbt"), protected)
-    check_resettable(str(tmp_path / "elsewhere"), protected)
+    check_resettable("a", str(dataset_dir / "workspaces" / "dbt"), protected)
+    check_resettable("a", str(tmp_path / "elsewhere"), protected)
     for unsafe in (dataset_dir, tmp_path, dataset_dir / "workspaces" / ".."):
-        with pytest.raises(ValueError, match="cannot be reset between trials"):
-            check_resettable(str(unsafe), protected)
+        with pytest.raises(
+            ValueError, match="of scenario a cannot be reset between trials"
+        ):
+            check_resettable("a", str(unsafe), protected)

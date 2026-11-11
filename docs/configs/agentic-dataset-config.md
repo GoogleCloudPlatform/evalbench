@@ -51,6 +51,7 @@ The file is a single JSON object with a `scenarios` array:
 - **Scenario filtering:** You do not need separate evalset files to run a subset. Set `scenarios` (explicit IDs) or `scenario_pattern` (a glob over IDs) in the run config to filter at load time.
 - **Empty trajectories are valid:** For scenarios scored purely by rubric or goal completion, set `"expected_trajectory": []`. The `trajectory_matcher` scorer can simply be left out of the run config.
 - **Reset between trials:** If `num_trials` is greater than 1, trials run one after another in the same sandbox home and the same `work_dir`. Before each trial after the first, EvalBench puts both directories back to their state before the first trial, so a trial does not see the files of an earlier one. The download caches in the sandbox home (`.npm`, `.cache`, `.local`) are kept.
+  - With the `agent_grpc_proxy` generator, the agent runs on another machine. EvalBench does not reset the files on that machine.
   - Cloud resources are not reset. Set `num_trials: 1` on a scenario that creates named cloud resources.
   - A `work_dir` that is reset must be a directory of its own. The run fails at the start if the `work_dir` is, or contains, the evalset file's directory, the sandbox home, your home directory, the system temp directory, or the directory EvalBench runs from.
   - With `gcs_artifacts` reporting, the upload holds the files of the last trial only.

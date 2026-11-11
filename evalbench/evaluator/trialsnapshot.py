@@ -71,7 +71,15 @@ class TrialSnapshot:
             len(self._saved), self._root)
 
     def restore(self) -> None:
-        """Puts every directory back to its state at `save`."""
+        """Puts every directory back to its state at `save`.
+
+        Raises FileNotFoundError, and resets nothing, if a copy is gone.
+        """
+        for saved in self._saved:
+            if saved.copy is not None and not os.path.isdir(saved.copy):
+                raise FileNotFoundError(
+                    f"The copy of {saved.path} for the reset between trials "
+                    f"is gone from {saved.copy}. Nothing was reset.")
         for saved in self._saved:
             if saved.copy is None or not os.path.isdir(saved.path):
                 # The directory did not exist at `save`, or a trial put
@@ -99,20 +107,23 @@ class TrialSnapshot:
         self._saved = []
 
 
-def check_resettable(work_dir: str, protected: Iterable[str]) -> None:
+def check_resettable(
+    scenario_id: str, work_dir: str, protected: Iterable[str]
+) -> None:
     """Raises ValueError if a reset of work_dir would delete a protected directory.
 
-    A reset deletes everything in work_dir, so work_dir must not be a
-    protected directory or contain one.
+    A reset deletes everything in the scenario's work_dir, so work_dir must
+    not be a protected directory or contain one.
     """
     real_work_dir = os.path.realpath(work_dir)
     for directory in protected:
         real_directory = os.path.realpath(directory)
         if os.path.commonpath([real_work_dir, real_directory]) == real_work_dir:
             raise ValueError(
-                f"work_dir {work_dir} cannot be reset between trials, because "
-                f"it is or contains {directory}. Use a sub-directory as the "
-                f"work_dir, or set num_trials: 1 on the scenario.")
+                f"work_dir {work_dir} of scenario {scenario_id} cannot be "
+                f"reset between trials, because it is or contains "
+                f"{directory}. Use a sub-directory as the work_dir, or set "
+                f"num_trials: 1 on the scenario.")
 
 
 def _copy_tree(
@@ -120,8 +131,8 @@ def _copy_tree(
 ) -> None:
     """Copies a directory tree. Leaves out the top-level entries in `skip`.
 
-    Unlike shutil.copytree, this keeps the owner of each entry and leaves out
-    sockets, pipes, and devices. Links stay links.
+    Unlike shutil.copytree, this leaves out sockets, pipes, and devices
+    instead of raising an error. Links stay links.
     """
     os.makedirs(target, exist_ok=True)
     for entry in os.scandir(source):
@@ -130,26 +141,12 @@ def _copy_tree(
         copy = os.path.join(target, entry.name)
         if entry.is_symlink():
             os.symlink(os.readlink(entry.path), copy)
-            _copy_owner(entry.path, copy)
         elif entry.is_dir():
             _copy_tree(entry.path, copy)
         elif entry.is_file():
             shutil.copy2(entry.path, copy)
-            _copy_owner(entry.path, copy)
     # Last, because a read-only mode would block the copy of the entries.
     shutil.copystat(source, target)
-    _copy_owner(source, target)
-
-
-def _copy_owner(source: str, target: str) -> None:
-    """Gives target the owner of source. Does not follow links.
-
-    Only root can change an owner. As root, some harnesses run the agent as
-    another user, who must still own the restored files.
-    """
-    if os.geteuid() == 0:
-        info = os.lstat(source)
-        os.lchown(target, info.st_uid, info.st_gid)
 
 
 def _remove(path: str) -> None:
