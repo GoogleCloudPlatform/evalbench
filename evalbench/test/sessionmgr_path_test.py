@@ -1,5 +1,6 @@
 """Tests for session ID and resource path validation."""
 
+import errno
 import importlib
 import os
 import sys
@@ -104,15 +105,51 @@ def test_prune_removes_symlink_but_keeps_target(session_root, manager):
     assert (target / "keep.txt").exists()
 
 
-def test_load_sessions_skips_symlinked_entries(session_root, manager):
+def test_load_sessions_removes_symlinked_entries(session_root, manager):
+    """A symlink is unlinked at load. Its target is untouched."""
     target = session_root / "aaaa"
     target.mkdir()
+    (target / "keep.txt").write_text("x")
     os.symlink(target, session_root / "bbbb")
     manager.sessions = {}
 
     manager.load_sessions_from_disk()
 
     assert set(manager.sessions) == {"aaaa"}
+    assert not os.path.lexists(session_root / "bbbb")
+    assert (target / "keep.txt").exists()
+
+
+def test_reap_expired_retries_failed_prune(session_root, manager):
+    """A failed prune does not stop the pass. The session stays registered
+    and the next pass retries it."""
+    # The manager fixture skips __init__, so set what reap_expired reads.
+    manager.ttl = 1
+    manager.lock = sessionmgr.RWLock()
+    manager.sessions = {
+        "bad": {"create_ts": 0.0, "session_id": "bad"},
+        "good": {"create_ts": 0.0, "session_id": "good"},
+    }
+    (session_root / "good").mkdir()
+
+    failing = {"bad"}
+    real_prune = manager.prune_resource_files
+
+    def flaky_prune(sid):
+        if sid in failing:
+            raise OSError(errno.ENOTEMPTY, "Directory not empty")
+        return real_prune(sid)
+
+    manager.prune_resource_files = flaky_prune
+
+    assert manager.reap_expired() == ["good"]
+    assert set(manager.sessions) == {"bad"}
+    assert not (session_root / "good").exists()
+
+    # Once the cause is gone, the next pass prunes the session.
+    failing.clear()
+    assert manager.reap_expired() == ["bad"]
+    assert manager.sessions == {}
 
 
 def test_conflict_check_fails_closed_outside_session_dir(session_root):

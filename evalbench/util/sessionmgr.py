@@ -114,7 +114,19 @@ class SessionManager:
                         f"Skipping invalid session directory {sid!r} on disk.")
                     continue
                 dir_path = os.path.join(SESSION_RESOURCES_PATH, sid)
-                if os.path.isdir(dir_path) and not os.path.islink(dir_path):
+                if os.path.islink(dir_path):
+                    # The server never creates a link here. A link routes
+                    # writes for this session ID into its target directory.
+                    try:
+                        os.unlink(dir_path)
+                        logging.warning(
+                            f"Removed symlinked session entry {sid!r}.")
+                    except OSError as e:
+                        logging.warning(
+                            f"Could not remove symlinked session entry "
+                            f"{sid!r}: {e}")
+                    continue
+                if os.path.isdir(dir_path):
                     mtime = os.path.getmtime(dir_path)
                     logging.info(f"Loading session {sid} from disk with mtime {mtime}.")
                     self.sessions[sid] = {
@@ -156,6 +168,8 @@ class SessionManager:
             # Remove the link only. Walking it would empty another
             # session, and rmdir on a link raises NotADirectoryError.
             os.unlink(path)
+            logging.warning(
+                f"Removed symlinked session entry {session_id!r}.")
             return
         if not os.path.exists(path):
             return
@@ -203,17 +217,37 @@ class SessionManager:
     def shutdown(self):
         self.running = False
 
+    def reap_expired(self):
+        """Prunes every session older than the TTL. Returns the pruned IDs.
+
+        A session whose prune fails stays registered, so the next pass
+        retries it. Failures log a warning, not an error: the release gate
+        rolls back on ERROR or a traceback, and a rollback cannot repair
+        the session disk.
+        """
+        now = time.time()
+        self.lock.acquire_read()
+        try:
+            to_delete = [
+                sid for sid, s in self.sessions.items()
+                if now - s["create_ts"] > self.ttl
+            ]
+        finally:
+            self.lock.release_read()
+
+        pruned = []
+        for sid in to_delete:
+            logging.info(f"Delete session {sid}.")
+            try:
+                self.prune_resource_files(sid)
+            except OSError as e:
+                logging.warning(f"Could not prune session {sid}: {e}")
+                continue
+            self.delete_session(sid)
+            pruned.append(sid)
+        return pruned
+
     def reaper(self):
         while self.running:
-            now = time.time()
-            self.lock.acquire_read()
-            try:
-                to_delete = [sid for sid, s in self.sessions.items() if now - s["create_ts"] > self.ttl]
-            finally:
-                self.lock.release_read()
-
-            for sid in to_delete:
-                logging.info(f"Delete session {sid}.")
-                self.delete_session(sid)
-                self.prune_resource_files(sid)
+            self.reap_expired()
             time.sleep(10)
