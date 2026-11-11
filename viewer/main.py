@@ -1,3 +1,4 @@
+import ast
 import os
 import re
 import hashlib
@@ -7,6 +8,7 @@ import yaml
 import logging
 import json
 import subprocess
+import time
 from functools import lru_cache
 import precompute_trends
 import dataset_quality
@@ -88,8 +90,6 @@ except ImportError:
 
 
 def df_to_config(df: pd.DataFrame) -> dict:
-    import ast
-
     original_dict = {}
 
     for _, row in df.iterrows():
@@ -300,7 +300,7 @@ def status_component():
             box_shadow="0 2px 4px rgba(0,0,0,0.05)",
         )
     ):
-        me.text("Product status", type="headline-5")
+        me.text("Product Status", type="headline-5")
         me.box(style=me.Style(height="16px"))
         me.text(f"Total Evaluation Jobs: {len(directories)}")
 
@@ -2079,7 +2079,6 @@ def render_app_content():
                 ),
             )
 
-            import time
             cache_file = os.path.join(results_dir, "trends_cache.csv")
             cache_status = "Not Ready"
             cache_color = "#ef4444"  # Red
@@ -2166,7 +2165,6 @@ def render_app_content():
                     results_dir_full = os.path.join(results_dir, state.selected_directory)
                     state.ai_summary = summarize_eval_scoring(results_dir_full)
                     # Parse score
-                    import re
                     match = re.search(r"\*\*General Score:\s*(\d+(\.\d+)?)[^*]*\*\*", state.ai_summary)
                     if match:
                         state.ai_score = float(match.group(1))
@@ -2276,7 +2274,6 @@ def render_app_content():
 
                                 # Fallback if score was not parsed correctly in cache
                                 if state.ai_score == 0.0 and state.ai_summary:
-                                    import re
                                     match = re.search(r"General Score:.*?(\d+(\.\d+)?)", state.ai_summary)
                                     if match:
                                         state.ai_score = float(match.group(1))
@@ -2296,7 +2293,6 @@ def render_app_content():
                             me.text("Formula: 0.4 * goal_completion + 0.2 * trajectory_matcher + 0.2 * behavioral_metrics + 0.2 * parameter_analysis", style=me.Style(font_size="14px", color="#6b7280", margin=me.Margin(bottom="16px")))
 
                         # Strip score from summary if present to avoid duplication
-                        import re
                         clean_summary = re.sub(r"^\s*\*\*General Score:\s*\d+(\.\d+)?[^*]*\*\*\s*", "", state.ai_summary)
                         me.markdown(clean_summary)
 
@@ -2375,6 +2371,7 @@ def render_app_content():
                         )
 
             else:
+                # Local: trends imports from main, so hoisting this cycles.
                 from trends import trends_component
                 state = me.state(State)
 
@@ -2440,7 +2437,3 @@ def render_app_content():
     except Exception as e:
         logging.exception("render_app_content failed")
         me.text(f"Fatal Error: {e}")
-
-
-if __name__ == "__main__":
-    me.run(app)
