@@ -131,10 +131,10 @@ Under `evalbench_service/k8s/`: `namespace.yaml`, `pvc.yaml`, `ksa.yaml`,
   directpath and `RequireDualStack` IPv6-first. A new port needs the container
   port, the Service port, and possibly `grpc_route.yaml` / `mesh.yaml`.
 - **Identity.** Workload Identity via the `ksa.yaml` annotation
-  (`evalbench@cloud-db-nl2sql.iam.gserviceaccount.com`), plus a read-only
-  secret mounted at `/etc/evalbench-sa-key`. A new GCP API call needs an IAM
-  role grant on that service account — call it out, since it can't be inferred
-  from the diff. Adding new credentials to env or into the image is a finding;
+  (`evalbench@cloud-db-nl2sql.iam.gserviceaccount.com`). A new GCP API call
+  needs an IAM role grant on that service account — call it out, since it
+  can't be inferred from the diff. Adding new credentials to env, into the
+  image, or as a key mount is a finding;
   `EVAL_DB_PASSWORD` is already a plaintext manifest value and should not be a
   precedent.
 - **New required env vars** must be added to `evalbench.yaml`, its `-test`
