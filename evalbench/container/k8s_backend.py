@@ -232,31 +232,54 @@ class KubernetesJobBackend(ContainerBackend):
         self._selector = (
             f"app={_APP_LABEL},{_DISPATCHER_LABEL}={self._dispatcher_id}")
 
-        self.image = self._resolve_image()
+        # One backend serves every run in its namespace, and runs may differ
+        # in image, service account and the rest. What is the same for all of
+        # them is resolved once; what is per run is checked once per value.
+        self._run_settings_lock = threading.Lock()
+        self._self_image: Optional[str] = None
+        self._verified_service_accounts: set[str] = set()
+        self._warned_mutable_images: set[str] = set()
+
         self._view = _ClusterView(
             self._batch, self._core, config.namespace, self._selector)
-        self._preflight()
+        self.prepare(config)
+        self.image = self.image_for(config)
         self._sweep_orphans()
 
     # -- startup ---------------------------------------------------------
 
-    def _resolve_image(self) -> str:
-        """The image case pods run, pinned to a digest when possible.
+    def prepare(self, config: ContainerizationConfig) -> None:
+        """Fails a run up front on setup errors that would fail every case."""
+        self.image_for(config)
+        self._ensure_service_account(config.service_account)
+
+    def image_for(self, config: ContainerizationConfig) -> str:
+        """The image a run's case pods use, pinned to a digest when possible.
 
         By default that is the eval server's own image. Pinning it matters
         twice over: every case in a run gets byte-identical code even if
         `:latest` is pushed mid-run, and the case runner always understands
         the spec format of the orchestrator that wrote the spec.
         """
-        if not self.config.uses_self_image:
-            if "@sha256:" not in self.config.image:
-                logging.warning(
-                    "k8s: case image %s is a mutable tag; cases in one run can "
-                    "land on different builds if it is pushed mid-run. Leave "
-                    "`containerization.image` unset to pin to the eval "
-                    "server's own digest.", self.config.image)
-            return self.config.image
+        if not config.uses_self_image:
+            if "@sha256:" not in config.image:
+                with self._run_settings_lock:
+                    first_time = config.image not in self._warned_mutable_images
+                    self._warned_mutable_images.add(config.image)
+                if first_time:
+                    logging.warning(
+                        "k8s: case image %s is a mutable tag; cases in one "
+                        "run can land on different builds if it is pushed "
+                        "mid-run. Leave `containerization.image` unset to pin "
+                        "to the eval server's own digest.", config.image)
+            return config.image
+        with self._run_settings_lock:
+            if self._self_image is None:
+                self._self_image = self._resolve_self_image()
+            return self._self_image
 
+    def _resolve_self_image(self) -> str:
+        """Reads the eval server's own image digest from its pod."""
         from kubernetes.client.rest import ApiException
 
         pod_name = self._server_pod_name or socket.gethostname()
@@ -291,25 +314,30 @@ class KubernetesJobBackend(ContainerBackend):
             chosen.image)
         return chosen.image
 
-    def _preflight(self) -> None:
-        """Fails the run up front on setup errors that would fail every case."""
+    def _ensure_service_account(self, name: str) -> None:
+        """Checks a case service account exists, once per name."""
         from kubernetes.client.rest import ApiException
 
+        with self._run_settings_lock:
+            if name in self._verified_service_accounts:
+                return
         try:
             self._core.read_namespaced_service_account(
-                name=self.config.service_account,
-                namespace=self.config.namespace)
+                name=name, namespace=self.config.namespace)
         except ApiException as e:
             if e.status == 404:
                 raise ValueError(
-                    f"Case service account {self.config.namespace}/"
-                    f"{self.config.service_account} does not exist; every case "
-                    f"Job would fail to create its pod. Create it with "
+                    f"Case service account {self.config.namespace}/{name} "
+                    f"does not exist; every case Job would fail to create its "
+                    f"pod. Create it with "
                     f"`evalbench_service/k8s/worker_pools.sh create`.") from e
-            # 403: older RBAC without serviceaccounts/get. Not fatal.
+            # 403: older RBAC without serviceaccounts/get. Not fatal, and not
+            # worth re-asking for every case.
             logging.warning(
                 "k8s: could not verify case service account %s (%s)",
-                self.config.service_account, e.reason)
+                name, e.reason)
+        with self._run_settings_lock:
+            self._verified_service_accounts.add(name)
 
     def _sweep_orphans(self) -> None:
         """Deletes unfinished case Jobs a previous incarnation left behind.
@@ -345,11 +373,20 @@ class KubernetesJobBackend(ContainerBackend):
         spec: EvalCaseSpec,
         pool: WorkerPool,
         deadline_seconds: int,
+        config: Optional[ContainerizationConfig] = None,
     ) -> CaseHandle:
+        cfg = config or self.config
+        if cfg.namespace != self.config.namespace:
+            # The sharing key guarantees this; a mismatch is a caller bug that
+            # would put the case where this backend's view never looks.
+            raise ValueError(
+                f"Case for namespace {cfg.namespace!r} submitted to the "
+                f"backend for {self.config.namespace!r}")
+        self.prepare(cfg)
         name = self._object_name(spec)
         self._create_configmap(name, spec)
         try:
-            job = self._create_job(name, spec, pool, deadline_seconds)
+            job = self._create_job(name, spec, pool, deadline_seconds, cfg)
         except Exception:
             # Never strand a ConfigMap whose Job failed to create: nothing else
             # will ever garbage-collect it.
@@ -359,7 +396,8 @@ class KubernetesJobBackend(ContainerBackend):
         logging.info(
             "k8s: submitted case %s as job %s on worker pool %s "
             "(deadline %ss)", spec.case_id, name, pool.name, deadline_seconds)
-        return CaseHandle(case_id=spec.case_id, pool=pool.name, name=name)
+        return CaseHandle(
+            case_id=spec.case_id, pool=pool.name, name=name, config=cfg)
 
     def _object_name(self, spec: EvalCaseSpec) -> str:
         with self._counter_lock:
@@ -436,8 +474,8 @@ class KubernetesJobBackend(ContainerBackend):
                 "k8s: could not attach configmap %s to its job (%s); it will "
                 "only be deleted by explicit cleanup", name, e.reason)
 
-    def _owner_references(self) -> Optional[list]:
-        if not (self.config.bind_to_server_pod
+    def _owner_references(self, cfg: ContainerizationConfig) -> Optional[list]:
+        if not (cfg.bind_to_server_pod
                 and self._server_pod_name and self._server_pod_uid):
             return None
         return [self._k8s.V1OwnerReference(
@@ -457,9 +495,10 @@ class KubernetesJobBackend(ContainerBackend):
         spec: EvalCaseSpec,
         pool: WorkerPool,
         deadline_seconds: int,
+        cfg: ContainerizationConfig,
     ):
-        cfg = self.config
         client = self._k8s
+        image = self.image_for(cfg)
 
         volume_mounts = [
             client.V1VolumeMount(name="case-spec", mount_path=CASE_DIR, read_only=True),
@@ -518,8 +557,8 @@ class KubernetesJobBackend(ContainerBackend):
 
         container = client.V1Container(
             name=_CONTAINER_NAME,
-            image=self.image,
-            image_pull_policy=cfg.pull_policy_for(self.image),
+            image=image,
+            image_pull_policy=cfg.pull_policy_for(image),
             command=list(cfg.command),
             args=[f"--case_dir={CASE_DIR}"],
             working_dir="/evalbench",
@@ -556,9 +595,9 @@ class KubernetesJobBackend(ContainerBackend):
         job = client.V1Job(
             metadata=client.V1ObjectMeta(
                 name=name,
-                namespace=cfg.namespace,
+                namespace=self.config.namespace,
                 labels=self._labels(spec, pool.name),
-                owner_references=self._owner_references(),
+                owner_references=self._owner_references(cfg),
             ),
             spec=client.V1JobSpec(
                 # One shot: a retried eval case would double-charge tokens and
@@ -573,7 +612,8 @@ class KubernetesJobBackend(ContainerBackend):
                 ),
             ),
         )
-        return self._batch.create_namespaced_job(namespace=cfg.namespace, body=job)
+        return self._batch.create_namespaced_job(
+            namespace=self.config.namespace, body=job)
 
     # -- collection ------------------------------------------------------
 
@@ -590,7 +630,8 @@ class KubernetesJobBackend(ContainerBackend):
             if timeout_seconds is not None
             else None
         )
-        interval = self.config.poll_interval_seconds
+        cfg = handle.config or self.config
+        interval = cfg.poll_interval_seconds
 
         try:
             while True:
@@ -602,7 +643,7 @@ class KubernetesJobBackend(ContainerBackend):
 
                 self._view.refresh_if_stale(interval)
                 state, pod, fail_reason = self._view.observe(
-                    handle, self.config.image_pull_grace_seconds)
+                    handle, cfg.image_pull_grace_seconds)
 
                 if state in ("succeeded", "failed"):
                     return self._collect(handle, pod, failed=(state == "failed"))
@@ -754,15 +795,16 @@ class KubernetesJobBackend(ContainerBackend):
     # -- teardown --------------------------------------------------------
 
     def cleanup(self, handle: CaseHandle, succeeded: bool) -> None:
+        cfg = handle.config or self.config
         if handle.abandoned:
             # Possibly still running: keeping it would only hold a node slot
             # and keep spending tokens until its deadline.
             logging.info("k8s: stopping abandoned case job %s", handle.name)
-        elif not succeeded and self.config.keep_failed_jobs:
+        elif not succeeded and cfg.keep_failed_jobs:
             logging.info(
                 "k8s: keeping failed job %s (and its ConfigMap) for inspection "
                 "for %ss; `kubectl -n %s describe job %s`",
-                handle.name, self.config.ttl_seconds_after_finished,
+                handle.name, cfg.ttl_seconds_after_finished,
                 self.config.namespace, handle.name)
             return
         self._delete_job(handle.name)

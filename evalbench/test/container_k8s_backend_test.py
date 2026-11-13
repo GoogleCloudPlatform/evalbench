@@ -6,6 +6,7 @@ would actually receive -- above all that each case lands on the worker pool it
 was routed to.
 """
 
+import dataclasses
 import os
 import shutil
 import tempfile
@@ -328,6 +329,108 @@ class TestSubmitLifecycle(_BackendTestBase):
         container = _job_body(backend).spec.template.spec.containers[0]
         self.assertEqual(container.image, "repo/img@sha256:abc")
         self.assertEqual(container.image_pull_policy, "IfNotPresent")
+
+
+class TestPerRunSettings(_BackendTestBase):
+    """One shared backend serves runs whose settings differ.
+
+    The backend is shared per (backend, namespace). Everything else -- image,
+    identity, resources, env, secrets, retention -- belongs to the run that
+    submitted the case, and must not leak from whichever run created the
+    backend.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.run_b = dataclasses.replace(
+            self.config,
+            image="team-b@sha256:bbb",
+            service_account="team-b-ksa",
+            resources={"requests": {"cpu": "4"}, "limits": {"cpu": "8"}},
+            env={"TEAM": "b"},
+            secrets=[SecretMount(name="b-key", mount_path="/etc/b")],
+            keep_failed_jobs=False,
+        )
+
+    def _pod_spec(self, call_index):
+        call = self.backend._batch.create_namespaced_job.call_args_list[call_index]
+        return call.kwargs["body"].spec.template.spec
+
+    def test_each_case_is_built_from_its_own_runs_settings(self):
+        self.backend.submit(self.spec, WorkerPool(name="pool-a"), 900)
+        self.backend.submit(
+            self.spec, WorkerPool(name="pool-a"), 900, config=self.run_b)
+
+        run_a, run_b = self._pod_spec(0), self._pod_spec(1)
+        self.assertEqual(run_a.containers[0].image, "img:tag")
+        self.assertEqual(run_b.containers[0].image, "team-b@sha256:bbb")
+        self.assertEqual(run_a.service_account_name, "evalbench-ksa")
+        self.assertEqual(run_b.service_account_name, "team-b-ksa")
+        self.assertEqual(run_a.containers[0].resources.requests["cpu"], "2")
+        self.assertEqual(run_b.containers[0].resources.requests["cpu"], "4")
+        env_b = {e.name: e.value for e in run_b.containers[0].env}
+        self.assertEqual(env_b["TEAM"], "b")
+        self.assertNotIn(
+            "TEAM", {e.name for e in run_a.containers[0].env})
+        self.assertIn("/etc/b", [m.mount_path for m in run_b.containers[0].volume_mounts])
+        self.assertNotIn("/etc/b", [m.mount_path for m in run_a.containers[0].volume_mounts])
+
+    def test_the_handle_carries_the_runs_settings_into_cleanup(self):
+        handle_a = self.backend.submit(self.spec, WorkerPool(name="pool-a"), 900)
+        handle_b = self.backend.submit(
+            self.spec, WorkerPool(name="pool-a"), 900, config=self.run_b)
+        self.assertIs(handle_b.config, self.run_b)
+
+        # Run A keeps failed jobs (the default); run B does not.
+        self.backend.cleanup(handle_a, succeeded=False)
+        self.backend._batch.delete_namespaced_job.assert_not_called()
+        self.backend.cleanup(handle_b, succeeded=False)
+        self.backend._batch.delete_namespaced_job.assert_called_once()
+
+    def test_each_runs_service_account_is_checked_once(self):
+        core = self.backend._core
+        core.read_namespaced_service_account.reset_mock()
+        for _ in range(3):
+            self.backend.submit(
+                self.spec, WorkerPool(name="pool-a"), 900, config=self.run_b)
+        checked = [c.kwargs["name"] for c in core.read_namespaced_service_account.call_args_list]
+        self.assertEqual(checked, ["team-b-ksa"])
+
+    def test_a_run_with_a_missing_service_account_submits_nothing(self):
+        from kubernetes.client.rest import ApiException
+
+        self.backend._core.read_namespaced_service_account.side_effect = (
+            ApiException(status=404))
+        with self.assertRaisesRegex(ValueError, "team-b-ksa"):
+            self.backend.submit(
+                self.spec, WorkerPool(name="pool-a"), 900, config=self.run_b)
+        self.backend._core.create_namespaced_config_map.assert_not_called()
+        self.backend._batch.create_namespaced_job.assert_not_called()
+
+    def test_the_servers_own_image_is_resolved_once_on_first_use(self):
+        # The backend was created by a run with an explicit image; a later
+        # run that wants the server's own image still gets it, by digest.
+        pod = MagicMock()
+        status = MagicMock()
+        status.name = "evalbench-eval"
+        status.image_id = "repo/eval_server@sha256:feed"
+        pod.status.container_statuses = [status]
+        self.backend._core.read_namespaced_pod.return_value = pod
+        self_image_run = dataclasses.replace(self.config, image="")
+
+        for _ in range(2):
+            self.backend.submit(
+                self.spec, WorkerPool(name="pool-a"), 900, config=self_image_run)
+
+        self.assertEqual(
+            self._pod_spec(1).containers[0].image, "repo/eval_server@sha256:feed")
+        self.backend._core.read_namespaced_pod.assert_called_once()
+
+    def test_a_case_for_another_namespace_is_refused(self):
+        other = dataclasses.replace(self.config, namespace="elsewhere")
+        with self.assertRaisesRegex(ValueError, "elsewhere"):
+            self.backend.submit(
+                self.spec, WorkerPool(name="pool-a"), 900, config=other)
 
 
 class TestStartup(_BackendTestBase):

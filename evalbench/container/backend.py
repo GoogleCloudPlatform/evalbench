@@ -63,13 +63,27 @@ class CaseHandle:
     # fail-fast, cancellation). `cleanup` must then stop it regardless of
     # `keep_failed_jobs`, which only makes sense for a finished case.
     abandoned: bool = False
+    # The settings of the run that submitted this case. A shared backend
+    # serves runs whose settings differ, so `wait` and `cleanup` must read
+    # timing and retention from here rather than from the backend.
+    config: Optional[ContainerizationConfig] = field(default=None, repr=False)
 
 
 class ContainerBackend(ABC):
     """Runs eval cases as containers on some compute substrate."""
 
     def __init__(self, config: ContainerizationConfig) -> None:
+        # Settings the backend was created with. Only what the sharing key
+        # covers (`backend`, `namespace`) is guaranteed to match every run it
+        # serves; everything else must come from the run's own config.
         self.config = config
+
+    def prepare(self, config: ContainerizationConfig) -> None:
+        """Checks a run's settings before any of its cases are submitted.
+
+        Raises on setup errors that would fail every case, so a run can fail
+        up front with one clear error. Safe to call repeatedly.
+        """
 
     @abstractmethod
     def submit(
@@ -77,8 +91,15 @@ class ContainerBackend(ABC):
         spec: EvalCaseSpec,
         pool: WorkerPool,
         deadline_seconds: int,
+        config: Optional[ContainerizationConfig] = None,
     ) -> CaseHandle:
-        """Starts the case. Returns as soon as it is accepted, not finished."""
+        """Starts the case. Returns as soon as it is accepted, not finished.
+
+        `config` is the submitting run's settings (image, identity,
+        resources, ...). A shared backend serves runs whose settings differ,
+        so every case must be built from its own run's config. Defaults to
+        the backend's own config.
+        """
 
     @abstractmethod
     def wait(
@@ -128,9 +149,13 @@ def acquire_shared_backend(config: ContainerizationConfig) -> ContainerBackend:
     Every concurrent `Eval` RPC builds its own evaluator, and a Kubernetes
     backend is not a cheap object: it loads cluster credentials and owns an
     HTTP connection pool to the API server. Hundreds of sessions each holding
-    their own would multiply both. The backends are stateless with respect to
-    an individual case -- everything case-specific travels in the `CaseHandle`
-    -- so one per (backend, namespace) is safe to share.
+    their own would multiply both. One per (backend, namespace) is safe to
+    share because nothing run-specific lives on it: each run passes its own
+    config to `submit`, and the `CaseHandle` carries it from there.
+
+    The key deliberately does not cover the other settings. A second backend
+    in the same namespace would run its own startup orphan sweep and delete
+    the first one's in-flight Jobs.
 
     Every call must be paired with `release_shared_backend`.
     """
@@ -183,6 +208,9 @@ def extract_result_payload(logs: str) -> Optional[dict]:
     """
     import json
 
+    # The case runner escapes `=` inside the payload (see
+    # `case_runner._emit`), so a marker can only occur where the runner wrote
+    # one, never inside a prompt or agent output it echoes.
     begin = logs.rfind(RESULT_BEGIN)
     if begin == -1:
         return None
@@ -191,6 +219,7 @@ def extract_result_payload(logs: str) -> Optional[dict]:
     if end == -1:
         return None
     try:
-        return json.loads(logs[start:end].strip())
+        payload = json.loads(logs[start:end].strip())
     except json.JSONDecodeError:
         return None
+    return payload if isinstance(payload, dict) else None
