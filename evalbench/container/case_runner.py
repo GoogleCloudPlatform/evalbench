@@ -108,8 +108,24 @@ def run_case(case_dir: str) -> dict:
         id=str(spec.case_id), payload=json.dumps(spec.scenario))
 
     run_time = _parse_run_time(spec.run_time_iso)
-    eval_outputs, scoring_results = evaluator.evaluate(
-        [item], spec.job_id, run_time)
+    errors = _ErrorCapture()
+    logging.getLogger().addHandler(errors)
+    try:
+        eval_outputs, scoring_results = evaluator.evaluate(
+            [item], spec.job_id, run_time)
+    finally:
+        logging.getLogger().removeHandler(errors)
+
+    # The evaluator catches an exception raised while running a scenario and
+    # only logs it, returning no row. This runner always runs exactly one
+    # case, so no row means it failed -- report that, with the error it
+    # logged, instead of exiting 0 with nothing (which the orchestrator would
+    # count as a success and the case would silently vanish from the run).
+    error = None
+    if not eval_outputs:
+        cause = errors.messages[-1] if errors.messages else (
+            "no error was logged; see the case pod's logs")
+        error = f"Case {spec.case_id} produced no result row: {cause}"
 
     return {
         "case_id": spec.case_id,
@@ -118,8 +134,19 @@ def run_case(case_dir: str) -> dict:
         # Resolved here, where the generator actually runs: the orchestrator
         # never instantiates one, and reporting records it per run.
         "agent_version": evaluator.agent_version,
-        "error": None,
+        "error": error,
     }
+
+
+class _ErrorCapture(logging.Handler):
+    """Keeps ERROR-level messages logged while the case runs."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.ERROR)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
 
 
 def _parse_run_time(run_time_iso: str) -> datetime.datetime:
