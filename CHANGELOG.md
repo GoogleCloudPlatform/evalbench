@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.22.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.21.0...v1.22.0) (2026-11-13)
+
+
+### Features
+
+* **container:** case runner, backend interface and cancellation for per-case containers ([5b76345](https://github.com/GoogleCloudPlatform/evalbench/commit/5b763451f2ede6bf88eb1ec72f7081d920becbc1))
+* **container:** case spec, config schema and pool router for per-case containers ([9229969](https://github.com/GoogleCloudPlatform/evalbench/commit/92299699d55a38b54cd5d6a87c59ef3f9ff949f4))
+* **container:** case spec, config schema and pool router for per-case containers ([67bb209](https://github.com/GoogleCloudPlatform/evalbench/commit/67bb2097782f670af861003260b3394314d97021))
+* **dataset_quality:** tell judges about success_criteria ([#685](https://github.com/GoogleCloudPlatform/evalbench/issues/685)) ([1523a53](https://github.com/GoogleCloudPlatform/evalbench/commit/1523a532ff8ed583339d08cae9880f1d7634620e))
+
+
+### Bug Fixes
+
+* **auth:** use Workload Identity instead of the GKE SA key ([#703](https://github.com/GoogleCloudPlatform/evalbench/issues/703)) ([1ff849f](https://github.com/GoogleCloudPlatform/evalbench/commit/1ff849f32f5ce0709ab95727ede2d8470865146a))
+* **dataset_quality:** don't count withheld data as Incomplete Result ([926c9cf](https://github.com/GoogleCloudPlatform/evalbench/commit/926c9cf983d8aca64159c00e1ba8bafddefbdb61))
+* **dataset_quality:** don't count withheld data as Incomplete Result ([1c40016](https://github.com/GoogleCloudPlatform/evalbench/commit/1c4001611ae3c31c07b370f695f0d080f178e7bf))
+* **gemini_cli:** resume follow-up turns by session ID ([#699](https://github.com/GoogleCloudPlatform/evalbench/issues/699)) ([f7f909d](https://github.com/GoogleCloudPlatform/evalbench/commit/f7f909d25230ede68ef49aee602f288d7e70f766))
+* **gke:** add health probes and make the deploy single-pod safe ([0ce5185](https://github.com/GoogleCloudPlatform/evalbench/commit/0ce5185ca8f59090863547d55577511e4841a828))
+* **scorers:** raise on malformed goal_completion judge replies ([#701](https://github.com/GoogleCloudPlatform/evalbench/issues/701)) ([b6023ba](https://github.com/GoogleCloudPlatform/evalbench/commit/b6023ba84f72ff717ec9f7efd2a19df373aaef76))
+* **sessionmgr:** remove a symlinked session entry instead of walking it ([#708](https://github.com/GoogleCloudPlatform/evalbench/issues/708)) ([21f7a5c](https://github.com/GoogleCloudPlatform/evalbench/commit/21f7a5c46e31337223ebeb1df9adb88f5b2b6bee))
+
 ## [1.21.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.20.0...v1.21.0) (2026-10-27)
 
 
