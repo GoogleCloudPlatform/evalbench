@@ -220,6 +220,12 @@ def analyze_one_metric(
                 "skills_best_practices",
             ]
             if metric_name in non_binary_metrics:
+                # Error rows score 0. Leave them out of the average.
+                if "generated_error" in df_metric.columns:
+                    df_metric = df_metric[
+                        df_metric["generated_error"].isna()
+                        | (df_metric["generated_error"] == "")
+                    ]
                 avg_val = (
                     df_metric["score"].mean()
                     if (not df_metric.empty and "score" in df_metric.columns)

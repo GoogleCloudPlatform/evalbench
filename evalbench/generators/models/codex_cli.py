@@ -20,6 +20,17 @@ _SECRET_MANAGER_PATH_RE = re.compile(
 )
 _SECRET_MANAGER_URL_PREFIX = "secret_manager://"
 
+# Quota and server errors in a Codex `turn.failed` message. "at capacity" is
+# CodexErr::ServerOverloaded and "high demand" is CodexErr::InternalServerError.
+# A status code must follow "status". "Incomplete response returned" is a
+# stop by the model, such as a content filter, so it is excluded.
+_CODEX_QUOTA_OR_SERVER_RE = re.compile(
+    r"\bstatus:?\s+(?:429|500|502|503|504)\b|quota|usage limit|rate limit"
+    r"|too many requests"
+    r"|stream disconnected before completion(?!: Incomplete response returned)"
+    r"|at capacity|high demand",
+    re.IGNORECASE)
+
 
 def _strip_sm_prefix(value: str) -> str:
     if value.startswith(_SECRET_MANAGER_URL_PREFIX):
@@ -1014,6 +1025,13 @@ class CodexCliGenerator(AgentCliGenerator):
                 usage = event.get("usage", {}) or usage
                 continue
 
+            if event_type == "turn.failed":
+                # Only the final error counts. `error` events are retries.
+                error = event.get("error")
+                final_obj["turn_error"] = str(
+                    error.get("message", "") if isinstance(error, dict) else error or "")
+                continue
+
             if event_type == "error":
                 # surface the error text into the response field
                 msg = event.get("message", "")
@@ -1241,6 +1259,16 @@ class CodexCliGenerator(AgentCliGenerator):
     @property
     def version(self) -> str:
         return self.codex_cli_version
+
+    def model_api_error(self, result: subprocess.CompletedProcess) -> Optional[str]:
+        """Returns the `turn.failed` message if it is a quota or server error."""
+        try:
+            turn_error = json.loads(result.stdout or "{}").get("turn_error") or ""
+        except (json.JSONDecodeError, AttributeError):
+            return None
+        if _CODEX_QUOTA_OR_SERVER_RE.search(turn_error):
+            return turn_error
+        return None
 
     def parse_response(self, stdout: str) -> dict:
         if not stdout:
