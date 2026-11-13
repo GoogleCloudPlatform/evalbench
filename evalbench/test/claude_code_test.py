@@ -363,3 +363,138 @@ def test_local_run_copies_gcloud_credentials_into_the_sandbox(
     assert os.path.exists(os.path.join(fake_gcloud, "access_tokens.db"))
     assert generator.env["GOOGLE_APPLICATION_CREDENTIALS"] == os.path.join(
         fake_gcloud, "application_default_credentials.json")
+
+
+def test_explicit_adc_does_not_set_cloudsdk_config(tmp_path, monkeypatch):
+    """When an explicit GOOGLE_APPLICATION_CREDENTIALS file (such as
+    /tmp_sessions/impersonated_adc.json) is copied into fake_home, CLOUDSDK_CONFIG
+    must not point at fake_gcloud_dir so gcloud does not load impersonated_adc.json
+    as its default ADC."""
+    impersonated = tmp_path / "impersonated_adc.json"
+    impersonated.write_text('{"type": "impersonated_service_account"}')
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "generators.models.claude_code.SESSIONS_ROOT", str(tmp_path / "sessions")
+    )
+    monkeypatch.setattr(sys, "argv", ["/evalbench/evalbench/eval_server.py"])
+
+    generator = ClaudeCodeGenerator(
+        {
+            "model": "claude-opus-4-6",
+            "use_vertex": True,
+            "session_id": "s1",
+            "env": {
+                "GOOGLE_APPLICATION_CREDENTIALS": str(impersonated),
+                "CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT": (
+                    "evalbench-runner@onemcp-evalviewer-dev.iam.gserviceaccount.com"
+                ),
+            },
+        }
+    )
+
+    fake_adc = os.path.join(
+        generator.fake_home,
+        ".config",
+        "gcloud",
+        "application_default_credentials.json",
+    )
+    assert generator.env["GOOGLE_APPLICATION_CREDENTIALS"] == fake_adc
+    assert os.path.exists(fake_adc)
+    assert "CLOUDSDK_CONFIG" not in generator.env
+
+
+def test_impersonation_with_gke_key_uses_sa_key_for_gcloud(monkeypatch):
+    generator = object.__new__(ClaudeCodeGenerator)
+    generator.env = {
+        "GOOGLE_APPLICATION_CREDENTIALS": "/tmp_sessions/impersonated_adc.json",
+        "CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT": (
+            "evalbench-runner@onemcp-evalviewer-dev.iam.gserviceaccount.com"
+        ),
+    }
+
+    monkeypatch.setattr(
+        "generators.models.claude_code.os.path.exists",
+        lambda p: p in (
+            "/tmp_sessions/impersonated_adc.json",
+            "/etc/evalbench-sa-key/key.json",
+        ),
+    )
+
+    with patch("generators.models.claude_code.subprocess.run") as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.stdout = "impersonated_token_abc\n"
+        mock_run.return_value = mock_proc
+
+        mcp_config = {
+            "httpUrl": "https://colaboratory.googleapis.com/mcp",
+            "authProviderType": "google_credentials",
+            "oauth": {
+                "scopes": ["https://www.googleapis.com/auth/colaboratory"]
+            },
+        }
+        translated = generator._translate_mcp_config("colab-mcp", mcp_config)
+
+        assert (
+            'GOOGLE_APPLICATION_CREDENTIALS="/etc/evalbench-sa-key/key.json" '
+            'gcloud auth application-default print-access-token '
+            '--scopes="https://www.googleapis.com/auth/colaboratory"'
+            in translated["headersHelper"]
+        )
+        called_env = mock_run.call_args_list[0].kwargs["env"]
+        assert (
+            called_env["CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT"]
+            == "evalbench-runner@onemcp-evalviewer-dev.iam.gserviceaccount.com"
+        )
+        assert (
+            called_env["GOOGLE_APPLICATION_CREDENTIALS"]
+            == "/etc/evalbench-sa-key/key.json"
+        )
+
+
+def test_impersonation_without_gke_key_unsets_adc_for_gcloud(monkeypatch):
+    """Under GKE Workload Identity (no /etc/evalbench-sa-key/key.json), gcloud
+    must not receive GOOGLE_APPLICATION_CREDENTIALS=/tmp_sessions/impersonated_adc.json
+    when impersonating via CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT."""
+    generator = object.__new__(ClaudeCodeGenerator)
+    generator.env = {
+        "GOOGLE_APPLICATION_CREDENTIALS": "/tmp_sessions/impersonated_adc.json",
+        "CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT": (
+            "evalbench-runner@onemcp-evalviewer-dev.iam.gserviceaccount.com"
+        ),
+    }
+
+    monkeypatch.setenv(
+        "GOOGLE_APPLICATION_CREDENTIALS", "/tmp_sessions/impersonated_adc.json"
+    )
+    monkeypatch.setattr(
+        "generators.models.claude_code.os.path.exists",
+        lambda p: p == "/tmp_sessions/impersonated_adc.json",
+    )
+
+    with patch("generators.models.claude_code.subprocess.run") as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.stdout = "wi_impersonated_token\n"
+        mock_run.return_value = mock_proc
+
+        mcp_config = {
+            "httpUrl": "https://colaboratory.googleapis.com/mcp",
+            "authProviderType": "google_credentials",
+            "oauth": {
+                "scopes": ["https://www.googleapis.com/auth/colaboratory"]
+            },
+        }
+        translated = generator._translate_mcp_config("colab-mcp", mcp_config)
+
+        assert (
+            "env -u GOOGLE_APPLICATION_CREDENTIALS "
+            "gcloud auth application-default print-access-token "
+            '--scopes="https://www.googleapis.com/auth/colaboratory"'
+            in translated["headersHelper"]
+        )
+        called_env = mock_run.call_args_list[0].kwargs["env"]
+        assert (
+            called_env["CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT"]
+            == "evalbench-runner@onemcp-evalviewer-dev.iam.gserviceaccount.com"
+        )
+        assert "GOOGLE_APPLICATION_CREDENTIALS" not in called_env

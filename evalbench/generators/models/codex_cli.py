@@ -663,8 +663,22 @@ class CodexCliGenerator(AgentCliGenerator):
         if one was configured.
         """
         token_env = os.environ.copy()
+        impersonate_sa = self.env.get(
+            "CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT"
+        )
+        if impersonate_sa:
+            token_env["CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT"] = (
+                impersonate_sa
+            )
         adc = self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
-        if adc and os.path.exists(adc):
+        if impersonate_sa:
+            if os.path.exists("/etc/evalbench-sa-key/key.json"):
+                token_env["GOOGLE_APPLICATION_CREDENTIALS"] = (
+                    "/etc/evalbench-sa-key/key.json"
+                )
+            else:
+                token_env.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
+        elif adc and os.path.exists(adc):
             token_env["GOOGLE_APPLICATION_CREDENTIALS"] = adc
 
         if scopes is None:
