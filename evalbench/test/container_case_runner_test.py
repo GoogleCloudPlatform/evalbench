@@ -158,6 +158,24 @@ class TestCaseRunnerSubprocess(unittest.TestCase):
         self.assertIn("FileNotFoundError", payload["error"])
         self.assertEqual(payload["agent_results"], [])
 
+    def test_a_case_that_produces_no_row_is_reported_as_failed(self):
+        # The evaluator swallows an exception raised while running the
+        # scenario and returns no row. Exiting 0 with no error made the case
+        # count as a success and vanish from the run.
+        config = dict(self.config, scorers={"goal_completion": {}})
+        case_dir = self._case_dir(
+            {"id": "cuj_01", "starting_prompt": "hello", "max_turns": 1},
+            config=config)
+        proc = self._run(case_dir)
+
+        payload = extract_result_payload(proc.stdout)
+        self.assertIsNotNone(payload, proc.stderr)
+        self.assertEqual(payload["agent_results"], [])
+        self.assertIn("produced no result row", payload["error"])
+        # The cause the evaluator logged travels with it.
+        self.assertIn("model_config is required", payload["error"])
+        self.assertEqual(proc.returncode, 1)
+
     def test_creates_the_scenario_work_dir(self):
         work_dir = os.path.join(self.tmp, "work", "cuj")
         case_dir = self._case_dir(
