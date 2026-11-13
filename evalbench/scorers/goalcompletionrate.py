@@ -168,8 +168,8 @@ class GoalCompletionRate(comparator.Comparator):
         conversation_plan = scenario.get("conversation_plan", "")
         success_criteria = _criteria_list(scenario.get("success_criteria"))
         if not success_criteria and not str(conversation_plan or "").strip():
-            return 0.0, ("The scenario has no conversation_plan or "
-                         "success_criteria to grade.")
+            raise ValueError("The scenario has no conversation_plan or "
+                             "success_criteria to grade.")
 
         prompt = build_goal_completion_prompt(
             conversation_plan=conversation_plan,
@@ -180,8 +180,9 @@ class GoalCompletionRate(comparator.Comparator):
                                 and _records_tool_calls(history_list)),
         )
 
-        # A judge error raises, so score.py records it in comparison_error and
-        # the viewer shows it. It must not look like a judged score of 0.
+        # A judge error or a malformed reply raises, so score.py records it in
+        # comparison_error and the viewer shows it. It must not look like a
+        # judged score of 0.
         response_text = self._generate(
             prompt,
             GOAL_COMPLETION_CRITERIA_SCHEMA if success_criteria
@@ -191,19 +192,19 @@ class GoalCompletionRate(comparator.Comparator):
             raise RuntimeError(
                 "goal_completion judge returned an empty response (see logs)")
         if not isinstance(response_text, str):
-            return 0.0, "Failed to parse LLM evaluation response."
+            raise RuntimeError("Failed to parse LLM evaluation response.")
 
         try:
             data = extract_json(response_text)
         except ValueError as e:
-            logging.error(f'GoalCompletionRate response unparsable: {e}')
-            return 0.0, f"Invalid JSON in response: {response_text[:200]}"
+            raise RuntimeError(
+                f"Invalid JSON in response: {response_text[:200]}") from e
 
         if success_criteria:
             verdicts, missing = _match_verdicts(
                 data.get("success_criteria"), len(success_criteria))
             if missing:
-                return 0.0, (
+                raise RuntimeError(
                     f"No verdict for success criteria {missing}: "
                     f"{response_text[:200]}")
             goals = [
@@ -219,7 +220,8 @@ class GoalCompletionRate(comparator.Comparator):
                 if isinstance(sg, dict)
             ]
             if not goals:
-                return 0.0, f"No sub-goals returned: {response_text[:200]}"
+                raise RuntimeError(
+                    f"No sub-goals returned: {response_text[:200]}")
             label = "sub-goals"
 
         met_count = sum(1 for _, met, _ in goals if met)
