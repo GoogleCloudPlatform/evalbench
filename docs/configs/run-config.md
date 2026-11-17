@@ -16,10 +16,51 @@ This section defines the primary resources used during evaluation, including the
 | `databases`         | Optional          | Specifies the databases (e.g., `db_blog`, `california_schools`, etc.). This filters the dataset to the provided list of databases and ignores all other evals. If not provided, all databases found in the dataset_config json file will be tried. |
 | `query_types`         | Optional          | Specifies the query_types (`dql`, `dml`, `dd`). This filters the dataset to the list of evals that are of the query_types provided. If not provided, all eval types (dql, dml and ddl) found in the dataset_config json file will be tried. |
 | `dataset_format`      | Conditional (if needed) | Defines the dataset format, with `evalbench-standard-format` as the default. For BIRD datasets, it must be set to `bird-standard-format`. For scenario-based agent runs use `agent-format` (orchestrator `agent`) or `gemini-cli-format` (orchestrator `geminicli`); other supported values are `bird-interact-format`, `cortado-format`, and `dea-format`.|
-| `num_trials`      | Optional     | Number of trials to run for each prompt. |
+| `num_trials`      | Optional     | Number of trials to run for each prompt (NL2SQL) or scenario (agent runs). Defaults to 1. See the [`num_trials` examples](#num_trials-examples). |
 | `scenarios`      | Optional     | A list of specific scenario IDs to run (only applies to scenario-based agentic datasets like `gemini-cli-format` or `cortado-format`). Defaults to empty (runs all scenarios). |
 | `scenario_pattern` | Optional     | A glob pattern of scenario IDs to run (only applies to scenario-based agentic datasets). Defaults to None (runs all scenarios). |
 | `eval_case_timeout` | Optional     | Maximum execution duration allowed per individual scenario (e.g. `'300s'`, `'5m'`, `'1h30m'`). Applicable to scenario-based agent evaluations. |
+
+### `num_trials` examples
+
+**NL2SQL run.** Each `dql` prompt runs 2 times. Prompts of other query types run once. See [datasets/bat/example_run_config.yaml](/datasets/bat/example_run_config.yaml).
+
+```yaml
+dataset_config: datasets/bat/prompts.json
+num_trials: 2
+```
+
+**Agent run.** The full suite runs 2 times in one job, one trial after another. The value must be an integer of 1 or more.
+
+```yaml
+dataset_config: datasets/claude-code-tools/claude-code.evalset.json
+dataset_format: agent-format
+orchestrator: agent
+num_trials: 2
+```
+
+A scenario can set its own `num_trials` in the evalset to run in fewer trials. It cannot run in more trials than the run config allows. In this example, the scenario creates a Cloud SQL instance, so it runs only in the first trial. The other fields of the scenario are left out.
+
+```json
+{
+  "id": "create-instance",
+  "starting_prompt": "Create a Cloud SQL instance.",
+  "num_trials": 1
+}
+```
+
+With `num_trials: 2` in the run config, this scenario and a scenario `list-instances` give these result rows. The `id` column is named `eval_id` in `evals.csv`.
+
+| `id` | `prompt_id` | `trial_index` |
+| ---- | ----------- | ------------- |
+| `list-instances_trial_0` | `list-instances` | 0 |
+| `list-instances_trial_1` | `list-instances` | 1 |
+| `create-instance_trial_0` | `create-instance` | 0 |
+
+With `num_trials: 1`, the `id` is unchanged and the rows have no `prompt_id` or `trial_index`.
+
+EvalBench does not reset cloud resources between trials. Set `num_trials: 1` on each scenario that creates or changes a cloud resource.
+
 ---
 
 ## 2. Prompt and Generation Modules
