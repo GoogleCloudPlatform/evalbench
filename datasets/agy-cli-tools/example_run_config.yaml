@@ -9,6 +9,9 @@ orchestrator: agent
 model_config: datasets/model_configs/agy_cli_model.yaml
 simulated_user_model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
 
+# Number of times to run the full suite. Default is 1.
+# num_trials: 2
+
 ############################################################
 ### Scorer Related Configs
 ############################################################

@@ -57,11 +57,17 @@ class AgentScoreWork(Work):
             "job_id": self.eval_output.get("job_id"),
         }
 
+        first_row = len(self.scoring_results)
         scorer.compare(
             eval_output_item=scoring_item,
             experiment_config=self.config,
             scoring_results=self.scoring_results,
             global_models=self.global_models
         )
+        # Label the new score rows with their trial.
+        if "trial_index" in self.eval_output:
+            for row in self.scoring_results[first_row:]:
+                row["prompt_id"] = self.eval_output["prompt_id"]
+                row["trial_index"] = self.eval_output["trial_index"]
 
         return self.eval_output
