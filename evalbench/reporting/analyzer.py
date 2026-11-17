@@ -323,12 +323,13 @@ def analyze_result(
     # An agent trial with an agent error or a scorer error is unscored. On
     # the other paths, such an error is a failure, for example invalid SQL.
     skip_unscored = orch in ("agent", "geminicli")
-    # Each agent result row is one trial of a scenario, and the summary covers
-    # all trials. So the rows are not grouped by `prompt_id`. `num_prompts`
-    # already counts the trial rows, so it is not multiplied by `num_trials`.
+
+    # The summary of an agent run counts each result row as one trial.
     summary_df = df
     if skip_unscored:
+        # Without `prompt_id`, the trials of a scenario are not merged.
         summary_df = df.drop(columns=["prompt_id"], errors="ignore")
+        # `num_prompts` already counts every trial row.
         num_trials = 1
 
     scorers = experiment_config["scorers"]
