@@ -6,6 +6,7 @@ import tempfile
 import json
 from dataset.evalgeminicliinput import EvalGeminiCliRequest
 from evaluator.agentevaluator import AgentEvaluator
+from reporting.runstats import check_pass_thresholds
 
 
 class AgentOrchestrator(Orchestrator):
@@ -17,6 +18,8 @@ class AgentOrchestrator(Orchestrator):
         report_progress=False,
     ):
         self.config = config
+        # An invalid value must stop the job before the trials run.
+        check_pass_thresholds(config.get("scorers"))
         self.db_configs = db_configs
         self.setup_config = setup_config
         self.job_id = f"{uuid.uuid4()}"

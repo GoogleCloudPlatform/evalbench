@@ -135,6 +135,8 @@ All of these require a `model_config` pointing at the LLM that performs the eval
 
 `goal_completion` also reads the optional `success_criteria` field of a scenario. If the field is set, the judge grades each criterion. If the field is not set, the judge splits `conversation_plan` into sub-goals. The simulated user does not see this field. See [Example: with and without `success_criteria`](/docs/configs/agentic-dataset-config.md#example-with-and-without-success_criteria).
 
+With `num_trials` above 1, a trial passes if its `goal_completion` score is at or above `pass_threshold` (default 100). See [Stats of an agent run with more than one trial](/docs/configs/run-config.md#stats-of-an-agent-run-with-more-than-one-trial).
+
 ---
 
 ## Skills scorers

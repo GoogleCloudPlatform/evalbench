@@ -176,7 +176,7 @@ reporting:
 
 | Reporter | What you get |
 |---|---|
-| `csv` | A `results/<job_id>/` folder per run containing `configs.csv`, `evals.csv` (every scenario or eval item, including the full conversation and tool calls), `scores.csv` (one row per scorer per item, with the judge's explanation), and `summary.csv` (aggregate metrics). |
+| `csv` | A `results/<job_id>/` folder per run containing `configs.csv`, `evals.csv` (every scenario or eval item, including the full conversation and tool calls), `scores.csv` (one row per scorer per item, with the judge's explanation), and `summary.csv` (aggregate metrics). An agent run with `num_trials` above 1 also writes `run_stats.csv` (pass rate and flakiness of each scenario). |
 | `bigquery` | The same tables in BigQuery for long-term storage, cross-run analysis, and A/B experiment comparison. |
 | `gcs_artifacts` | Each scenario's agent sandbox, zipped and uploaded to a GCS bucket so you can inspect exactly what the agent wrote and configured. |
 
