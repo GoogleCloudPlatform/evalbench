@@ -55,7 +55,8 @@ The file is a single JSON object with a `scenarios` array:
   - Cloud resources are not reset. Set `num_trials: 1` on a scenario that creates named cloud resources.
   - A `work_dir` that is reset must be a directory of its own. The run fails at the start if the `work_dir` is, or contains, the evalset file's directory, the sandbox home, your home directory, the system temp directory, or the directory EvalBench runs from.
   - With `gcs_artifacts` reporting, the upload holds the files of the last trial only.
-  - If a reset fails, the remaining trials do not run. EvalBench reports the trials that finished.
+  - If a reset fails, the remaining trials do not run. EvalBench reports the trials that finished, and the job ends with an error. The log gives the path of the snapshot, which still has the files from before the first trial.
+  - Do not run two jobs of one harness from the same directory at the same time. The reset of one job deletes the files of the other.
 
 ## Tool name format
 

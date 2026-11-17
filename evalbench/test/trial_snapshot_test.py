@@ -1,6 +1,8 @@
 import os
 import shutil
 import stat
+import subprocess
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -161,12 +163,19 @@ def test_snapshot_is_private_and_next_to_the_home(home, tmp_path):
     assert _snapshot_dirs(tmp_path) == []
 
 
+def _ended_process_id():
+    """Returns the ID of a process that ended."""
+    process = subprocess.Popen([sys.executable, "-c", "pass"])
+    process.wait()
+    return process.pid
+
+
 def test_save_deletes_the_snapshot_of_a_killed_job(home, tmp_path):
-    leftover = tmp_path / "fake_home_trial_base_killed"
+    leftover = tmp_path / f"fake_home_trial_base_{_ended_process_id()}_abc"
     leftover.mkdir()
     (leftover / "adc.json").write_text("secret")
     # The snapshot of another sandbox home in the same directory.
-    other = tmp_path / "fake_home_claude_trial_base_running"
+    other = tmp_path / f"fake_home_claude_trial_base_{_ended_process_id()}_abc"
     other.mkdir()
 
     snapshot = TrialSnapshot(str(home), [])
@@ -175,6 +184,50 @@ def test_save_deletes_the_snapshot_of_a_killed_job(home, tmp_path):
     assert not leftover.exists()
     assert other.exists()
     assert len(_snapshot_dirs(tmp_path)) == 2  # The new one and `other`.
+
+
+def test_save_keeps_the_snapshot_of_a_job_that_still_runs(
+        home, tmp_path, caplog):
+    # This test process stands in for the other job.
+    running = tmp_path / f"fake_home_trial_base_{os.getpid()}_abc"
+    running.mkdir()
+    (running / "adc.json").write_text("secret")
+
+    snapshot = TrialSnapshot(str(home), [])
+    snapshot.save()
+
+    assert (running / "adc.json").exists()
+    assert "The reset of one job deletes the files of the other" in caplog.text
+
+
+def test_snapshot_name_has_the_process_id(home, tmp_path):
+    snapshot = TrialSnapshot(str(home), [])
+    snapshot.save()
+
+    (snapshot_dir,) = _snapshot_dirs(tmp_path)
+    assert snapshot_dir.name.startswith(
+        f"fake_home_trial_base_{os.getpid()}_")
+
+
+def test_kept_copies_survive_remove_and_the_next_job(home, tmp_path):
+    snapshot = TrialSnapshot(str(home), [])
+    snapshot.save()
+
+    kept = snapshot.keep()
+    snapshot.remove()
+    TrialSnapshot(str(home), []).save()
+
+    assert os.path.basename(kept).startswith("fake_home_failed_reset_")
+    assert _files(os.path.join(kept, "0"))[".gemini/settings.json"] == "setup"
+
+
+def test_keep_returns_none_if_the_copies_are_gone(home, tmp_path):
+    snapshot = TrialSnapshot(str(home), [])
+    snapshot.save()
+    (snapshot_dir,) = _snapshot_dirs(tmp_path)
+    shutil.rmtree(snapshot_dir)
+
+    assert snapshot.keep() is None
 
 
 def test_restore_after_remove_changes_nothing(home):

@@ -28,10 +28,12 @@ class TrialSnapshot:
     share its work_dir. `save` copies these directories before the first
     trial. `restore` puts the copies back before each later trial, so a trial
     does not see the files of an earlier one. `remove` deletes the copies.
+    `keep` keeps them after a failed `restore`.
 
     The copies can hold credentials. They are in a directory next to the
-    sandbox home that only the current user can open. `save` also deletes a
-    copy that a killed job left there.
+    sandbox home that only the current user can open. Its name has the
+    process ID of the job, so `save` can delete a copy that a killed job
+    left there.
     """
 
     def __init__(self, fake_home: Optional[str], work_dirs: Iterable[str]):
@@ -56,7 +58,8 @@ class TrialSnapshot:
             return
 
         # mkdtemp makes a directory that only the current user can open.
-        self._root = tempfile.mkdtemp(prefix=prefix, dir=parent)
+        self._root = tempfile.mkdtemp(
+            prefix=f"{prefix}{os.getpid()}_", dir=parent)
         try:
             for index, (path, skip) in enumerate(targets):
                 copy = None
@@ -108,11 +111,60 @@ class TrialSnapshot:
         self._root = None
         self._saved = []
 
+    def keep(self) -> Optional[str]:
+        """Keeps the copies after a failed `restore`, and returns their path.
+
+        A `restore` that fails half way leaves a directory with a part of its
+        files. The copies are then the only full version. They get a new
+        name, so the next job does not delete them as a leftover. Returns
+        None if the copies are gone.
+        """
+        if self._root is None or not os.path.isdir(self._root):
+            return None
+        kept = os.path.join(
+            os.path.dirname(self._root),
+            os.path.basename(self._root).replace(
+                "_trial_base_", "_failed_reset_", 1))
+        try:
+            os.rename(self._root, kept)
+        except OSError:
+            # The copies stay under the old name until the next job starts.
+            kept = self._root
+        self._root = None
+        self._saved = []
+        return kept
+
+
+def _is_running(pid: int) -> bool:
+    """Returns True if a process with this ID exists."""
+    try:
+        os.kill(pid, 0)  # Signal 0 checks the process and sends nothing.
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # The process exists and belongs to another user.
+        pass
+    return True
+
 
 def _remove_leftover_copies(parent: str, prefix: str) -> None:
-    """Deletes the copies that a killed job left next to the sandbox home."""
+    """Deletes the copies that a killed job left next to the sandbox home.
+
+    The name of a copy has the process ID of its job after the prefix. The
+    copy stays if that process still runs, or if another process got its ID.
+    """
     for entry in os.scandir(parent):
         if not entry.name.startswith(prefix) or entry.is_symlink():
+            continue
+        owner = entry.name[len(prefix):].split("_")[0]
+        if not owner.isdigit():
+            # The name has no process ID, so the owner is not known.
+            continue
+        if _is_running(int(owner)):
+            logging.warning(
+                "Another job (process %s) has a trial snapshot of this "
+                "sandbox home at %s. The reset of one job deletes the files "
+                "of the other.", owner, entry.path)
             continue
         try:
             _remove(entry.path)

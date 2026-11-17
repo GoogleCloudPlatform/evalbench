@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -273,17 +274,82 @@ def test_failed_reset_stops_the_trials_and_keeps_the_results(
 
     assert [o["eval_id"] for o in eval_outputs] == ["a_trial_0", "a_trial_1"]
     assert "The reset before trial 2 failed: disk full" in caplog.text
-    # The snapshot is deleted when the run ends.
-    assert sorted(os.listdir(tmp_path)) == ["fake_home"]
+    # The job reports why trials are missing.
+    assert "The remaining trials did not run" in evaluator.incomplete_reason
+    # The snapshot is kept under a new name, and the reason has its path.
+    (kept,) = [name for name in os.listdir(tmp_path) if name != "fake_home"]
+    assert kept.startswith("fake_home_failed_reset_")
+    assert str(tmp_path / kept) in evaluator.incomplete_reason
 
 
-def test_unsafe_work_dir_raises_before_any_trial(make_evaluator, tmp_path):
+def test_reset_that_fails_half_way_keeps_the_only_full_copy(
+        make_evaluator, tmp_path):
+    work_dir = tmp_path / "workspace"
+    work_dir.mkdir()
+    for name in ("a.sql", "b.sql", "c.sql"):
+        (work_dir / name).write_text("select 1")
+    scenario = {"id": "a", "resolved_work_dir": str(work_dir)}
+    evaluator = make_evaluator(num_trials=2)
+    evaluator.process_scenario = MagicMock()
+
+    # `save` copies 3 files. In `restore`, the copy of the 2nd file fails.
+    copy2 = shutil.copy2
+    calls = []
+
+    def failing_copy2(source, target):
+        calls.append(source)
+        if len(calls) == 5:
+            raise OSError("disk full")
+        return copy2(source, target)
+
+    with patch("evaluator.agentevaluator.SimulatedUser"), \
+            patch("evaluator.trialsnapshot.shutil.copy2", failing_copy2):
+        evaluator._evaluate_agent_cli(
+            [_item({"scenarios": [scenario]})], "job1", None)
+
+    # The work dir lost files. The snapshot still has all 3.
+    assert len(os.listdir(work_dir)) < 3
+    (kept,) = [name for name in os.listdir(tmp_path)
+               if name.startswith("fake_home_failed_reset_")]
+    assert sorted(os.listdir(tmp_path / kept / "1")) == [
+        "a.sql", "b.sql", "c.sql"]
+    assert str(tmp_path / kept) in evaluator.incomplete_reason
+
+
+def test_all_trials_ran_leaves_no_incomplete_reason(make_evaluator):
+    evaluator = make_evaluator(num_trials=2)
+    evaluator.process_scenario = MagicMock()
+    with patch("evaluator.agentevaluator.SimulatedUser"):
+        evaluator._evaluate_agent_cli(
+            [_item({"scenarios": [{"id": "a"}]})], "job1", None)
+
+    assert evaluator.incomplete_reason is None
+
+
+def test_orchestrator_reports_the_incomplete_reason():
+    from evaluator.agentorchestrator import AgentOrchestrator
+
+    with patch("evaluator.agentorchestrator.AgentEvaluator") as mock_evaluator:
+        mock_evaluator.return_value.evaluate.return_value = ([], [])
+        mock_evaluator.return_value.incomplete_reason = "The reset failed."
+        orchestrator = AgentOrchestrator({}, [], {})
+        orchestrator.evaluate([])
+
+    assert orchestrator.incomplete_reason == "The reset failed."
+
+
+@pytest.mark.parametrize("as_dict", [False, True], ids=["path", "prompts_file"])
+def test_unsafe_work_dir_raises_before_any_trial(
+        make_evaluator, tmp_path, as_dict):
     dataset_dir = tmp_path / "dataset"
     dataset_dir.mkdir()
     # A work_dir of "." is the directory of the evalset file.
     scenario = {"id": "a", "resolved_work_dir": str(dataset_dir)}
-    evaluator = make_evaluator(
-        num_trials=2, dataset_config=str(dataset_dir / "evalset.json"))
+    # The run config accepts a path, or a dict with `prompts_file`.
+    dataset_config = str(dataset_dir / "evalset.json")
+    if as_dict:
+        dataset_config = {"prompts_file": dataset_config}
+    evaluator = make_evaluator(num_trials=2, dataset_config=dataset_config)
     evaluator.process_scenario = MagicMock()
 
     with pytest.raises(ValueError, match="cannot be reset between trials"):

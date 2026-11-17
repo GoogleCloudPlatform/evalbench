@@ -83,6 +83,8 @@ class AgentEvaluator:
         self.agent_runners = runner_config.get("agent_runners", 10)
         self.num_trials = _check_num_trials(
             self.config.get("num_trials", 1), "the run config")
+        # Set if the job stops before all trials ran.
+        self.incomplete_reason: str | None = None
 
     def evaluate(
         self,
@@ -137,11 +139,20 @@ class AgentEvaluator:
                     try:
                         snapshot.restore()
                     except OSError as e:
-                        # A trial must not start with the files of an earlier
-                        # one. Keep the results of the finished trials.
-                        logging.error(
-                            "The reset before trial %d failed: %s. The "
-                            "remaining trials do not run.", trial_index, e)
+                        # Stop, because a trial must not start with the files
+                        # of an earlier one. The finished trials keep their
+                        # results.
+                        self.incomplete_reason = (
+                            f"The reset before trial {trial_index} failed: "
+                            f"{e}. The remaining trials did not run.")
+                        # A reset that fails half way leaves a directory with
+                        # a part of its files. The snapshot has all of them.
+                        kept = snapshot.keep()
+                        if kept:
+                            self.incomplete_reason += (
+                                f" The snapshot of the sandbox home and the "
+                                f"work dirs is kept at {kept}.")
+                        logging.error(self.incomplete_reason)
                         break
                 items = [self._trial_item(item, trial_index) for item in dataset]
                 outputs, scores = self._run_items(
@@ -169,6 +180,9 @@ class AgentEvaluator:
         if fake_home:
             protected.append(fake_home)
         dataset_config = self.config.get("dataset_config")
+        if isinstance(dataset_config, dict):
+            # The run config also accepts `dataset_config: {prompts_file: ...}`.
+            dataset_config = dataset_config.get("prompts_file")
         if isinstance(dataset_config, str):
             # A work_dir of "." is the directory of the evalset file.
             protected.append(os.path.dirname(os.path.abspath(dataset_config)))
