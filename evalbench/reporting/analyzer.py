@@ -324,6 +324,14 @@ def analyze_result(
     # the other paths, such an error is a failure, for example invalid SQL.
     skip_unscored = orch in ("agent", "geminicli")
 
+    # The summary of an agent run counts each result row as one trial.
+    summary_df = df
+    if skip_unscored:
+        # Without `prompt_id`, the trials of a scenario are not merged.
+        summary_df = df.drop(columns=["prompt_id"], errors="ignore")
+        # `num_prompts` already counts every trial row.
+        num_trials = 1
+
     scorers = experiment_config["scorers"]
     num_scorers = len(scorers)
     partial_credit_names = _partial_credit_names(scorers)
@@ -359,7 +367,7 @@ def analyze_result(
                 continue
 
         summary = analyze_one_metric(
-            df=df,
+            df=summary_df,
             metric_name=metric_name,
             metric_score=metric_score,
             num_scorers=num_scorers,
@@ -371,7 +379,7 @@ def analyze_result(
         summary_scores.append(summary)
 
     summary = analyze_one_metric(
-        df=df,
+        df=summary_df,
         metric_name="executable",
         metric_score=1,
         execution=True,
