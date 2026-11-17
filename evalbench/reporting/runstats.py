@@ -54,9 +54,22 @@ def wilson_interval(passed: int, scored: int) -> tuple[float, float]:
     return max(0.0, center - half), min(1.0, center + half)
 
 
+def _scorer_config(scorers: Any, metric: str) -> Any:
+    """Returns the config of the scorer that reports its scores as `metric`."""
+    if not isinstance(scorers, dict):
+        return None
+    if metric in scorers:
+        return scorers[metric]
+    # A named scorer can report its scores under `scorer_name`.
+    for cfg in scorers.values():
+        if isinstance(cfg, dict) and cfg.get("scorer_name") == metric:
+            return cfg
+    return None
+
+
 def pass_threshold(scorers: Any, metric: str) -> float:
     """Returns the lowest score of `metric` that counts as a pass."""
-    cfg = scorers.get(metric) if isinstance(scorers, dict) else None
+    cfg = _scorer_config(scorers, metric)
     value = cfg.get("pass_threshold") if isinstance(cfg, dict) else None
     if value is None:
         return DEFAULT_PASS_THRESHOLD
@@ -100,13 +113,12 @@ def _scenario_stats(
         "scenario_id": scenario_id,
         "num_trials": len(trials),
     }
-    has_pass_metric = PASS_METRIC in metrics
-    if has_pass_metric:
+    if PASS_METRIC in metrics:
         scores = _trial_scores(df, PASS_METRIC)
         scored_trials = set(scores.index)
     else:
         # Without the pass metric, a trial is unscored if the agent failed.
-        scores = pd.Series(dtype=float)
+        scores = None
         agent_errors = df["generated_error"]
         failed = df[agent_errors.notna() & (agent_errors != "")]
         scored_trials = set(trials) - set(failed["trial_index"])
@@ -118,7 +130,7 @@ def _scenario_stats(
         "passed_trials", "pass_rate", "flakiness", "flaky", "confidence",
         "interval_low", "interval_high", "score_mean", "score_std"))
     status = "ERROR" if scored < len(trials) else None
-    if has_pass_metric and scored:
+    if scores is not None and scored:
         passed = int((scores >= pass_threshold(scorers, PASS_METRIC)).sum())
         low, high = wilson_interval(passed, scored)
         stats.update({
@@ -177,7 +189,12 @@ def compute_run_stats(
         df = df.assign(generated_error=None)
 
     scorers = config.get("scorers") or {}
-    metrics = _resolve_metric_names_to_analyze(scorers, df)
+    comparators = df["comparator"].astype(str).unique()
+    # A scorer that reports its scores under another name has no rows.
+    metrics = [
+        metric for metric in _resolve_metric_names_to_analyze(scorers, df)
+        if metric == PASS_METRIC
+        or any(_is_sub_comparator(name, metric) for name in comparators)]
     stats = pd.DataFrame([
         _scenario_stats(scenario_id, scenario_df, metrics, scorers)
         for scenario_id, scenario_df in df.groupby("prompt_id", sort=False)

@@ -162,6 +162,19 @@ def test_other_scorer_has_a_pass_rate():
     assert _stats(rows, scorers)["s1"]["trajectory_matcher_pass_rate"] == 1.0
 
 
+def test_named_scorer_uses_its_own_pass_threshold():
+    rows = _goal_rows("s1", [100, 100])
+    rows += [_row("s1", trial, "tools", score)
+             for trial, score in enumerate([100, 50])]
+    scorers = {"goal_completion": {},
+               "my_matcher": {"type": "trajectory_matcher",
+                              "scorer_name": "tools", "pass_threshold": 50}}
+    row = _stats(rows, scorers)["s1"]
+    assert row["tools_pass_rate"] == 1.0
+    # The config key has no score rows, so it gets no column.
+    assert "my_matcher_pass_rate" not in row
+
+
 def test_scenario_that_runs_in_one_trial():
     row = _stats(
         _goal_rows("many", [100, 100]) + _goal_rows("once", [100]))["once"]
