@@ -510,11 +510,24 @@ class AgentEvaluator:
             eval_output_data["prompt_id"] = scenario["prompt_id"]
             eval_output_data["trial_index"] = scenario["trial_index"]
 
-        score_work = AgentScoreWork(
-            config=self.config,
-            eval_output=eval_output_data,
-            scoring_results=eval_result.scoring_results
-        )
-        score_work.run()
-
+        # Execution evidence must survive a failed scorer. In normal scorer
+        # failures, score.compare creates an error-bearing comparison row.
         eval_result.agent_results.append(eval_output_data)
+        # Stage this scenario's scores: a late dispatch exception must never
+        # publish success rows from an incompletely scored scenario.
+        staged_scenario_scores: list[dict] = []
+        try:
+            score_work = AgentScoreWork(
+                config=self.config,
+                eval_output=eval_output_data,
+                scoring_results=staged_scenario_scores
+            )
+            score_work.run()
+        except Exception as exc:
+            # Keep the completed execution evidence, but do not publish the
+            # partial scenario buffer or touch any other scenario's scores.
+            eval_output_data["scoring_error"] = f"{type(exc).__name__}: {exc}"
+            logging.exception("Unexpected scoring failure for scenario %s",
+                              scenario["id"])
+        else:
+            eval_result.scoring_results.extend(staged_scenario_scores)
