@@ -18,7 +18,7 @@ class AgentOrchestrator(Orchestrator):
         report_progress=False,
     ):
         self.config = config
-        # An invalid value must stop the job before the trials run.
+        # An invalid pass_threshold must stop the job before the trials run.
         check_pass_thresholds(config.get("scorers"))
         self.db_configs = db_configs
         self.setup_config = setup_config

@@ -23,7 +23,10 @@ WILSON_Z = 1.96
 
 
 def flakiness(passed: int, scored: int) -> float:
-    """Returns 4p(1 - p). It is 0 if all trials agree and 1 at 50/50."""
+    """Returns 4p(1 - p) for the pass rate p.
+
+    It is 0 if all trials agree and 1 at 50/50.
+    """
     rate = passed / scored
     return 4 * rate * (1 - rate)
 
@@ -31,9 +34,9 @@ def flakiness(passed: int, scored: int) -> float:
 def confidence(passed: int, scored: int) -> float:
     """Returns the chance that the true pass rate is above CONFIDENCE_TARGET.
 
-    The prior for the pass rate is uniform. With this prior, the result is
-    the chance of at most `passed` successes in `scored + 1` attempts that
-    each succeed with a chance of CONFIDENCE_TARGET.
+    It uses a uniform prior for the pass rate. The result is then the
+    chance of at most `passed` successes in `scored + 1` attempts, each with
+    a success chance of CONFIDENCE_TARGET.
     """
     attempts = scored + 1
     return sum(
@@ -117,7 +120,8 @@ def _scenario_stats(
         scores = _trial_scores(df, PASS_METRIC)
         scored_trials = set(scores.index)
     else:
-        # Without the pass metric, a trial is unscored if the agent failed.
+        # Without the pass metric, a trial is unscored if it has an agent
+        # error.
         scores = None
         agent_errors = df["generated_error"]
         failed = df[agent_errors.notna() & (agent_errors != "")]
@@ -190,7 +194,8 @@ def compute_run_stats(
 
     scorers = config.get("scorers") or {}
     comparators = df["comparator"].astype(str).unique()
-    # A scorer that reports its scores under another name has no rows.
+    # Skip a scorer config key that has no score rows. Keep the pass metric:
+    # without rows, its trials are unscored.
     metrics = [
         metric for metric in _resolve_metric_names_to_analyze(scorers, df)
         if metric == PASS_METRIC
