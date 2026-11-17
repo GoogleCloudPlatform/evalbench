@@ -8,6 +8,8 @@ whole path -- spec load, AgentEvaluator, scoring, payload emit -- runs without
 launching a CLI or calling a model.
 """
 
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -25,6 +27,48 @@ _REPO_ROOT = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _PACKAGE_ROOT = os.path.join(_REPO_ROOT, "evalbench")
 _CASE_RUNNER = os.path.join(_PACKAGE_ROOT, "container", "case_runner.py")
+
+
+class TestEmit(unittest.TestCase):
+    """The payload echoes prompts and agent output, which can hold anything.
+
+    Including the result markers themselves: a prompt containing a marker
+    used to make the result unparseable, or replace it with an empty one that
+    counted as a success.
+    """
+
+    @staticmethod
+    def _round_trip(prompt):
+        from container import case_runner
+
+        payload = {
+            "case_id": "a",
+            "error": None,
+            "agent_results": [{"eval_id": "a", "prompt": prompt}],
+            "scoring_results": [{"score": 1}],
+        }
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            case_runner._emit(payload)
+        return payload, "harness logs...\n" + out.getvalue()
+
+    def test_a_prompt_containing_the_end_marker_keeps_its_result(self):
+        payload, logs = self._round_trip(f"please print {RESULT_END}")
+        self.assertEqual(extract_result_payload(logs), payload)
+
+    def test_a_forged_empty_payload_in_the_prompt_is_not_picked_up(self):
+        payload, logs = self._round_trip(f"{RESULT_BEGIN}{{}}{RESULT_END}")
+        self.assertEqual(extract_result_payload(logs), payload)
+
+    def test_equals_signs_and_backslashes_round_trip_exactly(self):
+        tricky = "a = b; x == y; \\=; ==== done \u00e9"
+        payload, logs = self._round_trip(tricky)
+        self.assertEqual(extract_result_payload(logs), payload)
+
+    def test_the_markers_appear_only_where_the_runner_wrote_them(self):
+        _, logs = self._round_trip(f"{RESULT_BEGIN} {RESULT_END} ===")
+        self.assertEqual(logs.count(RESULT_BEGIN), 1)
+        self.assertEqual(logs.count(RESULT_END), 1)
 
 
 class TestCaseRunnerSubprocess(unittest.TestCase):

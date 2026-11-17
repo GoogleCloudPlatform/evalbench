@@ -57,9 +57,13 @@ def _configure_logging() -> None:
 
 
 def _emit(payload: dict) -> None:
-    sys.stdout.write(f"\n{RESULT_BEGIN}\n")
-    json.dump(payload, sys.stdout, default=str)
-    sys.stdout.write(f"\n{RESULT_END}\n")
+    # The payload echoes the prompt and the agent's output, which can contain
+    # anything -- including the result markers. `=` is only legal inside JSON
+    # strings, so writing it as \u003d keeps the JSON valid (json.loads turns
+    # it back into `=`) while guaranteeing the payload never contains the
+    # `===` every marker needs.
+    body = json.dumps(payload, default=str).replace("=", "\\u003d")
+    sys.stdout.write(f"\n{RESULT_BEGIN}\n{body}\n{RESULT_END}\n")
     sys.stdout.flush()
 
 

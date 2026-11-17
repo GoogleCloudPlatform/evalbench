@@ -76,6 +76,11 @@ dependencies = [
     # (urllib3.contrib.pyopenssl.inject_into_urllib3). Lift when google-auth
     # stops using the deprecated inject pattern.
     "pyOpenSSL<26.2",
+    # Dispatches one Kubernetes Job per eval case when `containerization` is
+    # enabled (evalbench/container/k8s_backend.py). Imported lazily, so other
+    # runs never load it. Capped below 37, which moves to pydantic and drags in
+    # a pydantic/pydantic-core upgrade for everything else.
+    "kubernetes>=36.0.3,<37",
 ]
 
 [tool.uv.sources]
