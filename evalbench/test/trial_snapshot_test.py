@@ -161,6 +161,22 @@ def test_snapshot_is_private_and_next_to_the_home(home, tmp_path):
     assert _snapshot_dirs(tmp_path) == []
 
 
+def test_save_deletes_the_snapshot_of_a_killed_job(home, tmp_path):
+    leftover = tmp_path / "fake_home_trial_base_killed"
+    leftover.mkdir()
+    (leftover / "adc.json").write_text("secret")
+    # The snapshot of another sandbox home in the same directory.
+    other = tmp_path / "fake_home_claude_trial_base_running"
+    other.mkdir()
+
+    snapshot = TrialSnapshot(str(home), [])
+    snapshot.save()
+
+    assert not leftover.exists()
+    assert other.exists()
+    assert len(_snapshot_dirs(tmp_path)) == 2  # The new one and `other`.
+
+
 def test_restore_after_remove_changes_nothing(home):
     snapshot = TrialSnapshot(str(home), [])
     snapshot.save()

@@ -30,7 +30,8 @@ class TrialSnapshot:
     does not see the files of an earlier one. `remove` deletes the copies.
 
     The copies can hold credentials. They are in a directory next to the
-    sandbox home that only the current user can open.
+    sandbox home that only the current user can open. `save` also deletes a
+    copy that a killed job left there.
     """
 
     def __init__(self, fake_home: Optional[str], work_dirs: Iterable[str]):
@@ -49,6 +50,7 @@ class TrialSnapshot:
             # killed job left behind is easy to find next to it.
             prefix = os.path.basename(self._fake_home) + "_trial_base_"
             parent = os.path.dirname(self._fake_home)
+            _remove_leftover_copies(parent, prefix)
         targets += [(work_dir, frozenset()) for work_dir in self._work_dirs]
         if not targets:
             return
@@ -105,6 +107,21 @@ class TrialSnapshot:
                 "Could not delete the trial snapshot at %s: %s", self._root, e)
         self._root = None
         self._saved = []
+
+
+def _remove_leftover_copies(parent: str, prefix: str) -> None:
+    """Deletes the copies that a killed job left next to the sandbox home."""
+    for entry in os.scandir(parent):
+        if not entry.name.startswith(prefix) or entry.is_symlink():
+            continue
+        try:
+            _remove(entry.path)
+            logging.warning(
+                "Deleted the trial snapshot that an earlier job left at %s.",
+                entry.path)
+        except OSError as e:
+            logging.warning(
+                "Could not delete the trial snapshot at %s: %s", entry.path, e)
 
 
 def check_resettable(

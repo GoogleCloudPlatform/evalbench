@@ -114,7 +114,15 @@ class AgentEvaluator:
                 snapshot.save()
             for trial_index in range(self.num_trials):
                 if trial_index > 0:
-                    snapshot.restore()
+                    try:
+                        snapshot.restore()
+                    except OSError as e:
+                        # A trial must not start with the files of an earlier
+                        # one. Keep the results of the finished trials.
+                        logging.error(
+                            "The reset before trial %d failed: %s. The "
+                            "remaining trials do not run.", trial_index, e)
+                        break
                 items = [self._trial_item(item, trial_index) for item in dataset]
                 outputs, scores = self._run_items(
                     [item for item in items if item is not None],

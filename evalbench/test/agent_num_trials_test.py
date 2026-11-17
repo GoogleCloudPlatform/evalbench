@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from evaluator.agentevaluator import AgentEvaluator
+from evaluator.trialsnapshot import TrialSnapshot
 from generators.models.agent_cli import AgentCliGenerator
 from work.agentscorework import AgentScoreWork
 
@@ -250,6 +251,27 @@ def test_snapshot_is_removed_when_a_trial_fails(make_evaluator, tmp_path):
             evaluator._evaluate_agent_cli(
                 [_item({"scenarios": [{"id": "a"}]})], "job1", None)
 
+    assert sorted(os.listdir(tmp_path)) == ["fake_home"]
+
+
+def test_failed_reset_stops_the_trials_and_keeps_the_results(
+        make_evaluator, tmp_path, caplog):
+    evaluator = make_evaluator(num_trials=3)
+
+    def fake_process_scenario(scenario, eval_result, *args):
+        eval_result.agent_results.append({"eval_id": scenario["id"]})
+
+    evaluator.process_scenario = fake_process_scenario
+    # The reset before trial 1 works. The reset before trial 2 fails.
+    with patch("evaluator.agentevaluator.SimulatedUser"), \
+            patch.object(TrialSnapshot, "restore",
+                         side_effect=[None, OSError("disk full")]):
+        eval_outputs, _ = evaluator._evaluate_agent_cli(
+            [_item({"scenarios": [{"id": "a"}]})], "job1", None)
+
+    assert [o["eval_id"] for o in eval_outputs] == ["a_trial_0", "a_trial_1"]
+    assert "The reset before trial 2 failed: disk full" in caplog.text
+    # The snapshot is deleted when the run ends.
     assert sorted(os.listdir(tmp_path)) == ["fake_home"]
 
 
