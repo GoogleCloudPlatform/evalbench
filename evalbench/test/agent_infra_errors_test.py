@@ -12,7 +12,8 @@ from generators.models.codex_cli import CodexCliGenerator
 from generators.models.gemini_cli import GeminiCliGenerator
 from generators.models.noop_agent import NoopAgentGenerator
 from generators.models.passthrough import NOOPGenerator
-from reporting.analyzer import analyze_one_metric
+from reporting.analyzer import analyze_one_metric, analyze_result
+from scorers import score as score_module
 from work.agentscorework import AgentScoreWork
 
 
@@ -102,10 +103,13 @@ def _claude_api_error(category, text):
      True),
     ([_claude_api_error("rate_limit", "API Error: Request rejected (429)")], True),
     ([_claude_api_error("authentication_failed", "Invalid API key")], False),
+    ([_claude_api_error("unknown", "Request timed out")], True),
+    ([_claude_api_error("unknown", "Unexpected end of JSON input")], False),
     ([{"type": "user", "message": {"content": [{
         "type": "tool_result", "tool_use_id": "t1", "is_error": True,
         "content": "cloud-sql__list_instances returned UNAVAILABLE"}]}}], False),
-], ids=["overloaded_529", "rate_limit", "auth_failed", "tool_error_on_stdout"])
+], ids=["overloaded_529", "rate_limit", "auth_failed", "api_timeout",
+        "unknown_error", "tool_error_on_stdout"])
 def test_claude_model_api_error(events, is_infra):
     generator, result = _claude_result(*events)
     assert bool(generator.model_api_error(result)) == is_infra
@@ -179,9 +183,15 @@ def _codex_result(*events):
     ([{"type": "turn.failed", "error": {"message": "unexpected status 400 Bad "
                                         "Request: array too long, expected at "
                                         "most 500 items"}}], False),
+    ([{"type": "item.completed", "item": {
+        "id": "item_1", "type": "mcp_tool_call", "server": "cloud-sql",
+        "tool": "list_instances", "status": "failed",
+        "error": {"message": "503 Service Unavailable: quota exceeded"}}},
+      {"type": "turn.completed", "usage": {}}], False),
 ], ids=["retry_limit_429", "unexpected_503", "quota", "server_overloaded",
         "internal_server_error", "retry_then_success", "context_window",
-        "content_filter", "stream_disconnected", "number_500_in_a_400_error"])
+        "content_filter", "stream_disconnected", "number_500_in_a_400_error",
+        "mcp_tool_error"])
 def test_codex_model_api_error(events, is_infra):
     generator, result = _codex_result(*events)
     assert bool(generator.model_api_error(result)) == is_infra
@@ -276,6 +286,14 @@ def test_normal_run_has_no_error(run_scenario):
     assert error is None
 
 
+def test_max_turns_is_not_an_error(run_scenario):
+    """A conversation that reaches max_turns is scored as usual."""
+    error, simulated_user = run_scenario(_result(0), "next")
+    assert error is None
+    # The scenario has 3 turns. No reply is requested after the last turn.
+    assert simulated_user.get_next_response.call_count == 2
+
+
 def test_score_work_passes_generated_error():
     eval_output = {"eval_id": "s1", "generated_error": "Agent infrastructure error",
                    "scenario": {}, "metadata": {}}
@@ -308,3 +326,114 @@ def test_average_skips_rows_with_generated_error():
     ])
     summary = analyze_one_metric(df, "end_to_end_latency", 100)
     assert summary["metric_score"] == 1000.0
+
+
+def _score_row(scenario_id, comparator, score, generated_error=None,
+               comparison_error=None):
+    return {"id": scenario_id, "comparator": comparator, "score": score,
+            "generated_sql": "skipped", "generated_error": generated_error,
+            "comparison_error": comparison_error}
+
+
+def _summary(rows, orchestrator="agent"):
+    """Returns the summary rows of `rows`, keyed by metric name."""
+    config = {"orchestrator": orchestrator,
+              "scorers": {row["comparator"]: {} for row in rows}}
+    _, summary = analyze_result(rows, config)
+    return summary.set_index("metric_name").to_dict(orient="index")
+
+
+_UNSCORED = [
+    {"generated_error": "Agent infrastructure error (exit 1): 429"},
+    {"generated_error": "Simulated user error: model down"},
+    {"comparison_error": RuntimeError("Invalid JSON in response")},
+    # The orchestrator saves scores as JSON, so the error can be a string.
+    {"comparison_error": "Invalid JSON in response"},
+]
+_UNSCORED_IDS = ["agent_error", "simulated_user_error", "scorer_error",
+                 "scorer_error_as_text"]
+
+
+@pytest.mark.parametrize("metric", ["goal_completion", "trajectory_matcher"])
+@pytest.mark.parametrize("unscored", _UNSCORED, ids=_UNSCORED_IDS)
+def test_pass_rate_skips_unscored_agent_trials(metric, unscored):
+    """An unscored trial is not a pass and not a failure."""
+    row = _summary([
+        _score_row("passed", metric, 100.0),
+        _score_row("failed", metric, 0.0),
+        _score_row("unscored", metric, 0.0, **unscored),
+    ])[metric]
+    assert row["correct_results_count"] == 1
+    assert row["total_results_count"] == 2
+
+
+@pytest.mark.parametrize("metric", ["goal_completion", "turn_count"])
+def test_metric_with_only_unscored_trials_has_no_results(metric):
+    row = _summary([_score_row("s1", metric, 0.0,
+                               generated_error="Simulated user error")])[metric]
+    assert row["correct_results_count"] == 0
+    assert row["total_results_count"] == 0
+
+
+def test_average_skips_agent_trials_with_a_scorer_error():
+    row = _summary([
+        _score_row("s1", "turn_count", 4.0),
+        _score_row("s2", "turn_count", 0.0,
+                   comparison_error=RuntimeError("no stats")),
+    ])["turn_count"]
+    assert row["metric_score"] == 4.0
+
+
+@pytest.mark.parametrize("unscored", _UNSCORED, ids=_UNSCORED_IDS)
+def test_error_rows_still_fail_outside_agent_runs(unscored):
+    """On the NL2SQL path, a generation or scorer error is a failure."""
+    row = _summary([
+        _score_row("passed", "exact_match", 100.0),
+        _score_row("error", "exact_match", 0.0, **unscored),
+    ], orchestrator="oneshot")["exact_match"]
+    assert row["correct_results_count"] == 1
+    assert row["total_results_count"] == 2
+
+
+_PLAN = "List the Cloud SQL instances."
+_GOOD_JUDGE_REPLY = json.dumps(
+    {"sub_goals": [{"goal": "List the instances", "met": True}]})
+
+
+@pytest.mark.parametrize("judge_reply, scenario", [
+    (RuntimeError("judge model is down"), {"conversation_plan": _PLAN}),
+    (TimeoutError("judge request timed out"), {"conversation_plan": _PLAN}),
+    ("PASS, looks good", {"conversation_plan": _PLAN}),
+    (json.dumps({"sub_goals": []}), {"conversation_plan": _PLAN}),
+    (_GOOD_JUDGE_REPLY, {"conversation_plan": " "}),
+], ids=["scorer_fails", "scorer_times_out", "judge_reply_malformed",
+        "judge_reply_incomplete", "no_plan_and_no_criteria"])
+def test_goal_completion_error_is_unscored(judge_reply, scenario):
+    """The trial of a scorer error is not in the goal_completion pass rate."""
+    config = {"orchestrator": "agent",
+              "scorers": {"goal_completion": {"model_config": "fake_config"}}}
+    judge = MagicMock(spec=["generate"])
+    results = []
+    with patch("scorers.goalcompletionrate.get_generator", return_value=judge):
+        for scenario_id, reply, scenario_fields in [
+                ("scored", _GOOD_JUDGE_REPLY, {"conversation_plan": _PLAN}),
+                ("unscored", judge_reply, scenario)]:
+            judge.generate.side_effect = (
+                reply if isinstance(reply, Exception) else None)
+            judge.generate.return_value = reply
+            score_module.compare({
+                "id": scenario_id, "nl_prompt": "", "golden_sql": "",
+                "query_type": "", "golden_result": "", "golden_error": None,
+                "generated_sql": "skipped", "generated_result": "",
+                "generated_error": None, "dialects": [], "database": "",
+                "job_id": "j1",
+                "eval_results": json.dumps({"conversation_history": "[]",
+                                            "scenario": scenario_fields}),
+            }, config, results, global_models={})
+
+    # The agent orchestrator saves the scores as JSON with `default=str`.
+    results = json.loads(json.dumps(results, default=str))
+    _, summary = analyze_result(results, config)
+    row = summary.set_index("metric_name").loc["goal_completion"]
+    assert row["correct_results_count"] == 1
+    assert row["total_results_count"] == 1

@@ -33,6 +33,14 @@ def _partial_credit_count(scores: pd.Series) -> float:
     return round(float(scores.sum()) / 100.0, 4)
 
 
+def _scored_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Returns the rows that have no agent error and no scorer error."""
+    for col in ("generated_error", "comparison_error"):
+        if col in df.columns:
+            df = df[df[col].isna() | (df[col] == "")]
+    return df
+
+
 def _is_sub_comparator(comp: str, metric_name: str) -> bool:
     if comp == metric_name:
         return True
@@ -93,11 +101,13 @@ def analyze_one_metric(
     num_prompts: int = None,
     num_trials: int = None,
     partial_credit: bool | None = None,
+    skip_unscored: bool = False,
 ) -> dict:
     """Analyze one metric from dataframe with flexibility.
 
     `partial_credit` defaults to whether `metric_name` is in
-    PARTIAL_CREDIT_METRICS.
+    PARTIAL_CREDIT_METRICS. If `skip_unscored` is set, a row with an agent
+    error or a scorer error does not count as a pass or as a failure.
     """
     if partial_credit is None:
         partial_credit = metric_name in PARTIAL_CREDIT_METRICS
@@ -197,8 +207,12 @@ def analyze_one_metric(
             if original_df_size == 0 and num_prompts is not None:
                 original_df_size = num_prompts
         else:
+            if skip_unscored:
+                df_metric = _scored_rows(df_metric)
             original_df_size = len(df_metric)
-            if original_df_size == 0 and num_prompts is not None:
+            # If every row is unscored, the total stays 0. There is no rate.
+            if (original_df_size == 0 and num_prompts is not None
+                    and not skip_unscored):
                 original_df_size = num_prompts
 
             non_binary_metrics = [
@@ -306,6 +320,9 @@ def analyze_result(
             unique_ids = len(df["id"].dropna().unique())
             if num_prompts is None or unique_ids > num_prompts:
                 num_prompts = unique_ids
+    # An agent trial with an agent error or a scorer error is unscored. On
+    # the other paths, such an error is a failure, for example invalid SQL.
+    skip_unscored = orch in ("agent", "geminicli")
 
     scorers = experiment_config["scorers"]
     num_scorers = len(scorers)
@@ -349,6 +366,7 @@ def analyze_result(
             num_prompts=num_prompts,
             num_trials=num_trials,
             partial_credit=metric_name in partial_credit_names,
+            skip_unscored=skip_unscored,
         )
         summary_scores.append(summary)
 

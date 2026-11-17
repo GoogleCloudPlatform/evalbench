@@ -1182,13 +1182,17 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         return self.claude_code_version
 
     def model_api_error(self, result: subprocess.CompletedProcess) -> Optional[str]:
-        """Returns the API error for "rate_limit" or "server_error" (any 5xx)."""
+        """Returns the API error for a quota error, a 5xx error, or a timeout."""
         try:
             api_error = json.loads(result.stdout or "{}").get("api_error") or {}
         except (json.JSONDecodeError, AttributeError):
             return None
+        message = api_error.get("message") or ""
         if api_error.get("type") in ("rate_limit", "server_error"):
-            return api_error.get("message") or api_error["type"]
+            return message or api_error["type"]
+        # Claude Code reports an API timeout as "unknown" with this text.
+        if api_error.get("type") == "unknown" and "Request timed out" in message:
+            return message
         return None
 
     def parse_response(self, stdout: str) -> dict:
