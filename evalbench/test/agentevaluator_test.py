@@ -36,6 +36,7 @@ class TestAgentEvaluatorEnvSetup(unittest.TestCase):
     def test_process_scenario_copies_env_files(self, mock_get_generator):
         # 1. Setup mocks
         mock_generator = MagicMock(spec=AgentCliGenerator)
+        mock_generator.model_api_error.return_value = None
         # Set fake_home on the generator to point to our temp fake_home
         mock_generator.fake_home = self.fake_home
         mock_generator.name = "mock_agent_cli"

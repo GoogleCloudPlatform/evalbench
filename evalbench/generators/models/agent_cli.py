@@ -114,3 +114,13 @@ class AgentCliGenerator(QueryGenerator):
     @abstractmethod
     def extract_skills(self, stdout: str) -> list:
         raise NotImplementedError("Subclasses must implement this method")
+
+    def model_api_error(
+        self, result: subprocess.CompletedProcess
+    ) -> Optional[str]:
+        """Returns the model API error if it is a quota or server error.
+
+        The tool under test cannot cause these errors, so the trial is
+        unscored. Each CLI overrides this. By default, every error is a failure.
+        """
+        return None

@@ -10,6 +10,8 @@ import threading
 from dataset.evalgeminicliinput import EvalGeminiCliRequest
 from generators.models import get_generator
 from generators.models.agent_cli import AgentCliGenerator
+from generators.models.noop_agent import NoopAgentGenerator
+from generators.models.passthrough import NOOPGenerator
 from mp import mprunner
 from util.config import get_eval_case_timeout
 from work.agentgenwork import AgentGenWork
@@ -18,6 +20,24 @@ from work.agentscorework import AgentScoreWork
 import json
 import subprocess
 from typing import Dict
+
+
+def _infra_error(generator: AgentCliGenerator, result: Any) -> str | None:
+    """Returns an error message if the model API hit a quota or server error."""
+    returncode = getattr(result, "returncode", 0)
+    # 124 is a timeout, which counts as a failure.
+    if returncode == 124:
+        return None
+    api_error = generator.model_api_error(result)
+    if not api_error:
+        return None
+    return f"Agent infrastructure error (exit {returncode}): {api_error.strip()[-500:]}"
+
+
+def _is_noop(simulated_user: SimulatedUser) -> bool:
+    """Returns True if the simulated user returns an empty reply by design."""
+    return isinstance(simulated_user.model_generator,
+                      (NOOPGenerator, NoopAgentGenerator))
 
 
 class AgentEvaluator:
@@ -162,6 +182,7 @@ class AgentEvaluator:
             else self.eval_case_timeout_seconds
         )
         last_result = None
+        generated_error = None
 
         for turn in range(max_turns):
             remaining_timeout_seconds = None
@@ -241,13 +262,29 @@ class AgentEvaluator:
                 "agent": result.stdout
             })
 
+            generated_error = _infra_error(self.generator, result)
+            if generated_error:
+                logging.error(generated_error)
+                break
+
             if turn < max_turns - 1:
                 if simulated_user:
-                    next_response = simulated_user.get_next_response(
-                        conversation_plan,
-                        conversation_history,
-                        result.stdout
-                    )
+                    try:
+                        next_response = simulated_user.get_next_response(
+                            conversation_plan,
+                            conversation_history,
+                            result.stdout
+                        )
+                        # QueryGenerator.generate returns "" when out of quota.
+                        # ClaudeGenerator returns None on any error.
+                        if (not str(next_response or "").strip()
+                                and not _is_noop(simulated_user)):
+                            raise RuntimeError(
+                                "empty reply from the simulated user model")
+                    except Exception as e:
+                        generated_error = f"Simulated user error: {e}"
+                        logging.error(generated_error)
+                        break
                     if "TERMINATE" in next_response:
                         logging.info("Simulated user terminated conversation.")
                         break
@@ -268,7 +305,8 @@ class AgentEvaluator:
             accumulated_skills,
             eval_result,
             job_id,
-            metadata
+            metadata,
+            generated_error,
         )
 
     def _log_cli_result(self, turn: int, max_turns: int, result: subprocess.CompletedProcess):
@@ -289,7 +327,8 @@ class AgentEvaluator:
         accumulated_skills: List[str],
         eval_result: Any,
         job_id: str,
-        metadata: Dict[str, Any]
+        metadata: Dict[str, Any],
+        generated_error: str | None = None,
     ):
         """Finalizes the scenario by scoring and appending results."""
         timed_out = (
@@ -305,7 +344,7 @@ class AgentEvaluator:
             "returncode": getattr(last_result, "returncode", 0),
             "timed_out": timed_out,
             "prompt_generator_error": None,
-            "generated_error": None,
+            "generated_error": generated_error,
             "sql_generator_error": None,
             "golden_error": None,
             "generated_sql": "skipped",
