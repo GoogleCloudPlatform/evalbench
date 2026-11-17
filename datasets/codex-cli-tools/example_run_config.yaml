@@ -8,6 +8,9 @@ orchestrator: agent
 model_config: datasets/model_configs/codex_cli_model.yaml
 simulated_user_model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
 
+# Number of times to run the full suite. Default is 1.
+# num_trials: 2
+
 # Concurrency: number of scenarios to run in parallel.
 # Set to 1 for sequential runs (easier to follow logs, avoids session conflicts
 # on the shared sandboxed ~/.codex store).

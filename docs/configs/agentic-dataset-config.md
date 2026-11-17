@@ -43,7 +43,7 @@ The file is a single JSON object with a `scenarios` array:
 | `binary_rubric` | Optional | Array of pass/fail criteria evaluated by the `binary_rubric_scorer`. Each criterion is scored independently and reports as `binary_rubric_scorer_<index>`. |
 | `success_criteria` | Optional | Array of outcomes the agent must produce, judged by the `goal_completion` scorer. If set, the judge rules on each criterion and the score is the share met. If not set, the judge splits `conversation_plan` into sub-goals instead. The simulated user does not see this field. |
 | `expected_skills` | Optional | List of skill names the agent is expected to activate. Used by the `skills_trajectory` scorer. |
-| `num_trials` | Optional | Number of trials for this scenario. Must be an integer of 1 or more. It can only lower the run config `num_trials`. A higher value is capped at the run value. Applies only when the run config `num_trials` is greater than 1. |
+| `num_trials` | Optional | Number of trials for this scenario. Must be an integer of 1 or more. It can only lower the run config `num_trials`. A higher value is capped at the run value. Applies only when the run config `num_trials` is greater than 1. See the [`num_trials` examples](/docs/configs/run-config.md#num_trials-examples). |
 
 ## Important Notes
 

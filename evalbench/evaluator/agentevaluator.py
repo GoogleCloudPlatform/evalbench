@@ -86,6 +86,10 @@ class AgentEvaluator:
         scoring_results: List[Any] = []
         generator_name = type(self.generator).__name__
         logging.info(f"Running {generator_name} evaluation")
+        if self.num_trials > 1:
+            logging.warning(
+                "Cloud resources are not reset between trials. Set "
+                "num_trials: 1 on scenarios that create or change them.")
 
         # Extract generic metadata
         metadata = {

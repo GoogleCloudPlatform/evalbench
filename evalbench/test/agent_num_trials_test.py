@@ -105,6 +105,13 @@ def test_invalid_scenario_num_trials_raises(make_evaluator):
         make_evaluator(num_trials=2)._trial_item(item, 0)
 
 
+@pytest.mark.parametrize("num_trials, warns", [(2, True), (1, False)])
+def test_job_with_several_trials_warns_about_cloud_resources(
+        make_evaluator, caplog, num_trials, warns):
+    make_evaluator(num_trials=num_trials)._evaluate_agent_cli([], "job1", None)
+    assert ("Cloud resources are not reset" in caplog.text) == warns
+
+
 @patch("evaluator.agentevaluator.SimulatedUser")
 def test_trials_run_one_after_another(mock_sim_user, make_evaluator):
     evaluator = make_evaluator(num_trials=2, agent_runners=4)

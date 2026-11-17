@@ -108,8 +108,7 @@ class SecretMount:
     """A Secret to mount into every case container.
 
     Case containers get none of the eval server's volumes, so anything the
-    generator reads off disk -- notably the service-account key Claude Code
-    looks for at `/etc/evalbench-sa-key/key.json` -- has to be declared here.
+    generator reads off disk has to be declared here.
     """
 
     name: str
