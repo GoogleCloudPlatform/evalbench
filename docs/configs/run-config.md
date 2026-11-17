@@ -43,19 +43,19 @@ A scenario can set its own `num_trials` in the evalset to run in fewer trials. I
 
 ```json
 {
-  "id": "csql-create-ambiguous-multiturn-01",
-  "starting_prompt": "I need a database.",
+  "id": "create-instance",
+  "starting_prompt": "Create a Cloud SQL instance.",
   "num_trials": 1
 }
 ```
 
-With `num_trials: 2` in the run config, this scenario and the scenario `cloud-sql-list-instances-01` give these result rows. The `id` column is named `eval_id` in `evals.csv`.
+With `num_trials: 2` in the run config, this scenario and a scenario `list-instances` give these result rows. The `id` column is named `eval_id` in `evals.csv`.
 
 | `id` | `prompt_id` | `trial_index` |
 | ---- | ----------- | ------------- |
-| `cloud-sql-list-instances-01_trial_0` | `cloud-sql-list-instances-01` | 0 |
-| `cloud-sql-list-instances-01_trial_1` | `cloud-sql-list-instances-01` | 1 |
-| `csql-create-ambiguous-multiturn-01_trial_0` | `csql-create-ambiguous-multiturn-01` | 0 |
+| `list-instances_trial_0` | `list-instances` | 0 |
+| `list-instances_trial_1` | `list-instances` | 1 |
+| `create-instance_trial_0` | `create-instance` | 0 |
 
 With `num_trials: 1`, the `id` is unchanged and the rows have no `prompt_id` or `trial_index`.
 
