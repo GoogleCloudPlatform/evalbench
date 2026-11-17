@@ -30,6 +30,9 @@ class AgentOrchestrator(Orchestrator):
         self.report_progress = report_progress
         # Reporting writes this to configs.csv.
         self.agent_version = None
+        # Set if the job stops before all trials ran. The results of the
+        # finished trials are still reported.
+        self.incomplete_reason = None
 
     def evaluate(self, dataset: list[EvalGeminiCliRequest]):
         logging.info("Starting agent CLI evaluation")
@@ -38,6 +41,7 @@ class AgentOrchestrator(Orchestrator):
         eval_outputs, scoring_results = evaluator.evaluate(
             dataset, self.job_id, self.run_time
         )
+        self.incomplete_reason = evaluator.incomplete_reason
         self.total_eval_outputs.extend(eval_outputs)
         self.total_scoring_results.extend(scoring_results)
 
