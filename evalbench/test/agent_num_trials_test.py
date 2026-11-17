@@ -1,5 +1,8 @@
 import json
+import os
+import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import types
@@ -8,25 +11,30 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from evaluator.agentevaluator import AgentEvaluator
+from evaluator.trialsnapshot import TrialSnapshot
 from generators.models.agent_cli import AgentCliGenerator
 from work.agentscorework import AgentScoreWork
 
 
 @pytest.fixture
-def make_evaluator():
+def make_evaluator(tmp_path):
     """Returns a factory for an AgentEvaluator with a mocked agent CLI."""
     patcher = patch("evaluator.agentevaluator.get_generator")
     mock_get_generator = patcher.start()
     generator = MagicMock(spec=AgentCliGenerator)
     generator.version = "1.0"
-    generator.fake_home = "/tmp/fake_home"
+    # A real directory: with more than one trial, the evaluator resets it.
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    generator.fake_home = str(fake_home)
     mock_get_generator.return_value = generator
 
-    def _make(num_trials, agent_runners=1):
+    def _make(num_trials, agent_runners=1, **config):
         return AgentEvaluator({
             "model_config": "dummy.yaml",
             "num_trials": num_trials,
             "runners": {"agent_runners": agent_runners},
+            **config,
         })
 
     yield _make
@@ -173,3 +181,211 @@ def test_score_rows_get_trial_labels():
     assert scoring_results[1]["prompt_id"] == "s1"
     assert scoring_results[1]["trial_index"] == 1
     assert earlier_row == {"id": "other"}
+
+
+def _run_and_record(evaluator, dataset):
+    """Runs the trials with a fake scenario and returns what each one saw.
+
+    The fake scenario records the file names in its directory, then writes a
+    file there. The directory is the scenario's work dir, or the sandbox home
+    if it has none.
+    """
+    seen = []
+
+    def fake_process_scenario(scenario, eval_result, *args):
+        directory = (scenario.get("resolved_work_dir")
+                     or evaluator.generator.fake_home)
+        os.makedirs(directory, exist_ok=True)
+        seen.append((scenario["id"], sorted(os.listdir(directory))))
+        with open(os.path.join(directory, "output.txt"), "w") as f:
+            f.write(scenario["id"])
+
+    evaluator.process_scenario = fake_process_scenario
+    with patch("evaluator.agentevaluator.SimulatedUser"):
+        evaluator._evaluate_agent_cli(dataset, "job1", None)
+    return seen
+
+
+def test_home_is_reset_between_trials(make_evaluator, tmp_path):
+    evaluator = make_evaluator(num_trials=3)
+    seen = _run_and_record(evaluator, [_item({"scenarios": [{"id": "a"}]})])
+
+    # No trial sees the file that the trial before it wrote.
+    assert seen == [("a_trial_0", []), ("a_trial_1", []), ("a_trial_2", [])]
+    # The snapshot is deleted when the run ends.
+    assert sorted(os.listdir(tmp_path)) == ["fake_home"]
+
+
+def test_home_is_not_reset_with_one_trial(make_evaluator, tmp_path):
+    evaluator = make_evaluator(num_trials=1)
+    with patch("evaluator.agentevaluator.TrialSnapshot") as mock_snapshot:
+        _run_and_record(evaluator, [_item({"scenarios": [{"id": "a"}]})])
+
+    mock_snapshot.assert_not_called()
+    assert os.listdir(tmp_path / "fake_home") == ["output.txt"]
+
+
+def test_work_dir_is_reset_between_trials(make_evaluator, tmp_path):
+    work_dir = tmp_path / "workspace"
+    work_dir.mkdir()
+    (work_dir / "starter.sql").write_text("select 1")
+    scenario = {"id": "a", "resolved_work_dir": str(work_dir)}
+    evaluator = make_evaluator(num_trials=2)
+    seen = _run_and_record(evaluator, [_item({"scenarios": [scenario]})])
+
+    assert seen == [("a_trial_0", ["starter.sql"]), ("a_trial_1", ["starter.sql"])]
+
+
+def test_work_dir_of_single_trial_scenario_is_not_reset(make_evaluator, tmp_path):
+    once = {"id": "once", "num_trials": 1,
+            "resolved_work_dir": str(tmp_path / "once")}
+    twice = {"id": "twice", "resolved_work_dir": str(tmp_path / "twice")}
+    evaluator = make_evaluator(num_trials=2)
+    _run_and_record(evaluator, [_item({"scenarios": [once, twice]})])
+
+    # The scenario that ran once keeps its output. It needs no reset.
+    assert os.listdir(tmp_path / "once") == ["output.txt"]
+
+
+def test_snapshot_is_removed_when_a_trial_fails(make_evaluator, tmp_path):
+    evaluator = make_evaluator(num_trials=2)
+    with patch.object(evaluator, "_run_items", side_effect=RuntimeError("boom")):
+        with pytest.raises(RuntimeError):
+            evaluator._evaluate_agent_cli(
+                [_item({"scenarios": [{"id": "a"}]})], "job1", None)
+
+    assert sorted(os.listdir(tmp_path)) == ["fake_home"]
+
+
+def test_failed_reset_stops_the_trials_and_keeps_the_results(
+        make_evaluator, tmp_path, caplog):
+    evaluator = make_evaluator(num_trials=3)
+
+    def fake_process_scenario(scenario, eval_result, *args):
+        eval_result.agent_results.append({"eval_id": scenario["id"]})
+
+    evaluator.process_scenario = fake_process_scenario
+    # The reset before trial 1 works. The reset before trial 2 fails.
+    with patch("evaluator.agentevaluator.SimulatedUser"), \
+            patch.object(TrialSnapshot, "restore",
+                         side_effect=[None, OSError("disk full")]):
+        eval_outputs, _ = evaluator._evaluate_agent_cli(
+            [_item({"scenarios": [{"id": "a"}]})], "job1", None)
+
+    assert [o["eval_id"] for o in eval_outputs] == ["a_trial_0", "a_trial_1"]
+    assert "The reset before trial 2 failed: disk full" in caplog.text
+    # The job reports why trials are missing.
+    assert "The remaining trials did not run" in evaluator.incomplete_reason
+    # The snapshot is kept under a new name, and the reason has its path.
+    (kept,) = [name for name in os.listdir(tmp_path) if name != "fake_home"]
+    assert kept.startswith("fake_home_failed_reset_")
+    assert str(tmp_path / kept) in evaluator.incomplete_reason
+
+
+def test_reset_that_fails_half_way_keeps_the_only_full_copy(
+        make_evaluator, tmp_path):
+    work_dir = tmp_path / "workspace"
+    work_dir.mkdir()
+    for name in ("a.sql", "b.sql", "c.sql"):
+        (work_dir / name).write_text("select 1")
+    scenario = {"id": "a", "resolved_work_dir": str(work_dir)}
+    evaluator = make_evaluator(num_trials=2)
+    evaluator.process_scenario = MagicMock()
+
+    # `save` copies 3 files. In `restore`, the copy of the 2nd file fails.
+    copy2 = shutil.copy2
+    calls = []
+
+    def failing_copy2(source, target):
+        calls.append(source)
+        if len(calls) == 5:
+            raise OSError("disk full")
+        return copy2(source, target)
+
+    with patch("evaluator.agentevaluator.SimulatedUser"), \
+            patch("evaluator.trialsnapshot.shutil.copy2", failing_copy2):
+        evaluator._evaluate_agent_cli(
+            [_item({"scenarios": [scenario]})], "job1", None)
+
+    # The work dir lost files. The snapshot still has all 3.
+    assert len(os.listdir(work_dir)) < 3
+    (kept,) = [name for name in os.listdir(tmp_path)
+               if name.startswith("fake_home_failed_reset_")]
+    assert sorted(os.listdir(tmp_path / kept / "1")) == [
+        "a.sql", "b.sql", "c.sql"]
+    assert str(tmp_path / kept) in evaluator.incomplete_reason
+
+
+def test_all_trials_ran_leaves_no_incomplete_reason(make_evaluator):
+    evaluator = make_evaluator(num_trials=2)
+    evaluator.process_scenario = MagicMock()
+    with patch("evaluator.agentevaluator.SimulatedUser"):
+        evaluator._evaluate_agent_cli(
+            [_item({"scenarios": [{"id": "a"}]})], "job1", None)
+
+    assert evaluator.incomplete_reason is None
+
+
+def test_orchestrator_reports_the_incomplete_reason():
+    from evaluator.agentorchestrator import AgentOrchestrator
+
+    with patch("evaluator.agentorchestrator.AgentEvaluator") as mock_evaluator:
+        mock_evaluator.return_value.evaluate.return_value = ([], [])
+        mock_evaluator.return_value.incomplete_reason = "The reset failed."
+        orchestrator = AgentOrchestrator({}, [], {})
+        orchestrator.evaluate([])
+
+    assert orchestrator.incomplete_reason == "The reset failed."
+
+
+@pytest.mark.parametrize("as_dict", [False, True], ids=["path", "prompts_file"])
+def test_unsafe_work_dir_raises_before_any_trial(
+        make_evaluator, tmp_path, as_dict):
+    dataset_dir = tmp_path / "dataset"
+    dataset_dir.mkdir()
+    # A work_dir of "." is the directory of the evalset file.
+    scenario = {"id": "a", "resolved_work_dir": str(dataset_dir)}
+    # The run config accepts a path, or a dict with `prompts_file`.
+    dataset_config = str(dataset_dir / "evalset.json")
+    if as_dict:
+        dataset_config = {"prompts_file": dataset_config}
+    evaluator = make_evaluator(num_trials=2, dataset_config=dataset_config)
+    evaluator.process_scenario = MagicMock()
+
+    with pytest.raises(ValueError, match="cannot be reset between trials"):
+        evaluator._evaluate_agent_cli(
+            [_item({"scenarios": [scenario]})], "job1", None)
+
+    evaluator.process_scenario.assert_not_called()
+    assert sorted(os.listdir(tmp_path)) == ["dataset", "fake_home"]
+
+
+@pytest.mark.parametrize(
+    "protected", ["user_home", "run_dir", "temp_dir", "fake_home"])
+def test_work_dir_that_is_a_protected_directory_raises(
+    make_evaluator, tmp_path, monkeypatch, protected
+):
+    # Stand-ins for the real directories. The test only runs the check, so a
+    # broken check deletes nothing.
+    for name in ("user_home", "run_dir", "temp_dir"):
+        (tmp_path / name).mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path / "user_home"))
+    monkeypatch.chdir(tmp_path / "run_dir")
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "temp_dir"))
+    scenario = {"id": "a", "resolved_work_dir": str(tmp_path / protected)}
+    evaluator = make_evaluator(num_trials=2)
+
+    with pytest.raises(ValueError, match="of scenario a cannot be reset"):
+        evaluator._work_dirs_to_reset([_item({"scenarios": [scenario]})])
+
+
+def test_unsafe_work_dir_is_allowed_with_one_trial(make_evaluator, tmp_path):
+    dataset_dir = tmp_path / "dataset"
+    dataset_dir.mkdir()
+    scenario = {"id": "a", "num_trials": 1,
+                "resolved_work_dir": str(dataset_dir)}
+    evaluator = make_evaluator(
+        num_trials=2, dataset_config=str(dataset_dir / "evalset.json"))
+    seen = _run_and_record(evaluator, [_item({"scenarios": [scenario]})])
+
+    assert seen == [("a_trial_0", [])]

@@ -26,6 +26,7 @@ class TestEvalbench(unittest.TestCase):
         mock_load_session.return_value = ({}, [{}], {}, {})
 
         mock_evaluator = MagicMock()
+        mock_evaluator.incomplete_reason = None
         mock_evaluator.process.return_value = ("job123", "10s", None, None, None)
         mock_get_orch.return_value = mock_evaluator
 
@@ -33,6 +34,32 @@ class TestEvalbench(unittest.TestCase):
 
         self.assertTrue(success)
         mock_evaluator.evaluate.assert_called_once()
+        mock_evaluator.process.assert_called_once()
+
+    @patch('evalbench.evalbench.get_orchestrator')
+    @patch('evalbench.evalbench.load_yaml_config')
+    @patch('evalbench.evalbench.load_dataset_from_json')
+    @patch('evalbench.evalbench.set_session_configs')
+    @patch('evalbench.evalbench.load_session_configs')
+    @patch('evalbench.evalbench.get_reporters')
+    def test_eval_fails_if_the_job_is_incomplete(self, mock_get_reporters, mock_load_session, mock_set_session, mock_load_dataset, mock_load_yaml, mock_get_orch):
+        """A job that stops before all trials ran stores its results and fails."""
+        mock_load_yaml.return_value = {"dummy": "config"}
+
+        def mock_set_session_fn(session, parsed_config):
+            session["dataset_config"] = "fake_ds.json"
+        mock_set_session.side_effect = mock_set_session_fn
+
+        mock_load_session.return_value = ({}, [{}], {}, {})
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.process.return_value = ("job123", "10s", None, None, None)
+        mock_evaluator.incomplete_reason = "The reset before trial 1 failed."
+        mock_get_orch.return_value = mock_evaluator
+
+        success = evalbench_eval("fake_config.yaml")
+
+        self.assertFalse(success)
         mock_evaluator.process.assert_called_once()
 
     @patch('evalbench.evalbench.get_orchestrator')
@@ -97,6 +124,7 @@ class TestEvalbench(unittest.TestCase):
         mock_load_session.return_value = ({"tear_down_script": "teardown.sh"}, [{}], {}, {})
 
         mock_evaluator = MagicMock()
+        mock_evaluator.incomplete_reason = None
         mock_evaluator.job_id = "job123"
         mock_evaluator.process.return_value = ("job123", "10s", None, None, None)
         mock_get_orch.return_value = mock_evaluator

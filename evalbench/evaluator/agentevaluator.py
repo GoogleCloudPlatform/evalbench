@@ -5,6 +5,7 @@ import concurrent.futures
 import logging
 import os
 import shutil
+import tempfile
 import time
 import threading
 
@@ -17,6 +18,7 @@ from mp import mprunner
 from util.config import get_eval_case_timeout
 from work.agentgenwork import AgentGenWork
 from evaluator.simulateduser import SimulatedUser
+from evaluator.trialsnapshot import TrialSnapshot, check_resettable
 from work.agentscorework import AgentScoreWork
 import json
 import subprocess
@@ -81,6 +83,8 @@ class AgentEvaluator:
         self.agent_runners = runner_config.get("agent_runners", 10)
         self.num_trials = _check_num_trials(
             self.config.get("num_trials", 1), "the run config")
+        # Set if the job stops before all trials ran.
+        self.incomplete_reason: str | None = None
 
     def evaluate(
         self,
@@ -117,12 +121,39 @@ class AgentEvaluator:
         }
 
         self.agentrunner = mprunner.MPRunner(self.agent_runners)
+        snapshot = None
         try:
-            # Trials run one after another. Each trial runs the full suite.
-            # All trials of a scenario use the same generator fake_home and
-            # the same work_dir. Concurrent trials of one scenario would
-            # write to the same files.
+            # Trials run one after another, and each trial runs the full
+            # suite. They share the generator's fake_home and each scenario's
+            # work_dir, so concurrent trials would write to the same files.
+            # The snapshot puts these directories back before each trial
+            # after the first, so a trial does not see the files of an
+            # earlier one.
+            if self.num_trials > 1:
+                snapshot = TrialSnapshot(
+                    getattr(self.generator, "fake_home", None),
+                    self._work_dirs_to_reset(dataset))
+                snapshot.save()
             for trial_index in range(self.num_trials):
+                if trial_index > 0:
+                    try:
+                        snapshot.restore()
+                    except OSError as e:
+                        # Stop, because a trial must not start with the files
+                        # of an earlier one. The finished trials keep their
+                        # results.
+                        self.incomplete_reason = (
+                            f"The reset before trial {trial_index} failed: "
+                            f"{e}. The remaining trials did not run.")
+                        # A reset that fails half way leaves a directory with
+                        # a part of its files. The snapshot has all of them.
+                        kept = snapshot.keep()
+                        if kept:
+                            self.incomplete_reason += (
+                                f" The snapshot of the sandbox home and the "
+                                f"work dirs is kept at {kept}.")
+                        logging.error(self.incomplete_reason)
+                        break
                 items = [self._trial_item(item, trial_index) for item in dataset]
                 outputs, scores = self._run_items(
                     [item for item in items if item is not None],
@@ -133,6 +164,44 @@ class AgentEvaluator:
             return eval_outputs, scoring_results
         finally:
             self.agentrunner.shutdown()
+            if snapshot is not None:
+                snapshot.remove()
+
+    def _work_dirs_to_reset(self, dataset: List[Any]) -> List[str]:
+        """Returns the work dirs of the scenarios that run in more than one trial.
+
+        Raises ValueError if the reset of a work dir would delete a directory
+        that must stay.
+        """
+        # A reset deletes everything in a work dir, so a work dir must not be
+        # one of these directories or contain one.
+        protected = [os.path.expanduser("~"), os.getcwd(), tempfile.gettempdir()]
+        fake_home = getattr(self.generator, "fake_home", None)
+        if fake_home:
+            protected.append(fake_home)
+        dataset_config = self.config.get("dataset_config")
+        if isinstance(dataset_config, dict):
+            # The run config also accepts `dataset_config: {prompts_file: ...}`.
+            dataset_config = dataset_config.get("prompts_file")
+        if isinstance(dataset_config, str):
+            # A work_dir of "." is the directory of the evalset file.
+            protected.append(os.path.dirname(os.path.abspath(dataset_config)))
+
+        work_dirs = []
+        for item in dataset:
+            eval_set = json.loads(item.payload)
+            for scenario in eval_set.get("scenarios", [eval_set]):
+                work_dir = scenario.get("resolved_work_dir")
+                if work_dir and self._scenario_num_trials(scenario) > 1:
+                    check_resettable(scenario["id"], work_dir, protected)
+                    work_dirs.append(work_dir)
+        return work_dirs
+
+    def _scenario_num_trials(self, scenario: Dict[str, Any]) -> int:
+        """Returns the scenario's own num_trials, or the run value if it has none."""
+        return _check_num_trials(
+            scenario.get("num_trials", self.num_trials),
+            f"scenario {scenario.get('id')}")
 
     def _run_items(
         self, items: List[Any], job_id: str, metadata: Dict[str, Any]
@@ -177,10 +246,7 @@ class AgentEvaluator:
         # Check the scenario values with one trial too. A bad value must not
         # start to fail the job when the run value changes.
         trials_of_scenarios = [
-            _check_num_trials(
-                scenario.get("num_trials", self.num_trials),
-                f"scenario {scenario.get('id')}")
-            for scenario in scenarios]
+            self._scenario_num_trials(scenario) for scenario in scenarios]
         if self.num_trials == 1:
             return item
 
