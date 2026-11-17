@@ -186,7 +186,7 @@ reporting:
 | `evals.csv` | Every scenario or eval item, including the full conversation and tool calls. |
 | `scores.csv` | One row per scorer per item, with the judge's explanation. |
 | `summary.csv` | Aggregate metrics. |
-| `run_stats.csv` | The pass rate and flakiness of each scenario. Only an agent run with `num_trials` above 1 writes it. See [the columns](/docs/configs/run-config.md#stats-of-an-agent-run-with-more-than-one-trial). |
+| `run_stats.csv` | The pass rate and flakiness of each scenario. Only an agent run with `num_trials` above 1 writes it. See [the columns](/docs/agentic-evals.md#stats-across-trials). |
 
 ### Viewer
 
