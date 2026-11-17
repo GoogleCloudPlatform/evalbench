@@ -11,6 +11,7 @@ Layout::
     spec.py         the self-contained description of one eval case
     pool_router.py  round-robin placement across worker pools
     backend.py      ContainerBackend interface + CaseResult
+    k8s_backend.py  GKE implementation: one Kubernetes Job per case
     case_runner.py  the in-container entrypoint that runs one case
     cancellation.py lets a cancelled RPC stop the cases it started
 """

@@ -81,6 +81,12 @@ class TestCaseHandle(unittest.TestCase):
         handle = CaseHandle(case_id="a", pool="p", name="job-a")
         self.assertGreaterEqual(handle.submitted_at, before)
         self.assertFalse(handle.abandoned)
+        self.assertIsNone(handle.config)
+
+    def test_the_runs_config_is_not_in_its_repr(self):
+        # A config is large; it must not flood log lines that print handles.
+        handle = CaseHandle(case_id="a", pool="p", name="job-a", config=_config())
+        self.assertNotIn("worker_pools", repr(handle))
 
 
 class TestGetBackend(unittest.TestCase):
@@ -124,6 +130,13 @@ class TestExtractResultPayload(unittest.TestCase):
     def test_returns_none_on_invalid_json(self):
         self.assertIsNone(
             extract_result_payload(f"{RESULT_BEGIN}\nnot json\n{RESULT_END}"))
+
+    def test_returns_none_for_json_that_is_not_an_object(self):
+        # A result is always an object; anything else is not one.
+        for body in ("[]", '"x"', "1", "null"):
+            self.assertIsNone(
+                extract_result_payload(f"{RESULT_BEGIN}\n{body}\n{RESULT_END}"),
+                body)
 
     def test_uses_the_last_payload_when_the_marker_repeats(self):
         logs = (
