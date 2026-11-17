@@ -187,7 +187,7 @@ class AgentEvaluator:
         """Returns the scenario's own num_trials, or the run value if it has none."""
         return _check_num_trials(
             scenario.get("num_trials", self.num_trials),
-            f"scenario {scenario['id']}")
+            f"scenario {scenario.get('id')}")
 
     def _run_items(
         self, items: List[Any], job_id: str, metadata: Dict[str, Any]
@@ -227,14 +227,17 @@ class AgentEvaluator:
 
         Scenario ids become `<id>_trial_<k>`. With one trial, the item is unchanged.
         """
+        eval_set = json.loads(item.payload)
+        scenarios = eval_set.get("scenarios", [eval_set])
+        # Check the scenario values with one trial too. A bad value must not
+        # start to fail the job when the run value changes.
+        trials_of_scenarios = [
+            self._scenario_num_trials(scenario) for scenario in scenarios]
         if self.num_trials == 1:
             return item
 
-        eval_set = json.loads(item.payload)
-        scenarios = eval_set.get("scenarios", [eval_set])
         trial_scenarios = []
-        for scenario in scenarios:
-            scenario_trials = self._scenario_num_trials(scenario)
+        for scenario, scenario_trials in zip(scenarios, trials_of_scenarios):
             if scenario_trials > self.num_trials and trial_index == 0:
                 logging.warning(
                     "Scenario %s sets num_trials=%s, above the run value %s. "

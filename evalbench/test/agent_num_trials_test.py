@@ -100,10 +100,12 @@ def test_invalid_run_num_trials_raises(make_evaluator, value):
         make_evaluator(num_trials=value)
 
 
-def test_invalid_scenario_num_trials_raises(make_evaluator):
+@pytest.mark.parametrize("run_num_trials", [1, 2])
+def test_invalid_scenario_num_trials_raises(make_evaluator, run_num_trials):
+    """The scenario value is checked with one trial too."""
     item = _item({"scenarios": [{"id": "bad", "num_trials": 0}]})
     with pytest.raises(ValueError, match="scenario bad"):
-        make_evaluator(num_trials=2)._trial_item(item, 0)
+        make_evaluator(num_trials=run_num_trials)._trial_item(item, 0)
 
 
 @pytest.mark.parametrize("num_trials, warns", [(2, True), (1, False)])

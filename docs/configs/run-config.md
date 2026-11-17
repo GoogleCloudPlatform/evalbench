@@ -60,6 +60,7 @@ With `num_trials: 2` in the run config, this scenario and a scenario `list-insta
 With `num_trials: 1`, the `id` is unchanged and the rows have no `prompt_id` or `trial_index`.
 
 EvalBench does not reset cloud resources between trials. Set `num_trials: 1` on each scenario that creates or changes a cloud resource.
+
 ---
 
 ## 2. Prompt and Generation Modules
