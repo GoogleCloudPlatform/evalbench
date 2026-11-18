@@ -41,13 +41,22 @@ The file is a single JSON object with a `scenarios` array:
 | `kind` | Optional | Category label for grouping and reporting (e.g. `"tools"`). |
 | `work_dir` | Optional | Working directory the agent runs in. Relative paths resolve against the evalset file's own directory, and the directory is created if it doesn't exist. Use this for scenarios where the agent must read or write project files. |
 | `binary_rubric` | Optional | Array of pass/fail criteria evaluated by the `binary_rubric_scorer`. Each criterion is scored independently and reports as `binary_rubric_scorer_<index>`. |
+| `success_criteria` | Optional | Array of outcomes the agent must produce, judged by the `goal_completion` scorer. If set, the judge rules on each criterion and the score is the share met. If not set, the judge splits `conversation_plan` into sub-goals instead. The simulated user does not see this field. |
 | `expected_skills` | Optional | List of skill names the agent is expected to activate. Used by the `skills_trajectory` scorer. |
+| `num_trials` | Optional | Number of trials for this scenario. Must be an integer of 1 or more. It can only lower the run config `num_trials`. A higher value is capped at the run value. Applies only when the run config `num_trials` is greater than 1. See the [`num_trials` examples](/docs/configs/run-config.md#num_trials-examples). |
 
 ## Important Notes
 
 - **Environment placeholders:** `${VAR}` placeholders anywhere in the evalset are expanded from the environment at load time, so values like a GCP project need not be hard-coded. An unresolved placeholder **fails the run immediately** rather than passing a literal `${VAR}` to the agent — export the variable first.
 - **Scenario filtering:** You do not need separate evalset files to run a subset. Set `scenarios` (explicit IDs) or `scenario_pattern` (a glob over IDs) in the run config to filter at load time.
 - **Empty trajectories are valid:** For scenarios scored purely by rubric or goal completion, set `"expected_trajectory": []`. The `trajectory_matcher` scorer can simply be left out of the run config.
+- **Reset between trials:** If `num_trials` is greater than 1, trials run one after another in the same sandbox home and the same `work_dir`. Before each trial after the first, EvalBench puts both directories back to their state before the first trial, so a trial does not see the files of an earlier one. The download caches in the sandbox home (`.npm`, `.cache`, `.local`) are kept.
+  - With the `agent_grpc_proxy` generator, the agent runs on another machine. EvalBench does not reset the files on that machine.
+  - Cloud resources are not reset. Set `num_trials: 1` on a scenario that creates named cloud resources.
+  - A `work_dir` that is reset must be a directory of its own. The run fails at the start if the `work_dir` is, or contains, the evalset file's directory, the sandbox home, your home directory, the system temp directory, or the directory EvalBench runs from.
+  - With `gcs_artifacts` reporting, the upload holds the files of the last trial only.
+  - If a reset fails, the remaining trials do not run. EvalBench reports the trials that finished, and the job ends with an error. The log gives the path of the snapshot, which still has the files from before the first trial.
+  - Do not run two jobs of one harness from the same directory at the same time. The reset of one job deletes the files of the other.
 
 ## Tool name format
 
@@ -105,5 +114,14 @@ A rubric-scored scenario with no expected tool trajectory:
   "max_turns": 5
 }
 ```
+
+### Example: with and without `success_criteria`
+
+Two Claude Code run configs use the same scenarios and scorers. Only the dataset is different.
+
+| Run config | Dataset | `goal_completion` grades |
+|---|---|---|
+| [example_run_config.yaml](/datasets/claude-code-tools/example_run_config.yaml) | [claude-code.evalset.json](/datasets/claude-code-tools/claude-code.evalset.json) | Sub-goals that the judge splits from `conversation_plan` |
+| [example_run_extended_config.yaml](/datasets/claude-code-tools/example_run_extended_config.yaml) | [claude-code-extended.evalset.json](/datasets/claude-code-tools/claude-code-extended.evalset.json) | The `success_criteria` of each scenario |
 
 See the [scorer reference](/docs/scorers.md#agentic-scorers) for what each scorer does with these fields.

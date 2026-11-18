@@ -11,15 +11,33 @@ from typing import Optional, Union, Dict, List
 from util.context import rpc_id_var
 from util.sessionmgr import validate_session_id
 
+# Quota and server errors in a Gemini "[API Error: ...]" message. A bare
+# "quota" does not match, because a missing quota project is a config error.
+# A status code must follow its label, and a status name must be upper case,
+# because bare numbers and words also appear in other errors.
+_GEMINI_QUOTA_OR_SERVER_RE = re.compile(
+    r'(?:"code":\s*|\b[Ss]tatus:?\s+)(?:429|500|502|503|504)\b'
+    r"|\b(?:RESOURCE_EXHAUSTED|QUOTA_EXHAUSTED|MODEL_CAPACITY_EXHAUSTED"
+    r"|MODEL_CAPACITY_EXCEEDED|UNAVAILABLE|INTERNAL|DEADLINE_EXCEEDED)\b"
+    r"|(?i:quota exceeded|exceeded[^\n]{0,40}quota"
+    r"|exhausted your (?:daily quota|capacity)|capacity exceeded"
+    r"|retry attempts exhausted|resource (?:has been )?exhausted"
+    r"|rate limit|too many requests|overloaded)")
+
+# Gemini CLI quota error classes, from the result event's `error.type`.
+_GEMINI_QUOTA_ERROR_TYPES = ("TerminalQuotaError", "RetryableQuotaError")
+
 
 class CLICommand:
-    def __init__(self, cli, prompt, env=None, resume=False, yolo=True, cwd=None):
+    def __init__(self, cli, prompt, env=None, resume=False, yolo=True, cwd=None,
+                 session_id=None):
         self.cli = cli
         self.prompt = prompt
         self.env = env if env else {}
         self.resume = resume
         self.yolo = yolo
         self.cwd = cwd
+        self.session_id = session_id
 
 
 class GeminiCliGenerator(AgentCliGenerator):
@@ -846,8 +864,12 @@ class GeminiCliGenerator(AgentCliGenerator):
             cli_cmd.cli,
             "--",
         ]
-        if cli_cmd.resume:
-            command.append("--resume")
+        # Resume session: `--resume <session_id>` takes the UUID as its value.
+        # A bare `--resume` loads the latest session in the working directory,
+        # which can belong to another scenario when scenarios run concurrently.
+        session_id = (cli_cmd.session_id or "").strip()
+        if cli_cmd.resume and session_id and not session_id.startswith("-"):
+            command.extend(["--resume", session_id])
         if cli_cmd.yolo:
             command.append("--yolo")
 
@@ -1038,6 +1060,31 @@ class GeminiCliGenerator(AgentCliGenerator):
     def version(self) -> str:
         return self.gemini_cli_version
 
+    def model_api_error(self, result: subprocess.CompletedProcess) -> Optional[str]:
+        """Returns the final API error if it is a quota or server error.
+
+        On failure, stdout is the raw stream-json. Gemini CLI formats fatal
+        model errors as "[API Error: ...]". Tool errors and retry logs use
+        other formats.
+        """
+        for line in reversed((result.stdout or "").splitlines()):
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict) or event.get("type") != "result":
+                continue
+            if event.get("status") != "error":
+                return None
+            error = event.get("error") or {}
+            message = str(error.get("message", ""))
+            if message.startswith("[API Error:") and (
+                    error.get("type") in _GEMINI_QUOTA_ERROR_TYPES
+                    or _GEMINI_QUOTA_OR_SERVER_RE.search(message)):
+                return message
+            return None
+        return None
+
     def parse_response(self, stdout: str) -> dict:
         if not stdout:
             return {}
@@ -1110,4 +1157,5 @@ class GeminiCliGenerator(AgentCliGenerator):
 
         if env:
             merged_env.update(env)
-        return CLICommand(cli=cli, prompt=prompt, env=merged_env, resume=resume, cwd=cwd)
+        return CLICommand(cli=cli, prompt=prompt, env=merged_env, resume=resume,
+                          session_id=session_id, cwd=cwd)

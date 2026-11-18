@@ -198,6 +198,16 @@ def eval(experiment_config: str):
                 f"these reporters failed: {', '.join(failed_reporters)}"
             )
             return False
+
+        # An agent job can stop before all trials ran. The results of the
+        # finished trials are stored, and the job still counts as failed.
+        incomplete_reason = getattr(evaluator, "incomplete_reason", None)
+        if incomplete_reason:
+            logging.error(
+                f"Evaluation for config '{display_config}' stored its "
+                f"results, but it is incomplete. {incomplete_reason}"
+            )
+            return False
         return True
     except Exception as e:
         display_config = experiment_config

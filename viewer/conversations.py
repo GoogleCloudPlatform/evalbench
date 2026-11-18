@@ -45,8 +45,9 @@ def _get_conversation_status(
     Returns:
         tuple[str, list[str]]: (status, list_of_failed_metric_strings)
         status is one of:
-        - "red": goal_completion < 100%
-        - "yellow": goal_completion == 100% (or N/A), but another evaluative metric < 100%
+        - "red": goal_completion is 0%
+        - "yellow": goal_completion is partial (above 0% and below 100%), or
+          another evaluative metric < 100%
         - "green": all evaluated percentage metrics == 100%
         - "neutral": no evaluative scores available
     """
@@ -82,7 +83,7 @@ def _get_conversation_status(
         has_any_eval_metric = True
         if val < 100.0:
             failed_details.append(f"{comp}: {val:.0f}%")
-            if comp == "goal_completion":
+            if comp == "goal_completion" and val <= 0.0:
                 has_goal_completion_fail = True
             else:
                 has_other_fail = True
@@ -224,7 +225,7 @@ def conversations_component(
                                         )
                                     )
                                     me.text(
-                                        f"<100% Goal Completion ({counts['red']})",
+                                        f"0% Goal Completion ({counts['red']})",
                                         style=me.Style(font_size="12px", color="#475569"),
                                     )
                                 # Yellow Legend
@@ -251,7 +252,7 @@ def conversations_component(
                                         )
                                     )
                                     me.text(
-                                        f"Other Metric Issue ({counts['yellow']})",
+                                        f"Partial Goal or Other Metric Issue ({counts['yellow']})",
                                         style=me.Style(font_size="12px", color="#475569"),
                                     )
                                 # Green Legend

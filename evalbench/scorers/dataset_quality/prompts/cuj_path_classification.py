@@ -51,7 +51,8 @@ so judge what each scenario ACTUALLY exercises, not what it superficially resemb
 
 ### How to classify
 For each CUJ, base your judgment primarily on the conversation_plan (it describes
-the intended multi-turn dynamic), then the starting_prompt and expected_trajectory.
+the intended multi-turn dynamic), then the starting_prompt, success_criteria (if
+present), and expected_trajectory.
 Pick the ONE path that best characterizes the scenario. If more than one seems to
 apply, choose the dominant path using this priority order (top wins):
 1. "Out-of-Domain" -- if the core request targets PII / disallowed / out-of-scope
@@ -74,13 +75,19 @@ not to exist, then the user asks to fix it).
 
 Do not invent behavior that is not implied by the scenario. When genuinely
 uncertain between an edge path and Happy, prefer the edge path only if the
-conversation_plan clearly describes that dynamic; otherwise classify as "Happy".
+conversation_plan or success_criteria clearly describes that dynamic; otherwise
+classify as "Happy".
 
 ### Input Data
 **Available Tools:** {tool_names}
 
 **CUJs (JSON list):** Each object has "id", "starting_prompt", "conversation_plan",
-and "expected_trajectory".
+and "expected_trajectory". Some also have "success_criteria", the outcomes the agent
+must produce. Credit a criterion only if the agent can reach it from the
+starting_prompt and conversation_plan. A criterion is unreachable when it needs a
+value that the user never gives and the agent cannot look up (a tier, a disk size,
+a role name), or when it contradicts the request (e.g. "show only active items"
+when the user asks for every item). Ignore unreachable criteria.
 {cujs_json}
 
 ### Recommendations

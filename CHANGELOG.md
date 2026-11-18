@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.21.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.20.0...v1.21.0) (2026-10-27)
+
+
+### Features
+
+* **scorers:** add optional success_criteria for goal_completion ([#675](https://github.com/GoogleCloudPlatform/evalbench/issues/675)) ([cfd952a](https://github.com/GoogleCloudPlatform/evalbench/commit/cfd952af0bacec531269824bf31766c4eaff6d45))
+* **scorers:** award partial credit for goal_completion ([#626](https://github.com/GoogleCloudPlatform/evalbench/issues/626)) ([79e1ddf](https://github.com/GoogleCloudPlatform/evalbench/commit/79e1ddf1ebaafc2b83e2593a0438a3f0b0152d6a))
+* **viewer:** show partial goal_completion ([#674](https://github.com/GoogleCloudPlatform/evalbench/issues/674)) ([fcd25a3](https://github.com/GoogleCloudPlatform/evalbench/commit/fcd25a351109086d877ec7ca6d681f780f80d332))
+
+
+### Bug Fixes
+
+* **release:** repair the release binaries and test them on PRs ([#684](https://github.com/GoogleCloudPlatform/evalbench/issues/684)) ([1047285](https://github.com/GoogleCloudPlatform/evalbench/commit/10472855c7b8dc3950f80da3a2d37d7ee99640c7))
+* **scorers:** support unhashable cell values in SetMatcher and make_hashable ([a3b6f9e](https://github.com/GoogleCloudPlatform/evalbench/commit/a3b6f9e7d1cda0109dbc9ce8c8a3da30defd9ef7))
+
 ## [1.20.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.19.0...v1.20.0) (2026-10-26)
 
 

@@ -8,7 +8,7 @@ static sub-scorers and the skill catalog they grade against
 
 Not yet covered: the five LLM judge sub-scorers, ``synthesis.py``, ``render.py``,
 ``context.py``, the ``dataset-quality-format`` loader, and the viewer. The
-Gemini JSON-mode branch of ``llm.generate_json`` is also untested; every judge
+Gemini JSON-mode branch of ``scorers.util.generate_json`` is also untested; every judge
 call here takes the ``model.generate`` fallback.
 """
 
@@ -37,6 +37,7 @@ from scorers.dataset_quality.composition import CompositionScorer
 from scorers.dataset_quality.context import (
     CATEGORY_DISCOVERABILITY,
     CATEGORY_TOOL_ACTIVATION,
+    DEFAULT_CUJ_FIELDS,
     DatasetQualityContext,
     SubScoreContribution,
     SubScorer,
@@ -48,6 +49,12 @@ from scorers.dataset_quality.grading import (
     letter_grade,
 )
 from scorers.dataset_quality.naming_distribution import NamingDistributionScorer
+from scorers.dataset_quality.prompts import (
+    composition_coverage,
+    cuj_path_classification,
+    error_recovery_coverage,
+    parameter_coverage,
+)
 from scorers.dataset_quality.prompts.composition_coverage import (
     KEY_MULTI_TOOL,
     KEY_SEQUENCE_DEPENDENCY,
@@ -65,7 +72,7 @@ _TRAJECTORY_WEIGHT = TrajectoryCoverageScorer.default_weight
 class _StubModel:
     """Judge stand-in returning a canned response.
 
-    Deliberately not a ``MagicMock``: ``llm.generate_json`` branches on the
+    Deliberately not a ``MagicMock``: ``scorers.util.generate_json`` branches on the
     model having ``client`` and ``_call_generate_content``, which a mock
     auto-creates, silently routing the call down the Gemini JSON-mode path.
     """
@@ -643,6 +650,42 @@ class ProseSkillCoverageTest(unittest.TestCase):
         contribution = self._run([{"id": "c1", "expected_trajectory": ["alpha"]}])
 
         self.assertEqual(contribution.score, 0)
+
+
+class CujsJsonTest(unittest.TestCase):
+
+    def test_default_fields_include_success_criteria_when_set(self):
+        """A plan can leave outcomes to success_criteria, so the judges need
+        the field to see them."""
+        context = _context([
+            {"id": "c1", "conversation_plan": "p",
+             "success_criteria": ["The agent lists the instances"]},
+            {"id": "c2", "conversation_plan": "p"},
+        ], [])
+
+        cujs = json.loads(context.cujs_json(DEFAULT_CUJ_FIELDS))
+
+        self.assertEqual(["The agent lists the instances"],
+                         cujs[0]["success_criteria"])
+        self.assertNotIn("success_criteria", cujs[1])
+
+    def test_prompts_that_receive_success_criteria_describe_it(self):
+        """A judge ignores a field that its prompt does not mention."""
+        for prompt in [composition_coverage.COMPOSITION_COVERAGE_PROMPT,
+                       cuj_path_classification.CUJ_PATH_CLASSIFICATION_PROMPT,
+                       error_recovery_coverage.ERROR_RECOVERY_COVERAGE_PROMPT,
+                       parameter_coverage.PARAMETER_COVERAGE_PROMPT]:
+            with self.subTest(prompt=prompt[:40]):
+                self.assertIn('"success_criteria"', prompt)
+
+    def test_prompts_ignore_unreachable_success_criteria(self):
+        """A criterion the user cannot lead the agent to must not raise a score."""
+        for prompt in [composition_coverage.COMPOSITION_COVERAGE_PROMPT,
+                       cuj_path_classification.CUJ_PATH_CLASSIFICATION_PROMPT,
+                       error_recovery_coverage.ERROR_RECOVERY_COVERAGE_PROMPT,
+                       parameter_coverage.PARAMETER_COVERAGE_PROMPT]:
+            with self.subTest(prompt=prompt[:40]):
+                self.assertIn("Ignore unreachable criteria.", prompt)
 
 
 class CompositionScorerTest(unittest.TestCase):

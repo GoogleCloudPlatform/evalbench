@@ -317,3 +317,49 @@ def test_fetch_gcloud_access_token_rejects_unsafe_scopes():
         generator._fetch_gcloud_access_token(
             scopes=['$(whoami)']
         )
+
+
+def _vertex_generator(tmp_path, monkeypatch, server_mode):
+    """Builds a Vertex ClaudeCodeGenerator whose real HOME holds a gcloud
+    config with cached credentials, in local or eval-server mode."""
+    real_gcloud = tmp_path / "home" / ".config" / "gcloud"
+    real_gcloud.mkdir(parents=True)
+    (real_gcloud / "access_tokens.db").write_text("cached-token")
+    (real_gcloud / "application_default_credentials.json").write_text("{}")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "generators.models.claude_code.SESSIONS_ROOT", str(tmp_path / "sessions"))
+    argv0 = "/evalbench/evalbench/eval_server.py" if server_mode else "pytest"
+    monkeypatch.setattr(sys, "argv", [argv0])
+    return ClaudeCodeGenerator(
+        {"model": "claude-opus-4-6", "use_vertex": True, "session_id": "s1"})
+
+
+def test_eval_server_does_not_copy_host_gcloud_config(
+    tmp_path, monkeypatch
+):
+    """On the eval server the host's gcloud config is not copied into the
+    session sandbox and no ADC file is set. Claude and gcloud use the
+    metadata server."""
+    generator = _vertex_generator(tmp_path, monkeypatch, server_mode=True)
+
+    fake_gcloud = os.path.join(generator.fake_home, ".config", "gcloud")
+    assert generator.fake_home.startswith(str(tmp_path / "sessions"))
+    assert not os.path.exists(os.path.join(fake_gcloud, "access_tokens.db"))
+    assert "GOOGLE_APPLICATION_CREDENTIALS" not in generator.env
+    assert generator.env["CLOUDSDK_CONFIG"] == fake_gcloud
+
+
+def test_local_run_copies_gcloud_credentials_into_the_sandbox(
+    tmp_path, monkeypatch
+):
+    """Locally the developer's gcloud login is copied into the sandbox, so
+    skill scripts can use it."""
+    generator = _vertex_generator(tmp_path, monkeypatch, server_mode=False)
+
+    fake_gcloud = os.path.join(generator.fake_home, ".config", "gcloud")
+    assert os.path.exists(os.path.join(fake_gcloud, "access_tokens.db"))
+    assert generator.env["GOOGLE_APPLICATION_CREDENTIALS"] == os.path.join(
+        fake_gcloud, "application_default_credentials.json")

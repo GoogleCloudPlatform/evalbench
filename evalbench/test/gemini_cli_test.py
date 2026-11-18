@@ -337,3 +337,40 @@ def test_setup_skill_dict_disable(
         "my-skill",
     ]
     assert expected_cmd in calls
+
+
+def _cli_args(tmp_path, monkeypatch, *, resume, session_id):
+    """Runs one turn with a mocked subprocess and returns the Gemini CLI argv."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "real_home"))
+    generator = GeminiCliGenerator({})
+    cli_cmd = generator.create_command(
+        cli="gemini-cli", prompt="hello", resume=resume, session_id=session_id
+    )
+    with patch.object(
+        generator,
+        "_execute_cli_command",
+        return_value=MagicMock(returncode=0, stdout="", stderr=""),
+    ) as mock_exec:
+        generator._run_gemini_cli(cli_cmd)
+    return mock_exec.call_args.args[0]
+
+
+def test_resume_uses_session_id(tmp_path, monkeypatch):
+    session_id = "3f2b8c1e-9a4d-4e6f-8b7a-1c2d3e4f5a6b"
+    args = _cli_args(tmp_path, monkeypatch, resume=True, session_id=session_id)
+    assert args[args.index("--resume") + 1] == session_id
+
+
+@pytest.mark.parametrize("resume, session_id", [
+    (True, None),
+    (True, ""),
+    (True, "   "),
+    (True, "-bad-flag"),
+    (False, "abc"),
+], ids=["none_id", "empty_id", "blank_id", "flag_like_id", "first_turn"])
+def test_no_resume_unless_resume_and_session_id_are_set(
+    tmp_path, monkeypatch, resume, session_id,
+):
+    args = _cli_args(tmp_path, monkeypatch, resume=resume, session_id=session_id)
+    assert "--resume" not in args

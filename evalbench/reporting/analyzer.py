@@ -3,6 +3,43 @@
 import logging
 import pandas as pd
 
+# Metrics that score a fraction of a pass, not a pass/fail verdict. The analyzer
+# sums their scores instead of counting exact 100s, so partial credit counts.
+PARTIAL_CREDIT_METRICS = ("goal_completion",)
+
+
+def _partial_credit_names(scorers: dict) -> set[str]:
+    """Returns the metric names that score partial credit.
+
+    A named scorer counts if its `type`, or its nested config block, is a
+    partial-credit metric, the same two forms that scorers/score.py accepts.
+    """
+    names = set(PARTIAL_CREDIT_METRICS)
+    for key, cfg in (scorers.items() if isinstance(scorers, dict) else []):
+        if not isinstance(cfg, dict):
+            continue
+        target = cfg.get("type") or next(
+            (m for m in PARTIAL_CREDIT_METRICS if isinstance(cfg.get(m), dict)),
+            None)
+        if target in PARTIAL_CREDIT_METRICS:
+            names.add(key)
+            if cfg.get("scorer_name"):
+                names.add(cfg["scorer_name"])
+    return names
+
+
+def _partial_credit_count(scores: pd.Series) -> float:
+    """Returns 0-100 scores as a pass count, rounded to remove float noise."""
+    return round(float(scores.sum()) / 100.0, 4)
+
+
+def _scored_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Returns the rows that have no agent error and no scorer error."""
+    for col in ("generated_error", "comparison_error"):
+        if col in df.columns:
+            df = df[df[col].isna() | (df[col] == "")]
+    return df
+
 
 def _is_sub_comparator(comp: str, metric_name: str) -> bool:
     if comp == metric_name:
@@ -63,8 +100,17 @@ def analyze_one_metric(
     num_scorers: int = 1,
     num_prompts: int = None,
     num_trials: int = None,
+    partial_credit: bool | None = None,
+    skip_unscored: bool = False,
 ) -> dict:
-    """Analyze one metric from dataframe with flexibility."""
+    """Analyze one metric from dataframe with flexibility.
+
+    `partial_credit` defaults to whether `metric_name` is in
+    PARTIAL_CREDIT_METRICS. If `skip_unscored` is set, a row with an agent
+    error or a scorer error does not count as a pass or as a failure.
+    """
+    if partial_credit is None:
+        partial_credit = metric_name in PARTIAL_CREDIT_METRICS
     num_scorers = max(1, num_scorers)
 
     if num_prompts is not None:
@@ -151,18 +197,23 @@ def analyze_one_metric(
         ):
             # Aggregate at prompt level
             prompt_scores = df_metric.groupby("prompt_id")["score"].min()
-            correct_results_count = len(
-                prompt_scores[prompt_scores == metric_score])
+            if partial_credit:
+                correct_results_count = _partial_credit_count(prompt_scores)
+            else:
+                correct_results_count = len(
+                    prompt_scores[prompt_scores == metric_score])
             original_df_size = len(prompt_scores)
 
             if original_df_size == 0 and num_prompts is not None:
                 original_df_size = num_prompts
         else:
+            if skip_unscored:
+                df_metric = _scored_rows(df_metric)
             original_df_size = len(df_metric)
-            if original_df_size == 0 and num_prompts is not None:
+            # If every row is unscored, the total stays 0. There is no rate.
+            if (original_df_size == 0 and num_prompts is not None
+                    and not skip_unscored):
                 original_df_size = num_prompts
-            correct_results_count = len(
-                df_metric[df_metric["score"] == metric_score])
 
             non_binary_metrics = [
                 "turn_count",
@@ -183,6 +234,12 @@ def analyze_one_metric(
                 "skills_best_practices",
             ]
             if metric_name in non_binary_metrics:
+                # Error rows score 0. Leave them out of the average.
+                if "generated_error" in df_metric.columns:
+                    df_metric = df_metric[
+                        df_metric["generated_error"].isna()
+                        | (df_metric["generated_error"] == "")
+                    ]
                 avg_val = (
                     df_metric["score"].mean()
                     if (not df_metric.empty and "score" in df_metric.columns)
@@ -212,8 +269,12 @@ def analyze_one_metric(
                     "total_results_count": original_df_size,
                 }
 
-            correct_results_count = len(
-                df_metric[df_metric["score"] == metric_score])
+            if partial_credit:
+                correct_results_count = _partial_credit_count(
+                    df_metric["score"])
+            else:
+                correct_results_count = len(
+                    df_metric[df_metric["score"] == metric_score])
 
     percentage = (
         (correct_results_count / original_df_size * 100)
@@ -259,9 +320,21 @@ def analyze_result(
             unique_ids = len(df["id"].dropna().unique())
             if num_prompts is None or unique_ids > num_prompts:
                 num_prompts = unique_ids
+    # An agent trial with an agent error or a scorer error is unscored. On
+    # the other paths, such an error is a failure, for example invalid SQL.
+    skip_unscored = orch in ("agent", "geminicli")
+
+    # The summary of an agent run counts each result row as one trial.
+    summary_df = df
+    if skip_unscored:
+        # Without `prompt_id`, the trials of a scenario are not merged.
+        summary_df = df.drop(columns=["prompt_id"], errors="ignore")
+        # `num_prompts` already counts every trial row.
+        num_trials = 1
 
     scorers = experiment_config["scorers"]
     num_scorers = len(scorers)
+    partial_credit_names = _partial_credit_names(scorers)
     llm_metrics_list = [
         "goal_completion",
         "behavioral_metrics",
@@ -294,17 +367,19 @@ def analyze_result(
                 continue
 
         summary = analyze_one_metric(
-            df=df,
+            df=summary_df,
             metric_name=metric_name,
             metric_score=metric_score,
             num_scorers=num_scorers,
             num_prompts=num_prompts,
             num_trials=num_trials,
+            partial_credit=metric_name in partial_credit_names,
+            skip_unscored=skip_unscored,
         )
         summary_scores.append(summary)
 
     summary = analyze_one_metric(
-        df=df,
+        df=summary_df,
         metric_name="executable",
         metric_score=1,
         execution=True,

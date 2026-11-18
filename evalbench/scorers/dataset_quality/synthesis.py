@@ -8,7 +8,7 @@ reasons over final signals instead of re-judging CUJs.
 import json
 import logging
 
-from scorers.dataset_quality.llm import generate_json
+from scorers.util import generate_json
 from scorers.util import extract_json
 from scorers.dataset_quality.prompts.synthesis import (
     SYNTHESIS_PROMPT,

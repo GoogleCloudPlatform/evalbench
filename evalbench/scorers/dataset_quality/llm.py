@@ -1,64 +1,9 @@
-"""Shared LLM plumbing for the dataset-quality judge scorers: JSON-mode
-generation and CUJ id grouping by label."""
+"""Shared LLM plumbing for the dataset-quality judge scorers: CUJ id
+grouping by label. JSON-mode generation lives in ``scorers.util``."""
 
 import logging
 
-from scorers.util import extract_json
-
-
-# Gemini 3.x draws reasoning tokens from the output budget, so a high cap keeps
-# thought tokens from starving the JSON answer (which otherwise finishes with
-# empty ``.text``).
-_MAX_OUTPUT_TOKENS = 65536
-
-# genai defaults to no request timeout, so a stalled call blocks its thread
-# forever. Generous enough for a whole-dataset thinking-model call, but bounded
-# so one bad request degrades to a dropped metric instead of hanging the run.
-_REQUEST_TIMEOUT_MS = 10 * 60 * 1000
-
-
-def _finish_reason(resp) -> str:
-    try:
-        return str(resp.candidates[0].finish_reason)
-    except (AttributeError, IndexError, TypeError):
-        return "unknown"
-
-
-def generate_json(model, prompt: str, response_schema: dict | None = None) -> str:
-    """Generate a model response as raw JSON text.
-
-    Uses Gemini's native JSON mode via the underlying genai client, which bypasses
-    ``GeminiGenerator.generate``'s SQL sanitizer (it corrupts JSON escapes). Only
-    non-Gemini models fall back to ``model.generate``.
-    """
-    client = getattr(model, "client", None)
-    caller = getattr(model, "_call_generate_content", None)
-    if client is not None and callable(caller):
-        try:
-            from google.genai import types
-
-            config = types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0,
-                max_output_tokens=_MAX_OUTPUT_TOKENS,
-                response_schema=response_schema,
-                http_options=types.HttpOptions(timeout=_REQUEST_TIMEOUT_MS),
-            )
-            resp = caller(contents=prompt, config=config)
-        except Exception as e:
-            logging.warning(
-                "dataset_quality: JSON-mode generation failed (%s)", e
-            )
-            return ""
-        text = getattr(resp, "text", None)
-        if text:
-            return text
-        logging.warning(
-            "dataset_quality: JSON-mode returned empty text (finish_reason=%s)",
-            _finish_reason(resp),
-        )
-        return ""
-    return model.generate(prompt)
+from scorers.util import extract_json, generate_json
 
 
 def _log_parse_failure(raw: str, err: Exception) -> None:

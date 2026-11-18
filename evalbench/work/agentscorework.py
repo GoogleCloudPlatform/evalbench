@@ -51,17 +51,23 @@ class AgentScoreWork(Work):
             "generated_sql": "skipped",
             "generated_result": self.eval_output.get("accumulated_tools", []),
             "eval_results": self.eval_output,
-            "generated_error": None,
+            "generated_error": self.eval_output.get("generated_error"),
             "dialects": metadata.get("dialects", []),
             "database": metadata.get("database", "unknown"),
             "job_id": self.eval_output.get("job_id"),
         }
 
+        first_row = len(self.scoring_results)
         scorer.compare(
             eval_output_item=scoring_item,
             experiment_config=self.config,
             scoring_results=self.scoring_results,
             global_models=self.global_models
         )
+        # Label the new score rows with their trial.
+        if "trial_index" in self.eval_output:
+            for row in self.scoring_results[first_row:]:
+                row["prompt_id"] = self.eval_output["prompt_id"]
+                row["trial_index"] = self.eval_output["trial_index"]
 
         return self.eval_output

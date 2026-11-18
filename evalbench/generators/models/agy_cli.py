@@ -38,8 +38,8 @@ _UPDATED_AGY_BINS_LOCK = threading.Lock()
 # instead of its interactive OAuth login. See _setup_auth.
 ADC_AUTH_ENV_VAR = "AGY_ADC_AUTH"
 
-# Read-only secret mount in the GKE pod; the only ADC a pod carries on disk.
-GKE_SA_KEY_PATH = "/etc/evalbench-sa-key/key.json"
+# Quota project for agy when it authenticates from the metadata server.
+QUOTA_PROJECT_ENV_VAR = "GOOGLE_CLOUD_QUOTA_PROJECT"
 
 # `<...>/skills/<name>/<file>`. The trailing segment is required so that
 # listing the skills root is not read as activation.
@@ -299,8 +299,8 @@ class AgyCliGenerator(AgentCliGenerator):
         device-code URL.
 
         A credential file is optional. Without one, agy uses the metadata
-        server (Cloud Build, GCE, GKE Workload Identity) and takes the quota
-        project from the metadata project.
+        server (Cloud Build, GCE, GKE Workload Identity). See
+        _ensure_metadata_quota_project for the quota project in that mode.
         """
         self.env[ADC_AUTH_ENV_VAR] = "true"
         self._setup_gcloud_credentials(self.env, self.real_home, self.fake_home)
@@ -309,14 +309,6 @@ class AgyCliGenerator(AgentCliGenerator):
         # much as a config-supplied one.
         adc_path = (self.env.get("GOOGLE_APPLICATION_CREDENTIALS")
                     or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"))
-
-        # Read in place: the session sandbox is on a PVC shared across
-        # sessions, which is no place for a private key.
-        if not (adc_path and os.path.exists(adc_path)) and os.path.exists(
-            GKE_SA_KEY_PATH
-        ):
-            adc_path = GKE_SA_KEY_PATH
-            self.env["GOOGLE_APPLICATION_CREDENTIALS"] = adc_path
 
         if adc_path and os.path.exists(adc_path):
             self.adc_path = adc_path
@@ -334,7 +326,28 @@ class AgyCliGenerator(AgentCliGenerator):
             )
 
         self.adc_path = None
-        logging.info("agy found no ADC file; using the metadata server.")
+        self._ensure_metadata_quota_project()
+        logging.info(
+            "agy found no ADC file; using the metadata server (quota project: "
+            "%s).", self.env.get(QUOTA_PROJECT_ENV_VAR)
+            or os.environ.get(QUOTA_PROJECT_ENV_VAR) or "metadata project",
+        )
+
+    def _ensure_metadata_quota_project(self) -> None:
+        """Sets ``GOOGLE_CLOUD_QUOTA_PROJECT`` from ``env.GOOGLE_CLOUD_PROJECT``
+        when no quota project is set.
+
+        Without it, agy uses the metadata project. This keeps the quota
+        project the same as on the credential-file path
+        (_ensure_quota_project). A value set in the model config or the shell
+        is kept.
+        """
+        if (self.env.get(QUOTA_PROJECT_ENV_VAR)
+                or os.environ.get(QUOTA_PROJECT_ENV_VAR)):
+            return
+        project = self.env.get("GOOGLE_CLOUD_PROJECT")
+        if project:
+            self.env[QUOTA_PROJECT_ENV_VAR] = project
 
     def _ensure_quota_project(self) -> None:
         """Adds ``quota_project_id`` to the resolved ADC file when it is
@@ -372,8 +385,8 @@ class AgyCliGenerator(AgentCliGenerator):
             )
 
         credentials["quota_project_id"] = project
-        # Node-local scratch: the GKE key is read in place from a read-only
-        # mount, and its copy must not land on the shared-PVC sandbox.
+        # Node-local scratch: a service-account key copy must not land on the
+        # shared-PVC sandbox.
         try:
             fd, augmented = tempfile.mkstemp(prefix="agy-adc-", suffix=".json")
             with os.fdopen(fd, "w") as f:

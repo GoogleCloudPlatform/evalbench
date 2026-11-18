@@ -32,6 +32,7 @@ DEFAULT_CUJ_FIELDS = [
     "starting_prompt",
     "conversation_plan",
     "expected_trajectory",
+    "success_criteria",
 ]
 
 
