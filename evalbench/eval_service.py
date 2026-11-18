@@ -777,10 +777,13 @@ def _process_results(
     scores_df, summary_scores_df = analyzer.analyze_result(
         scores, config, num_prompts=num_prompts, num_trials=num_trials
     )
-    summary_scores_df["job_id"] = job_id
-    summary_scores_df["run_time"] = run_time
     run_stats_df = runstats.compute_run_stats(
         scores_df, config, job_id, run_time)
+    if run_stats_df is not None:
+        summary_scores_df = runstats.add_suite_stats(
+            summary_scores_df, scores_df, run_stats_df, config)
+    summary_scores_df["job_id"] = job_id
+    summary_scores_df["run_time"] = run_time
 
     # Store the reports in specified outputs
     for reporter in reporters:

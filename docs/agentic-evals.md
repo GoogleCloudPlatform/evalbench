@@ -141,6 +141,16 @@ If a scenario has no scored trial, its `status` is `ERROR` and its other stats a
 
 With few trials, the `confidence` is low and the interval is wide. For example, 3 passes in 3 trials give a `confidence` of 0.34 and an interval of 0.44 to 1.
 
+The job also adds the stats of the whole suite to `summary.csv`, in these columns. The existing columns do not change.
+
+| Column | Row | Description |
+| ------ | --- | ----------- |
+| `pass_rate` | `goal_completion` | Passed trials divided by scored trials, over all scenarios. |
+| `interval_low`, `interval_high` | `goal_completion` | The Wilson interval of `pass_rate`. |
+| `flakiness`, `confidence` | `goal_completion` | The average of the scenario values, over the scenarios with more than one scored trial. |
+| `flaky_scenarios` | `goal_completion` | Number of flaky scenarios. |
+| `trial_min`, `trial_median`, `trial_max` | Each numeric metric | EvalBench takes the suite average of the metric in each trial. These columns have the min, median, and max of those averages. Only the scenarios with a scored result in every trial count. |
+
 ---
 
 ## Quick start
