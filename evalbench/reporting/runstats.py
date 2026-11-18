@@ -20,6 +20,10 @@ DEFAULT_PASS_THRESHOLD = 100
 CONFIDENCE_TARGET = 0.9
 # The z value of a 95% interval.
 WILSON_Z = 1.96
+# The columns that a multi-trial agent run adds to the summary.
+_SUITE_COLUMNS = (
+    "pass_rate", "interval_low", "interval_high", "flakiness", "confidence",
+    "flaky_scenarios", "trial_min", "trial_median", "trial_max")
 
 
 def flakiness(passed: int, scored: int) -> float:
@@ -107,6 +111,22 @@ def _rounded(value: float) -> float:
     return round(float(value), 4)
 
 
+def _scored_trials(
+    df: pd.DataFrame, metrics: list[str]
+) -> tuple[Optional[pd.Series], set]:
+    """Returns the pass metric scores and the scored trials of one scenario.
+
+    The scores are None if the job has no pass metric.
+    """
+    if PASS_METRIC in metrics:
+        scores = _trial_scores(df, PASS_METRIC)
+        return scores, set(scores.index)
+    # Without the pass metric, a trial is unscored if it has an agent error.
+    agent_errors = df["generated_error"]
+    failed = df[agent_errors.notna() & (agent_errors != "")]
+    return None, set(df["trial_index"]) - set(failed["trial_index"])
+
+
 def _scenario_stats(
     scenario_id: str, df: pd.DataFrame, metrics: list[str], scorers: Any
 ) -> dict:
@@ -116,16 +136,7 @@ def _scenario_stats(
         "scenario_id": scenario_id,
         "num_trials": len(trials),
     }
-    if PASS_METRIC in metrics:
-        scores = _trial_scores(df, PASS_METRIC)
-        scored_trials = set(scores.index)
-    else:
-        # Without the pass metric, a trial is unscored if it has an agent
-        # error.
-        scores = None
-        agent_errors = df["generated_error"]
-        failed = df[agent_errors.notna() & (agent_errors != "")]
-        scored_trials = set(trials) - set(failed["trial_index"])
+    scores, scored_trials = _scored_trials(df, metrics)
     scored = len(scored_trials)
     row["scored_trials"] = scored
     row["unscored_trials"] = len(trials) - scored
@@ -173,22 +184,22 @@ def _scenario_stats(
     return row
 
 
-def compute_run_stats(
-    scores_df: pd.DataFrame, config: dict, job_id: str, run_time: Any
-) -> Optional[pd.DataFrame]:
-    """Returns one row of stats for each scenario of a multi-trial agent run.
+def _trial_rows(
+    scores_df: pd.DataFrame, config: dict
+) -> tuple[Optional[pd.DataFrame], list[str]]:
+    """Returns the score rows that have a trial label, and their metrics.
 
-    Returns None for a run with one trial and for a run that is not an agent
-    run.
+    The rows are None for a run with one trial and for a run that is not an
+    agent run.
     """
     if config.get("orchestrator") not in AGENT_ORCHESTRATORS:
-        return None
+        return None, []
     if not {"trial_index", "prompt_id"} <= set(scores_df.columns):
-        return None
+        return None, []
     df = scores_df[
         scores_df["trial_index"].notna() & scores_df["prompt_id"].notna()]
     if df.empty:
-        return None
+        return None, []
     if "generated_error" not in df.columns:
         df = df.assign(generated_error=None)
 
@@ -200,6 +211,21 @@ def compute_run_stats(
         metric for metric in _resolve_metric_names_to_analyze(scorers, df)
         if metric == PASS_METRIC
         or any(_is_sub_comparator(name, metric) for name in comparators)]
+    return df, metrics
+
+
+def compute_run_stats(
+    scores_df: pd.DataFrame, config: dict, job_id: str, run_time: Any
+) -> Optional[pd.DataFrame]:
+    """Returns one row of stats for each scenario of a multi-trial agent run.
+
+    Returns None for a run with one trial and for a run that is not an agent
+    run.
+    """
+    df, metrics = _trial_rows(scores_df, config)
+    if df is None:
+        return None
+    scorers = config.get("scorers") or {}
     stats = pd.DataFrame([
         _scenario_stats(scenario_id, scenario_df, metrics, scorers)
         for scenario_id, scenario_df in df.groupby("prompt_id", sort=False)
@@ -210,3 +236,81 @@ def compute_run_stats(
     stats["job_id"] = job_id
     stats["run_time"] = run_time
     return stats
+
+
+def _trial_averages(
+    df: pd.DataFrame, metric: str, metrics: list[str]
+) -> pd.Series:
+    """Returns the suite average of `metric` in each trial.
+
+    Only the scenarios with a scored value in every trial count, so each
+    average covers the same scenarios.
+    """
+    trials = set(df["trial_index"])
+    values = {}
+    for scenario_id, scenario_df in df.groupby("prompt_id", sort=False):
+        _, scored_trials = _scored_trials(scenario_df, metrics)
+        scores = _trial_scores(scenario_df, metric)
+        scores = scores[scores.index.isin(scored_trials)]
+        if set(scores.index) == trials:
+            values[scenario_id] = scores
+    return pd.DataFrame(values).mean(axis=1)
+
+
+def add_suite_stats(
+    summary_df: pd.DataFrame,
+    scores_df: pd.DataFrame,
+    run_stats: pd.DataFrame,
+    config: dict,
+) -> pd.DataFrame:
+    """Returns the summary with the stats of the suite across trials.
+
+    The row of the pass metric gets the pass stats. The row of each numeric
+    metric gets the min, median, and max of its average in each trial.
+    """
+    summary_df = summary_df.copy()
+    for column in _SUITE_COLUMNS:
+        summary_df[column] = float("nan")
+
+    def set_values(metric: str, values: dict) -> None:
+        rows = summary_df["metric_name"] == metric
+        for column, value in values.items():
+            summary_df.loc[rows, column] = value
+
+    scored = int(run_stats["scored_trials"].sum())
+    if run_stats["passed_trials"].notna().any() and scored:
+        passed = int(run_stats["passed_trials"].sum())
+        low, high = wilson_interval(passed, scored)
+        set_values(PASS_METRIC, {
+            "pass_rate": _rounded(passed / scored),
+            "interval_low": _rounded(low),
+            "interval_high": _rounded(high),
+            "flaky_scenarios": int(run_stats["flaky"].sum()),
+        })
+        # Flakiness and confidence need more than one scored trial.
+        repeated = run_stats[run_stats["scored_trials"] > 1]
+        counts = [(int(row.passed_trials), int(row.scored_trials))
+                  for row in repeated.itertuples()]
+        if counts:
+            set_values(PASS_METRIC, {
+                "flakiness": _rounded(
+                    sum(flakiness(*count) for count in counts) / len(counts)),
+                "confidence": _rounded(
+                    sum(confidence(*count) for count in counts) / len(counts)),
+            })
+
+    df, metrics = _trial_rows(scores_df, config)
+    for metric in metrics:
+        if metric not in NUMERIC_METRICS:
+            continue
+        averages = _trial_averages(df, metric, metrics)
+        if len(averages):
+            set_values(metric, {
+                "trial_min": _rounded(averages.min()),
+                "trial_median": _rounded(averages.median()),
+                "trial_max": _rounded(averages.max()),
+            })
+    # This type keeps an integer next to an empty value.
+    summary_df["flaky_scenarios"] = (
+        summary_df["flaky_scenarios"].astype("Int64"))
+    return summary_df
