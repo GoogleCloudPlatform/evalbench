@@ -746,29 +746,69 @@ def _summary_count(value) -> float | int:
     return int(count) if count.is_integer() else round(count, 2)
 
 
+def _store_reports(
+    reporters, config_df, results_df, scores_df, summary_scores_df
+) -> list[dict[str, str]]:
+    """Writes evaluation outputs to each configured reporter.
+
+    Isolates per-reporter failures so a reporting error (such as a BigQuery
+    permission or quota failure) neither blocks other reporters (CSV, GCS
+    artifacts) nor fails a completed evaluation RPC.
+
+    Returns:
+      A list of {"reporter": <class_name>, "error": <message>} dicts for any
+      reporters that failed.
+    """
+    errors: list[dict[str, str]] = []
+    for reporter in reporters:
+        name = type(reporter).__name__
+        try:
+            reporter.store(config_df, report.STORETYPE.CONFIGS)
+            reporter.store(results_df, report.STORETYPE.EVALS)
+            reporter.store(scores_df, report.STORETYPE.SCORES)
+            reporter.store(summary_scores_df, report.STORETYPE.SUMMARY)
+        except Exception as exc:
+            logging.exception(
+                "Reporter %s failed while storing evaluation results: %s",
+                name,
+                exc,
+            )
+            errors.append({"reporter": name, "error": str(exc)})
+    return errors
+
+
 def _process_results(
     reporters, job_id, run_time, results_tf, scores_tf, multi_trial_scores_tf, config, model_config, db_configs
 ):
-    config_df = config_to_df(
-        job_id,
-        run_time,
-        config,
-        model_config,
-        db_configs,
-    )
-    results = load_json(results_tf)
-    results_df = report.get_dataframe(results)
-    if results_df.empty:
-        raise EmptyEvalResultError(
-            "No matching evals were produced for this run. Check that the dataset, "
-            "dialect filters, and database configuration line up."
+    try:
+        config_df = config_to_df(
+            job_id,
+            run_time,
+            config,
+            model_config,
+            db_configs,
         )
-    report.quick_summary(results_df)
-    scores = load_json(scores_tf)
-    if multi_trial_scores_tf:
-        multi_trial_scores = load_json(multi_trial_scores_tf)
-        if multi_trial_scores:
-            scores.extend(multi_trial_scores)
+        results = load_json(results_tf)
+        results_df = report.get_dataframe(results)
+        if results_df.empty:
+            raise EmptyEvalResultError(
+                "No matching evals were produced for this run. Check that the dataset, "
+                "dialect filters, and database configuration line up."
+            )
+        report.quick_summary(results_df)
+        scores = load_json(scores_tf)
+        if multi_trial_scores_tf:
+            multi_trial_scores = load_json(multi_trial_scores_tf)
+            if multi_trial_scores:
+                scores.extend(multi_trial_scores)
+    finally:
+        # k8s emptyDir /tmp does not auto cleanup, so always unlink temp files.
+        if results_tf:
+            pathlib.Path(results_tf).unlink(missing_ok=True)
+        if scores_tf:
+            pathlib.Path(scores_tf).unlink(missing_ok=True)
+        if multi_trial_scores_tf:
+            pathlib.Path(multi_trial_scores_tf).unlink(missing_ok=True)
 
     num_prompts = len(set(r.get("prompt_id")
                       for r in results if r.get("prompt_id")))
@@ -779,18 +819,10 @@ def _process_results(
     summary_scores_df["job_id"] = job_id
     summary_scores_df["run_time"] = run_time
 
-    # Store the reports in specified outputs
-    for reporter in reporters:
-        reporter.store(config_df, report.STORETYPE.CONFIGS)
-        reporter.store(results_df, report.STORETYPE.EVALS)
-        reporter.store(scores_df, report.STORETYPE.SCORES)
-        reporter.store(summary_scores_df, report.STORETYPE.SUMMARY)
-
-    # k8s emptyDir /tmp does not auto cleanup, so we explicitly delete
-    pathlib.Path(results_tf).unlink()
-    pathlib.Path(scores_tf).unlink()
-    if multi_trial_scores_tf:
-        pathlib.Path(multi_trial_scores_tf).unlink()
+    # Store the reports in specified outputs without aborting completed evals
+    reporting_errors = _store_reports(
+        reporters, config_df, results_df, scores_df, summary_scores_df
+    )
 
     # Build summary dict from summary_scores_df
     summary = {"total": 0, "scores": {}}
@@ -809,5 +841,8 @@ def _process_results(
                 "p50": round(latencies.quantile(0.5), 2),
                 "p90": round(latencies.quantile(0.9), 2),
             }
+
+    if reporting_errors:
+        summary["reporting_errors"] = reporting_errors
 
     return summary
