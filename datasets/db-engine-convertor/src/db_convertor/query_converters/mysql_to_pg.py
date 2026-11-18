@@ -802,7 +802,28 @@ Output your decision now:
         """
         names = [_normalize_expr(str(c)) for c in source_result.columns]
         items = _select_items(source_query)
-        has_star = any(expr == "*" or expr.endswith(".*") for expr, _ in items)
+        stars = [
+            i
+            for i, (expr, _) in enumerate(items)
+            if expr == "*" or expr.endswith(".*")
+        ]
+        has_star = bool(stars)
+
+        def _item_col_index(i: int, col_name: Optional[str]) -> Optional[int]:
+            """Maps SELECT item `i` to its index in `source_result.columns`."""
+            if not stars:
+                return i if i < len(names) else None
+            if len(names) >= len(items):
+                if i < stars[0]:
+                    return i
+                if i > stars[-1]:
+                    return len(names) - (len(items) - i)
+            if col_name is not None:
+                hits = [k for k, name in enumerate(names) if name == col_name]
+                if len(hits) == 1:
+                    return hits[0]
+            return None
+
         out = []
         for key in keys:
             norm = _normalize_expr(key)
@@ -813,15 +834,17 @@ Output your decision now:
             # A SELECT alias (checked first, as MySQL does).
             if idx is None:
                 for i, (_, alias) in enumerate(items):
-                    if alias is not None and alias == norm and i < len(names):
-                        idx = i
-                        break
+                    if alias is not None and alias == norm:
+                        idx = _item_col_index(i, alias)
+                        if idx is not None:
+                            break
             # Same expression as a SELECT item (e.g. `t.col` or `SUM(x)`).
             if idx is None:
-                for i, (expr, _) in enumerate(items):
-                    if expr == norm and i < len(names):
-                        idx = i
-                        break
+                for i, (expr, alias) in enumerate(items):
+                    if expr == norm:
+                        idx = _item_col_index(i, alias or expr)
+                        if idx is not None:
+                            break
             # Output column name (for `t.col`, the name is `col`, but only
             # when a `*` in the SELECT list can have produced that column).
             if idx is None:
@@ -1028,12 +1051,13 @@ Output your decision now:
 
     @staticmethod
     def _is_whole(num: Any) -> bool:
-        """True for whole-number values: ints, Decimals without decimals, and
-        floats with no fractional part (`1234567.0`)."""
+        """True for whole-number values: ints, Decimals with no non-zero
+        fractional digits (`5`, `Decimal('5.00')`), and floats with no
+        fractional part (`1234567.0`)."""
         if isinstance(num, int):
             return True
         if isinstance(num, decimal.Decimal) and num.is_finite():
-            return num.as_tuple().exponent >= 0
+            return num == num.to_integral_value()
         if isinstance(num, float) and math.isfinite(num):
             return num.is_integer()
         return False
@@ -1090,7 +1114,11 @@ Output your decision now:
         src_whole, dest_whole = cls._is_whole(src_num), cls._is_whole(dest_num)
         if src_whole and dest_whole:
             return int(src_num) == int(dest_num)
-        if src_whole and not isinstance(src_num, float):
+        if (
+            src_whole
+            and not isinstance(src_num, float)
+            and cls._decimal_places(src_raw) == 0
+        ):
             return False
         both_exact = not isinstance(src_num, float) and not isinstance(
             dest_num, float

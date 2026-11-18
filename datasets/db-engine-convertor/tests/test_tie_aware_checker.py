@@ -852,10 +852,6 @@ class TestTiebreakerRerunNeedsBothQueriesChanged(unittest.TestCase):
         self.assertFalse(ok)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestStrictTiesAndExactValues(unittest.TestCase):
     """Tests for the stricter tie, text and whole-number rules (Nov 9 review)."""
 
@@ -1138,3 +1134,103 @@ class TestCandidateVeto(unittest.TestCase):
             ),
             "",
         )
+
+
+class TestReviewFollowups(unittest.TestCase):
+    """Tests for model-judgment tagging, trailing-zero Decimals, and `SELECT a.*` sort keys."""
+
+    def test_model_judgment_matches_are_tagged(self):
+        """Verify matches declared by the AI model carry `[model_judgment]` in `reason`."""
+        orch = QueryConversionOrchestrator(
+            converter=MySQLToPGQueryConverter(),
+            source_connection={},
+            dest_connection={},
+            source_schema="",
+            dest_schema="",
+            max_attempts=2,
+        )
+        src_res = QueryResult(columns=["a"], rows=[(1,)], total_rows=1, error=None)
+        orch._execute_source_query = mock.Mock(return_value=src_res)  # pylint: disable=protected-access
+
+        # AI declares result_matched with notes: reason gets the [model_judgment] prefix.
+        with mock.patch(
+            "db_convertor.query_conversion_orchestrator.gemini_inference",
+            return_value=json.dumps({
+                "conversion_finished": "result_matched",
+                "notes": "Minor float rounding in STDDEV",
+            }),
+        ):
+            res = orch.convert_query("SELECT a FROM t", question_id="q1", verbose=False)
+        self.assertEqual(res.status, ConversionStatus.RESULT_MATCHED)
+        self.assertEqual(res.reason, "[model_judgment] Minor float rounding in STDDEV")
+
+        # AI declares unable_to_match: reason keeps plain notes with no match tag.
+        with mock.patch(
+            "db_convertor.query_conversion_orchestrator.gemini_inference",
+            return_value=json.dumps({
+                "conversion_finished": "unable_to_match",
+                "notes": "Source query uses session variables",
+            }),
+        ):
+            unable = orch.convert_query("SELECT a FROM t", question_id="q2", verbose=False)
+        self.assertEqual(unable.status, ConversionStatus.UNABLE_TO_MATCH)
+        self.assertEqual(unable.reason, "Source query uses session variables")
+
+    def test_whole_decimal_with_trailing_zeros_matches_integer(self):
+        """Verify `5` matches `Decimal('5.00')` while keeping 4-decimal rounding intact."""
+        c = MySQLToPGQueryConverter()
+        # Whole Decimal with trailing zeros matches an integer in both directions.
+        self.assertTrue(c._values_equal(5, decimal.Decimal("5.00")))  # pylint: disable=protected-access
+        self.assertTrue(c._values_equal(decimal.Decimal("5.00"), 5))  # pylint: disable=protected-access
+        self.assertFalse(c._values_equal(5, decimal.Decimal("5.50")))  # pylint: disable=protected-access
+        # A 4-decimal MySQL average that rounded to .0000 still matches the unrounded PG value.
+        self.assertTrue(
+            c._values_equal(decimal.Decimal("5.0000"), decimal.Decimal("5.00001"))  # pylint: disable=protected-access
+        )
+        self.assertFalse(
+            c._values_equal(decimal.Decimal("5.0000"), decimal.Decimal("5.0001"))  # pylint: disable=protected-access
+        )
+
+    def test_star_plus_extra_columns_maps_sort_key_to_real_column(self):
+        """Verify `SELECT a.*, expr AS total ORDER BY total` checks `total`, not column 2."""
+        c = MySQLToPGQueryConverter()
+        q = "SELECT a.*, price * qty AS total FROM orders a ORDER BY total DESC"
+        cols = ["id", "price", "qty", "total"]
+        # Both rows tie on `total` (20) even though `price` (column 2) differs: swapping is valid.
+        src = QueryResult(
+            columns=cols, rows=[(1, 10, 2, 20), (2, 4, 5, 20)], total_rows=2, error=None
+        )
+        dest_tied_swap = QueryResult(
+            columns=cols, rows=[(2, 4, 5, 20), (1, 10, 2, 20)], total_rows=2, error=None
+        )
+        self.assertTrue(c.compare_results(src, dest_tied_swap, q)[0])
+
+        # Rows with different `total` values (30 vs 20) must NOT swap even if `price` ties (10 == 10).
+        src_diff = QueryResult(
+            columns=cols, rows=[(1, 10, 3, 30), (2, 10, 2, 20)], total_rows=2, error=None
+        )
+        dest_wrong_order = QueryResult(
+            columns=cols, rows=[(2, 10, 2, 20), (1, 10, 3, 30)], total_rows=2, error=None
+        )
+        self.assertFalse(c.compare_results(src_diff, dest_wrong_order, q)[0])
+
+        # Also works when an alias sits between two stars (`SELECT a.*, expr AS total, b.*`).
+        q_two_stars = "SELECT a.*, price * qty AS total, b.* FROM orders a JOIN meta b ON a.id = b.id ORDER BY total DESC"
+        cols_two = ["id", "price", "qty", "total", "note"]
+        src_two = QueryResult(
+            columns=cols_two,
+            rows=[(1, 10, 2, 20, "x"), (2, 4, 5, 20, "y")],
+            total_rows=2,
+            error=None,
+        )
+        dest_two = QueryResult(
+            columns=cols_two,
+            rows=[(2, 4, 5, 20, "y"), (1, 10, 2, 20, "x")],
+            total_rows=2,
+            error=None,
+        )
+        self.assertTrue(c.compare_results(src_two, dest_two, q_two_stars)[0])
+
+
+if __name__ == "__main__":
+    unittest.main()

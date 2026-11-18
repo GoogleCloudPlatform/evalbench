@@ -1181,14 +1181,25 @@ class QueryConversionOrchestrator:
                         safe_print(f"✗ Candidate rejected: {veto}")
                         last_notes = f"Rejected: {veto}"
                         continue
-                    
+
+                    reason = notes
+                    if status == ConversionStatus.RESULT_MATCHED:
+                        safe_print(
+                            "   ⚠ Accepted via model judgment (not mechanical check)"
+                        )
+                        reason = (
+                            f"[model_judgment] {notes}"
+                            if notes
+                            else "[model_judgment]"
+                        )
+
                     # Return the final result
                     return ConversionResult(
                         status=status,
                         converted_query=final_query,
                         source_result=source_result,
                         dest_result=dest_result,
-                        reason=notes,
+                        reason=reason,
                         attempts=attempt
                     )
                 
