@@ -20,6 +20,9 @@ DEFAULT_PASS_THRESHOLD = 100
 CONFIDENCE_TARGET = 0.9
 # The z value of a 95% interval.
 WILSON_Z = 1.96
+# The columns of the stats that hold a number of trials.
+_COUNT_COLUMNS = (
+    "num_trials", "scored_trials", "unscored_trials", "passed_trials")
 
 
 def flakiness(passed: int, scored: int) -> float:
@@ -204,9 +207,12 @@ def compute_run_stats(
         _scenario_stats(scenario_id, scenario_df, metrics, scorers)
         for scenario_id, scenario_df in df.groupby("prompt_id", sort=False)
     ])
-    # These types keep an integer or a boolean next to an empty value.
-    stats["passed_trials"] = stats["passed_trials"].astype("Int64")
-    stats["flaky"] = stats["flaky"].astype("boolean")
+    # Each column has one type in every job, also if it has no value. A
+    # BigQuery table needs this.
+    types = {"scenario_id": "string", "status": "string", "flaky": "boolean",
+             **dict.fromkeys(_COUNT_COLUMNS, "Int64")}
+    types.update(dict.fromkeys(stats.columns.difference(types), "float64"))
+    stats = stats.astype(types)
     stats["job_id"] = job_id
     stats["run_time"] = run_time
     return stats
