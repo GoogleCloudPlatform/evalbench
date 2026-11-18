@@ -6,6 +6,7 @@ from .base import (
     ConversionResult,
     ConversionStatus
 )
+from .mysql_to_pg import MySQLToPGQueryConverter
 from .sqlite_to_pg import SQLiteToPGQueryConverter
 from .sqlite_to_spanner import SQLiteToSpannerQueryConverter
 from .pg_to_spanner import PostgreSQLToSpannerQueryConverter
@@ -17,10 +18,10 @@ __all__ = [
     'QueryResult',
     'ConversionResult',
     'ConversionStatus',
+    'MySQLToPGQueryConverter',
     'SQLiteToPGQueryConverter',
     'SQLiteToSpannerQueryConverter',
     'PostgreSQLToSpannerQueryConverter',
     'PostgreSQLToBigQueryQueryConverter',
     'BigQueryToPGQueryConverter',
 ]
-
