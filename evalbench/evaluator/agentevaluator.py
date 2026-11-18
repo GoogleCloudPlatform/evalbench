@@ -20,6 +20,7 @@ from work.agentgenwork import AgentGenWork
 from evaluator.simulateduser import SimulatedUser
 from evaluator.trialsnapshot import TrialSnapshot, check_resettable
 from work.agentscorework import AgentScoreWork
+from scorers.score import _construction_error_metric_name
 import json
 import subprocess
 from typing import Dict
@@ -529,5 +530,28 @@ class AgentEvaluator:
             eval_output_data["scoring_error"] = f"{type(exc).__name__}: {exc}"
             logging.exception("Unexpected scoring failure for scenario %s",
                               scenario["id"])
+            # Publish an *unscored* comparison-error record for each configured
+            # metric. The analyzer consumes scoring_results, not agent_results;
+            # without these records an otherwise completed agent execution is
+            # incorrectly absent from execution accounting. Do not publish
+            # partially staged successes from the interrupted dispatch.
+            for scorer_name, scorer_config in self.config.get("scorers", {}).items():
+                error_row = {
+                    "id": scenario["id"],
+                    "comparator": _construction_error_metric_name(
+                        scorer_name, scorer_config),
+                    "score": 0,
+                    "generated_sql": eval_output_data["generated_sql"],
+                    "generated_error": eval_output_data["generated_error"],
+                    "comparison_error": eval_output_data["scoring_error"],
+                    "comparison_logs": None,
+                    "dialects": metadata.get("dialects", []),
+                    "database": metadata.get("database", "unknown"),
+                    "job_id": job_id,
+                }
+                if "trial_index" in scenario:
+                    error_row["prompt_id"] = scenario["prompt_id"]
+                    error_row["trial_index"] = scenario["trial_index"]
+                eval_result.scoring_results.append(error_row)
         else:
             eval_result.scoring_results.extend(staged_scenario_scores)

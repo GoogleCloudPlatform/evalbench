@@ -64,5 +64,12 @@ def test_fallback_does_not_publish_partial_or_erase_sibling_scores():
         result = finalize_with(
             {"trajectory_matcher": {}}, existing_scores=[existing]
         )
-    assert result.scoring_results == [existing], result.scoring_results
+    # Keep A intact and reject the partial success for B. A single B row is
+    # now required for execution accounting, but it must be explicitly unscored.
+    assert result.scoring_results[0] == existing, result.scoring_results
+    assert len(result.scoring_results) == 2, result.scoring_results
+    b_row = result.scoring_results[1]
+    assert b_row["id"] == "B" and b_row["comparator"] == "trajectory_matcher"
+    assert b_row["score"] == 0 and b_row.get("generated_error") is None
+    assert "POST_PUBLICATION_DISPATCH_CRASH" in b_row["comparison_error"]
     assert "POST_PUBLICATION_DISPATCH_CRASH" in result.agent_results[0].get("scoring_error", "")
