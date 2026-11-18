@@ -196,6 +196,30 @@ def test_run_without_goal_completion_has_no_pass_stats():
     assert row["status"] == "ERROR"
 
 
+def test_columns_have_the_same_type_in_every_job():
+    def types(rows):
+        config = {"orchestrator": "agent",
+                  "scorers": {row["comparator"]: {} for row in rows}}
+        scores_df, _ = analyze_result(rows, config)
+        stats = runstats.compute_run_stats(scores_df, config, "job-1", None)
+        return stats.dtypes.astype(str).to_dict()
+
+    turns = [_row("s1", trial, "turn_count", 2.0) for trial in range(2)]
+    error = "Agent infrastructure error (exit 1): 429"
+    unscored = [
+        _row("s1", trial, comparator, 0.0, generated_error=error)
+        for trial in range(2)
+        for comparator in ("goal_completion", "turn_count")]
+
+    expected = types(_goal_rows("s1", [100, 0]) + turns)
+    assert expected["pass_rate"] == "float64"
+    assert expected["turn_count_max"] == "float64"
+    assert expected["passed_trials"] == "Int64"
+    # A job with no pass stats, and a job with no scored trial.
+    assert types(turns) == expected
+    assert types(unscored) == expected
+
+
 def test_no_stats_for_a_run_with_one_trial():
     rows = [{"id": "s1", "comparator": "goal_completion", "score": 100.0}]
     assert _stats(rows) is None
