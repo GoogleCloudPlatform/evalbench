@@ -49,6 +49,7 @@ from absl import app
 from absl import flags
 import grpc
 import util
+from util import bindhost
 from util import health
 from eval_service import EvalServicer
 from eval_service import SessionManagerInterceptor
@@ -57,8 +58,9 @@ from evalproto import eval_service_pb2_grpc
 _LOCALHOST = flags.DEFINE_bool(
     "localhost",
     False,
-    "Whether to use localhost. ALTS is only available on GCP, so this is "
-    "useful for local testing.",
+    "Serve without ALTS on the loopback interface. ALTS is only available on "
+    "GCP, so this is useful for local testing. Set EVALBENCH_HOST to bind "
+    "another interface.",
 )
 
 CLOUD_RUN = os.getenv("CLOUD_RUN", False)
@@ -81,9 +83,19 @@ async def _serve():
     server = grpc.aio.server(interceptors=interceptors)
     servicer = EvalServicer()
     eval_service_pb2_grpc.add_EvalServiceServicer_to_server(servicer, server)
-    host = os.getenv("EVALBENCH_HOST", "[::]")
+    host = bindhost.resolve_bind_host(
+        localhost=_LOCALHOST.value,
+        cloud_run=bool(CLOUD_RUN),
+        env_host=os.getenv("EVALBENCH_HOST"),
+    )
     if _LOCALHOST.value or CLOUD_RUN:
         logging.info("Using localhost server insecure credentials per flag")
+        # Cloud Run authenticates requests before they reach the container.
+        if not CLOUD_RUN and not bindhost.is_loopback(host):
+            logging.warning(
+                "EVALBENCH_HOST=%s: the server accepts connections without "
+                "authentication from other machines.", host,
+            )
         bound_port = server.add_insecure_port(f"{host}:{PORT}")
     else:
         logging.info("Using ALTS server credentials")
