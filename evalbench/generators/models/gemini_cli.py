@@ -28,6 +28,13 @@ _GEMINI_QUOTA_OR_SERVER_RE = re.compile(
 _GEMINI_QUOTA_ERROR_TYPES = ("TerminalQuotaError", "RetryableQuotaError")
 
 
+def _owner_only_opener(path, flags):
+    """Opener for open(). Creates the file with mode 0o600 and does not
+    follow a symlink."""
+    # O_NOFOLLOW is POSIX only.
+    return os.open(path, flags | getattr(os, "O_NOFOLLOW", 0), 0o600)
+
+
 class CLICommand:
     def __init__(self, cli, prompt, env=None, resume=False, yolo=True, cwd=None,
                  session_id=None):
@@ -209,6 +216,10 @@ class GeminiCliGenerator(AgentCliGenerator):
         npmrc_file = os.path.join(self.fake_home, ".npmrc")
         logging.info(f"Updating {npmrc_file} with new token...")
 
+        # The agent can write the fake home, so do not follow a symlink.
+        if os.path.islink(npmrc_file):
+            os.unlink(npmrc_file)
+
         registries = [
             "//us-west1-npm.pkg.dev/gemini-code-dev/gemini-code/",
             "//us-npm.pkg.dev/artifact-foundry-prod/npm-3p-trusted/",
@@ -246,7 +257,11 @@ class GeminiCliGenerator(AgentCliGenerator):
             if not auth_found:
                 lines.append(auth_line)
 
-        with open(npmrc_file, "w") as f:
+        # The file holds an access token. Create it again, because the mode
+        # applies only to a new file.
+        if os.path.lexists(npmrc_file):
+            os.unlink(npmrc_file)
+        with open(npmrc_file, "w", opener=_owner_only_opener) as f:
             f.writelines(lines)
 
         logging.info(f"NPM authentication updated successfully at {npmrc_file}")
