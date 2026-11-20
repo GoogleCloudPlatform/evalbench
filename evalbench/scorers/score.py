@@ -70,6 +70,19 @@ DEFAULT_SCORERS: dict[str, type[comparator.Comparator]] = {
 }
 
 
+def _python_scorer_public_name(config: dict, fallback: str | None) -> str | None:
+    """Match PythonScorer's configured name and script-basename fallback."""
+    custom_name = config.get("scorer_name")
+    if custom_name:
+        return custom_name
+    script_path = config.get("script_path")
+    if isinstance(script_path, str):
+        from_path = os.path.splitext(os.path.basename(script_path))[0].strip()
+        if from_path:
+            return from_path
+    return fallback
+
+
 def _build_instances(
     scorer_cls: type[comparator.Comparator],
     config: dict,
@@ -120,12 +133,7 @@ def _build_instances(
         kwargs["global_models"] = global_models
 
     if scorer_cls == pythonscorer.PythonScorer:
-        custom_name = config.get("scorer_name")
-        script_path = config.get("script_path")
-        if not custom_name and script_path and isinstance(script_path, str):
-            custom_name = os.path.splitext(
-                os.path.basename(script_path)
-            )[0].strip()
+        custom_name = _python_scorer_public_name(config, fallback=None)
         if custom_name:
             kwargs["name"] = custom_name
 
@@ -189,6 +197,46 @@ def get_scorer_instance(
 
     return []
 
+def _construction_error_metric_name(scorer_name: str, config: dict) -> str:
+    """Use a named scorer's public metric name even if construction fails.
+
+    Default scorers are not wrapped. Multi-row category names are unknowable
+    before construction, so this chooses the configured public scorer name.
+    """
+    if not isinstance(config, dict) or config.get("delegated", False):
+        return scorer_name
+    if scorer_name == "python_scorer":
+        return _python_scorer_public_name(config, fallback=scorer_name)
+    if scorer_name in DEFAULT_SCORERS:
+        return scorer_name
+
+    target_type = config.get("type")
+    if not target_type:
+        for default_type in DEFAULT_SCORERS:
+            if isinstance(config.get(default_type), dict):
+                target_type = default_type
+                break
+
+    if isinstance(target_type, str) and target_type in DEFAULT_SCORERS:
+        return config.get("scorer_name") or scorer_name
+    return scorer_name
+
+
+def _scorer_error_row(eval_output_item, scorer_name: str, exc: Exception) -> dict:
+    """Record grader failures as unscored using the existing score row fields."""
+    return {
+        "comparator": scorer_name,
+        "score": 0,
+        "comparison_error": f"{type(exc).__name__}: {exc}",
+        "comparison_logs": None,
+        "id": eval_output_item["id"],
+        "generated_sql": eval_output_item["generated_sql"],
+        "generated_error": eval_output_item["generated_error"],
+        "dialects": eval_output_item["dialects"],
+        "database": eval_output_item["database"],
+        "job_id": eval_output_item["job_id"],
+    }
+
 
 def compare(
     eval_output_item: EvalOutput,
@@ -196,70 +244,76 @@ def compare(
     scoring_results: list[dict],
     global_models,
 ):
-    """Run comparators against eval output."""
-    scorers = experiment_config["scorers"]
-    comparators: list[comparator.Comparator] = []
-
-    for name, config in scorers.items():
-        comparators.extend(
-            get_scorer_instance(
-                name,
-                config,
-                experiment_config,
-                eval_output_item,
-                global_models,
-            )
-        )
-
-    for comp in comparators:
-        # Each element is (comparator_name, score, logs, error). Most
-        # comparators produce one row, but a whole-dataset scorer like
-        # dataset_quality returns a list of rows (one per category).
-        rows: list = []
+    """Evaluate independent scorers without losing good rows to another error."""
+    for scorer_name, config in experiment_config["scorers"].items():
         try:
-            if eval_output_item["generated_sql"] is not None:
-                sig = inspect.signature(comp.compare)
-                compare_kwargs = {}
-                if "database" in sig.parameters:
-                    compare_kwargs["database"] = eval_output_item.get(
-                        "database", ""
-                    )
-                result = comp.compare(
-                    eval_output_item["nl_prompt"],
-                    eval_output_item["golden_sql"],
-                    eval_output_item["query_type"],
-                    eval_output_item["golden_result"],
-                    eval_output_item.get("golden_eval_results", ""),
-                    eval_output_item["golden_error"],
-                    eval_output_item["generated_sql"],
-                    eval_output_item["generated_result"],
-                    eval_output_item.get("eval_results", ""),
-                    eval_output_item["generated_error"],
-                    **compare_kwargs,
-                )
-                if isinstance(result, list):
-                    rows = [(name, s, logs, None) for name, s, logs in result]
-                else:
-                    score, logs = result
-                    rows = [(comp.name, score, logs, None)]
-        except Exception as e:
-            rows = [(comp.name, 0, None, e)]
-        if not rows:
-            rows = [(comp.name, 0, None, None)]
-        for name, score_val, logs, error in rows:
-            score_dict = comparator.ComparisonResult(
-                comp, score_val, comparison_logs=logs, comparison_error=error
-            ).to_dict()
-            score_dict["comparator"] = name
-            score_dict.update({
-                "id": eval_output_item["id"],
-                "generated_sql": eval_output_item["generated_sql"],
-                "generated_error": eval_output_item["generated_error"],
-                "dialects": eval_output_item["dialects"],
-                "database": eval_output_item["database"],
-                "job_id": eval_output_item["job_id"],
-            })
-            logging.debug(
-                "scoring: %s %s %s", score_dict["id"], name, score_val
+            comparators = get_scorer_instance(
+                scorer_name, config, experiment_config,
+                eval_output_item, global_models,
             )
-            scoring_results.append(score_dict)
+        except Exception as exc:
+            logging.exception("Could not construct scorer %s", scorer_name)
+            public_name = _construction_error_metric_name(scorer_name, config)
+            scoring_results.append(_scorer_error_row(
+                eval_output_item, public_name, exc))
+            continue
+
+        for comp in comparators:
+            # One configured scorer may produce multiple rows. Stage and publish
+            # the entire comparator's result only after all rows serialize.
+            try:
+                rows = []
+                try:
+                    if eval_output_item["generated_sql"] is not None:
+                        sig = inspect.signature(comp.compare)
+                        compare_kwargs = {}
+                        if "database" in sig.parameters:
+                            compare_kwargs["database"] = eval_output_item.get(
+                                "database", "")
+                        result = comp.compare(
+                            eval_output_item["nl_prompt"],
+                            eval_output_item["golden_sql"],
+                            eval_output_item["query_type"],
+                            eval_output_item["golden_result"],
+                            eval_output_item.get("golden_eval_results", ""),
+                            eval_output_item["golden_error"],
+                            eval_output_item["generated_sql"],
+                            eval_output_item["generated_result"],
+                            eval_output_item.get("eval_results", ""),
+                            eval_output_item["generated_error"],
+                            **compare_kwargs,
+                        )
+                        if isinstance(result, list):
+                            rows = [(name, s, logs, None)
+                                    for name, s, logs in result]
+                        else:
+                            score, logs = result
+                            rows = [(comp.name, score, logs, None)]
+                except Exception as exc:
+                    # Preserve the existing comparison-error convention.
+                    rows = [(comp.name, 0, None, exc)]
+
+                if not rows:
+                    rows = [(comp.name, 0, None, None)]
+
+                staged = []
+                for row_name, score_val, logs, error in rows:
+                    record = comparator.ComparisonResult(
+                        comp, score_val,
+                        comparison_logs=logs, comparison_error=error,
+                    ).to_dict()
+                    record["comparator"] = row_name
+                    record.update({
+                        "id": eval_output_item["id"],
+                        "generated_sql": eval_output_item["generated_sql"],
+                        "generated_error": eval_output_item["generated_error"],
+                        "dialects": eval_output_item["dialects"],
+                        "database": eval_output_item["database"],
+                        "job_id": eval_output_item["job_id"],
+                    })
+                    staged.append(record)
+            except Exception as exc:
+                logging.exception("Scorer %s could not serialize result", comp.name)
+                staged = [_scorer_error_row(eval_output_item, comp.name, exc)]
+
+            scoring_results.extend(staged)
