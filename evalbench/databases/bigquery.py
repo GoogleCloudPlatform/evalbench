@@ -24,7 +24,12 @@ class BQDB(DB):
         super().__init__(db_config)
         self.project_id = get_gcp_project(db_config.get("gcp_project_id", ""))
         self.location = db_config.get("location", "US")
-        self.client = bigquery.Client(project=self.project_id)
+        # Pin the client to the dataset location. Without it, location-less
+        # jobs (e.g. the `SELECT 1` that creates the rollback session) default
+        # to US, and the session then cannot reach datasets in other locations.
+        self.client = bigquery.Client(
+            project=self.project_id, location=self.location
+        )
         self.tmp_users = []
 
     #####################################################
