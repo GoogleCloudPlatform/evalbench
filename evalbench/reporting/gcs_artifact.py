@@ -1,4 +1,5 @@
 import os
+import stat
 import tempfile
 import zipfile
 import logging
@@ -102,6 +103,18 @@ class GcsReporter(Reporter):
                 eval_id = rows["eval_id"].iloc[0]
                 self._zip_and_upload(fake_home, eval_id, bucket)
 
+    @staticmethod
+    def _is_regular_file(path: str) -> bool:
+        """Returns True for a regular file. A symlink is not a regular file.
+
+        The agent under test writes the sandbox. A symlink there can point to
+        a host file, and zipfile copies the target. A FIFO blocks the read.
+        """
+        try:
+            return stat.S_ISREG(os.lstat(path).st_mode)
+        except OSError:
+            return False
+
     def _zip_and_upload(
         self, src_dir: str, eval_id: str, bucket: storage.Bucket
     ) -> None:
@@ -128,8 +141,12 @@ class GcsReporter(Reporter):
             ) as tmp_file:
                 zip_path = tmp_file.name
 
+            skipped = 0
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-                for root, dirs, files in os.walk(src_dir):
+                # os.walk does not enter a symlinked directory, and
+                # _is_regular_file rejects a symlinked file. Thus each file
+                # in the zip is inside src_dir.
+                for root, dirs, files in os.walk(src_dir, followlinks=False):
                     # Exclude hidden directories and common heavy/cache directories
                     dirs[:] = [
                         d
@@ -142,8 +159,19 @@ class GcsReporter(Reporter):
                         if file.startswith("."):
                             continue
                         file_path = os.path.join(root, file)
+                        if not self._is_regular_file(file_path):
+                            skipped += 1
+                            continue
                         arcname = os.path.relpath(file_path, src_dir)
                         zipf.write(file_path, arcname)
+
+            if skipped:
+                logging.warning(
+                    "GcsReporter._zip_and_upload: skipped %d symlinks or "
+                    "special files in %s.",
+                    skipped,
+                    src_dir,
+                )
 
             blob_name = f"{self.path_prefix}/{self.job_id}/{eval_id}.zip"
             logging.info(
