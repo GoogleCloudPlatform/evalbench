@@ -4,11 +4,11 @@ Fetches an HTTPS URL, strips HTML to text, and returns the result so the
 judge can ground rubric questions in external state.
 
 Defense in depth: HTTPS only, SSRF guard against private/loopback/link-local
-hosts, 10s timeout, 50KB body cap.
+hosts (also for each redirect target), 10s timeout, 50KB body cap.
 """
 
 from html.parser import HTMLParser
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 import ipaddress
 import logging
@@ -66,25 +66,49 @@ def _is_blocked_host(host: str) -> bool:
     return False
 
 
+def _url_error(url: str) -> Optional[str]:
+    """Returns the reason to refuse url, or None if the URL is allowed."""
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        return f"only https URLs are allowed (got scheme '{parsed.scheme}')"
+    if not parsed.hostname:
+        return "URL has no hostname"
+    if _is_blocked_host(parsed.hostname):
+        return (
+            f"refusing to fetch '{parsed.hostname}' "
+            "(private, loopback, link-local, or unresolvable)"
+        )
+    return None
+
+
+class _CheckedRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Applies the URL checks to each redirect target."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        error = _url_error(newurl)
+        if error:
+            raise urllib.error.URLError(f"redirect refused: {error}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _open(request):
+    """Opens request. A redirect target gets the same checks as the URL."""
+    opener = urllib.request.build_opener(_CheckedRedirectHandler)
+    return opener.open(request, timeout=_TIMEOUT_SECONDS)
+
+
 def fetch_url(args: Dict[str, Any]) -> str:
     url = args.get("url", "")
     if not isinstance(url, str) or not url:
         return "Error: missing required arg 'url' (string)"
 
-    parsed = urlparse(url)
-    if parsed.scheme != "https":
-        return f"Error: only https URLs are allowed (got scheme '{parsed.scheme}')"
-    if not parsed.hostname:
-        return "Error: URL has no hostname"
-    if _is_blocked_host(parsed.hostname):
-        return (
-            f"Error: refusing to fetch '{parsed.hostname}' "
-            "(private, loopback, link-local, or unresolvable)"
-        )
+    error = _url_error(url)
+    if error:
+        return f"Error: {error}"
 
     request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     try:
-        with urllib.request.urlopen(request, timeout=_TIMEOUT_SECONDS) as response:
+        with _open(request) as response:
             raw = response.read(_MAX_BYTES + 1)
             content_type = response.headers.get("Content-Type", "")
     except urllib.error.HTTPError as e:
