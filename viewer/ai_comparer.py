@@ -10,6 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../eval
 
 from evalbench.generators.models import get_generator
 from evalbench.util.config import load_yaml_config
+import run_index
 from summarizer import get_summarizer
 
 # Setup logging
@@ -47,8 +48,12 @@ def compare_evals(id1, id2):
     """Compares two evaluation runs using Gemini."""
     results_dir = get_results_dir()
 
-    path1 = os.path.join(results_dir, id1)
-    path2 = os.path.join(results_dir, id2)
+    # The IDs come from the browser. Accept only run directories.
+    path1 = run_index.resolve_run_dir(results_dir, id1)
+    path2 = run_index.resolve_run_dir(results_dir, id2)
+    if not path1 or not path2:
+        logger.warning("Rejected the run IDs %r and %r.", id1, id2)
+        return "Error: Invalid evaluation run ID."
 
     if not os.path.exists(path1):
         return f"Error: Directory for {id1} not found at {path1}"
