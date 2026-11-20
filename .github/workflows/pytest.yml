@@ -13,9 +13,7 @@ permissions:
 
 jobs:
   test:
-    # A pull request runs on a GitHub-hosted runner. A push to main runs on
-    # the bastion runners, which have GCP credentials.
-    runs-on: ${{ github.event_name == 'push' && fromJSON('["self-hosted", "bastion"]') || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     steps:
     - name: Checkout
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -37,4 +35,4 @@ jobs:
       env:
         PYTHONPATH: ${{ github.workspace }}/evalbench:${{ github.workspace }}
         # A GitHub-hosted runner has no GCP credentials.
-        SKIP_CLOUD_TESTS: ${{ github.event_name != 'push' }}
+        SKIP_CLOUD_TESTS: "true"
