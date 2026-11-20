@@ -153,8 +153,10 @@ Under `evalbench_service/k8s/`: `namespace.yaml`, `pvc.yaml`, `ksa.yaml`,
 `us-central1-docker.pkg.dev/evalbench-dev/cr-images/eval_server:latest`.
 
 - **4 CPU / 8Gi**, versus GKE's 20/80Gi. Work sized for the cluster OOMs here.
-- `--port=3000`, `CLOUD_RUN=True`, `MESOP_XSRF_CHECK=false`, `min-instances=1`,
-  `--no-cpu-throttling`, internal ingress on `cr-infra-vpc-network`.
+- `--port=3000`, `CLOUD_RUN=True`, `min-instances=1`, `--no-cpu-throttling`,
+  internal ingress on `cr-infra-vpc-network`.
+- Do not set `MESOP_XSRF_CHECK=false`. The viewer ignores it and keeps the
+  Mesop XSRF check on.
 - GCS volume at `/tmp_session_files`; no PVC.
 - The jobs run `python3 viewer/precompute_trends.py` (and `--clean` for
   recompute). Changing that script's CLI surface or entry point requires

@@ -64,14 +64,11 @@ except Exception:
 
 logging.basicConfig(level=logging.INFO)
 
-# Manually enable debug mode to bypass XSRF check if needed
-# (e.g. when running in container behind a proxy)
+# Mesop rejects a cross-site POST to the UI endpoint. Keep that check on.
 if os.environ.get("MESOP_XSRF_CHECK") == "false":
-    try:
-        from mesop.runtime import runtime
-        runtime().debug_mode = True
-    except Exception as e:
-        logging.error(f"Failed to enable debug mode: {e}")
+    logging.warning(
+        "MESOP_XSRF_CHECK=false has no effect. The XSRF check stays on."
+    )
 
 try:
     import dashboard
