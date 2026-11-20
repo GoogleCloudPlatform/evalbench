@@ -10,6 +10,7 @@ from .tool_naming import canonical_tool_name
 import logging
 import os
 import shutil
+import sys
 
 
 class AgentCliGenerator(QueryGenerator):
@@ -24,8 +25,19 @@ class AgentCliGenerator(QueryGenerator):
     CLI generator only needs to subclass this -- no evaluator changes.
     """
 
+    @staticmethod
+    def _is_shared_sandbox() -> bool:
+        """Returns True on the eval server, where the session sandboxes share
+        one volume."""
+        return sys.argv[0].endswith("eval_server.py")
+
     def _setup_gcloud_credentials(self, env: dict, real_home: str, fake_home: str):
-        """Sets up gcloud credentials in the fake home directory."""
+        """Makes gcloud credentials available to the sandboxed CLI.
+
+        A local run copies the ADC file into the fake home and uses the real
+        gcloud config. A shared sandbox gets no credential file and its own
+        gcloud config directory.
+        """
         adc_path = env.get("GOOGLE_APPLICATION_CREDENTIALS")
         if not adc_path:
             adc_path = os.path.join(
@@ -37,8 +49,13 @@ class AgentCliGenerator(QueryGenerator):
             if os.path.exists(adc_path):
                 env["GOOGLE_APPLICATION_CREDENTIALS"] = adc_path
 
+        fake_gcloud_dir = os.path.join(fake_home, ".config", "gcloud")
+        if AgentCliGenerator._is_shared_sandbox():
+            if "CLOUDSDK_CONFIG" not in env:
+                env["CLOUDSDK_CONFIG"] = fake_gcloud_dir
+            return
+
         if adc_path and os.path.exists(adc_path):
-            fake_gcloud_dir = os.path.join(fake_home, ".config", "gcloud")
             os.makedirs(fake_gcloud_dir, exist_ok=True)
             fake_adc_path = os.path.join(
                 fake_gcloud_dir, "application_default_credentials.json"

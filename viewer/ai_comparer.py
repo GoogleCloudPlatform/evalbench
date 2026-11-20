@@ -11,6 +11,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../eval
 from evalbench.generators.models import get_generator
 from evalbench.util.config import load_yaml_config
 from summarizer import get_summarizer
+# The bounded renderers keep the prompt small when cells hold large values.
+from summarizer import render_evals_for_prompt, render_scores_for_prompt
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -73,14 +75,14 @@ def compare_evals(id1, id2):
         prompt = prompt_instructions + "\n\n"
 
         prompt += f"### Run 1: {id1}\n"
-        prompt += evals1.head(5).to_string() + "\n\n"
+        prompt += render_evals_for_prompt(evals1) + "\n\n"
         if scores1 is not None:
-            prompt += "Scores:\n" + scores1.to_string() + "\n\n"
+            prompt += "Scores:\n" + render_scores_for_prompt(scores1) + "\n\n"
 
         prompt += f"### Run 2: {id2}\n"
-        prompt += evals2.head(5).to_string() + "\n\n"
+        prompt += render_evals_for_prompt(evals2) + "\n\n"
         if scores2 is not None:
-            prompt += "Scores:\n" + scores2.to_string() + "\n\n"
+            prompt += "Scores:\n" + render_scores_for_prompt(scores2) + "\n\n"
 
         # Get generator or use API key directly
         from google import genai
