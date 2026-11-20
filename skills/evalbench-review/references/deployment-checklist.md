@@ -26,8 +26,10 @@ Consequences to check:
 - Code reachable only from the frontend still runs on GKE if it's imported at
   module load. Cloud Run has no eval server, so eval-server-only work silently
   never happens there.
-- `eval_server.py:63,80` binds localhost when `CLOUD_RUN` is set. Changing bind
-  behavior affects Cloud Run ingress.
+- `eval_server.py` serves without ALTS and binds all interfaces when
+  `CLOUD_RUN` is set. With `--localhost` and no `CLOUD_RUN`, it binds
+  `127.0.0.1` unless `EVALBENCH_HOST` is set. Changing bind behavior affects
+  Cloud Run ingress.
 
 ## Does the image still build?
 
