@@ -239,7 +239,12 @@ def on_load(e: me.LoadEvent):
     eval1 = me.query_params.get("eval1")
     eval2 = me.query_params.get("eval2")
 
-    if tab == "compare" and eval1 and eval2:
+    # The query parameters are untrusted. Accept only run directories.
+    if (
+        tab == "compare"
+        and run_index.resolve_run_dir(results_dir, eval1)
+        and run_index.resolve_run_dir(results_dir, eval2)
+    ):
         state.selected_main_tab = "Compare"
         state.compare_tab_visible = True
         state.compare_evals = json.dumps([eval1, eval2])
@@ -2047,6 +2052,15 @@ def render_app_content():
         results_dir = get_results_dir()
         logging.info(f"render_app_content: selected_directory='{state.selected_directory}', selected_evals='{state.selected_evals}', selected_main_tab='{state.selected_main_tab}'")
 
+        # The browser holds the state, so selected_directory is untrusted.
+        if state.selected_directory and not run_index.resolve_run_dir(
+            results_dir, state.selected_directory
+        ):
+            logging.warning(
+                "Rejected the run directory %r.", state.selected_directory
+            )
+            state.selected_directory = ""
+
         directories = run_index.list_run_directories(results_dir)
 
         def on_title_click(e: me.ClickEvent):
@@ -2186,8 +2200,13 @@ def render_app_content():
 
                 def on_generate_summary_click(e: me.ClickEvent):
                     state = me.state(State)
-                    results_dir_full = os.path.join(results_dir, state.selected_directory)
-                    state.ai_summary = summarize_eval_scoring(results_dir_full)
+                    run_dir = run_index.resolve_run_dir(
+                        results_dir, state.selected_directory
+                    )
+                    if not run_dir:
+                        state.ai_summary = "Error: invalid run directory."
+                        return
+                    state.ai_summary = summarize_eval_scoring(run_dir)
                     # Parse score
                     import re
                     match = re.search(r"\*\*General Score:\s*(\d+(\.\d+)?)[^*]*\*\*", state.ai_summary)

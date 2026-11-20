@@ -1,4 +1,7 @@
+import os
+import tempfile
 import unittest
+import zipfile
 from unittest.mock import patch, MagicMock
 import pandas as pd
 import datetime
@@ -110,6 +113,62 @@ class TestGcsReporter(unittest.TestCase):
         self.assertEqual(mock_bucket.blob.call_count, 1)
         mock_bucket.blob.assert_called_once_with("results/test-job-id/fake_home.zip")
         mock_blob.upload_from_filename.assert_called_once_with("/tmp/temp.zip")
+
+    def _zip_names_and_data(self, src_dir):
+        """Runs _zip_and_upload and returns the names and bytes in the zip."""
+        captured = {}
+
+        def read_zip(zip_path):
+            with zipfile.ZipFile(zip_path) as zipf:
+                captured["names"] = sorted(zipf.namelist())
+                captured["data"] = b"".join(
+                    zipf.read(name) for name in zipf.namelist())
+
+        bucket = MagicMock()
+        bucket.blob.return_value.upload_from_filename.side_effect = read_zip
+        reporter = GcsReporter(self.reporting_config, self.job_id, self.run_time)
+        reporter._zip_and_upload(src_dir, "eval1", bucket)
+        return captured["names"], captured["data"]
+
+    def _make_sandbox(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        fake_home = os.path.join(temp_dir.name, "fake_home")
+        os.makedirs(os.path.join(fake_home, "sub"))
+        for name in ("note.txt", os.path.join("sub", "kept.txt")):
+            with open(os.path.join(fake_home, name), "w") as f:
+                f.write("sandbox file")
+        return temp_dir.name, fake_home
+
+    @patch('reporting.gcs_artifact.storage.Client')
+    def test_zip_does_not_follow_symlinks(self, mock_storage_client):
+        """A symlink in the sandbox must not copy a host file into the zip."""
+        host_dir, fake_home = self._make_sandbox()
+        host_file = os.path.join(host_dir, "host_secret.txt")
+        with open(host_file, "w") as f:
+            f.write("HOST_SECRET")
+        host_subdir = os.path.join(host_dir, "host_subdir")
+        os.makedirs(host_subdir)
+        with open(os.path.join(host_subdir, "inner.txt"), "w") as f:
+            f.write("HOST_SECRET")
+        os.symlink(host_file, os.path.join(fake_home, "link_to_file.txt"))
+        os.symlink(host_file, os.path.join(fake_home, "sub", "nested_link.txt"))
+        os.symlink(host_subdir, os.path.join(fake_home, "link_to_dir"))
+
+        names, data = self._zip_names_and_data(fake_home)
+
+        self.assertEqual(names, ["note.txt", "sub/kept.txt"])
+        self.assertNotIn(b"HOST_SECRET", data)
+
+    @patch('reporting.gcs_artifact.storage.Client')
+    def test_zip_skips_special_files(self, mock_storage_client):
+        """A FIFO in the sandbox must not block the reporter."""
+        _, fake_home = self._make_sandbox()
+        os.mkfifo(os.path.join(fake_home, "pipe"))
+
+        names, _ = self._zip_names_and_data(fake_home)
+
+        self.assertEqual(names, ["note.txt", "sub/kept.txt"])
 
 
 if __name__ == '__main__':
