@@ -90,7 +90,7 @@ async def _serve():
     )
     if _LOCALHOST.value or CLOUD_RUN:
         logging.info("Using localhost server insecure credentials per flag")
-        # Cloud Run authenticates requests before they reach the container.
+        # On Cloud Run, the platform controls access to the container.
         if not CLOUD_RUN and not bindhost.is_loopback(host):
             logging.warning(
                 "EVALBENCH_HOST=%s: the server accepts connections without "
