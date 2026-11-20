@@ -25,10 +25,10 @@ def _homes(tmp_path, with_adc=True):
     return str(tmp_path / "real_home"), str(fake_home)
 
 
-def _setup(env, real_home, fake_home, **kwargs):
+def _setup(env, real_home, fake_home):
     # The method does not read self.
     AgentCliGenerator._setup_gcloud_credentials(
-        None, env, real_home, fake_home, **kwargs)
+        None, env, real_home, fake_home)
 
 
 def _gcloud_dir(home):
@@ -36,7 +36,7 @@ def _gcloud_dir(home):
 
 
 def test_local_run_copies_adc_into_the_sandbox(tmp_path, monkeypatch):
-    """A local run uses the login of the developer. This is by design."""
+    """A local run uses the login of the developer."""
     monkeypatch.setattr(sys, "argv", ["pytest"])
     real_home, fake_home = _homes(tmp_path)
     env = {}
@@ -92,15 +92,6 @@ def test_eval_server_keeps_a_configured_cloudsdk_config(tmp_path, monkeypatch):
     assert env["CLOUDSDK_CONFIG"] == "/configured/gcloud"
 
 
-def test_shared_sandbox_argument_overrides_the_detection(tmp_path, monkeypatch):
-    monkeypatch.setattr(sys, "argv", ["pytest"])
-    real_home, fake_home = _homes(tmp_path)
-
-    _setup({}, real_home, fake_home, shared_sandbox=True)
-
-    assert os.listdir(fake_home) == []
-
-
 def _run_npm_auth(tmp_path, token="npm-token-123"):
     """Runs GeminiCliGenerator._setup_npm_auth with a stubbed gcloud."""
     fake_home = tmp_path / "fake_home"
@@ -142,8 +133,8 @@ def test_existing_npmrc_mode_is_tightened(tmp_path):
 
 
 def test_npmrc_symlink_is_replaced_and_not_followed(tmp_path):
-    """A symlink that the agent left in the fake home must not make the
-    harness write the token into another file."""
+    """A symlink in the fake home must not make the harness write the token
+    into another file."""
     host_file = tmp_path / "host_file"
     host_file.write_text("host content\n")
     fake_home = tmp_path / "fake_home"
