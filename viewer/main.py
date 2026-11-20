@@ -10,6 +10,7 @@ import dataset_quality
 import run_index
 from summarizer import summarize_eval_scoring
 from ai_comparer import compare_evals
+from paths import get_results_dir
 
 
 @me.stateclass
@@ -112,26 +113,6 @@ def df_to_config(df: pd.DataFrame) -> dict:
         current_level[keys[-1]] = value
 
     return original_dict
-
-
-def get_results_dir():
-    # Try to read from environment variable
-    res_dir = os.environ.get("RESULTS_DIR")
-    if res_dir:
-        return res_dir
-
-    # Check multiple locations for results directory
-    results_dir_candidates = [
-        "/tmp_session_files/results",
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), "results"),
-        os.path.join(os.getcwd(), "results"),
-    ]
-
-    for candidate in results_dir_candidates:
-        if os.path.exists(candidate) and os.path.isdir(candidate):
-            return candidate
-
-    return results_dir_candidates[1]  # Fallback to default
 
 
 def get_eval_details(results_dir, dir_name):
