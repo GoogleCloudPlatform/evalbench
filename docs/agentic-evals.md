@@ -107,6 +107,40 @@ scorers:
     model_config: datasets/model_configs/gemini_2.5_pro_model.yaml
 ```
 
+### Stats across trials
+
+Set [`num_trials`](/docs/configs/run-config.md#num_trials-examples) above 1 in the run config to run each scenario more than one time. The job then also writes `run_stats.csv`. The file has one row for each scenario. Only the `csv` reporter writes it.
+
+A trial passes if its `goal_completion` score is at or above `pass_threshold`. The default is 100. To change it, set `pass_threshold` on the scorer to a number from 0 to 100:
+
+```yaml
+scorers:
+  goal_completion:
+    pass_threshold: 80
+```
+
+A trial is unscored if it has an agent error in `generated_error` or if the `goal_completion` scorer fails. An unscored trial does not count as a pass or as a failure.
+
+| Column | Description |
+| ------ | ----------- |
+| `scenario_id` | The scenario `id` from the evalset. It is the `prompt_id` of the result rows. |
+| `num_trials` | Number of trials of the scenario that ran. |
+| `scored_trials`, `unscored_trials` | Number of trials that were scored, and number that were unscored. |
+| `passed_trials` | Number of scored trials that passed. |
+| `pass_rate` | `passed_trials / scored_trials`, from 0 to 1. |
+| `flakiness` | `4p(1 - p)`, where `p` is the pass rate. It is 0 if all scored trials agree and 1 at 50/50. |
+| `flaky` | `True` if some scored trials passed and some failed. |
+| `confidence` | The chance, from 0 to 1, that the true pass rate is above 90%. The true pass rate is the pass rate over a very large number of trials. |
+| `interval_low`, `interval_high` | The Wilson interval. It is the range that holds the true pass rate with 95% certainty. |
+| `score_mean`, `score_std` | Mean and sample standard deviation of the `goal_completion` scores of the scored trials. |
+| `status` | `PASS`: every trial was scored and passed. `FAIL`: every trial was scored and at least one failed. `ERROR`: at least one trial was unscored. |
+| `<metric>_min`, `<metric>_median`, `<metric>_max` | For each numeric metric, such as `token_consumption`, `end_to_end_latency`, and `turn_count`: the min, median, and max over the scored trials. |
+| `<scorer>_pass_rate` | For each other 0 to 100 scorer, such as `trajectory_matcher`: the share of scored trials with a score at or above the `pass_threshold` of that scorer. The default is 100. |
+
+If a scenario has no scored trial, its `status` is `ERROR` and its other stats are empty. Without the `goal_completion` scorer, the pass stats are empty.
+
+With few trials, the `confidence` is low and the interval is wide. For example, 3 passes in 3 trials give a `confidence` of 0.34 and an interval of 0.44 to 1.
+
 ---
 
 ## Quick start

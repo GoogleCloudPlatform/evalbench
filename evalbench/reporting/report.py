@@ -16,6 +16,13 @@ class Reporter(ABC):
     def store(self, results, type: STORETYPE):
         pass
 
+    def store_run_stats(self, run_stats: pd.DataFrame):
+        """Stores the scenario stats of a multi-trial agent run.
+
+        A reporter that does not support these stats ignores the call.
+        """
+        pass
+
     def print_dashboard_links(self):
         pass
 

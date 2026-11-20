@@ -7,6 +7,20 @@ import pandas as pd
 # sums their scores instead of counting exact 100s, so partial credit counts.
 PARTIAL_CREDIT_METRICS = ("goal_completion",)
 
+# Metrics that measure an amount, not a 0-100 score.
+NUMERIC_METRICS = (
+    "turn_count",
+    "agent_steps",
+    "end_to_end_latency",
+    "tool_call_latency",
+    "token_consumption",
+    "tokens_processed",
+    "effective_billed_tokens",
+)
+
+# The orchestrators that run agent scenarios.
+AGENT_ORCHESTRATORS = ("agent", "geminicli")
+
 
 def _partial_credit_names(scorers: dict) -> set[str]:
     """Returns the metric names that score partial credit.
@@ -216,13 +230,7 @@ def analyze_one_metric(
                 original_df_size = num_prompts
 
             non_binary_metrics = [
-                "turn_count",
-                "agent_steps",
-                "end_to_end_latency",
-                "tool_call_latency",
-                "token_consumption",
-                "tokens_processed",
-                "effective_billed_tokens",
+                *NUMERIC_METRICS,
                 # 0-100 grades: matching against 100 would report every
                 # grade below it as a flat 0%.
                 "dataset_quality",
@@ -315,14 +323,14 @@ def analyze_result(
         if isinstance(experiment_config, dict)
         else ""
     )
-    if orch in ("agent", "geminicli"):
+    if orch in AGENT_ORCHESTRATORS:
         if "id" in df.columns and not df["id"].isna().all():
             unique_ids = len(df["id"].dropna().unique())
             if num_prompts is None or unique_ids > num_prompts:
                 num_prompts = unique_ids
     # An agent trial with an agent error or a scorer error is unscored. On
     # the other paths, such an error is a failure, for example invalid SQL.
-    skip_unscored = orch in ("agent", "geminicli")
+    skip_unscored = orch in AGENT_ORCHESTRATORS
 
     # The summary of an agent run counts each result row as one trial.
     summary_df = df

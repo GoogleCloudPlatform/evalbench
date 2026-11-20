@@ -12,6 +12,7 @@ from evaluator import get_orchestrator
 from reporting import get_reporters
 import reporting.analyzer as analyzer
 import reporting.report as report
+import reporting.runstats as runstats
 from util.config import config_to_df, load_yaml_config, with_agent_version
 from util.config import set_session_configs
 from util.flags import EXPERIMENT_CONFIG
@@ -48,7 +49,8 @@ flags.declare_key_flag('experiment_config')
 
 
 def _store_reports(
-    reporters, config_df, results_df, scores_df, summary_scores_df
+    reporters, config_df, results_df, scores_df, summary_scores_df,
+    run_stats_df=None,
 ) -> list[str]:
     """Writes the reports with each reporter.
 
@@ -66,6 +68,8 @@ def _store_reports(
             reporter.store(results_df, report.STORETYPE.EVALS)
             reporter.store(scores_df, report.STORETYPE.SCORES)
             reporter.store(summary_scores_df, report.STORETYPE.SUMMARY)
+            if run_stats_df is not None:
+                reporter.store_run_stats(run_stats_df)
             reporter.print_dashboard_links()
         except Exception:
             logging.exception(f"{name} failed to store the reports.")
@@ -176,6 +180,8 @@ def eval(experiment_config: str):
             )
             summary_scores_df["job_id"] = job_id
             summary_scores_df["run_time"] = run_time
+            run_stats_df = runstats.compute_run_stats(
+                scores_df, config, job_id, run_time)
         else:
             logging.warning(
                 f"There were no matching evals in run for config '{display_config}'. Returning empty set."
@@ -185,10 +191,12 @@ def eval(experiment_config: str):
             results_df = None
             scores_df = None
             summary_scores_df = None
+            run_stats_df = None
 
         # Store the reports in specified outputs
         failed_reporters = _store_reports(
-            reporters, config_df, results_df, scores_df, summary_scores_df)
+            reporters, config_df, results_df, scores_df, summary_scores_df,
+            run_stats_df)
 
         print(f"Finished Job ID {job_id}")
 

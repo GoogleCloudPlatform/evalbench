@@ -20,6 +20,7 @@ from evaluator import get_orchestrator, get_streaming_orchestrator
 import reporting.report as report
 from reporting import get_reporters
 import reporting.analyzer as analyzer
+import reporting.runstats as runstats
 from util.config import update_google3_relative_paths, set_session_configs, config_to_df
 from util.config import with_agent_version
 from util import get_SessionManager
@@ -778,6 +779,8 @@ def _process_results(
     )
     summary_scores_df["job_id"] = job_id
     summary_scores_df["run_time"] = run_time
+    run_stats_df = runstats.compute_run_stats(
+        scores_df, config, job_id, run_time)
 
     # Store the reports in specified outputs
     for reporter in reporters:
@@ -785,6 +788,8 @@ def _process_results(
         reporter.store(results_df, report.STORETYPE.EVALS)
         reporter.store(scores_df, report.STORETYPE.SCORES)
         reporter.store(summary_scores_df, report.STORETYPE.SUMMARY)
+        if run_stats_df is not None:
+            reporter.store_run_stats(run_stats_df)
 
     # k8s emptyDir /tmp does not auto cleanup, so we explicitly delete
     pathlib.Path(results_tf).unlink()

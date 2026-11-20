@@ -39,3 +39,9 @@ class CsvReporter(Reporter):
             "Created csv {} for {} in directory {}".format(
                 file_name, type, directory)
         )
+
+    def store_run_stats(self, run_stats):
+        directory = f"{self.output_dir}/{self.job_id}"
+        os.makedirs(directory, exist_ok=True)
+        run_stats.to_csv(f"{directory}/run_stats.csv", index=False)
+        logging.info(f"Created csv run_stats.csv in directory {directory}")
