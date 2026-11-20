@@ -166,9 +166,9 @@ Under `evalbench_service/k8s/`: `namespace.yaml`, `pvc.yaml`, `ksa.yaml`,
 `.ci/build.cloudbuild.yaml` (the Build trigger, on push to `main`) is a fuller
 gate than the GitHub Actions workflows:
 
-1. `uv sync` + proto + `pytest evalbench/test` with `PYTHONPATH=evalbench:.`
-   and `SKIP_CLOUD_TESTS=true` (which skips `bigtable_test.py` and
-   `spanner_test.py` — so those get *less* coverage here, not more).
+1. `uv sync` + proto + `pytest evalbench/test` with `PYTHONPATH=evalbench:.`.
+   This is the only CI job that runs `bigtable_test.py` and `spanner_test.py`.
+   The GitHub Actions workflow skips them with `SKIP_CLOUD_TESTS=true`.
    This runs at the same time as step 2.
 2. `docker build -f evalbench_service/Dockerfile`, with `:build-cache` as
    the layer cache.
