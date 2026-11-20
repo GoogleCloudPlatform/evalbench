@@ -47,32 +47,108 @@ class TestViewerSummarizer(unittest.TestCase):
         self.assertTrue(args[1].endswith("gemini_summarizer_model.yaml"))
         self.assertEqual(generator, mock_generator)
 
+    def _write_run(self, summarizer_model_config):
+        """Writes a run directory whose run_config.yaml selects a model config."""
+        run_dir = os.path.join(self.temp_dir.name, "results", "run-1")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "run_config.yaml"), "w") as f:
+            f.write(f"summarizer_model_config: {summarizer_model_config}\n")
+        return run_dir
+
+    def _write_trusted_config(self, content):
+        trusted_dir = os.path.join(self.temp_dir.name, "trusted")
+        os.makedirs(trusted_dir, exist_ok=True)
+        config_path = os.path.join(trusted_dir, "custom_model.yaml")
+        with open(config_path, "w") as f:
+            f.write(content)
+        return trusted_dir, config_path
+
+    def _assert_default_config(self, mock_get_generator):
+        mock_get_generator.assert_called_once()
+        args, _ = mock_get_generator.call_args
+        self.assertEqual(
+            os.path.basename(args[1]), "gemini_summarizer_model.yaml")
+        self.assertEqual(
+            os.path.basename(os.path.dirname(args[1])), "config")
+
     @patch("viewer.summarizer.get_generator")
-    @patch("viewer.summarizer.load_yaml_config")
-    def test_get_summarizer_run_config_override(self, mock_load_yaml, mock_get_generator):
-        """Verify run_config.yaml in results_dir takes precedence if summarizer_model_config is defined."""
-        custom_config_path = os.path.join(self.temp_dir.name, "custom_model.yaml")
-        with open(custom_config_path, "w") as f:
-            f.write("generator: gcp_vertex_gemini\nvertex_model: gemini-2.5-pro\n")
+    def test_get_summarizer_run_config_override(self, mock_get_generator):
+        """Verify run_config.yaml in results_dir takes precedence if it selects a trusted model config."""
+        trusted_dir, config_path = self._write_trusted_config(
+            "generator: gcp_vertex_gemini\nvertex_model: gemini-2.5-pro\n")
+        run_dir = self._write_run(config_path)
 
-        run_config_path = os.path.join(self.temp_dir.name, "run_config.yaml")
-        with open(run_config_path, "w") as f:
-            f.write(f"summarizer_model_config: {custom_config_path}\n")
-
-        def side_effect(path):
-            if os.path.abspath(path) == os.path.abspath(run_config_path):
-                return {"summarizer_model_config": custom_config_path}
-            return {"model_config_path": "./gemini_summarizer_model.yaml"}
-
-        mock_load_yaml.side_effect = side_effect
-        mock_generator = MagicMock()
-        mock_get_generator.return_value = mock_generator
-
-        get_summarizer(results_dir=self.temp_dir.name)
+        with patch("viewer.summarizer.TRUSTED_MODEL_CONFIG_DIRS", (trusted_dir,)):
+            get_summarizer(results_dir=run_dir)
 
         mock_get_generator.assert_called_once()
         args, _ = mock_get_generator.call_args
-        self.assertEqual(args[1], os.path.abspath(custom_config_path))
+        self.assertEqual(args[1], os.path.realpath(config_path))
+
+    @patch("viewer.summarizer.get_generator")
+    def test_get_summarizer_run_config_repo_relative_path(self, mock_get_generator):
+        """A relative path is relative to the repository root, as in a run config."""
+        run_dir = self._write_run("datasets/model_configs/gemini_2.5_pro_model.yaml")
+
+        get_summarizer(results_dir=run_dir)
+
+        mock_get_generator.assert_called_once()
+        args, _ = mock_get_generator.call_args
+        self.assertTrue(os.path.isabs(args[1]))
+        self.assertTrue(args[1].endswith(
+            os.path.join("datasets", "model_configs", "gemini_2.5_pro_model.yaml")))
+
+    @patch("viewer.summarizer.get_generator")
+    def test_get_summarizer_ignores_model_config_in_run_directory(self, mock_get_generator):
+        """A run must not make the viewer load a model config that the run wrote."""
+        run_dir = os.path.join(self.temp_dir.name, "results", "run-1")
+        os.makedirs(run_dir)
+        config_path = os.path.join(run_dir, "model.yaml")
+        with open(config_path, "w") as f:
+            f.write("generator_class: subprocess:Popen\n")
+
+        for selected in (config_path, "model.yaml", "../results/run-1/model.yaml"):
+            mock_get_generator.reset_mock()
+            self._write_run(selected)
+
+            get_summarizer(results_dir=run_dir)
+
+            self._assert_default_config(mock_get_generator)
+
+    @patch("viewer.summarizer.get_generator")
+    def test_get_summarizer_ignores_run_selected_custom_class_and_agent_cli(self, mock_get_generator):
+        """A run can select only a generator that the summarizer uses."""
+        contents = (
+            "generator: gcp_vertex_gemini\ngenerator_class: subprocess:Popen\n",
+            "generator_class: subprocess:Popen\n",
+            "generator: gemini_cli\n",
+            "- not\n- a\n- mapping\n",
+        )
+        for content in contents:
+            mock_get_generator.reset_mock()
+            trusted_dir, config_path = self._write_trusted_config(content)
+            run_dir = self._write_run(config_path)
+
+            with patch("viewer.summarizer.TRUSTED_MODEL_CONFIG_DIRS", (trusted_dir,)):
+                get_summarizer(results_dir=run_dir)
+
+            self._assert_default_config(mock_get_generator)
+
+    @patch("viewer.summarizer.get_generator")
+    def test_get_summarizer_ignores_symlink_that_leaves_trusted_directory(self, mock_get_generator):
+        trusted_dir = os.path.join(self.temp_dir.name, "trusted")
+        os.makedirs(trusted_dir)
+        outside_path = os.path.join(self.temp_dir.name, "outside_model.yaml")
+        with open(outside_path, "w") as f:
+            f.write("generator: gcp_vertex_gemini\n")
+        link_path = os.path.join(trusted_dir, "link.yaml")
+        os.symlink(outside_path, link_path)
+        run_dir = self._write_run(link_path)
+
+        with patch("viewer.summarizer.TRUSTED_MODEL_CONFIG_DIRS", (trusted_dir,)):
+            get_summarizer(results_dir=run_dir)
+
+        self._assert_default_config(mock_get_generator)
 
     @patch("viewer.summarizer.get_generator")
     @patch("viewer.summarizer.load_yaml_config")
