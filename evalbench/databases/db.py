@@ -36,6 +36,17 @@ class DB(ABC):
         # Initialize the Redis cache client
         self.cache_client = get_cache_client(db_config)
 
+    def _cache_scope(self) -> str:
+        """Returns the identity of this database for the query cache key.
+
+        The engine URL is not sufficient. With a Cloud SQL connector, the URL
+        has no host, no user, and no database name.
+        """
+        return "|".join(
+            str(part)
+            for part in (self.db_type, self.db_path, self.db_name, self.username)
+        )
+
     def clean_tmp_creations(self) -> None:
         self.drop_tmp_databases(self.tmp_dbs.copy())
         self.delete_tmp_users(self.tmp_users.copy())

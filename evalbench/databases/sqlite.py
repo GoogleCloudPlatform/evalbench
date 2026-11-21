@@ -94,7 +94,7 @@ class SQLiteDB(DB):
             return self._execute(query, eval_query, rollback)
         return with_cache_execute(
             query,
-            self.db_name,
+            self._cache_scope(),
             self._execute,
             self.cache_client,
         )
