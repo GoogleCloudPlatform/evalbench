@@ -7,6 +7,34 @@ import threading
 
 _SYS_PATH_LOCK = threading.Lock()
 
+# On the eval server, a custom class must be in a module of this setting.
+SERVER_MODULES_SETTING = "EVALBENCH_CUSTOM_CLASS_MODULES"
+
+
+def _check_server_modules(class_path: str, mod_name: str) -> None:
+    """Raises PermissionError if the eval server must not load mod_name.
+
+    On the eval server the config comes from the client, so a class path can
+    name any importable class. Thus the server loads a custom class only from
+    the modules in EVALBENCH_CUSTOM_CLASS_MODULES (comma-separated). A module
+    in the list also permits its submodules. The default list is empty.
+    """
+    if not sys.argv[0].endswith("eval_server.py"):
+        return
+    allowed = [
+        name.strip()
+        for name in os.environ.get(SERVER_MODULES_SETTING, "").split(",")
+        if name.strip()
+    ]
+    if any(mod_name == name or mod_name.startswith(name + ".")
+           for name in allowed):
+        return
+    raise PermissionError(
+        f"The eval server does not load the custom class '{class_path}'. "
+        f"The {SERVER_MODULES_SETTING} variable of the server sets the "
+        "permitted modules."
+    )
+
 
 def _import_with_cwd_fallback(mod_name: str):
     """Imports mod_name, falling back to appending os.getcwd() to sys.path."""
@@ -43,6 +71,7 @@ def load_custom_class(class_path: str):
 
     Raises:
         ValueError: If class_path format is invalid.
+        PermissionError: If the eval server does not permit the module.
         ImportError: If the module cannot be imported.
         AttributeError: If the class does not exist in the module.
 
@@ -59,6 +88,8 @@ def load_custom_class(class_path: str):
             f"Invalid class_path '{class_path}'. Expected format"
             " 'module.submodule.ClassName' or 'module:ClassName'."
         )
+
+    _check_server_modules(class_path, mod_name)
 
     try:
         mod = _import_with_cwd_fallback(mod_name)
