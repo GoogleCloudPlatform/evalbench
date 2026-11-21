@@ -106,6 +106,66 @@ def _load_setup_sql(sql_file_path: str):
         return []
 
 
+REDACTED = "[REDACTED]"
+_SECRET_KEY_WORDS = frozenset({
+    "password", "passwd", "secret", "token", "credential", "credentials",
+    "authorization", "apikey",
+})
+# "key" is a secret only after one of these words, as in api_key.
+_SECRET_KEY_QUALIFIERS = frozenset({"api", "private", "access", "secret"})
+_CAMEL_CASE_RE = re.compile(r"([a-z0-9])([A-Z])")
+_URL_PASSWORD_RE = re.compile(r"(://[^/\s:@]+:)[^@\s/]+(@)")
+# A Secret Manager resource name is a reference to a secret, not a secret.
+_SECRET_REFERENCE_RE = re.compile(
+    r"^projects/[^/\s]+/secrets/[^/\s]+(/versions/[^/\s]+)?$")
+
+
+def _is_secret_key(key) -> bool:
+    """Returns True if the last words of a config key name a secret."""
+    words = [
+        word
+        for word in re.split(
+            r"[^a-z0-9]+", _CAMEL_CASE_RE.sub(r"\1_\2", str(key)).lower())
+        if word
+    ]
+    if not words:
+        return False
+    if words[-1] in _SECRET_KEY_WORDS:
+        return True
+    return (
+        len(words) > 1
+        and words[-1] == "key"
+        and words[-2] in _SECRET_KEY_QUALIFIERS
+    )
+
+
+def _is_secret_value(value) -> bool:
+    if value is None or value == "" or isinstance(value, bool):
+        return False
+    return not (isinstance(value, str) and _SECRET_REFERENCE_RE.match(value))
+
+
+def redact_secrets(config):
+    """Returns a copy of a config without the values of secret keys.
+
+    The copy is for reports (configs.csv, BigQuery). It also removes the
+    password from a URL of the form scheme://user:password@host.
+    """
+    if isinstance(config, dict):
+        return {
+            key: REDACTED
+            if _is_secret_key(key) and _is_secret_value(value)
+            else redact_secrets(value)
+            for key, value in config.items()
+        }
+    if isinstance(config, (list, tuple)):
+        return [redact_secrets(item) for item in config]
+    if isinstance(config, str):
+        return _URL_PASSWORD_RE.sub(
+            lambda match: match.group(1) + REDACTED + match.group(2), config)
+    return config
+
+
 def config_to_df(
     job_id: str,
     run_time: datetime.datetime,
@@ -114,11 +174,11 @@ def config_to_df(
     db_configs: list[dict],
 ):
     configs = []
-    config = {
+    config = redact_secrets({
         "experiment_config": experiment_config,
         "model_config": model_config,
         "db_configs": db_configs,
-    }
+    })
     df = pd.json_normalize(config, sep=".")
     d_flat = df.to_dict(orient="records")[0]
     for key in d_flat:
