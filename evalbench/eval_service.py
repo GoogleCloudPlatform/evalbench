@@ -260,18 +260,14 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                 await executor.run(ctx.run, evaluator.evaluate, dataset)
 
             job_id, run_time, results_tf, scores_tf, multi_trial_scores_tf = evaluator.process()
-            # Fallback to empty dict if reporting is present but null in YAML
-            reporters = get_reporters(
-                config.get("reporting") or {}, job_id, run_time
-            )
 
-            # Offload blocking results processing to a thread pool
+            # Offload blocking results processing and reporter setup to a thread pool
             logging.info("Offloading results processing to thread pool...")
             ctx = contextvars.copy_context()
             summary = await executor.run(
                 ctx.run,
                 _process_results,
-                reporters,
+                None,
                 job_id,
                 run_time,
                 results_tf,
@@ -280,6 +276,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                 config,
                 with_agent_version(model_config, evaluator),
                 db_configs,
+                not config.get("summary_in_response"),
             )
 
             logging.info(
@@ -469,8 +466,6 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
 
             # Process final scoring and reporting
             job_id, run_time, results_tf, scores_tf = orchestrator.process()
-            reporters = get_reporters(config.get(
-                "reporting") or {}, job_id, run_time)
 
             logging.info(
                 "Offloading interactive results processing to thread pool...")
@@ -478,7 +473,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             summary = await executor.run(
                 ctx.run,
                 _process_results,
-                reporters,
+                None,
                 job_id,
                 run_time,
                 results_tf,
@@ -602,14 +597,11 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                     scores_tf,
                     multi_trial_scores_tf,
                 ) = orchestrator.process()
-                reporters = get_reporters(
-                    config.get("reporting") or {}, job_id, run_time
-                )
                 logging.info("Processing agent evaluation results...")
                 summary = await executor.run(
                     ctx.run,
                     _process_results,
-                    reporters,
+                    None,
                     job_id,
                     run_time,
                     results_tf,
@@ -746,29 +738,99 @@ def _summary_count(value) -> float | int:
     return int(count) if count.is_integer() else round(count, 2)
 
 
+def _build_reporters(
+    reporting_config, job_id, run_time
+) -> tuple[list, list[dict[str, str]]]:
+    """Constructs each configured reporter with per-reporter error isolation."""
+    reporters = []
+    errors: list[dict[str, str]] = []
+    if not isinstance(reporting_config, dict):
+        return reporters, errors
+    for key, cfg in reporting_config.items():
+        try:
+            reporters.extend(get_reporters({key: cfg}, job_id, run_time))
+        except Exception as exc:
+            logging.exception(
+                "Reporter %s failed to initialize: %s",
+                key,
+                exc,
+            )
+            errors.append({"reporter": str(key), "error": str(exc)})
+    return reporters, errors
+
+
+def _store_reports(
+    reporters, config_df, results_df, scores_df, summary_scores_df
+) -> list[dict[str, str]]:
+    """Writes evaluation outputs to each configured reporter.
+
+    Isolates per-reporter failures so a reporting error (such as a BigQuery
+    permission or quota failure) neither blocks other reporters (CSV, GCS
+    artifacts) nor fails a completed evaluation RPC.
+
+    Returns:
+      A list of {"reporter": <class_name>, "error": <message>} dicts for any
+      reporters that failed.
+    """
+    errors: list[dict[str, str]] = []
+    for reporter in reporters:
+        name = type(reporter).__name__
+        try:
+            reporter.store(config_df, report.STORETYPE.CONFIGS)
+            reporter.store(results_df, report.STORETYPE.EVALS)
+            reporter.store(scores_df, report.STORETYPE.SCORES)
+            reporter.store(summary_scores_df, report.STORETYPE.SUMMARY)
+        except Exception as exc:
+            logging.exception(
+                "Reporter %s failed while storing evaluation results: %s",
+                name,
+                exc,
+            )
+            errors.append({"reporter": name, "error": str(exc)})
+    return errors
+
+
 def _process_results(
-    reporters, job_id, run_time, results_tf, scores_tf, multi_trial_scores_tf, config, model_config, db_configs
+    reporters,
+    job_id,
+    run_time,
+    results_tf,
+    scores_tf,
+    multi_trial_scores_tf,
+    config,
+    model_config,
+    db_configs,
+    fail_if_all_reporters_failed=False,
 ):
-    config_df = config_to_df(
-        job_id,
-        run_time,
-        config,
-        model_config,
-        db_configs,
-    )
-    results = load_json(results_tf)
-    results_df = report.get_dataframe(results)
-    if results_df.empty:
-        raise EmptyEvalResultError(
-            "No matching evals were produced for this run. Check that the dataset, "
-            "dialect filters, and database configuration line up."
+    try:
+        config_df = config_to_df(
+            job_id,
+            run_time,
+            config,
+            model_config,
+            db_configs,
         )
-    report.quick_summary(results_df)
-    scores = load_json(scores_tf)
-    if multi_trial_scores_tf:
-        multi_trial_scores = load_json(multi_trial_scores_tf)
-        if multi_trial_scores:
-            scores.extend(multi_trial_scores)
+        results = load_json(results_tf)
+        results_df = report.get_dataframe(results)
+        if results_df.empty:
+            raise EmptyEvalResultError(
+                "No matching evals were produced for this run. Check that the dataset, "
+                "dialect filters, and database configuration line up."
+            )
+        report.quick_summary(results_df)
+        scores = load_json(scores_tf)
+        if multi_trial_scores_tf:
+            multi_trial_scores = load_json(multi_trial_scores_tf)
+            if multi_trial_scores:
+                scores.extend(multi_trial_scores)
+    finally:
+        # k8s emptyDir /tmp does not auto cleanup, so always unlink temp files.
+        if results_tf:
+            pathlib.Path(results_tf).unlink(missing_ok=True)
+        if scores_tf:
+            pathlib.Path(scores_tf).unlink(missing_ok=True)
+        if multi_trial_scores_tf:
+            pathlib.Path(multi_trial_scores_tf).unlink(missing_ok=True)
 
     num_prompts = len(set(r.get("prompt_id")
                       for r in results if r.get("prompt_id")))
@@ -779,18 +841,31 @@ def _process_results(
     summary_scores_df["job_id"] = job_id
     summary_scores_df["run_time"] = run_time
 
-    # Store the reports in specified outputs
-    for reporter in reporters:
-        reporter.store(config_df, report.STORETYPE.CONFIGS)
-        reporter.store(results_df, report.STORETYPE.EVALS)
-        reporter.store(scores_df, report.STORETYPE.SCORES)
-        reporter.store(summary_scores_df, report.STORETYPE.SUMMARY)
+    if reporters is None:
+        reporters, reporting_errors = _build_reporters(
+            config.get("reporting") or {}, job_id, run_time
+        )
+    else:
+        reporting_errors = []
 
-    # k8s emptyDir /tmp does not auto cleanup, so we explicitly delete
-    pathlib.Path(results_tf).unlink()
-    pathlib.Path(scores_tf).unlink()
-    if multi_trial_scores_tf:
-        pathlib.Path(multi_trial_scores_tf).unlink()
+    total_reporters = len(reporters) + len(reporting_errors)
+
+    # Store the reports in specified outputs without aborting completed evals
+    reporting_errors.extend(
+        _store_reports(
+            reporters, config_df, results_df, scores_df, summary_scores_df
+        )
+    )
+
+    if (
+        fail_if_all_reporters_failed
+        and total_reporters > 0
+        and len(reporting_errors) >= total_reporters
+    ):
+        raise RuntimeError(
+            f"All configured reporters failed for job {job_id}: "
+            f"{reporting_errors}"
+        )
 
     # Build summary dict from summary_scores_df
     summary = {"total": 0, "scores": {}}
@@ -809,5 +884,8 @@ def _process_results(
                 "p50": round(latencies.quantile(0.5), 2),
                 "p90": round(latencies.quantile(0.9), 2),
             }
+
+    if reporting_errors:
+        summary["reporting_errors"] = reporting_errors
 
     return summary
