@@ -1,11 +1,13 @@
 """SQLite Ground Truth Resolution Adapter for EvalBench."""
 
+import logging
 import os
 import sqlite3
 
 import pandas as pd
 
 from databases.util import unique_column_names
+from util.safepath import contained_path
 
 
 def get_sqlite_ground_truth(
@@ -15,7 +17,11 @@ def get_sqlite_ground_truth(
 ) -> list:
     """Resolves candidate SQLite database files and executes query."""
 
-    sqlite_path = os.path.join(db_dir, f"{database}.sqlite")
+    try:
+        sqlite_path = contained_path(db_dir, f"{database}.sqlite")
+    except ValueError as e:
+        logging.warning("Skipped the SQLite ground truth: %s", e)
+        return []
     if not os.path.exists(sqlite_path):
         return []
     conn = sqlite3.connect(sqlite_path)

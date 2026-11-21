@@ -30,6 +30,7 @@ if os.path.isdir(_PROTO_DIR) and _PROTO_DIR not in sys.path:
 
 from container.backend import RESULT_BEGIN, RESULT_END  # noqa: E402
 from container.spec import EvalCaseSpec  # noqa: E402
+from util.safepath import contained_path  # noqa: E402
 
 
 def _configure_logging() -> None:
@@ -79,7 +80,11 @@ def _materialize_env_files(spec: EvalCaseSpec, session_dir: str) -> None:
     env_dir = os.path.join(session_dir, "env_files")
     os.makedirs(env_dir, exist_ok=True)
     for name, content in spec.env_files.items():
-        path = os.path.join(env_dir, name)
+        try:
+            path = contained_path(env_dir, name)
+        except ValueError as e:
+            logging.error("case: skipped an env file: %s", e)
+            continue
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)

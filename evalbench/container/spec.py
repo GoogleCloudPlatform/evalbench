@@ -16,6 +16,8 @@ import os
 import re
 import yaml
 
+from util.safepath import contained_path
+
 # Where the spec is mounted inside the case container.
 CASE_DIR = "/etc/evalbench-case"
 
@@ -415,8 +417,16 @@ def _collect_env_files(scenario: dict, session_dir: Optional[str]) -> dict[str, 
         return {}
 
     collected: dict[str, str] = {}
+    env_dir = os.path.join(session_dir, "env_files")
     for name in declared:
-        src = os.path.join(session_dir, "env_files", name)
+        # The scenario comes from the dataset, so the name is untrusted.
+        try:
+            src = contained_path(env_dir, name)
+        except ValueError as e:
+            logging.warning(
+                "Skipped an env file of containerized case %s: %s",
+                scenario.get("id"), e)
+            continue
         if not os.path.isfile(src):
             logging.warning(
                 "Declared env file not found for containerized case %s: %s",
