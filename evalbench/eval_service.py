@@ -260,18 +260,14 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                 await executor.run(ctx.run, evaluator.evaluate, dataset)
 
             job_id, run_time, results_tf, scores_tf, multi_trial_scores_tf = evaluator.process()
-            # Fallback to empty dict if reporting is present but null in YAML
-            reporters = get_reporters(
-                config.get("reporting") or {}, job_id, run_time
-            )
 
-            # Offload blocking results processing to a thread pool
+            # Offload blocking results processing and reporter setup to a thread pool
             logging.info("Offloading results processing to thread pool...")
             ctx = contextvars.copy_context()
             summary = await executor.run(
                 ctx.run,
                 _process_results,
-                reporters,
+                None,
                 job_id,
                 run_time,
                 results_tf,
@@ -280,6 +276,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                 config,
                 with_agent_version(model_config, evaluator),
                 db_configs,
+                not config.get("summary_in_response"),
             )
 
             logging.info(
@@ -469,8 +466,6 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
 
             # Process final scoring and reporting
             job_id, run_time, results_tf, scores_tf = orchestrator.process()
-            reporters = get_reporters(config.get(
-                "reporting") or {}, job_id, run_time)
 
             logging.info(
                 "Offloading interactive results processing to thread pool...")
@@ -478,7 +473,7 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
             summary = await executor.run(
                 ctx.run,
                 _process_results,
-                reporters,
+                None,
                 job_id,
                 run_time,
                 results_tf,
@@ -602,14 +597,11 @@ class EvalServicer(eval_service_pb2_grpc.EvalServiceServicer):
                     scores_tf,
                     multi_trial_scores_tf,
                 ) = orchestrator.process()
-                reporters = get_reporters(
-                    config.get("reporting") or {}, job_id, run_time
-                )
                 logging.info("Processing agent evaluation results...")
                 summary = await executor.run(
                     ctx.run,
                     _process_results,
-                    reporters,
+                    None,
                     job_id,
                     run_time,
                     results_tf,
@@ -746,6 +738,27 @@ def _summary_count(value) -> float | int:
     return int(count) if count.is_integer() else round(count, 2)
 
 
+def _build_reporters(
+    reporting_config, job_id, run_time
+) -> tuple[list, list[dict[str, str]]]:
+    """Constructs each configured reporter with per-reporter error isolation."""
+    reporters = []
+    errors: list[dict[str, str]] = []
+    if not isinstance(reporting_config, dict):
+        return reporters, errors
+    for key, cfg in reporting_config.items():
+        try:
+            reporters.extend(get_reporters({key: cfg}, job_id, run_time))
+        except Exception as exc:
+            logging.exception(
+                "Reporter %s failed to initialize: %s",
+                key,
+                exc,
+            )
+            errors.append({"reporter": str(key), "error": str(exc)})
+    return reporters, errors
+
+
 def _store_reports(
     reporters, config_df, results_df, scores_df, summary_scores_df
 ) -> list[dict[str, str]]:
@@ -778,7 +791,16 @@ def _store_reports(
 
 
 def _process_results(
-    reporters, job_id, run_time, results_tf, scores_tf, multi_trial_scores_tf, config, model_config, db_configs
+    reporters,
+    job_id,
+    run_time,
+    results_tf,
+    scores_tf,
+    multi_trial_scores_tf,
+    config,
+    model_config,
+    db_configs,
+    fail_if_all_reporters_failed=False,
 ):
     try:
         config_df = config_to_df(
@@ -819,10 +841,31 @@ def _process_results(
     summary_scores_df["job_id"] = job_id
     summary_scores_df["run_time"] = run_time
 
+    if reporters is None:
+        reporters, reporting_errors = _build_reporters(
+            config.get("reporting") or {}, job_id, run_time
+        )
+    else:
+        reporting_errors = []
+
+    total_reporters = len(reporters) + len(reporting_errors)
+
     # Store the reports in specified outputs without aborting completed evals
-    reporting_errors = _store_reports(
-        reporters, config_df, results_df, scores_df, summary_scores_df
+    reporting_errors.extend(
+        _store_reports(
+            reporters, config_df, results_df, scores_df, summary_scores_df
+        )
     )
+
+    if (
+        fail_if_all_reporters_failed
+        and total_reporters > 0
+        and len(reporting_errors) >= total_reporters
+    ):
+        raise RuntimeError(
+            f"All configured reporters failed for job {job_id}: "
+            f"{reporting_errors}"
+        )
 
     # Build summary dict from summary_scores_df
     summary = {"total": 0, "scores": {}}
