@@ -13,9 +13,29 @@ from dataset.dataengineeringagentinput import EvalDeaRequest
 from itertools import chain
 import os
 import re
+import sys
 
 
 _ENV_PLACEHOLDER_RE = re.compile(r"\$\{([^}]+)\}")
+
+# On the eval server, a dataset can read only the variables in this setting.
+SERVER_ENV_VARS_SETTING = "EVALBENCH_DATASET_ENV_VARS"
+_DEFAULT_SERVER_ENV_VARS = (
+    "EVAL_GCP_PROJECT_ID,EVAL_GCP_PROJECT_REGION,GOOGLE_CLOUD_PROJECT"
+)
+
+
+def _allowed_env_names() -> Optional[set[str]]:
+    """Returns the variables that a dataset can read. None means all.
+
+    On the eval server the dataset comes from the client, and ListEvalInputs
+    sends the expanded dataset to the client. Thus the server expands only
+    the variables in EVALBENCH_DATASET_ENV_VARS (comma-separated).
+    """
+    if not sys.argv[0].endswith("eval_server.py"):
+        return None
+    names = os.environ.get(SERVER_ENV_VARS_SETTING, _DEFAULT_SERVER_ENV_VARS)
+    return {name.strip() for name in names.split(",") if name.strip()}
 
 
 def _expand_env_placeholders(text: str, source_path: str) -> str:
@@ -24,15 +44,34 @@ def _expand_env_placeholders(text: str, source_path: str) -> str:
     of hard-coded. Fails fast on any unresolved placeholder rather than
     passing a literal ``${VAR}`` to the agent.
     """
-    expanded = os.path.expandvars(text)
+    allowed = _allowed_env_names()
+    if allowed is None:
+        expanded = os.path.expandvars(text)
+    else:
+        expanded = _ENV_PLACEHOLDER_RE.sub(
+            lambda match: os.environ[match.group(1)]
+            if match.group(1) in allowed and match.group(1) in os.environ
+            else match.group(0),
+            text,
+        )
     unresolved = sorted(
         {m.group(1) for m in _ENV_PLACEHOLDER_RE.finditer(expanded)}
     )
     if unresolved:
+        if allowed is None:
+            hint = (
+                "Export the corresponding environment variable(s) "
+                f"before running (e.g. `export {unresolved[0]}=...`)."
+            )
+        else:
+            hint = (
+                "On the eval server, a dataset can read only these "
+                f"variables: {sorted(allowed)}. The {SERVER_ENV_VARS_SETTING} "
+                "variable of the server sets this list."
+            )
         raise ValueError(
             f"Unresolved ${{...}} placeholder(s) in dataset {source_path}: "
-            f"{unresolved}. Export the corresponding environment variable(s) "
-            f"before running (e.g. `export {unresolved[0]}=...`)."
+            f"{unresolved}. {hint}"
         )
     return expanded
 
