@@ -14,6 +14,7 @@ import logging
 import traceback
 from generators.models.generator import QueryGenerator
 from evalproto import eval_request_pb2
+from util.context import rpc_id_var
 
 PROXY_QUEUES = {}
 
@@ -22,6 +23,28 @@ class GrpcProxyModel(QueryGenerator):
     def __init__(self, config):
         super().__init__(config)
         self.name = "grpc_proxy"
+        # The Interact handler puts the session ID into the config.
+        self.session_id = config.get("session_id")
+
+    def _session_queues(self):
+        """Returns the queues of the session that owns this request.
+
+        Concurrent sessions must not share queues. A model that has no
+        session ID uses the RPC ID of the caller, or the only active session.
+        """
+        if self.session_id is not None:
+            if self.session_id not in PROXY_QUEUES:
+                raise RuntimeError(
+                    f"The proxy session {self.session_id!r} is not active.")
+            return PROXY_QUEUES[self.session_id]
+        rpc_id = rpc_id_var.get()
+        if rpc_id in PROXY_QUEUES:
+            return PROXY_QUEUES[rpc_id]
+        if len(PROXY_QUEUES) == 1:
+            return next(iter(PROXY_QUEUES.values()))
+        raise RuntimeError(
+            f"Cannot select the proxy session: {len(PROXY_QUEUES)} sessions "
+            "are active and the model has no session ID.")
 
     def generate_internal(self, prompt: str) -> str:
         # This method seems unused in the bidi flow, can be left as pass
@@ -39,9 +62,7 @@ class GrpcProxyModel(QueryGenerator):
             if not PROXY_QUEUES:
                 raise RuntimeError("PROXY_QUEUES is empty!")
 
-            # Assuming single session per proxy for now
-            session_id = list(PROXY_QUEUES.keys())[0]
-            in_queues_dict, out_queue = PROXY_QUEUES[session_id]
+            in_queues_dict, out_queue = self._session_queues()
 
             def get_val(obj, *keys, default=None):
                 for k in keys:
