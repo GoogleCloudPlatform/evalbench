@@ -1,6 +1,6 @@
 from sqlalchemy.pool import NullPool
 import sqlalchemy
-from sqlalchemy import text, MetaData
+from sqlalchemy import MetaData
 from sqlalchemy.engine.base import Connection
 import logging
 import sqlparse
@@ -8,6 +8,7 @@ from .db import DB
 from google.cloud.sql.connector import Connector
 from util.auth import get_adc_user_email
 from .util import (
+    literal_text,
     rows_to_dicts,
     get_db_secret,
     with_cache_execute,
@@ -107,7 +108,7 @@ class SQLServerDB(DB):
         result: List = []
         for sub_query in sqlparse.split(query):
             if sub_query:
-                resultset = connection.execute(text(sub_query))
+                resultset = connection.execute(literal_text(sub_query))
                 if resultset.returns_rows:
                     rows = resultset.fetchall()
                     result.extend(rows_to_dicts(resultset.keys(), rows))

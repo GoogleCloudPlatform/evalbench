@@ -8,6 +8,7 @@ from .db import DB
 from google.cloud.sql.connector import Connector
 from util.auth import get_adc_user_email
 from .util import (
+    literal_text,
     rows_to_dicts,
     get_db_secret,
     with_cache_execute,
@@ -167,14 +168,14 @@ class PGDB(DB):
             try:
                 with self.engine.connect() as connection:
                     with connection.begin() as transaction:
-                        resultset = connection.execute(text(query))
+                        resultset = connection.execute(literal_text(query))
                         if resultset.returns_rows:
                             rows = resultset.fetchall()
                             result.extend(rows_to_dicts(resultset.keys(), rows))
 
                         if eval_query:
                             eval_resultset = connection.execute(
-                                text(eval_query))
+                                literal_text(eval_query))
                             if eval_resultset.returns_rows:
                                 eval_rows = eval_resultset.fetchall()
                                 eval_result.extend(rows_to_dicts(

@@ -9,6 +9,7 @@ import sqlite3
 import shutil
 from .db import DB
 from .util import (
+    literal_text,
     rows_to_dicts,
     with_cache_execute,
     DatabaseSchema,
@@ -66,7 +67,7 @@ class SQLiteDB(DB):
         result: List = []
         for sub_query in sqlparse.split(query):
             if sub_query:
-                resultset = connection.execute(text(sub_query))
+                resultset = connection.execute(literal_text(sub_query))
                 if resultset.returns_rows:
                     rows = resultset.fetchall()
                     result.extend(rows_to_dicts(resultset.keys(), rows))
@@ -121,7 +122,7 @@ class SQLiteDB(DB):
 
                         if batch_commands and len(batch_commands) > 0:
                             for command in batch_commands:
-                                connection.execute(text(command))
+                                connection.execute(literal_text(command))
 
                         if rollback:
                             transaction.rollback()

@@ -7,6 +7,7 @@ import pickle
 import redis
 import re
 from dataclasses import dataclass, field
+from sqlalchemy import text
 from util.safe_pickle import safe_pickle_loads
 
 # CLIENT is initialized lazily to avoid blocking network calls during module import,
@@ -133,6 +134,17 @@ def rows_to_dicts(columns, rows) -> list[dict]:
     """Converts result rows to dicts, keeping columns that share a name."""
     names = unique_column_names(columns)
     return [dict(zip(names, row)) for row in rows]
+
+
+def literal_text(query: str):
+    """Returns text(query) with every colon read as a plain character.
+
+    text() reads ":name" as a bind parameter, also inside a string literal, so
+    a query such as SELECT ... LIKE '_:%:__.___' fails before it reaches the
+    database. Use this for queries that are run as written, without
+    parameters.
+    """
+    return text(query.replace(":", "\\:"))
 
 
 # Prefix of every cached result key. Change it whenever the format of the cached

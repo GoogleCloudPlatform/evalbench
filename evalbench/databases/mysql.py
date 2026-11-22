@@ -9,6 +9,7 @@ from .db import DB
 from google.cloud.sql.connector import Connector
 from util.auth import get_adc_user_email
 from .util import (
+    literal_text,
     rows_to_dicts,
     get_db_secret,
     with_cache_execute,
@@ -147,7 +148,7 @@ class MySQLDB(DB):
         result: List = []
         for sub_query in sqlparse.split(query):
             if sub_query:
-                resultset = connection.execute(text(sub_query))
+                resultset = connection.execute(literal_text(sub_query))
                 if resultset.returns_rows:
                     rows = resultset.fetchall()
                     result.extend(rows_to_dicts(resultset.keys(), rows))
@@ -205,7 +206,7 @@ class MySQLDB(DB):
 
                         if batch_commands and len(batch_commands) > 0:
                             for command in batch_commands:
-                                connection.execute(text(command))
+                                connection.execute(literal_text(command))
 
                         if rollback:
                             transaction.rollback()
