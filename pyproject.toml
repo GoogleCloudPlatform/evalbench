@@ -50,9 +50,6 @@ dependencies = [
     "pymongo",
     "mongomock",
     "rich",
-    # Minimum 2.14.0 required to remediate CVE-2026-4810 (>=1.28.1) while
-    # remaining compatible with opentelemetry-api 1.45.2 (prevents uv from
-    # silently downgrading google-adk to 1.14.1 on transitive otel bumps).
     "google-adk>=2.14.0",
     "google-cloud-geminidataanalytics>=0.11.0",
     "google-cloud-firestore",
