@@ -16,7 +16,6 @@ import numpy as np
 import pandas as pd
 from reporting.bqstore import (
     BigQueryReporter,
-    _coerce_scalar,
     _dataframe_to_json_rows,
     _infer_schema,
     _iter_streaming_batches,
@@ -89,7 +88,6 @@ class TestBigQueryReporterStreaming(unittest.TestCase):
                     "job_id": "job-123",
                     "run_time": "2026-11-18T03:15:00.000000",
                     "config": "experiment_config.empty_val",
-                    "value": None,
                 },
             ],
         )
@@ -109,6 +107,7 @@ class TestBigQueryReporterStreaming(unittest.TestCase):
                 "metric_score": 100.0,
                 "correct_results_count": 1.67,
                 "total_results_count": 2,
+                "extra_ratio": 0.75,
                 "job_id": "job-123",
                 "run_time": self.run_time,
             }
@@ -122,12 +121,14 @@ class TestBigQueryReporterStreaming(unittest.TestCase):
         self.assertEqual(schema_types["metric_score"], "INTEGER")
         self.assertEqual(schema_types["correct_results_count"], "INTEGER")
         self.assertEqual(schema_types["total_results_count"], "INTEGER")
+        self.assertEqual(schema_types["extra_ratio"], "STRING")
         self.assertEqual(schema_types["run_time"], "DATETIME")
 
         _, rows = self.mock_client.insert_rows_json.call_args[0]
         self.assertEqual(rows[0]["correct_results_count"], 2)
         self.assertEqual(rows[0]["metric_score"], 100)
         self.assertEqual(rows[0]["total_results_count"], 2)
+        self.assertEqual(rows[0]["extra_ratio"], "0.75")
 
     def test_store_adds_missing_columns_to_existing_table_schema(self):
         existing_table = bigquery.Table(
@@ -204,8 +205,8 @@ class TestBigQueryReporterStreaming(unittest.TestCase):
         _, rows = self.mock_client.insert_rows_json.call_args[0]
         self.assertEqual(rows[0]["score"], 95.5)
         self.assertEqual(rows[0]["dialects"], ["bigquery"])
-        self.assertIsNone(rows[1]["score"])
-        self.assertEqual(rows[1]["dialects"], [])
+        self.assertNotIn("score", rows[1])
+        self.assertNotIn("dialects", rows[1])
 
     @patch("reporting.bqstore.time.sleep")
     def test_store_retries_transient_errors_and_schema_lag_but_not_forbidden(
@@ -433,21 +434,19 @@ class TestBigQueryReporterStreaming(unittest.TestCase):
         self.assertEqual(self.mock_client.update_table.call_count, 3)
         self.assertEqual(mock_sleep.call_count, 2)
 
-    def test_infer_schema_scans_all_values_chunks_and_numpy_scalars(self):
-        # Mixed object and repeated columns widen instead of locking on row 0;
-        # NumPy scalars are unwrapped to native BigQuery types.
+    def test_infer_schema_uses_pandas_gbq_for_full_df_mixed_and_numpy_types(self):
         df = pd.DataFrame({
             "mixed_obj": pd.Series([100, "N/A"], dtype="object"),
             "int_and_float": pd.Series([1, 2.5], dtype="object"),
-            "mixed_repeated": pd.Series([[1], ["foo"]], dtype="object"),
             "numpy_int": pd.Series([np.int64(7), None], dtype="object"),
+            "dialects": pd.Series([None, ["bigquery"]], dtype="object"),
         })
         fields = {f.name: f for f in _infer_schema(df, STORETYPE.EVALS)}
         self.assertEqual(fields["mixed_obj"].field_type, "STRING")
         self.assertEqual(fields["int_and_float"].field_type, "FLOAT")
-        self.assertEqual(fields["mixed_repeated"].mode, "REPEATED")
-        self.assertEqual(fields["mixed_repeated"].field_type, "STRING")
         self.assertEqual(fields["numpy_int"].field_type, "INTEGER")
+        self.assertEqual(fields["dialects"].mode, "REPEATED")
+        self.assertEqual(fields["dialects"].field_type, "STRING")
 
         # All-null in chunk 0 but populated as REPEATED in chunk 1 must infer
         # REPEATED STRING across the whole DataFrame before chunking.
@@ -467,29 +466,18 @@ class TestBigQueryReporterStreaming(unittest.TestCase):
         self.assertEqual(created_fields["dialects"].mode, "REPEATED")
         self.assertEqual(created_fields["dialects"].field_type, "STRING")
 
-    def test_coerce_scalar_and_record_edge_cases(self):
-        big_int = 9007199254740993  # 2**53 + 1
-        self.assertEqual(_coerce_scalar(big_int, "INT64"), big_int)
-        self.assertEqual(_coerce_scalar(str(big_int), "INT64"), big_int)
-        self.assertEqual(_coerce_scalar(True, "INT64"), 1)
-        self.assertIsNone(_coerce_scalar("", "INT64"))
-
-        self.assertIsNone(_coerce_scalar("", "DATETIME"))
-        self.assertIsNone(_coerce_scalar("   ", "TIMESTAMP"))
-        self.assertIsNone(_coerce_scalar("", "DATE"))
-        self.assertEqual(
-            _coerce_scalar("2026-11-18T03:15:00-07:00", "DATETIME"),
-            "2026-11-18T10:15:00.000000",
-        )
-        self.assertEqual(
-            _coerce_scalar("2026-11-18T03:15:00Z", "DATETIME"),
-            "2026-11-18T03:15:00.000000",
-        )
-
-        json_str = _coerce_scalar({"a": float("nan"), "b": 1}, "JSON")
-        self.assertEqual(json.loads(json_str), {"a": None, "b": 1})
-
-        record_schema = [
+    def test_dataframe_to_json_rows_serialization_edge_cases(self):
+        schema = [
+            bigquery.SchemaField("big_int", "INT64"),
+            bigquery.SchemaField("big_int_str", "INT64"),
+            bigquery.SchemaField("dt_offset", "DATETIME"),
+            bigquery.SchemaField("dt_empty", "DATETIME"),
+            bigquery.SchemaField("ts_empty", "TIMESTAMP"),
+            bigquery.SchemaField("d_from_dt", "DATE"),
+            bigquery.SchemaField("json_col", "JSON"),
+            bigquery.SchemaField("json_str_col", "JSON"),
+            bigquery.SchemaField("dict_str", "STRING"),
+            bigquery.SchemaField("inf_float", "FLOAT"),
             bigquery.SchemaField(
                 "meta",
                 "RECORD",
@@ -497,13 +485,56 @@ class TestBigQueryReporterStreaming(unittest.TestCase):
                     bigquery.SchemaField("count", "INT64"),
                     bigquery.SchemaField("tag", "STRING"),
                 ],
-            )
+            ),
         ]
-        rows = _dataframe_to_json_rows(
-            pd.DataFrame([{"meta": {"count": 42, "tag": "ok"}}]),
-            record_schema,
-        )
-        self.assertEqual(rows, [{"meta": {"count": 42, "tag": "ok"}}])
+        big_int = 9007199254740993  # 2**53 + 1
+        df = pd.DataFrame([
+            {
+                "big_int": big_int,
+                "big_int_str": str(big_int),
+                "dt_offset": "2026-11-18T03:15:00-07:00",
+                "dt_empty": "",
+                "ts_empty": "   ",
+                "d_from_dt": self.run_time,
+                "json_col": {"a": float("nan"), "b": 1},
+                "json_str_col": '{"k": 2}',
+                "dict_str": {"nested": "v"},
+                "inf_float": float("inf"),
+                "meta": {"COUNT": 42, "tag": "ok"},
+            },
+            {
+                "big_int": 1,
+                "big_int_str": "",
+                "dt_offset": "2026-11-18 03:15:00",
+                "dt_empty": None,
+                "ts_empty": None,
+                "d_from_dt": "",
+                "json_col": None,
+                "json_str_col": "   ",
+                "dict_str": None,
+                "inf_float": None,
+                "meta": None,
+            },
+        ])
+
+        rows = _dataframe_to_json_rows(df, schema)
+        row = rows[0]
+        self.assertEqual(row["big_int"], big_int)
+        self.assertEqual(row["big_int_str"], big_int)
+        self.assertEqual(row["dt_offset"], "2026-11-18T10:15:00.000000")
+        self.assertNotIn("dt_empty", row)
+        self.assertNotIn("ts_empty", row)
+        self.assertEqual(row["d_from_dt"], "2026-11-18")
+        self.assertEqual(json.loads(row["json_col"]), {"a": None, "b": 1})
+        self.assertEqual(json.loads(row["json_str_col"]), {"k": 2})
+        self.assertEqual(json.loads(row["dict_str"]), {"nested": "v"})
+        self.assertNotIn("inf_float", row)
+        self.assertEqual(row["meta"], {"count": 42, "tag": "ok"})
+        # Naive DATETIME in the same column as a tz-offset string must not be shifted.
+        self.assertEqual(rows[1]["dt_offset"], "2026-11-18T03:15:00.000000")
+        self.assertNotIn("big_int_str", rows[1])
+        self.assertNotIn("d_from_dt", rows[1])
+        self.assertNotIn("json_str_col", rows[1])
 
     def test_iter_streaming_batches_splits_by_byte_size(self):
         rows = [

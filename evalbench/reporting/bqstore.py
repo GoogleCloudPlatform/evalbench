@@ -1,8 +1,6 @@
 from collections.abc import Iterator, Sequence
-import datetime
 import json
 import logging
-import math
 import time
 from typing import Any
 import urllib.parse
@@ -18,6 +16,7 @@ from google.api_core.exceptions import (
 )
 from google.cloud import bigquery
 import pandas as pd
+from pandas_gbq.schema.pandas_to_bigquery import dataframe_to_bigquery_fields
 from reporting.report import Reporter, STORETYPE
 from util.gcp import get_gcp_project
 
@@ -101,159 +100,48 @@ def _split_dataframe(df: pd.DataFrame, chunk_size: int) -> Iterator[pd.DataFrame
         yield df[start:end]
 
 
-def _unwrap_numpy_scalar(val: Any) -> Any:
-    """Converts a 0-d NumPy scalar to its native Python counterpart."""
-    if hasattr(val, "item") and callable(val.item) and not isinstance(
-        val, (pd.Timestamp, datetime.date, bytes, str)
-    ):
-        try:
-            return val.item()
-        except ValueError:
-            pass
-    return val
-
-
-def _is_missing(val: Any) -> bool:
-    """Returns True for None, NaN, Inf, pd.NA, or pd.NaT without failing on sequences."""
-    if val is None or val is pd.NA or val is pd.NaT:
-        return True
-    if isinstance(val, (list, tuple, dict, set)):
-        return False
-    val = _unwrap_numpy_scalar(val)
-    if val is None or val is pd.NA or val is pd.NaT:
-        return True
-    if isinstance(val, float):
-        return not math.isfinite(val)
-    try:
-        na_check = _unwrap_numpy_scalar(pd.isna(val))
-        return bool(na_check) if isinstance(na_check, bool) else False
-    except (TypeError, ValueError):
-        return False
-
-
-def _sanitize_for_json(val: Any) -> Any:
-    """Recursively converts nested structures into strict RFC-8259 JSON values."""
-    if _is_missing(val):
-        return None
-    val = _unwrap_numpy_scalar(val)
-    if isinstance(val, dict):
-        return {str(k): _sanitize_for_json(v) for k, v in val.items()}
-    if isinstance(val, (list, tuple)):
-        return [_sanitize_for_json(v) for v in val]
-    if (
-        hasattr(val, "tolist")
-        and callable(val.tolist)
-        and not isinstance(val, (str, bytes))
-    ):
-        return _sanitize_for_json(val.tolist())
-    if isinstance(val, (datetime.datetime, datetime.date, pd.Timestamp)):
-        return val.isoformat()
-    return val
-
-
-def _infer_scalar_bq_type(val: Any) -> str:
-    """Infers a BigQuery scalar column type from a non-null Python/pandas value."""
-    val = _unwrap_numpy_scalar(val)
-    if isinstance(val, pd.Timestamp):
-        return "TIMESTAMP" if val.tzinfo is not None else "DATETIME"
-    if isinstance(val, datetime.datetime):
-        return "TIMESTAMP" if val.tzinfo is not None else "DATETIME"
-    if isinstance(val, datetime.date):
-        return "DATE"
-    if isinstance(val, bool):
-        return "BOOLEAN"
-    if isinstance(val, int):
-        return "INTEGER"
-    if isinstance(val, float):
-        return "FLOAT"
-    return "STRING"
-
-
-def _merge_bq_types(
-    types: set[str], store_type: STORETYPE | None
-) -> str:
-    """Merges inferred BigQuery scalar types across all non-null values."""
-    if not types:
-        return "STRING"
-    if len(types) == 1:
-        inferred = next(iter(types))
-    elif types == {"INTEGER", "FLOAT"}:
-        inferred = "FLOAT"
-    elif types == {"DATETIME", "TIMESTAMP"}:
-        inferred = "TIMESTAMP"
-    else:
-        inferred = "STRING"
-
-    if (
-        inferred == "FLOAT"
-        and store_type in (STORETYPE.SUMMARY, STORETYPE.SCORES)
-    ):
-        return "STRING"
-    return inferred
-
-
 def _infer_schema(
     df: pd.DataFrame, store_type: STORETYPE
 ) -> list[bigquery.SchemaField]:
-    """Infers BigQuery SchemaFields for new tables or newly added columns."""
-    fields: list[bigquery.SchemaField] = []
-    for col in df.columns:
-        col_name = str(col)
-        series = df[col]
-        if (
-            store_type in (STORETYPE.SUMMARY, STORETYPE.SCORES)
-            and col_name in _SUMMARY_AND_SCORES_INT_COLS
-        ):
-            fields.append(bigquery.SchemaField(col_name, "INTEGER"))
-            continue
+    """Infers BigQuery SchemaFields via pandas-gbq with EvalBench overrides."""
+    overrides: list[bigquery.SchemaField] = []
+    if store_type in (STORETYPE.SUMMARY, STORETYPE.SCORES):
+        overrides = [
+            bigquery.SchemaField(str(col), "INTEGER")
+            for col in df.columns
+            if str(col) in _SUMMARY_AND_SCORES_INT_COLS
+        ]
 
-        if pd.api.types.is_datetime64_any_dtype(series.dtype):
-            tz = getattr(series.dtype, "tz", None)
-            fields.append(
-                bigquery.SchemaField(
-                    col_name, "TIMESTAMP" if tz is not None else "DATETIME"
-                )
-            )
-        elif pd.api.types.is_bool_dtype(series.dtype):
-            fields.append(bigquery.SchemaField(col_name, "BOOLEAN"))
-        elif pd.api.types.is_integer_dtype(series.dtype):
-            fields.append(bigquery.SchemaField(col_name, "INTEGER"))
-        elif pd.api.types.is_float_dtype(series.dtype):
-            bq_type = (
-                "STRING"
-                if store_type in (STORETYPE.SUMMARY, STORETYPE.SCORES)
-                else "FLOAT"
-            )
-            fields.append(bigquery.SchemaField(col_name, bq_type))
-        else:
-            non_null = [v for v in series.tolist() if not _is_missing(v)]
-            if not non_null:
-                fields.append(bigquery.SchemaField(col_name, "STRING"))
-            elif all(isinstance(v, (list, tuple)) for v in non_null):
-                elem_types = {
-                    _infer_scalar_bq_type(e)
-                    for seq in non_null
-                    for e in seq
-                    if not _is_missing(e)
-                }
-                elem_type = _merge_bq_types(elem_types, store_type=None)
-                fields.append(
-                    bigquery.SchemaField(col_name, elem_type, mode="REPEATED")
-                )
-            else:
-                scalar_types = {_infer_scalar_bq_type(v) for v in non_null}
-                inferred = _merge_bq_types(scalar_types, store_type)
-                fields.append(bigquery.SchemaField(col_name, inferred))
+    fields = list(
+        dataframe_to_bigquery_fields(
+            df, override_bigquery_fields=overrides or None, index=False
+        )
+    )
+    if store_type in (STORETYPE.SUMMARY, STORETYPE.SCORES):
+        # Preserve legacy bqstore behavior: non-int float columns in SUMMARY /
+        # SCORES are stored as STRING to avoid int/float schema lock conflicts.
+        fields = [
+            bigquery.SchemaField(f.name, "STRING")
+            if f.mode != "REPEATED" and f.field_type.upper() in ("FLOAT", "FLOAT64")
+            else f
+            for f in fields
+        ]
     return fields
 
 
-def _coerce_scalar(val: Any, field_type: str) -> Any:
-    """Coerces a non-missing scalar value to match a BigQuery SchemaField type."""
-    val = _unwrap_numpy_scalar(val)
-    if _is_missing(val):
+def _coerce_json_value(val: Any, field: bigquery.SchemaField | None) -> Any:
+    """Aligns an already JSON-decoded value with its target BigQuery SchemaField."""
+    if val is None:
         return None
+    if field is not None and field.mode == "REPEATED":
+        items = val if isinstance(val, list) else [val]
+        scalar_field = bigquery.SchemaField(
+            field.name, field.field_type, mode="NULLABLE", fields=field.fields
+        )
+        cleaned = [_coerce_json_value(e, scalar_field) for e in items]
+        return [e for e in cleaned if e is not None]
 
-    upper = field_type.upper()
+    upper = field.field_type.upper() if field is not None else "STRING"
     if upper in ("INTEGER", "INT64"):
         if isinstance(val, bool):
             return int(val)
@@ -268,14 +156,14 @@ def _coerce_scalar(val: Any, field_type: str) -> Any:
             except ValueError:
                 pass
         try:
-            num = float(val)
-            return int(round(num)) if math.isfinite(num) else None
+            return int(round(float(val)))
         except (TypeError, ValueError, OverflowError):
             return None
     if upper in ("FLOAT", "FLOAT64", "NUMERIC", "BIGNUMERIC"):
+        if isinstance(val, str) and not val.strip():
+            return None
         try:
-            num = float(val)
-            return num if math.isfinite(num) else None
+            return float(val)
         except (TypeError, ValueError):
             return None
     if upper in ("BOOLEAN", "BOOL"):
@@ -285,143 +173,92 @@ def _coerce_scalar(val: Any, field_type: str) -> Any:
             lowered = val.strip().lower()
             if lowered in ("true", "1", "t", "yes"):
                 return True
-            if lowered in ("false", "0", "f", "no", ""):
+            if lowered in ("false", "0", "f", "no"):
                 return False
             return None
         return bool(val)
     if upper == "DATETIME":
-        if isinstance(val, pd.Timestamp):
-            val = val.to_pydatetime()
-        if isinstance(val, datetime.datetime):
-            if val.tzinfo is not None:
-                val = val.astimezone(datetime.timezone.utc).replace(tzinfo=None)
-            return val.isoformat(timespec="microseconds")
         text = str(val).strip()
         if not text:
             return None
-        iso_text = (
-            f"{text[:-1]}+00:00" if text.endswith(("Z", "z")) else text
-        )
         try:
-            parsed = datetime.datetime.fromisoformat(iso_text)
-        except ValueError:
-            if text.endswith(("Z", "z")):
-                return text[:-1]
-            if text.endswith("+00:00"):
-                return text[:-6]
+            ts = pd.Timestamp(text)
+        except (TypeError, ValueError):
             return text
-        if parsed.tzinfo is not None:
-            parsed = parsed.astimezone(datetime.timezone.utc).replace(
-                tzinfo=None
-            )
-        return parsed.isoformat(timespec="microseconds")
-    if upper == "TIMESTAMP":
-        if isinstance(val, pd.Timestamp):
-            val = val.to_pydatetime()
-        if isinstance(val, datetime.datetime):
-            if val.tzinfo is None:
-                val = val.replace(tzinfo=datetime.timezone.utc)
-            return val.isoformat()
-        text = str(val).strip()
-        return text or None
+        if pd.isna(ts):
+            return None
+        if ts.tzinfo is not None:
+            ts = ts.tz_convert("UTC").tz_localize(None)
+        return ts.isoformat(timespec="microseconds")
     if upper == "DATE":
-        if isinstance(val, pd.Timestamp):
-            val = val.to_pydatetime()
-        if isinstance(val, datetime.datetime):
-            return val.date().isoformat()
-        if isinstance(val, datetime.date):
-            return val.isoformat()
+        text = str(val).strip()
+        if not text:
+            return None
+        try:
+            ts = pd.Timestamp(text)
+            return None if pd.isna(ts) else ts.date().isoformat()
+        except (TypeError, ValueError):
+            return text
+    if upper == "TIMESTAMP":
         text = str(val).strip()
         return text or None
     if upper == "JSON":
         if isinstance(val, str):
-            text = val.strip()
-            return text or None
-        return json.dumps(_sanitize_for_json(val), default=str, allow_nan=False)
-
-    # Default STRING serialization: strip trailing .0 on integral floats to
-    # match legacy bqstore behavior, and JSON-encode nested dicts/lists.
-    if isinstance(val, float):
-        return str(int(val)) if val.is_integer() else str(val)
-    if isinstance(val, (dict, list, tuple)):
-        return json.dumps(_sanitize_for_json(val), default=str, allow_nan=False)
-    if isinstance(val, (datetime.datetime, datetime.date, pd.Timestamp)):
-        return val.isoformat()
-    return str(val)
-
-
-def _coerce_single_value(
-    val: Any, field: bigquery.SchemaField | None
-) -> Any:
-    """Coerces a single non-repeated value (scalar or RECORD/STRUCT)."""
-    field_type = field.field_type if field is not None else "STRING"
-    if field_type.upper() in ("RECORD", "STRUCT"):
-        val = _unwrap_numpy_scalar(val)
-        if _is_missing(val):
-            return None
+            return val.strip() or None
+        return json.dumps(val, allow_nan=False)
+    if upper in ("RECORD", "STRUCT"):
         if isinstance(val, str):
-            text = val.strip()
-            if not text:
-                return None
             try:
-                parsed = json.loads(text)
+                val = json.loads(val)
             except ValueError:
                 return None
-            if not isinstance(parsed, dict):
-                return None
-            val = parsed
         if not isinstance(val, dict):
             return None
         if field is not None and field.fields:
-            sub_by_lower = {f.name.lower(): f for f in field.fields}
-            coerced_record: dict[str, Any] = {}
-            for sub_key, sub_val in val.items():
-                sub_field = sub_by_lower.get(str(sub_key).lower())
-                target_key = (
-                    sub_field.name if sub_field is not None else str(sub_key)
-                )
-                coerced_record[target_key] = _coerce_field_value(
-                    sub_val, sub_field
-                )
-            return coerced_record
-        return _sanitize_for_json(val)
-    return _coerce_scalar(val, field_type)
+            sub_map = {f.name.lower(): f for f in field.fields}
+            return {
+                (sub_map[k.lower()].name if k.lower() in sub_map else k): v
+                for k, raw in val.items()
+                if (v := _coerce_json_value(raw, sub_map.get(k.lower()))) is not None
+            }
+        return val
 
-
-def _coerce_field_value(
-    raw_val: Any, field: bigquery.SchemaField | None
-) -> Any:
-    """Coerces a field value according to its BigQuery SchemaField mode and type."""
-    if field is not None and field.mode == "REPEATED":
-        if _is_missing(raw_val):
-            return []
-        if isinstance(raw_val, (list, tuple)):
-            coerced_items = [
-                _coerce_single_value(elem, field)
-                for elem in raw_val
-                if not _is_missing(elem)
-            ]
-            return [item for item in coerced_items if item is not None]
-        coerced_single = _coerce_single_value(raw_val, field)
-        return [coerced_single] if coerced_single is not None else []
-    if _is_missing(raw_val):
-        return None
-    return _coerce_single_value(raw_val, field)
+    # STRING (and fallback): strip trailing .0 on integral floats for legacy
+    # parity and JSON-encode nested dicts/lists.
+    if isinstance(val, str):
+        return val
+    if isinstance(val, float):
+        return str(int(val)) if val.is_integer() else str(val)
+    if isinstance(val, (dict, list)):
+        return json.dumps(val, allow_nan=False)
+    return str(val)
 
 
 def _dataframe_to_json_rows(
     chunk: pd.DataFrame, schema: Sequence[bigquery.SchemaField]
 ) -> list[dict[str, Any]]:
-    """Converts a DataFrame chunk into JSON-serializable dicts matching `schema`."""
+    """Converts a DataFrame chunk to BigQuery insertAll JSON dicts via pandas.to_json()."""
     schema_by_lower = {field.name.lower(): field for field in schema}
+    # pandas.to_json() handles NumPy scalars, NaN/Inf/pd.NA/pd.NaT -> null
+    # (including inside nested dicts/lists), exact 64-bit ints, and ISO dates.
+    raw_rows = json.loads(
+        chunk.to_json(
+            orient="records",
+            date_format="iso",
+            date_unit="us",
+            default_handler=str,
+        )
+    )
     rows: list[dict[str, Any]] = []
-    for record in chunk.to_dict(orient="records"):
-        json_row: dict[str, Any] = {}
-        for col, raw_val in record.items():
+    for record in raw_rows:
+        row: dict[str, Any] = {}
+        for col, val in record.items():
             field = schema_by_lower.get(str(col).lower())
             target_col = field.name if field is not None else str(col)
-            json_row[target_col] = _coerce_field_value(raw_val, field)
-        rows.append(json_row)
+            coerced = _coerce_json_value(val, field)
+            if coerced is not None:
+                row[target_col] = coerced
+        rows.append(row)
     return rows
 
 
@@ -571,6 +408,27 @@ class BigQueryReporter(Reporter):
             return self.summary_table
         raise ValueError(f"Unsupported store type: {store_type}")
 
+    def _refresh_schema(
+        self,
+        table_id: str,
+        results: pd.DataFrame,
+        store_type: STORETYPE,
+        current_schema: list[bigquery.SchemaField],
+        chunk: pd.DataFrame,
+        pending_positions: list[int],
+        pending_rows: list[dict[str, Any]],
+    ) -> tuple[list[bigquery.SchemaField], list[dict[str, Any]]]:
+        """Refreshes cached table schema and re-coerces pending rows if it changed."""
+        self._tables.pop(table_id, None)
+        refreshed = self._ensure_table_and_schema(table_id, results, store_type)
+        refreshed_schema = list(refreshed.schema)
+        if refreshed_schema != current_schema:
+            current_schema = refreshed_schema
+            pending_rows = _dataframe_to_json_rows(
+                chunk.iloc[pending_positions], current_schema
+            )
+        return current_schema, pending_rows
+
     def store(self, results, type: STORETYPE):
         if results is None or results.empty:
             logging.info(f"No results to store for {type}")
@@ -637,17 +495,17 @@ class BigQueryReporter(Reporter):
                                     pending_row_ids[i] for i in failed_indices
                                 ]
                             if _has_schema_lag_error(errors):
-                                self._tables.pop(table, None)
-                                refreshed = self._ensure_table_and_schema(
-                                    table, results, type
-                                )
-                                refreshed_schema = list(refreshed.schema)
-                                if refreshed_schema != current_schema:
-                                    current_schema = refreshed_schema
-                                    pending_rows = _dataframe_to_json_rows(
-                                        chunk.iloc[pending_positions],
+                                current_schema, pending_rows = (
+                                    self._refresh_schema(
+                                        table,
+                                        results,
+                                        type,
                                         current_schema,
+                                        chunk,
+                                        pending_positions,
+                                        pending_rows,
                                     )
+                                )
                             delay = initial_delay * (backoff_factor ** attempt)
                             logging.warning(
                                 "BQ streaming write had transient/schema-lag "
@@ -672,17 +530,15 @@ class BigQueryReporter(Reporter):
                             )
                             raise
                         if isinstance(e, NotFound):
-                            self._tables.pop(table, None)
-                            refreshed = self._ensure_table_and_schema(
-                                table, results, type
+                            current_schema, pending_rows = self._refresh_schema(
+                                table,
+                                results,
+                                type,
+                                current_schema,
+                                chunk,
+                                pending_positions,
+                                pending_rows,
                             )
-                            refreshed_schema = list(refreshed.schema)
-                            if refreshed_schema != current_schema:
-                                current_schema = refreshed_schema
-                                pending_rows = _dataframe_to_json_rows(
-                                    chunk.iloc[pending_positions],
-                                    current_schema,
-                                )
                         delay = initial_delay * (backoff_factor ** attempt)
                         logging.warning(
                             f"BQ write failed with transient error: {e}. "
