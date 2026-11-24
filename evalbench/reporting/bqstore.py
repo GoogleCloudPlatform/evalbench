@@ -130,108 +130,51 @@ def _infer_schema(
 
 
 def _coerce_json_value(val: Any, field: bigquery.SchemaField | None) -> Any:
-    """Aligns an already JSON-decoded value with its target BigQuery SchemaField."""
+    """Normalizes a pandas.to_json() value for BigQuery tabledata.insertAll."""
     if val is None:
         return None
     if field is not None and field.mode == "REPEATED":
         items = val if isinstance(val, list) else [val]
-        scalar_field = bigquery.SchemaField(
+        elem_field = bigquery.SchemaField(
             field.name, field.field_type, mode="NULLABLE", fields=field.fields
         )
-        cleaned = [_coerce_json_value(e, scalar_field) for e in items]
-        return [e for e in cleaned if e is not None]
+        return [
+            v for e in items
+            if (v := _coerce_json_value(e, elem_field)) is not None
+        ]
 
-    upper = field.field_type.upper() if field is not None else "STRING"
-    if upper in ("INTEGER", "INT64"):
-        if isinstance(val, bool):
-            return int(val)
-        if isinstance(val, int):
-            return val
+    ftype = field.field_type.upper() if field is not None else "STRING"
+    if ftype == "STRING":
         if isinstance(val, str):
-            text = val.strip()
-            if not text:
-                return None
-            try:
-                return int(text)
-            except ValueError:
-                pass
-        try:
-            return int(round(float(val)))
-        except (TypeError, ValueError, OverflowError):
-            return None
-    if upper in ("FLOAT", "FLOAT64", "NUMERIC", "BIGNUMERIC"):
-        if isinstance(val, str) and not val.strip():
-            return None
-        try:
-            return float(val)
-        except (TypeError, ValueError):
-            return None
-    if upper in ("BOOLEAN", "BOOL"):
-        if isinstance(val, bool):
             return val
-        if isinstance(val, str):
-            lowered = val.strip().lower()
-            if lowered in ("true", "1", "t", "yes"):
-                return True
-            if lowered in ("false", "0", "f", "no"):
-                return False
-            return None
-        return bool(val)
-    if upper == "DATETIME":
-        text = str(val).strip()
-        if not text:
-            return None
+        if isinstance(val, float):
+            return str(int(val)) if val.is_integer() else str(val)
+        return (
+            json.dumps(val, allow_nan=False)
+            if isinstance(val, (dict, list))
+            else str(val)
+        )
+
+    # Empty strings in dtype="string" DataFrames represent NULL for non-STRING columns.
+    if isinstance(val, str) and not val.strip():
+        return None
+    if ftype in ("INTEGER", "INT64") and isinstance(val, float):
+        return int(round(val))
+    if ftype == "DATETIME":
         try:
-            ts = pd.Timestamp(text)
+            ts = pd.Timestamp(val)
         except (TypeError, ValueError):
-            return text
+            return val
         if pd.isna(ts):
             return None
         if ts.tzinfo is not None:
             ts = ts.tz_convert("UTC").tz_localize(None)
         return ts.isoformat(timespec="microseconds")
-    if upper == "DATE":
-        text = str(val).strip()
-        if not text:
-            return None
-        try:
-            ts = pd.Timestamp(text)
-            return None if pd.isna(ts) else ts.date().isoformat()
-        except (TypeError, ValueError):
-            return text
-    if upper == "TIMESTAMP":
-        text = str(val).strip()
-        return text or None
-    if upper == "JSON":
-        if isinstance(val, str):
-            return val.strip() or None
+    if ftype == "DATE" and isinstance(val, str) and "T" in val:
+        return val.split("T", 1)[0]
+    if ftype == "JSON" and not isinstance(val, str):
         return json.dumps(val, allow_nan=False)
-    if upper in ("RECORD", "STRUCT"):
-        if isinstance(val, str):
-            try:
-                val = json.loads(val)
-            except ValueError:
-                return None
-        if not isinstance(val, dict):
-            return None
-        if field is not None and field.fields:
-            sub_map = {f.name.lower(): f for f in field.fields}
-            return {
-                (sub_map[k.lower()].name if k.lower() in sub_map else k): v
-                for k, raw in val.items()
-                if (v := _coerce_json_value(raw, sub_map.get(k.lower()))) is not None
-            }
-        return val
-
-    # STRING (and fallback): strip trailing .0 on integral floats for legacy
-    # parity and JSON-encode nested dicts/lists.
-    if isinstance(val, str):
-        return val
-    if isinstance(val, float):
-        return str(int(val)) if val.is_integer() else str(val)
-    if isinstance(val, (dict, list)):
-        return json.dumps(val, allow_nan=False)
-    return str(val)
+    return val
 
 
 def _dataframe_to_json_rows(

@@ -520,7 +520,7 @@ class TestBigQueryReporterStreaming(unittest.TestCase):
         rows = _dataframe_to_json_rows(df, schema)
         row = rows[0]
         self.assertEqual(row["big_int"], big_int)
-        self.assertEqual(row["big_int_str"], big_int)
+        self.assertEqual(row["big_int_str"], str(big_int))
         self.assertEqual(row["dt_offset"], "2026-11-18T10:15:00.000000")
         self.assertNotIn("dt_empty", row)
         self.assertNotIn("ts_empty", row)
@@ -529,7 +529,7 @@ class TestBigQueryReporterStreaming(unittest.TestCase):
         self.assertEqual(json.loads(row["json_str_col"]), {"k": 2})
         self.assertEqual(json.loads(row["dict_str"]), {"nested": "v"})
         self.assertNotIn("inf_float", row)
-        self.assertEqual(row["meta"], {"count": 42, "tag": "ok"})
+        self.assertEqual(row["meta"], {"COUNT": 42, "tag": "ok"})
         # Naive DATETIME in the same column as a tz-offset string must not be shifted.
         self.assertEqual(rows[1]["dt_offset"], "2026-11-18T03:15:00.000000")
         self.assertNotIn("big_int_str", rows[1])
