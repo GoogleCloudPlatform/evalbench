@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.22.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.21.0...v1.22.0) (2026-11-23)
+
+
+### Features
+
+* **agent:** reset the sandbox home and work_dir between trials ([#709](https://github.com/GoogleCloudPlatform/evalbench/issues/709)) ([4234154](https://github.com/GoogleCloudPlatform/evalbench/commit/423415458f1c2e9ddebdafdfabd5014c5a60d781))
+* **agent:** run num_trials trials of each scenario ([#700](https://github.com/GoogleCloudPlatform/evalbench/issues/700)) ([921c7a9](https://github.com/GoogleCloudPlatform/evalbench/commit/921c7a91453a860a1efa7a33ca78f0e4c4deac66))
+* **container:** case runner, backend interface and cancellation for per-case containers ([5b76345](https://github.com/GoogleCloudPlatform/evalbench/commit/5b763451f2ede6bf88eb1ec72f7081d920becbc1))
+* **container:** case spec, config schema and pool router for per-case containers ([9229969](https://github.com/GoogleCloudPlatform/evalbench/commit/92299699d55a38b54cd5d6a87c59ef3f9ff949f4))
+* **container:** case spec, config schema and pool router for per-case containers ([67bb209](https://github.com/GoogleCloudPlatform/evalbench/commit/67bb2097782f670af861003260b3394314d97021))
+* **container:** Kubernetes Job backend for per-case containers ([#695](https://github.com/GoogleCloudPlatform/evalbench/issues/695)) ([63f0cc1](https://github.com/GoogleCloudPlatform/evalbench/commit/63f0cc1083e30fc5a4ad998656d265f2bc009b31))
+* **dataset_quality:** tell judges about success_criteria ([#685](https://github.com/GoogleCloudPlatform/evalbench/issues/685)) ([1523a53](https://github.com/GoogleCloudPlatform/evalbench/commit/1523a532ff8ed583339d08cae9880f1d7634620e))
+
+
+### Bug Fixes
+
+* **agent:** mark agent infrastructure and simulated-user errors as unscored ([#702](https://github.com/GoogleCloudPlatform/evalbench/issues/702)) ([f320ab7](https://github.com/GoogleCloudPlatform/evalbench/commit/f320ab73464d28bc430d7e0181c7978267a6c807))
+* **agent:** report the correct summary when num_trials is above 1 ([#712](https://github.com/GoogleCloudPlatform/evalbench/issues/712)) ([18683e0](https://github.com/GoogleCloudPlatform/evalbench/commit/18683e03846ca1881acddc8b5ee478dc3a138776))
+* **auth:** use Workload Identity instead of the GKE SA key ([#703](https://github.com/GoogleCloudPlatform/evalbench/issues/703)) ([1ff849f](https://github.com/GoogleCloudPlatform/evalbench/commit/1ff849f32f5ce0709ab95727ede2d8470865146a))
+* **dataset_quality:** don't count withheld data as Incomplete Result ([926c9cf](https://github.com/GoogleCloudPlatform/evalbench/commit/926c9cf983d8aca64159c00e1ba8bafddefbdb61))
+* **dataset_quality:** don't count withheld data as Incomplete Result ([1c40016](https://github.com/GoogleCloudPlatform/evalbench/commit/1c4001611ae3c31c07b370f695f0d080f178e7bf))
+* **datasets:** split two records joined on one line in bat-interact ([de30f82](https://github.com/GoogleCloudPlatform/evalbench/commit/de30f82e1400c8e8ca5c6a5ea04b11a52604383a))
+* **datasets:** split two records joined on one line in bat-interact ([ae1c85c](https://github.com/GoogleCloudPlatform/evalbench/commit/ae1c85c82078e69ffd2b097ce7c16eac1eb05d4a))
+* **datasets:** verify the TLS certificate in the bird-interact download ([#723](https://github.com/GoogleCloudPlatform/evalbench/issues/723)) ([1769517](https://github.com/GoogleCloudPlatform/evalbench/commit/176951787cca551f55655a6e346ee0e822f491e0))
+* **deps:** pin google-adk&gt;=2.14.0 to remediate CVE-2026-4810 ([#730](https://github.com/GoogleCloudPlatform/evalbench/issues/730)) ([a2258c8](https://github.com/GoogleCloudPlatform/evalbench/commit/a2258c808c6437d2cfefabac7692f01046e44c8a))
+* **gemini_cli:** resume follow-up turns by session ID ([#699](https://github.com/GoogleCloudPlatform/evalbench/issues/699)) ([f7f909d](https://github.com/GoogleCloudPlatform/evalbench/commit/f7f909d25230ede68ef49aee602f288d7e70f766))
+* **generators:** keep gcloud credentials off the shared session volume ([#724](https://github.com/GoogleCloudPlatform/evalbench/issues/724)) ([90a2926](https://github.com/GoogleCloudPlatform/evalbench/commit/90a2926bc9ae1151dc86afdc43b816e087e3f617))
+* **gke:** add health probes and make the deploy single-pod safe ([0ce5185](https://github.com/GoogleCloudPlatform/evalbench/commit/0ce5185ca8f59090863547d55577511e4841a828))
+* **reporting:** skip symlinks and special files in the GCS artifact zip ([#721](https://github.com/GoogleCloudPlatform/evalbench/issues/721)) ([77d30b8](https://github.com/GoogleCloudPlatform/evalbench/commit/77d30b85d3826835ea19426e5093da8f36376aaf))
+* **scorers:** raise on malformed goal_completion judge replies ([#701](https://github.com/GoogleCloudPlatform/evalbench/issues/701)) ([b6023ba](https://github.com/GoogleCloudPlatform/evalbench/commit/b6023ba84f72ff717ec9f7efd2a19df373aaef76))
+* **server:** bind the loopback interface for --localhost ([#722](https://github.com/GoogleCloudPlatform/evalbench/issues/722)) ([5684958](https://github.com/GoogleCloudPlatform/evalbench/commit/5684958f6242cb67ac76a395c48c4858ea10f2e1))
+* **sessionmgr:** remove a symlinked session entry instead of walking it ([#708](https://github.com/GoogleCloudPlatform/evalbench/issues/708)) ([21f7a5c](https://github.com/GoogleCloudPlatform/evalbench/commit/21f7a5c46e31337223ebeb1df9adb88f5b2b6bee))
+* **tools:** apply the fetch_url checks to redirect targets ([#728](https://github.com/GoogleCloudPlatform/evalbench/issues/728)) ([6ca77dc](https://github.com/GoogleCloudPlatform/evalbench/commit/6ca77dc05de03e34b5535efc2db34e9578239eae))
+* **viewer:** accept only trusted model configs and run directories ([#720](https://github.com/GoogleCloudPlatform/evalbench/issues/720)) ([0a2a06e](https://github.com/GoogleCloudPlatform/evalbench/commit/0a2a06ed20c0d294766a21603465f3edf7851275))
+* **viewer:** bound the prompt size of the AI comparison ([#725](https://github.com/GoogleCloudPlatform/evalbench/issues/725)) ([4167338](https://github.com/GoogleCloudPlatform/evalbench/commit/41673380e5e6b27a66ce95789a7483027586883d))
+* **viewer:** turn off Mesop debug mode in production ([#726](https://github.com/GoogleCloudPlatform/evalbench/issues/726)) ([33afd41](https://github.com/GoogleCloudPlatform/evalbench/commit/33afd41926b2e474abf3c13005471581bb1f2971))
+
 ## [1.21.0](https://github.com/GoogleCloudPlatform/evalbench/compare/v1.20.0...v1.21.0) (2026-10-27)
 
 
