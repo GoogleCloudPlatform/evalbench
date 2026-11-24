@@ -13,6 +13,10 @@
 # the eval_server images and the GKE cluster. The trigger sets
 # _DEPLOY_PROJECT, so this public file has no project names.
 #
+# The smoke gate runs the candidate image, and every step can write to
+# /workspace. So the other steps keep their helpers and their state in the
+# release-state volume at /release, and they do not read /workspace again.
+#
 # Use $$ for shell variables and $$(...). Cloud Build expands a single $.
 
 steps:
@@ -20,6 +24,9 @@ steps:
   # Waits for the image that the Build trigger pushes after its tests pass.
   - id: resolve-release
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    volumes:
+      - name: 'release-state'
+        path: '/release'
     timeout: '2400s'
     entrypoint: 'bash'
     args:
@@ -28,6 +35,12 @@ steps:
         set -uo pipefail
         . /workspace/.ci/release/lib.sh
         STAGE=resolve-release
+
+        # /workspace is the clean checkout here. The later steps use this
+        # copy, because the smoke gate can write to /workspace.
+        if ! cp -a /workspace/.ci/release /release/ci; then
+          release_fail $$STAGE "Could not copy the release helpers to /release."
+        fi
 
         if [[ -z "$COMMIT_SHA" || -z "$SHORT_SHA" ]]; then
           release_fail $$STAGE "COMMIT_SHA or SHORT_SHA is empty."
@@ -64,9 +77,10 @@ steps:
 
         TAG="v$$(date -u +%Y.%m.%d).$SHORT_SHA"
 
-        echo "$$REPO"   > /workspace/image_repo.txt
-        echo "$$DIGEST" > /workspace/image_digest.txt
-        echo "$$TAG"    > /workspace/release_tag.txt
+        echo "$$REPO"   > /release/image_repo.txt
+        echo "$$DIGEST" > /release/image_digest.txt
+        echo "$$TAG"    > /release/release_tag.txt
+        share_result_files
         echo "digest = $$DIGEST"
         echo "tag    = $$TAG"
 
@@ -75,13 +89,18 @@ steps:
   # never fails the release.
   - id: release-notes
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    volumes:
+      - name: 'release-state'
+        path: '/release'
     waitFor: ['resolve-release']
     entrypoint: 'bash'
     args:
       - '-c'
       - |
         set -uo pipefail
-        NOTES=/workspace/release_prs.txt
+        . /release/ci/lib.sh
+        trap share_result_files EXIT
+        NOTES=/release/release_prs.txt
         GITHUB=https://github.com/GoogleCloudPlatform/evalbench
 
         unavailable() {
@@ -115,7 +134,7 @@ steps:
           unavailable "the previous commit is unknown. GKE serves $$OLD_DIGEST, which has no commit SHA tag."
         fi
         echo "$$GITHUB/compare/$$OLD_SHA...$COMMIT_SHA" \
-          > /workspace/release_compare.txt
+          > /release/release_compare.txt
 
         # A treeless clone has every commit message and no file contents.
         # A step timeout fails the release, so limit the clone instead.
@@ -123,7 +142,7 @@ steps:
           "$$GITHUB.git" /tmp/evalbench; then
           unavailable "git clone of $$GITHUB failed or took more than 300 s."
         fi
-        if ! python3 /workspace/.ci/release/release_notes.py \
+        if ! python3 /release/ci/release_notes.py \
           --repo-dir /tmp/evalbench --old "$$OLD_SHA" --new "$COMMIT_SHA" \
           > /tmp/prs.txt; then
           unavailable "git log $$OLD_SHA..$COMMIT_SHA failed."
@@ -138,6 +157,7 @@ steps:
   #   2. client_sql_smoke.py: the client-generated SQL path, with fixed scores.
   #   3. The log scan: any ERROR, CRITICAL, or traceback in the server log
   #      fails the gate.
+  # This step does not mount the release-state volume.
   - id: smoke-gate
     name: 'us-central1-docker.pkg.dev/${_DEPLOY_PROJECT}/evalbench/eval_server:$COMMIT_SHA'
     dir: '/evalbench'
@@ -233,6 +253,9 @@ steps:
   # Tags the tested digest, not :$COMMIT_SHA.
   - id: tag-release
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    volumes:
+      - name: 'release-state'
+        path: '/release'
     waitFor: ['smoke-gate']
     timeout: '120s'
     entrypoint: 'bash'
@@ -240,11 +263,11 @@ steps:
       - '-c'
       - |
         set -uo pipefail
-        . /workspace/.ci/release/lib.sh
+        . /release/ci/lib.sh
         STAGE=tag-release
-        REPO=$$(cat /workspace/image_repo.txt)
-        DIGEST=$$(cat /workspace/image_digest.txt)
-        TAG=$$(cat /workspace/release_tag.txt)
+        REPO=$$(cat /release/image_repo.txt)
+        DIGEST=$$(cat /release/image_digest.txt)
+        TAG=$$(cat /release/release_tag.txt)
 
         # If a Build re-run moved :$COMMIT_SHA, the gate tested another image.
         CURRENT=$$(gcloud artifacts docker images describe \
@@ -262,6 +285,9 @@ steps:
   # the Deployment spec can hold a tag.
   - id: capture-rollback-target
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    volumes:
+      - name: 'release-state'
+        path: '/release'
     waitFor: ['tag-release']
     timeout: '120s'
     entrypoint: 'bash'
@@ -269,7 +295,7 @@ steps:
       - '-c'
       - |
         set -uo pipefail
-        . /workspace/.ci/release/lib.sh
+        . /release/ci/lib.sh
         STAGE=capture-rollback-target
         NAMESPACE=evalbench-namespace
         SELECTOR=app=evalbench-eval-server
@@ -292,13 +318,16 @@ steps:
           release_fail $$STAGE "Pods serve more than one digest. A rollout is already in progress."
         fi
 
-        echo "$$RUNNING" > /workspace/rollback_digest.txt
+        echo "$$RUNNING" > /release/rollback_digest.txt
         echo "rollback target = $$RUNNING"
 
   # Deploy, check, and rollback share one step, because Cloud Build has no
   # on-failure hook.
   - id: deploy-gke
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    volumes:
+      - name: 'release-state'
+        path: '/release'
     waitFor: ['capture-rollback-target']
     # 2 rollouts (600 s), confirm (60 s), and Ping (120 s).
     timeout: '900s'
@@ -307,7 +336,7 @@ steps:
       - '-c'
       - |
         set -uo pipefail
-        . /workspace/.ci/release/lib.sh
+        . /release/ci/lib.sh
         STAGE=deploy-gke
         NAMESPACE=evalbench-namespace
         SELECTOR=app=evalbench-eval-server
@@ -315,10 +344,10 @@ steps:
         DEPLOYMENT=deployment/evalbench-eval-server-deploy
         ROLLOUT_TIMEOUT=300s
 
-        REPO=$$(cat /workspace/image_repo.txt)
-        NEW_DIGEST=$$(cat /workspace/image_digest.txt)
-        OLD_DIGEST=$$(cat /workspace/rollback_digest.txt)
-        TAG=$$(cat /workspace/release_tag.txt)
+        REPO=$$(cat /release/image_repo.txt)
+        NEW_DIGEST=$$(cat /release/image_digest.txt)
+        OLD_DIGEST=$$(cat /release/rollback_digest.txt)
+        TAG=$$(cat /release/release_tag.txt)
 
         if ! gcloud container clusters get-credentials \
           evalbench-directpath-cluster \
@@ -401,6 +430,9 @@ steps:
   # image.
   - id: promote-latest
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    volumes:
+      - name: 'release-state'
+        path: '/release'
     waitFor: ['deploy-gke']
     timeout: '120s'
     entrypoint: 'bash'
@@ -408,9 +440,9 @@ steps:
       - '-c'
       - |
         set -uo pipefail
-        . /workspace/.ci/release/lib.sh
-        REPO=$$(cat /workspace/image_repo.txt)
-        DIGEST=$$(cat /workspace/image_digest.txt)
+        . /release/ci/lib.sh
+        REPO=$$(cat /release/image_repo.txt)
+        DIGEST=$$(cat /release/image_digest.txt)
         if ! move_tag "$$REPO" latest "$$DIGEST"; then
           release_fail promote-latest "GKE serves $$DIGEST, but :latest did not move. Break-glass deploys still use the previous release."
         fi
@@ -419,17 +451,20 @@ steps:
   # Cloud Run pulls from evalbench-dev. The copy keeps the digest.
   - id: copy-cloudrun-image
     name: 'gcr.io/go-containerregistry/gcrane:debug'
+    volumes:
+      - name: 'release-state'
+        path: '/release'
     waitFor: ['promote-latest']
     timeout: '300s'
     entrypoint: 'sh'
     args:
       - '-c'
       - |
-        . /workspace/.ci/release/lib.sh
+        . /release/ci/lib.sh
         CR_REPO=us-central1-docker.pkg.dev/evalbench-dev/cr-images/eval_server
-        REPO=$$(cat /workspace/image_repo.txt)
-        DIGEST=$$(cat /workspace/image_digest.txt)
-        TAG=$$(cat /workspace/release_tag.txt)
+        REPO=$$(cat /release/image_repo.txt)
+        DIGEST=$$(cat /release/image_digest.txt)
+        TAG=$$(cat /release/release_tag.txt)
         if ! gcrane copy "$$REPO@$$DIGEST" "$$CR_REPO:$$TAG"; then
           release_fail copy-cloudrun-image "Could not copy the release to $$CR_REPO. Cloud Run still serves the previous release."
         fi
@@ -438,6 +473,9 @@ steps:
   # waits for the revision startup check, and pre-merge CI tests the pages.
   - id: deploy-cloudrun
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    volumes:
+      - name: 'release-state'
+        path: '/release'
     waitFor: ['copy-cloudrun-image']
     timeout: '600s'
     entrypoint: 'bash'
@@ -445,13 +483,13 @@ steps:
       - '-c'
       - |
         set -uo pipefail
-        . /workspace/.ci/release/lib.sh
+        . /release/ci/lib.sh
         STAGE=deploy-cloudrun
         SERVICE=evalbench
         JOBS=(precompute-job recompute-job)
         RUN=(--project=evalbench-dev --region=us-central1 --quiet)
         CR_REPO=us-central1-docker.pkg.dev/evalbench-dev/cr-images/eval_server
-        DIGEST=$$(cat /workspace/image_digest.txt)
+        DIGEST=$$(cat /release/image_digest.txt)
 
         OLD_REVISION=$$(gcloud run services describe "$$SERVICE" "$${RUN[@]}" \
           --format='value(status.latestReadyRevisionName)')
@@ -494,14 +532,17 @@ steps:
 
   - id: notify-success
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    volumes:
+      - name: 'release-state'
+        path: '/release'
     waitFor: ['deploy-cloudrun', 'release-notes']
     timeout: '60s'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
-        . /workspace/.ci/release/lib.sh
-        release_result SUCCESS notify-success "GKE and Cloud Run serve $$(cat /workspace/release_tag.txt) ($$(cat /workspace/image_digest.txt))."
+        . /release/ci/lib.sh
+        release_result SUCCESS notify-success "GKE and Cloud Run serve $$(cat /release/release_tag.txt) ($$(cat /release/image_digest.txt))."
 
 substitutions:
   # The project of the eval_server images and the GKE cluster. The trigger

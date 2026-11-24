@@ -1,5 +1,5 @@
 # Helpers for the steps in release.cloudbuild.yaml:
-#   . /workspace/.ci/release/lib.sh
+#   . /release/ci/lib.sh
 #
 # POSIX sh, so the busybox shell in the gcrane image can source it. Needs
 # BUILD_ID, COMMIT_SHA, LOCATION and PROJECT_ID from options.env.
@@ -8,6 +8,28 @@
 # change either, update the policy.
 RELEASE_RESULT_PREFIX="RELEASE_RESULT"
 
+# The steps keep their state in the release-state volume at /release. The
+# smoke gate runs the candidate image and does not mount the volume, so it
+# reads the copies from share_result_files.
+if [ -d /release ]; then
+  RELEASE_STATE_DIR=/release
+else
+  RELEASE_STATE_DIR=/workspace
+fi
+
+# Copies the files of the result line to /workspace for the smoke gate. No
+# other step reads the copies. --remove-destination replaces a symlink and
+# does not write through it.
+#
+# Usage: share_result_files
+share_result_files() {
+  for _file in release_tag.txt release_prs.txt release_compare.txt; do
+    [ -f "$RELEASE_STATE_DIR/$_file" ] \
+      && cp --remove-destination "$RELEASE_STATE_DIR/$_file" "/workspace/$_file"
+  done
+  return 0
+}
+
 # Prints the result line of the run.
 #
 # Usage: release_result STATUS STAGE DETAIL
@@ -15,15 +37,15 @@ RELEASE_RESULT_PREFIX="RELEASE_RESULT"
 #   STAGE   the id of the step that ended the run
 #   DETAIL  one sentence for the email
 #
-# Reads the tag, PR list, and compare link from /workspace. Keep detail
+# Reads the tag, PR list, and compare link from RELEASE_STATE_DIR. Keep detail
 # last, because the alert policy reads it with a greedy regex.
 release_result() {
-  _tag=$(cat /workspace/release_tag.txt 2>/dev/null || echo "none")
+  _tag=$(cat "$RELEASE_STATE_DIR/release_tag.txt" 2>/dev/null || echo "none")
   _detail=$(printf '%s' "$3" | tr '"\n' "' ")
-  _prs=$(cat /workspace/release_prs.txt 2>/dev/null \
+  _prs=$(cat "$RELEASE_STATE_DIR/release_prs.txt" 2>/dev/null \
     || echo "PR list not computed before this step ended the run.")
   _prs=$(printf '%s' "$_prs" | tr '"\n' "' ")
-  _compare=$(cat /workspace/release_compare.txt 2>/dev/null || echo "unavailable")
+  _compare=$(cat "$RELEASE_STATE_DIR/release_compare.txt" 2>/dev/null || echo "unavailable")
   _log="https://console.cloud.google.com/cloud-build/builds;region=${LOCATION}/${BUILD_ID}?project=${PROJECT_ID}"
   _commit="https://github.com/GoogleCloudPlatform/evalbench/commit/${COMMIT_SHA}"
   echo "${RELEASE_RESULT_PREFIX} status=$1 stage=$2 tag=${_tag} commit=${_commit} log=${_log} compare=${_compare} prs=\"${_prs}\" detail=\"${_detail}\""
