@@ -20,6 +20,7 @@ from work.agentgenwork import AgentGenWork
 from evaluator.simulateduser import SimulatedUser
 from evaluator.trialsnapshot import TrialSnapshot, check_resettable
 from work.agentscorework import AgentScoreWork
+from scorers.score import _construction_error_metric_name
 import json
 import subprocess
 from typing import Dict
@@ -510,11 +511,47 @@ class AgentEvaluator:
             eval_output_data["prompt_id"] = scenario["prompt_id"]
             eval_output_data["trial_index"] = scenario["trial_index"]
 
-        score_work = AgentScoreWork(
-            config=self.config,
-            eval_output=eval_output_data,
-            scoring_results=eval_result.scoring_results
-        )
-        score_work.run()
-
+        # Execution evidence must survive a failed scorer. In normal scorer
+        # failures, score.compare creates an error-bearing comparison row.
         eval_result.agent_results.append(eval_output_data)
+        # Stage this scenario's scores: a late dispatch exception must never
+        # publish success rows from an incompletely scored scenario.
+        staged_scenario_scores: list[dict] = []
+        try:
+            score_work = AgentScoreWork(
+                config=self.config,
+                eval_output=eval_output_data,
+                scoring_results=staged_scenario_scores
+            )
+            score_work.run()
+        except Exception as exc:
+            # Keep the completed execution evidence, but do not publish the
+            # partial scenario buffer or touch any other scenario's scores.
+            eval_output_data["scoring_error"] = f"{type(exc).__name__}: {exc}"
+            logging.exception("Unexpected scoring failure for scenario %s",
+                              scenario["id"])
+            # Publish an *unscored* comparison-error record for each configured
+            # metric. The analyzer consumes scoring_results, not agent_results;
+            # without these records an otherwise completed agent execution is
+            # incorrectly absent from execution accounting. Do not publish
+            # partially staged successes from the interrupted dispatch.
+            for scorer_name, scorer_config in self.config.get("scorers", {}).items():
+                error_row = {
+                    "id": scenario["id"],
+                    "comparator": _construction_error_metric_name(
+                        scorer_name, scorer_config),
+                    "score": 0,
+                    "generated_sql": eval_output_data["generated_sql"],
+                    "generated_error": eval_output_data["generated_error"],
+                    "comparison_error": eval_output_data["scoring_error"],
+                    "comparison_logs": None,
+                    "dialects": metadata.get("dialects", []),
+                    "database": metadata.get("database", "unknown"),
+                    "job_id": job_id,
+                }
+                if "trial_index" in scenario:
+                    error_row["prompt_id"] = scenario["prompt_id"]
+                    error_row["trial_index"] = scenario["trial_index"]
+                eval_result.scoring_results.append(error_row)
+        else:
+            eval_result.scoring_results.extend(staged_scenario_scores)
