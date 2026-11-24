@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from eval_service import _process_results, EmptyEvalResultError
+from eval_service import _build_reporters, _process_results, EmptyEvalResultError
 
 
 class BigQueryReporter(MagicMock):
@@ -199,6 +199,57 @@ class TestEvalServiceProcessResultsReporting(unittest.TestCase):
 
         self.assertFalse(os.path.exists(results_tf))
         self.assertFalse(os.path.exists(scores_tf))
+
+    def test_non_dict_reporting_config_multi_trial_scores_and_latency_summary(self):
+        reporters, errs = _build_reporters(None, "job-none", datetime.datetime.now())
+        self.assertEqual((reporters, errs), ([], []))
+
+        results_tf = self._write_json_tempfile([
+            {
+                "id": "scenario-1",
+                "prompt_id": "scenario-1",
+                "generated_sql": "SELECT 1",
+                "generated_error": None,
+                "sql_generator_time": 1.5,
+            }
+        ])
+        scores_tf = self._write_json_tempfile([
+            {
+                "id": "scenario-1",
+                "prompt_id": "scenario-1",
+                "comparator": "exact_match",
+                "score": 100,
+                "generated_sql": "SELECT 1",
+                "generated_error": None,
+            }
+        ])
+        multi_trial_tf = self._write_json_tempfile([
+            {
+                "id": "scenario-1",
+                "prompt_id": "scenario-1",
+                "comparator": "exact_match_consistency",
+                "score": 100,
+            }
+        ])
+
+        summary = _process_results(
+            reporters=[],
+            job_id="job-mt",
+            run_time=datetime.datetime(2026, 11, 18, 3, 20, 0),
+            results_tf=results_tf,
+            scores_tf=scores_tf,
+            multi_trial_scores_tf=multi_trial_tf,
+            config={"scorers": {"exact_match": {}, "exact_match_consistency": {}}},
+            model_config={"generator": "noop"},
+            db_configs=[],
+        )
+
+        self.assertEqual(summary["scores"]["exact_match"], 1)
+        self.assertEqual(summary["scores"]["exact_match_consistency"], 1)
+        self.assertEqual(summary["generation_latency"], {"p50": 1.5, "p90": 1.5})
+        self.assertFalse(os.path.exists(results_tf))
+        self.assertFalse(os.path.exists(scores_tf))
+        self.assertFalse(os.path.exists(multi_trial_tf))
 
 
 if __name__ == "__main__":

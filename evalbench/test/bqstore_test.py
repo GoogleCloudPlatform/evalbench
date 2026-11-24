@@ -16,8 +16,10 @@ import numpy as np
 import pandas as pd
 from reporting.bqstore import (
     BigQueryReporter,
+    _coerce_json_value,
     _dataframe_to_json_rows,
     _infer_schema,
+    _is_transient_insert_error,
     _iter_streaming_batches,
 )
 from reporting.report import STORETYPE
@@ -545,6 +547,116 @@ class TestBigQueryReporterStreaming(unittest.TestCase):
         batches = list(_iter_streaming_batches(rows, max_rows=10, max_bytes=150))
         self.assertEqual(len(batches), 3)
         self.assertEqual([b[0]["id"] for b in batches], ["1", "2", "3"])
+
+    def test_empty_input_and_unsupported_store_type_and_helper_guards(self):
+        self.reporter.store(None, STORETYPE.CONFIGS)
+        self.reporter.store(pd.DataFrame(), STORETYPE.CONFIGS)
+        self.mock_client.create_dataset.assert_not_called()
+
+        with self.assertRaises(ValueError):
+            self.reporter.store(pd.DataFrame([{"a": 1}]), "INVALID_TYPE")
+
+        # Unparseable DATETIME returns raw value; "NaT" maps to None.
+        dt_field = bigquery.SchemaField("dt", "DATETIME")
+        self.assertEqual(_coerce_json_value("not-a-date", dt_field), "not-a-date")
+        self.assertIsNone(_coerce_json_value("NaT", dt_field))
+
+        # Empty error lists and row errors with no inner error entries are non-retryable.
+        self.assertFalse(_is_transient_insert_error([]))
+        self.assertFalse(_is_transient_insert_error([{"index": 0, "errors": []}]))
+
+    @patch("reporting.bqstore.time.sleep")
+    def test_schema_edge_paths_empty_create_race_exhaustion_and_multi_batch_refresh(
+        self, mock_sleep
+    ):
+        # 1. create_table returning empty schema triggers fallback get_table().
+        populated_table = bigquery.Table(
+            "test-project.evalbench.configs",
+            schema=[bigquery.SchemaField("job_id", "STRING")],
+        )
+        self.mock_client.get_table.side_effect = [
+            NotFound("missing"),
+            populated_table,
+        ]
+        self.mock_client.create_table.return_value = bigquery.Table(
+            "test-project.evalbench.configs"
+        )
+        self.mock_client.insert_rows_json.return_value = []
+        self.reporter.store(pd.DataFrame([{"job_id": "j1"}]), STORETYPE.CONFIGS)
+        self.assertEqual(self.mock_client.get_table.call_count, 2)
+
+        # 2. Another worker adds missing column before update_table -> no update_table call.
+        self.reporter._tables.clear()
+        self.mock_client.reset_mock()
+        stale_table = bigquery.Table(
+            "test-project.evalbench.results",
+            schema=[bigquery.SchemaField("job_id", "STRING")],
+        )
+        already_updated = bigquery.Table(
+            "test-project.evalbench.results",
+            schema=[
+                bigquery.SchemaField("job_id", "STRING"),
+                bigquery.SchemaField("new_col", "STRING"),
+            ],
+        )
+        self.mock_client.get_table.side_effect = [stale_table, already_updated]
+        self.mock_client.insert_rows_json.return_value = []
+        self.reporter.store(
+            pd.DataFrame([{"job_id": "j1", "new_col": "v"}]), STORETYPE.EVALS
+        )
+        self.mock_client.update_table.assert_not_called()
+
+        # 3. update_table exhausting all 5 conflict retries re-raises PreconditionFailed.
+        self.reporter._tables.clear()
+        self.mock_client.reset_mock()
+        self.mock_client.get_table.side_effect = lambda _: bigquery.Table(
+            "test-project.evalbench.results",
+            schema=[bigquery.SchemaField("job_id", "STRING")],
+        )
+        self.mock_client.update_table.side_effect = PreconditionFailed("etag")
+        with self.assertRaises(PreconditionFailed):
+            self.reporter.store(
+                pd.DataFrame([{"job_id": "j1", "new_col": "v"}]), STORETYPE.EVALS
+            )
+        self.assertEqual(self.mock_client.update_table.call_count, 5)
+
+        # 4. Schema change during batch 1 of a multi-batch chunk re-coerces batch 2 too.
+        self.reporter._tables.clear()
+        self.mock_client.reset_mock()
+        old_scores = bigquery.Table(
+            "test-project.evalbench.scores",
+            schema=[
+                bigquery.SchemaField("id", "STRING"),
+                bigquery.SchemaField("score", "STRING"),
+            ],
+        )
+        new_scores = bigquery.Table(
+            "test-project.evalbench.scores",
+            schema=[
+                bigquery.SchemaField("id", "STRING"),
+                bigquery.SchemaField("score", "INTEGER"),
+            ],
+        )
+        self.mock_client.get_table.side_effect = [old_scores, new_scores]
+        self.mock_client.insert_rows_json.side_effect = [
+            NotFound("recreated"),
+            [],
+            [],
+        ]
+        # Force 2 streaming batches within 1 DataFrame chunk via max_bytes patch.
+        with patch("reporting.bqstore._MAX_STREAMING_REQUEST_BYTES", 40):
+            self.reporter.store(
+                pd.DataFrame([
+                    {"id": "s1", "score": 95.6},
+                    {"id": "s2", "score": 88.2},
+                ]),
+                STORETYPE.SCORES,
+            )
+        self.assertEqual(self.mock_client.insert_rows_json.call_count, 3)
+        batch1_retry = self.mock_client.insert_rows_json.call_args_list[1].args[1]
+        batch2_rows = self.mock_client.insert_rows_json.call_args_list[2].args[1]
+        self.assertEqual(batch1_retry[0]["score"], 96)
+        self.assertEqual(batch2_rows[0]["score"], 88)
 
 
 if __name__ == "__main__":

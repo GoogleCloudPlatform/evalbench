@@ -208,9 +208,11 @@ def _dataframe_to_json_rows(
 def _iter_streaming_batches(
     rows: Sequence[dict[str, Any]],
     max_rows: int,
-    max_bytes: int = _MAX_STREAMING_REQUEST_BYTES,
+    max_bytes: int | None = None,
 ) -> Iterator[list[dict[str, Any]]]:
     """Splits JSON rows by both count and serialized byte size for insertAll."""
+    if max_bytes is None:
+        max_bytes = _MAX_STREAMING_REQUEST_BYTES
     batch: list[dict[str, Any]] = []
     batch_bytes = 0
     for row in rows:
