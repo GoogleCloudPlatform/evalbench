@@ -145,9 +145,15 @@ jobs:
 
   publish-release:
     needs: build-artifacts
-    if: github.event_name != 'pull_request'
+    # Publish only for a release, or for a manual run with a tag.
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name != '')
+    # The protection rules of this environment are a repository setting.
+    environment: release
     permissions:
       contents: write
+      # For the provenance attestation.
+      id-token: write
+      attestations: write
     runs-on: ubuntu-latest
     steps:
       - name: Download all build artifacts
@@ -157,8 +163,14 @@ jobs:
           pattern: binary-*
           merge-multiple: true
 
+      # To verify a download:
+      #   gh attestation verify FILE --repo GoogleCloudPlatform/evalbench
+      - name: Attest the release archives
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release-assets/*
+
       - name: Upload Release Assets
-        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name != '')
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ github.event.release.tag_name || github.event.inputs.tag_name }}
