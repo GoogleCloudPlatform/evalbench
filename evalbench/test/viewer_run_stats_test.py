@@ -238,6 +238,21 @@ class TestRunStatsComponent(RunStatsTestCase):
         self.assertLess(texts.index("create-backup"),
                         texts.index("list-instances"))
 
+    def test_each_column_but_the_scenario_has_a_tooltip(self):
+        self.write(run_stats.RUN_STATS_FILE, [STABLE_PASS])
+
+        with patch.object(run_stats, "me") as me:
+            run_stats.run_stats_component(self.results_dir)
+
+        tips = [c.kwargs["message"] for c in me.tooltip.call_args_list]
+        self.assertEqual(6, len(tips))
+        for expected in ["at least one trial was unscored",
+                         "does not count as a pass or as a failure",
+                         "Passed trials divided by scored trials",
+                         "Wilson interval", "4p(1 - p)", "above 90%"]:
+            with self.subTest(expected=expected):
+                self.assertTrue(any(expected in tip for tip in tips))
+
 
 class TestDashboardShowsRunStats(RunStatsTestCase):
 

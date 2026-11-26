@@ -34,19 +34,27 @@ _STATUS_COLORS = {"PASS": _GREEN, "FAIL": _RED, "ERROR": _GREY}
 _STATUS_ORDER = {"FAIL": 1, "ERROR": 2, "PASS": 3}
 _EMPTY = "–"
 
-_HEADERS = ("Scenario", "Status", "Trials passed", "Pass rate",
-            "95% interval", "Flakiness", "Confidence")
-_GRID = "minmax(180px, 2fr) 80px minmax(190px, 1.5fr) 80px 120px 80px 90px"
-_NOTES = (
-    "Pass rate: passed trials divided by scored trials. An unscored trial "
-    "has an agent error or a scorer error. It does not count as a pass or "
-    "as a failure.",
-    "95% interval: the Wilson interval. It is the range that holds the true "
-    "pass rate with 95% certainty.",
-    "Flakiness: 4p(1 - p) for the pass rate p. It is 0 if all scored trials "
-    "agree and 1 at 50/50.",
-    "Confidence: the chance, from 0 to 1, that the true pass rate is above "
-    "90%.",
+_GRID = "minmax(180px, 2fr) 90px minmax(190px, 1.5fr) 90px 120px 100px 110px"
+# The label of each column of the scenario table, and the text of its tooltip.
+_COLUMNS = (
+    ("Scenario", ""),
+    ("Status",
+     "PASS: every trial was scored and passed. FAIL: every trial was "
+     "scored and at least one failed. ERROR: at least one trial was "
+     "unscored."),
+    ("Trials passed",
+     "Passed trials out of scored trials. An unscored trial has an agent "
+     "error or a scorer error. It does not count as a pass or as a "
+     "failure."),
+    ("Pass rate", "Passed trials divided by scored trials."),
+    ("95% interval",
+     "The Wilson interval. It is the range that holds the true pass rate "
+     "with 95% certainty."),
+    ("Flakiness",
+     "4p(1 - p) for the pass rate p. It is 0 if all scored trials agree "
+     "and 1 at 50/50."),
+    ("Confidence",
+     "The chance, from 0 to 1, that the true pass rate is above 90%."),
 )
 
 
@@ -255,7 +263,7 @@ def _row_style(header: bool = False) -> me.Style:
         grid_template_columns=_GRID,
         align_items="center",
         gap="12px",
-        min_width="900px",
+        min_width="1000px",
         padding=me.Padding.symmetric(vertical="10px", horizontal="16px"),
         border=me.Border(bottom=_line()),
         background="#f8fafc" if header else "#ffffff",
@@ -295,11 +303,44 @@ def _trials_cell(row: dict) -> None:
         me.text(row["trials"], style=me.Style(font_size="13px", color=_TEXT))
 
 
+def _column_header(label: str, tip: str) -> None:
+    """Draws the header of a column.
+
+    A column with a tooltip text gets an info icon. The tooltip opens when
+    the pointer is on the label or on the icon.
+    """
+    style = me.Style(font_size="12px", font_weight="600", color=_MUTED)
+    if not tip:
+        me.text(label, style=style)
+        return
+    # The outer box keeps the tooltip area as narrow as the label and icon.
+    with me.box(style=me.Style(display="flex")):
+        with me.tooltip(message=tip, position="above"):
+            with me.box(
+                style=me.Style(
+                    display="flex",
+                    align_items="center",
+                    gap="4px",
+                    cursor="help",
+                )
+            ):
+                me.text(label, style=style)
+                me.icon(
+                    "info",
+                    style=me.Style(
+                        font_size="14px",
+                        width="14px",
+                        height="14px",
+                        color=_GREY,
+                    ),
+                )
+
+
 def _table(rows: list[dict]) -> None:
     cell = me.Style(font_size="13px", color=_TEXT)
     with me.box(
         style=me.Style(
-            margin=me.Margin(top="16px"),
+            margin=me.Margin(top="16px", bottom="16px"),
             background="#ffffff",
             border_radius="10px",
             border=me.Border.all(_line()),
@@ -308,12 +349,8 @@ def _table(rows: list[dict]) -> None:
         )
     ):
         with me.box(style=_row_style(header=True)):
-            for header in _HEADERS:
-                me.text(
-                    header,
-                    style=me.Style(
-                        font_size="12px", font_weight="600", color=_MUTED),
-                )
+            for label, tip in _COLUMNS:
+                _column_header(label, tip)
         for row in rows:
             with me.box(style=_row_style()):
                 # me.text escapes the scenario id, which comes from a file.
@@ -392,13 +429,3 @@ def run_stats_component(
         for card in suite_cards(suite_stats(summary_df), rows):
             _card(*card)
     _table(rows)
-    with me.box(style=me.Style(margin=me.Margin(top="12px", bottom="8px"))):
-        for note in _NOTES:
-            me.text(
-                note,
-                style=me.Style(
-                    font_size="12px",
-                    color=_MUTED,
-                    margin=me.Margin(bottom="2px"),
-                ),
-            )

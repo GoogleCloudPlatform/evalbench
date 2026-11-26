@@ -151,7 +151,7 @@ The job also adds the stats of the whole suite to `summary.csv`, in these column
 | `flaky_scenarios` | `goal_completion` | Number of flaky scenarios. |
 | `trial_min`, `trial_median`, `trial_max` | Each numeric metric | EvalBench takes the suite average of the metric in each trial. These columns have the min, median, and max of those averages. Only the scenarios with a scored result in every trial count. |
 
-The viewer shows the pass stats on the Dashboard tab of the run, in the section "Stats across trials". The section has the stats of the suite and one row for each scenario, with the flaky scenarios first. A run without `run_stats.csv` has no such section.
+The viewer shows the pass stats on the Dashboard tab of the run, in the section "Stats across trials". The section has the stats of the suite and one row for each scenario, with the flaky scenarios first. A tooltip on each column header gives the definition of the column. A run without `run_stats.csv` has no such section.
 
 ---
 
