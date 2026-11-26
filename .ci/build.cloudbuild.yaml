@@ -28,7 +28,6 @@ steps:
         $$HOME/.local/bin/uv run pytest evalbench/test -vv
     env:
       - 'PYTHONPATH=evalbench:.'
-      - 'SKIP_CLOUD_TESTS=true'
 
   # Pulls the previous image for the layer cache. A miss is not a failure.
   - id: pull-cache
