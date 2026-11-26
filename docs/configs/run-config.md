@@ -61,7 +61,7 @@ With `num_trials: 1`, the `id` is unchanged and the rows have no `prompt_id` or 
 
 EvalBench does not reset cloud resources between trials. Set `num_trials: 1` on each scenario that creates or changes a cloud resource.
 
-With `num_trials` above 1, an agent run also writes `run_stats.csv` with the pass rate and flakiness of each scenario. See [Stats across trials](/docs/agentic-evals.md#stats-across-trials).
+With `num_trials` above 1, an agent run also writes `run_stats.csv` with the pass rate and flakiness of each scenario. See [Stats across trials](/docs/agentic-evals.md#stats-across-trials). To select a value, see [How to select `num_trials`](/docs/agentic-evals.md#how-to-select-num_trials).
 
 ---
 
