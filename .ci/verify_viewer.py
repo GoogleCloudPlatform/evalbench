@@ -184,6 +184,26 @@ def verify(results_dir):
         # markers no longer apply and the run's own name is what proves it drew.
         check_drawn(label, [FIXTURE_JOB_ID])
 
+    def fire_on_load_compare(label):
+        # A compare link opens the tab. It must not start the AI comparison.
+        calls = []
+        original = viewer_app.compare_evals
+        viewer_app.compare_evals = lambda *ids: calls.append(ids) or "unexpected"
+        try:
+            rt.context().set_query_param("tab", "compare")
+            rt.context().set_query_param("eval1", FIXTURE_RUN_IDS[0])
+            rt.context().set_query_param("eval2", FIXTURE_RUN_IDS[1])
+            viewer_app.on_load(me.LoadEvent(path=ROOT_PAGE))
+        finally:
+            viewer_app.compare_evals = original
+        if calls:
+            failures.append(f"{label} started the AI comparison for {calls}")
+        tab = me.state(viewer_app.State).selected_main_tab
+        if tab != "Compare":
+            failures.append(f"{label} selected the tab {tab!r}, not 'Compare'")
+        rt.run_path(ROOT_PAGE)
+        check_drawn(label, ["Run AI comparison"])
+
     def report():
         print(f"\n{len(failures)} check(s) failed:")
         for failure in failures:
@@ -218,6 +238,7 @@ def verify(results_dir):
         attempt(f"rendering {path}", partial(render_page, path))
 
     attempt("on_load", fire_on_load)
+    attempt("on_load with a compare link", fire_on_load_compare)
 
     for tab in EXPECTED_TABS:
         attempt(f"rendering tab {tab!r}", partial(render_tab, tab))

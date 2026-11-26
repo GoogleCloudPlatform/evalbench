@@ -1,3 +1,4 @@
+import collections
 import sys
 import os
 import logging
@@ -21,6 +22,36 @@ logger = logging.getLogger(__name__)
 
 # Global models dict for get_generator
 global_models = {"lock": threading.Lock(), "registered_models": {}}
+
+# compare_evals does not read a run file that is larger than this.
+_MAX_CSV_BYTES = 100 * 1024 * 1024
+
+# Results of earlier comparisons, so the same request does not call the model
+# again. The key holds the state of the run files, so a changed run gets a new
+# comparison.
+_CACHE_MAX_ENTRIES = 64
+_cache = collections.OrderedDict()
+_cache_lock = threading.Lock()
+
+
+def _file_state(path):
+    """Returns the modification time and size of path, or None."""
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None
+    return (stat.st_mtime_ns, stat.st_size)
+
+
+def _remember(key, text):
+    """Stores a comparison result. Does not store an empty result."""
+    if not isinstance(text, str) or not text:
+        return
+    with _cache_lock:
+        _cache[key] = text
+        _cache.move_to_end(key)
+        while len(_cache) > _CACHE_MAX_ENTRIES:
+            _cache.popitem(last=False)
 
 
 def get_results_dir():
@@ -61,6 +92,26 @@ def compare_evals(id1, id2):
         return f"Error: Directory for {id1} not found at {path1}"
     if not os.path.exists(path2):
         return f"Error: Directory for {id2} not found at {path2}"
+
+    run_files = [
+        os.path.join(path, name)
+        for path in (path1, path2)
+        for name in ("evals.csv", "scores.csv")
+    ]
+    file_states = [_file_state(run_file) for run_file in run_files]
+    for run_file, state in zip(run_files, file_states):
+        if state and state[1] > _MAX_CSV_BYTES:
+            return (
+                f"Error: {os.path.basename(run_file)} of run "
+                f"{os.path.basename(os.path.dirname(run_file))} is larger than "
+                f"{_MAX_CSV_BYTES // (1024 * 1024)} MB. The AI comparison does not read it."
+            )
+
+    cache_key = (id1, id2, tuple(file_states))
+    with _cache_lock:
+        if cache_key in _cache:
+            _cache.move_to_end(cache_key)
+            return _cache[cache_key]
 
     try:
         evals1 = pd.read_csv(os.path.join(path1, "evals.csv"))
@@ -117,6 +168,7 @@ def compare_evals(id1, id2):
                     model=model_name,
                     contents=prompt,
                 )
+                _remember(cache_key, response.text)
                 return response.text
             except ClientError as e:
                 if "429" in str(e) and attempt < max_retries - 1:
