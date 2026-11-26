@@ -6,6 +6,7 @@ make the next scheduled run compare against a surface nobody reviewed.
 """
 
 import csv
+import datetime
 import os
 import tempfile
 import unittest
@@ -252,3 +253,51 @@ class BigQueryStoreTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IsExpiredTest(unittest.TestCase):
+    """Expiry is what stops a finding being carried indefinitely."""
+
+    NOW = datetime.datetime(2026, 9, 30, tzinfo=datetime.timezone.utc)
+
+    def _baseline(self, days_old, endpoint_key=_KEY):
+        stamp = self.NOW - datetime.timedelta(days=days_old)
+        return baseline_mod.Baseline(
+            endpoint_key=endpoint_key,
+            check_timestamp=stamp.isoformat(),
+        )
+
+    def test_a_fresh_baseline_is_kept(self):
+        self.assertFalse(
+            baseline_mod.is_expired(self._baseline(1), 90, now=self.NOW)
+        )
+
+    def test_a_baseline_well_past_the_limit_expires(self):
+        self.assertTrue(
+            baseline_mod.is_expired(self._baseline(400), 90, now=self.NOW)
+        )
+
+    def test_zero_disables_expiry(self):
+        self.assertFalse(
+            baseline_mod.is_expired(self._baseline(4000), 0, now=self.NOW)
+        )
+
+    def test_an_unparseable_timestamp_expires(self):
+        """An unreadable date must not be treated as fresh."""
+        stale = baseline_mod.Baseline(
+            endpoint_key=_KEY, check_timestamp="not-a-date"
+        )
+        self.assertTrue(baseline_mod.is_expired(stale, 90, now=self.NOW))
+
+    def test_expiry_is_staggered_across_endpoints(self):
+        """A fleet primed on one day must not all re-judge on one later day."""
+        keys = [f"Product{i}|http://x|PROD" for i in range(40)]
+        # Just past the limit: the stagger decides which have flipped yet.
+        flipped = [
+            baseline_mod.is_expired(
+                self._baseline(91, endpoint_key=key), 90, now=self.NOW
+            )
+            for key in keys
+        ]
+        self.assertIn(True, flipped)
+        self.assertIn(False, flipped)

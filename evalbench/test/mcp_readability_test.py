@@ -428,6 +428,12 @@ def test_orchestrator_end_to_end():
             feedback_json = json.loads(row["mcp_readability_llm_feedback_json"])
             assert "readability_score" not in feedback_json
             assert feedback_json["waived"][0]["rule_id"] == "use-enums"
+            # Provenance is reported once, in its own column, so the two
+            # copies cannot drift.
+            assert "provenance" not in feedback_json
+            assert json.loads(
+                row["mcp_readability_feedback_provenance_json"]
+            )["mode"]
             assert row["job_id"] == job_id
             # This config declares no run_tag, so the row says ad-hoc rather
             # than leaving the reader to infer it from a blank.
@@ -636,3 +642,195 @@ def test_scores_flow_through_shared_analyzer():
     metrics = summary_df[summary_df["metric_name"] == "mcp_tool_metrics"].iloc[0]
     assert int(metrics["correct_results_count"]) == 2  # both within budget
     assert int(metrics["total_results_count"]) == 2
+
+
+# --------------------------------------------------------------------------
+# Carry-forward wiring: the orchestrator building, priming and honouring a
+# baseline store. The scorer's own decisions are covered in
+# mcp_carry_forward_scorer_test; these pin the orchestrator's part.
+# --------------------------------------------------------------------------
+class _VaryingLLM:
+    """Rewords every answer, so a reused judgement is unmistakable."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def generate(self, prompt):
+        self.calls += 1
+        return json.dumps(
+            {
+                "readability_score": 80,
+                "findings_by_tool": [
+                    {
+                        "tool": "list_datasets",
+                        "findings": [
+                            {
+                                "severity": "P1",
+                                "rule_id": "Tool Names",
+                                "title": "name is vague",
+                                "message": f"wording-{self.calls}",
+                                "suggestion": "s",
+                            }
+                        ],
+                    }
+                ],
+                "waived": [],
+                "summary": f"summary-{self.calls}",
+            }
+        )
+
+
+def _persist_as_baseline(results_dir, job_id, row):
+    """Write a run's row where LocalResultsBaselineStore will find it."""
+    import csv
+
+    run_dir = os.path.join(results_dir, job_id)
+    os.makedirs(run_dir, exist_ok=True)
+    with open(os.path.join(run_dir, "evals.csv"), "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(row))
+        writer.writeheader()
+        writer.writerow(row)
+
+
+def _carry_forward_run(config, llm):
+    from evaluator import get_orchestrator
+
+    before = llm.calls
+    orch = get_orchestrator(config, [], {})
+    orch.evaluate([])
+    job_id, _, results_tf, _, _ = orch.process()
+    with open(results_tf) as f:
+        row = json.load(f)[0]
+    return job_id, row, llm.calls - before
+
+
+def test_an_unchanged_endpoint_is_carried_with_no_model_call():
+    """The whole point: same tools means same findings and no judge call."""
+    llm = _VaryingLLM()
+    with patch(
+        "scorers.mcp_readability.style_readability.get_generator", return_value=llm
+    ):
+        with tempfile.TemporaryDirectory() as d:
+            ep_path = os.path.join(d, "endpoints.yaml")
+            _write_endpoints(
+                ep_path,
+                "Sample",
+                {
+                    "type": "file",
+                    "path": _ds("datasets/mcp_readability/sample_tools.json"),
+                },
+            )
+            config = _base_config(ep_path, d)
+            config["baseline"] = {"store": "local", "results_dir": d}
+
+            job1, first, calls1 = _carry_forward_run(config, llm)
+            assert first["mcp_readability_feedback_mode"] == "full_judge"
+            assert first["mcp_readability_change_reason"] == "no_baseline"
+            assert calls1 == 1
+            _persist_as_baseline(d, job1, first)
+
+            _, second, calls2 = _carry_forward_run(config, llm)
+            assert second["mcp_readability_feedback_mode"] == "carried"
+            assert second["mcp_readability_change_reason"] == "unchanged"
+            # No judge call, and the reused wording proves it was not redrawn.
+            assert calls2 == 0
+            assert (
+                second["mcp_readability_llm_feedback_json"]
+                == first["mcp_readability_llm_feedback_json"]
+            )
+            assert (
+                second["mcp_readability_score"]
+                == first["mcp_readability_score"]
+            )
+
+
+def test_force_refresh_re_judges_a_carried_endpoint():
+    """Without an escape hatch a bad first draw could never be cleared."""
+    llm = _VaryingLLM()
+    with patch(
+        "scorers.mcp_readability.style_readability.get_generator", return_value=llm
+    ):
+        with tempfile.TemporaryDirectory() as d:
+            ep_path = os.path.join(d, "endpoints.yaml")
+            _write_endpoints(
+                ep_path,
+                "Sample",
+                {
+                    "type": "file",
+                    "path": _ds("datasets/mcp_readability/sample_tools.json"),
+                },
+            )
+            config = _base_config(ep_path, d)
+            config["baseline"] = {"store": "local", "results_dir": d}
+            job1, first, _ = _carry_forward_run(config, llm)
+            _persist_as_baseline(d, job1, first)
+
+            forced = dict(config)
+            forced["baseline"] = dict(config["baseline"], force_refresh=True)
+            _, row, calls = _carry_forward_run(forced, llm)
+            assert row["mcp_readability_feedback_mode"] == "full_judge"
+            assert row["mcp_readability_change_reason"] == "forced_refresh"
+            assert calls == 1
+
+            # A product filter that does not match leaves the endpoint carried.
+            other = dict(config)
+            other["baseline"] = dict(
+                config["baseline"], force_refresh_products=["Other"]
+            )
+            _, row, calls = _carry_forward_run(other, llm)
+            assert row["mcp_readability_feedback_mode"] == "carried"
+            assert calls == 0
+
+
+def test_the_env_var_forces_a_refresh_for_one_off_runs():
+    """Guitar cannot edit the mirrored run config, so the env var exists."""
+    llm = _VaryingLLM()
+    with patch(
+        "scorers.mcp_readability.style_readability.get_generator", return_value=llm
+    ):
+        with tempfile.TemporaryDirectory() as d:
+            ep_path = os.path.join(d, "endpoints.yaml")
+            _write_endpoints(
+                ep_path,
+                "Sample",
+                {
+                    "type": "file",
+                    "path": _ds("datasets/mcp_readability/sample_tools.json"),
+                },
+            )
+            config = _base_config(ep_path, d)
+            config["baseline"] = {"store": "local", "results_dir": d}
+            job1, first, _ = _carry_forward_run(config, llm)
+            _persist_as_baseline(d, job1, first)
+
+            with patch.dict(
+                os.environ, {"EVALBENCH_MCP_FORCE_REFRESH": "1"}
+            ):
+                _, row, calls = _carry_forward_run(config, llm)
+            assert row["mcp_readability_change_reason"] == "forced_refresh"
+            assert calls == 1
+
+
+def test_no_baseline_block_judges_every_run_in_full():
+    """A config that has not opted in must behave exactly as before."""
+    llm = _VaryingLLM()
+    with patch(
+        "scorers.mcp_readability.style_readability.get_generator", return_value=llm
+    ):
+        with tempfile.TemporaryDirectory() as d:
+            ep_path = os.path.join(d, "endpoints.yaml")
+            _write_endpoints(
+                ep_path,
+                "Sample",
+                {
+                    "type": "file",
+                    "path": _ds("datasets/mcp_readability/sample_tools.json"),
+                },
+            )
+            config = _base_config(ep_path, d)
+            job1, first, calls1 = _carry_forward_run(config, llm)
+            _persist_as_baseline(d, job1, first)
+            _, second, calls2 = _carry_forward_run(config, llm)
+            assert second["mcp_readability_feedback_mode"] == "full_judge"
+            assert second["mcp_readability_change_reason"] == "no_baseline"
+            assert (calls1, calls2) == (1, 1)

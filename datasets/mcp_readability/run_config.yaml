@@ -29,6 +29,31 @@ scorers:
     model_config: datasets/model_configs/gemini_3.1_pro_model.yaml
     style_guide: datasets/mcp_readability/style_guide.md
 
+# Carry-forward baselines (optional; omit the whole block to keep today's
+# behaviour, which re-judges every endpoint on every run).
+#
+# The LLM judge is a thinking model: even at temperature 0 an unchanged tool
+# surface can produce different findings, so issue counts drift with no
+# explanation. With a baseline store configured, each endpoint's tool surface
+# and judge inputs are fingerprinted; when nothing changed the previous findings
+# are reused verbatim and the model is not called at all. Every deviation is
+# reported in `mcp_readability_change_reason` (unchanged / tools_changed /
+# style_guide_changed / model_changed / ...), so numbers move only for tools a
+# team actually touched.
+#
+# Waiving a rule in `exceptions.yaml` changes the judge fingerprint and so
+# re-judges that whole endpoint.
+# baseline:
+#   store: bigquery        # none (default) | local | bigquery
+#   # store: local         # reads results/<job_id>/evals.csv from earlier runs;
+#   #   results_dir: results   # must match reporting.csv.output_directory
+#   max_age_days: 90       # re-derive a baseline older than this; 0 disables
+#                          # expiry. Staggered per endpoint so they don't all
+#                          # flip on the same day. Reported as baseline_expired.
+#   force_refresh: false   # re-judge everything once (also
+#                          # EVALBENCH_MCP_FORCE_REFRESH=1 for one-offs)
+#   # force_refresh_products: ["AlloyDB"]   # or just these products
+
 # Inputs (paths relative to the repo root / run cwd).
 endpoints_config: datasets/mcp_readability/endpoints.yaml
 exceptions_config: datasets/mcp_readability/exceptions.yaml          # optional
