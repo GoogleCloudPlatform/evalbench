@@ -59,6 +59,27 @@ def list_run_directories(results_dir, force=False):
     return list(dirs)
 
 
+def resolve_run_dir(results_dir, name):
+    """Return the path of run directory `name` in results_dir, or None.
+
+    `name` comes from the browser (a query parameter or the Mesop state), so
+    it is untrusted. It must be one path component, and the directory must be
+    inside results_dir after symlinks are resolved.
+    """
+    if not isinstance(name, str) or name in ("", ".", ".."):
+        return None
+    if "\x00" in name or os.path.basename(name) != name:
+        return None
+    root = os.path.realpath(results_dir)
+    real_path = os.path.realpath(os.path.join(root, name))
+    try:
+        if real_path == root or os.path.commonpath([root, real_path]) != root:
+            return None
+    except ValueError:
+        return None
+    return os.path.join(results_dir, name)
+
+
 def invalidate():
     """Drop the cached listing so the next call re-walks the mount."""
     with _lock:

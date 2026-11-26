@@ -67,7 +67,7 @@ Every run is **sandboxed**: agents execute against an isolated home directory, s
 
 ## Getting started
 
-> *Note*: EvalBench requires Python 3.10 or higher and [**uv**](https://docs.astral.sh/uv/getting-started/installation/). Agent evaluations also need each CLI's runtime (for example, **Node.js and npm** for Gemini CLI) — see each agent's guide.
+> *Note*: EvalBench requires Python 3.11 or higher and [**uv**](https://docs.astral.sh/uv/getting-started/installation/). Agent evaluations also need each CLI's runtime (for example, **Node.js and npm** for Gemini CLI) — see each agent's guide.
 
 ### 1. Install
 

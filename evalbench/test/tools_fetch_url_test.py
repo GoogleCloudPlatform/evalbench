@@ -1,13 +1,22 @@
+import http.server
 import io
 import os
 import socket
 import sys
+import threading
 import urllib.error
+import urllib.request
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from generators.models.tools.fetch_url import fetch_url  # noqa: E402
+from generators.models.tools.fetch_url import (  # noqa: E402
+    _CheckedRedirectHandler,
+    _open,
+    fetch_url,
+)
 
 
 def _public_addrinfo():
@@ -70,7 +79,7 @@ def test_unresolvable_host_rejected(mock_getaddrinfo):
     assert "private, loopback, link-local, or unresolvable" in result
 
 
-@patch("generators.models.tools.fetch_url.urllib.request.urlopen")
+@patch("generators.models.tools.fetch_url._open")
 @patch("generators.models.tools.fetch_url.socket.getaddrinfo")
 def test_plain_text_response_returned(mock_getaddrinfo, mock_urlopen):
     mock_getaddrinfo.return_value = _public_addrinfo()
@@ -82,7 +91,7 @@ def test_plain_text_response_returned(mock_getaddrinfo, mock_urlopen):
     assert result == "Apache Beam 2.99.0 released"
 
 
-@patch("generators.models.tools.fetch_url.urllib.request.urlopen")
+@patch("generators.models.tools.fetch_url._open")
 @patch("generators.models.tools.fetch_url.socket.getaddrinfo")
 def test_html_response_is_stripped(mock_getaddrinfo, mock_urlopen):
     mock_getaddrinfo.return_value = _public_addrinfo()
@@ -99,7 +108,7 @@ def test_html_response_is_stripped(mock_getaddrinfo, mock_urlopen):
     assert "<h1>" not in result
 
 
-@patch("generators.models.tools.fetch_url.urllib.request.urlopen")
+@patch("generators.models.tools.fetch_url._open")
 @patch("generators.models.tools.fetch_url.socket.getaddrinfo")
 def test_oversized_body_is_truncated(mock_getaddrinfo, mock_urlopen):
     mock_getaddrinfo.return_value = _public_addrinfo()
@@ -110,7 +119,7 @@ def test_oversized_body_is_truncated(mock_getaddrinfo, mock_urlopen):
     assert len(result) <= 50_000 + len("\n\n[truncated at 50000 bytes]")
 
 
-@patch("generators.models.tools.fetch_url.urllib.request.urlopen")
+@patch("generators.models.tools.fetch_url._open")
 @patch("generators.models.tools.fetch_url.socket.getaddrinfo")
 def test_http_error_returned_as_string(mock_getaddrinfo, mock_urlopen):
     mock_getaddrinfo.return_value = _public_addrinfo()
@@ -121,7 +130,7 @@ def test_http_error_returned_as_string(mock_getaddrinfo, mock_urlopen):
     assert "HTTP 404" in result
 
 
-@patch("generators.models.tools.fetch_url.urllib.request.urlopen")
+@patch("generators.models.tools.fetch_url._open")
 @patch("generators.models.tools.fetch_url.socket.getaddrinfo")
 def test_timeout_returned_as_string(mock_getaddrinfo, mock_urlopen):
     mock_getaddrinfo.return_value = _public_addrinfo()
@@ -130,7 +139,7 @@ def test_timeout_returned_as_string(mock_getaddrinfo, mock_urlopen):
     assert "timeout after" in result
 
 
-@patch("generators.models.tools.fetch_url.urllib.request.urlopen")
+@patch("generators.models.tools.fetch_url._open")
 @patch("generators.models.tools.fetch_url.socket.getaddrinfo")
 def test_url_error_returned_as_string(mock_getaddrinfo, mock_urlopen):
     mock_getaddrinfo.return_value = _public_addrinfo()
@@ -138,3 +147,87 @@ def test_url_error_returned_as_string(mock_getaddrinfo, mock_urlopen):
     result = fetch_url({"url": "https://example.com/down"})
     assert "URL error" in result
     assert "connection refused" in result
+
+
+# --- Redirect targets get the same checks as the first URL ---
+
+def _redirect(newurl):
+    request = urllib.request.Request("https://example.com/start")
+    return _CheckedRedirectHandler().redirect_request(
+        request, None, 302, "Found", {}, newurl)
+
+
+@patch("generators.models.tools.fetch_url.socket.getaddrinfo")
+def test_redirect_to_public_https_host_is_followed(mock_getaddrinfo):
+    mock_getaddrinfo.return_value = _public_addrinfo()
+
+    new_request = _redirect("https://example.org/next")
+
+    assert new_request.full_url == "https://example.org/next"
+
+
+def test_redirect_to_http_is_refused():
+    with pytest.raises(urllib.error.URLError) as error:
+        _redirect("http://example.org/next")
+
+    assert "only https URLs are allowed" in str(error.value.reason)
+
+
+@patch("generators.models.tools.fetch_url.socket.getaddrinfo")
+def test_redirect_to_private_host_is_refused(mock_getaddrinfo):
+    for addrinfo in (_private_addrinfo(), _loopback_addrinfo()):
+        mock_getaddrinfo.return_value = addrinfo
+
+        with pytest.raises(urllib.error.URLError) as error:
+            _redirect("https://internal.example/secret")
+
+        assert "refusing to fetch 'internal.example'" in str(error.value.reason)
+
+
+def test_opener_refuses_a_redirect_before_the_second_request():
+    """Runs the real opener against a local server that redirects."""
+    paths = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            paths.append(self.path)
+            if self.path == "/start":
+                self.send_response(302)
+                self.send_header(
+                    "Location", f"http://127.0.0.1:{self.server.server_port}/target")
+                self.end_headers()
+            else:
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"secret")
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{server.server_port}/start")
+        with pytest.raises(urllib.error.URLError) as error:
+            _open(request)
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert "redirect refused" in str(error.value.reason)
+    assert paths == ["/start"]
+
+
+@patch("generators.models.tools.fetch_url._open")
+@patch("generators.models.tools.fetch_url.socket.getaddrinfo")
+def test_refused_redirect_is_returned_as_string(mock_getaddrinfo, mock_open):
+    mock_getaddrinfo.return_value = _public_addrinfo()
+    mock_open.side_effect = urllib.error.URLError(
+        "redirect refused: URL has no hostname")
+
+    result = fetch_url({"url": "https://example.com/start"})
+
+    assert result.startswith("Error: URL error fetching")
+    assert "redirect refused" in result
