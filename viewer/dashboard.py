@@ -4,6 +4,7 @@ import mesop as me
 import pandas as pd
 import os
 
+import run_stats
 from goal_completion_rollup import goal_completion_scores
 
 
@@ -136,3 +137,5 @@ def dashboard_component(results_dir: str):
                             )
                 except Exception as e:
                     print(f"Error reading scores.csv for dashboard: {e}")
+
+    run_stats.suite_stats_component(results_dir, df)
