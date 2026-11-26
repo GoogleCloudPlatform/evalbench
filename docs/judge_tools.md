@@ -121,15 +121,10 @@ rubric judge and leave latency-sensitive judges (`behavioral_metrics`,
   network call.
 - **SSRF guard.** `fetch_url` resolves the hostname and rejects responses
   pointing at private / loopback / link-local / multicast / reserved address
-  ranges (Python's `ipaddress` classification).
-- **Known follow-ups:**
-  - **Redirect SSRF.** `urlopen` follows 3xx without re-validating each hop.
-    A malicious site can return a 302 to a private IP and bypass the upfront
-    check. Fix is a custom `HTTPRedirectHandler` that re-runs the host check
-    on every hop, or disabling redirects entirely.
-  - **DNS TOCTOU.** `_is_blocked_host` resolves the name once; `urlopen`
-    resolves it again. DNS rebinding can flip between the two. Hardening
-    requires socket-level interception.
+  ranges (Python's `ipaddress` classification). The same check applies to
+  each redirect target and to the address of each connection.
+- **No proxy.** The tool ignores proxy settings such as `HTTPS_PROXY`,
+  because a proxy resolves the host name itself.
 
 ## Adding a new tool
 
