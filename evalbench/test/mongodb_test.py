@@ -656,6 +656,9 @@ class TestFirestoreMongoDBAPI:
         monkeypatch.setitem(sys.modules, "google.cloud.firestore_v1.pipeline", mock_pipeline_mod)
         monkeypatch.setitem(sys.modules, "google.cloud.firestore_v1.pipeline_stages", mock_stages_mod)
         monkeypatch.setitem(sys.modules, "google.cloud.firestore_v1.types.document", mock_types_doc)
+        # mongodb.py imported the real firestore_v1 at load time. The real
+        # client needs GCP credentials.
+        monkeypatch.setattr(mongodb, "firestore_v1", mock_firestore_v1)
 
         # Config
         db_config = {

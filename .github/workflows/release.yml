@@ -82,8 +82,14 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
+      # PyInstaller is not in uv.lock, so pin it and its dependencies here.
       - name: Install PyInstaller
-        run: uv pip install pyinstaller
+        run: >-
+          uv pip install pyinstaller==6.22.3 pyinstaller-hooks-contrib==2026.10
+          altgraph==0.17.5
+          "macholib==1.16.4; sys_platform == 'darwin'"
+          "pefile==2024.8.26; sys_platform == 'win32'"
+          "pywin32-ctypes==0.2.3; sys_platform == 'win32'"
 
       - name: Build binary with PyInstaller
         run: uv run pyinstaller pyinstaller.spec

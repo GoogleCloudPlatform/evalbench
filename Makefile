@@ -51,7 +51,6 @@ container:
 		-v ~/.config/gcloud:/root/.config/gcloud \
 		-v ~/.gemini/antigravity-cli:/root/.gemini/antigravity-cli:ro \
 		-e GOOGLE_CLOUD_PROJECT=cloud-db-nl2sql \
-		-e MESOP_XSRF_CHECK=false \
 		--cap-add=SYS_PTRACE \
 		-p 3000:3000 \
 		-p 50051:50051 \
@@ -119,7 +118,7 @@ deploy-corprun:
 		--min-instances=1 \
 		--no-cpu-throttling \
 		--service-account=crsvc-evalbench@evalbench-dev.iam.gserviceaccount.com \
-		--set-env-vars CLOUD_RUN=True,GOOGLE_CLOUD_PROJECT=evalbench-dev,MESOP_XSRF_CHECK=false \
+		--set-env-vars CLOUD_RUN=True,GOOGLE_CLOUD_PROJECT=evalbench-dev \
 		--ingress=internal-and-cloud-load-balancing \
 		--network=cr-infra-vpc-network \
 		--subnet=cr-infra-subnetwork \

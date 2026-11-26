@@ -26,8 +26,10 @@ Consequences to check:
 - Code reachable only from the frontend still runs on GKE if it's imported at
   module load. Cloud Run has no eval server, so eval-server-only work silently
   never happens there.
-- `eval_server.py:63,80` binds localhost when `CLOUD_RUN` is set. Changing bind
-  behavior affects Cloud Run ingress.
+- `eval_server.py` serves without ALTS and binds all interfaces when
+  `CLOUD_RUN` is set. With `--localhost` and no `CLOUD_RUN`, it binds
+  `127.0.0.1` unless `EVALBENCH_HOST` is set. Changing bind behavior affects
+  Cloud Run ingress.
 
 ## Does the image still build?
 
@@ -153,8 +155,8 @@ Under `evalbench_service/k8s/`: `namespace.yaml`, `pvc.yaml`, `ksa.yaml`,
 `us-central1-docker.pkg.dev/evalbench-dev/cr-images/eval_server:latest`.
 
 - **4 CPU / 8Gi**, versus GKE's 20/80Gi. Work sized for the cluster OOMs here.
-- `--port=3000`, `CLOUD_RUN=True`, `MESOP_XSRF_CHECK=false`, `min-instances=1`,
-  `--no-cpu-throttling`, internal ingress on `cr-infra-vpc-network`.
+- `--port=3000`, `CLOUD_RUN=True`, `min-instances=1`, `--no-cpu-throttling`,
+  internal ingress on `cr-infra-vpc-network`.
 - GCS volume at `/tmp_session_files`; no PVC.
 - The jobs run `python3 viewer/precompute_trends.py` (and `--clean` for
   recompute). Changing that script's CLI surface or entry point requires
@@ -166,9 +168,9 @@ Under `evalbench_service/k8s/`: `namespace.yaml`, `pvc.yaml`, `ksa.yaml`,
 `.ci/build.cloudbuild.yaml` (the Build trigger, on push to `main`) is a fuller
 gate than the GitHub Actions workflows:
 
-1. `uv sync` + proto + `pytest evalbench/test` with `PYTHONPATH=evalbench:.`
-   and `SKIP_CLOUD_TESTS=true` (which skips `bigtable_test.py` and
-   `spanner_test.py` — so those get *less* coverage here, not more).
+1. `uv sync` + proto + `pytest evalbench/test` with `PYTHONPATH=evalbench:.`.
+   This is the only CI job that runs `bigtable_test.py` and `spanner_test.py`.
+   The GitHub Actions workflow skips them with `SKIP_CLOUD_TESTS=true`.
    This runs at the same time as step 2.
 2. `docker build -f evalbench_service/Dockerfile`, with `:build-cache` as
    the layer cache.

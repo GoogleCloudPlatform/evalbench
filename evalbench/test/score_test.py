@@ -31,8 +31,14 @@ class TestScoreModule(unittest.TestCase):
         for key in expected_keys:
             self.assertIn(key, score.DEFAULT_SCORERS, f"Key '{key}' missing from DEFAULT_SCORERS")
 
+    # The Dataform cloud scorers create an API client, which needs GCP
+    # credentials.
+    @patch("scorers.dataformcloudscorer.dataform_v1beta1.DataformClient")
+    @patch("google.auth.default", return_value=(MagicMock(), "project"))
     @patch("generators.models.load_yaml_config")
-    def test_default_scorers_map_instantiation(self, mock_load_yaml):
+    def test_default_scorers_map_instantiation(
+        self, mock_load_yaml, mock_auth_default, mock_dataform_client
+    ):
         """Verify get_scorer_instance correctly instantiates all registered comparators."""
         mock_load_yaml.return_value = {"generator": "gemini_cli", "model_id": "test"}
         eval_output_item = {

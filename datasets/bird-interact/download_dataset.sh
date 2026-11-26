@@ -8,7 +8,7 @@ FILE="https://drive.usercontent.google.com/download?id=1KABce6czIqL9kMyIX7i-_A0C
 
 # Download the DB schema
 echo "Downloading the DB schema"
-curl -k -L "$FILE" -o "$FILE_NAME"
+curl -L "$FILE" -o "$FILE_NAME"
 
 # Unzip the file
 unzip "$FILE_NAME"

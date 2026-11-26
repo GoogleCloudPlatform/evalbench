@@ -37,6 +37,68 @@ EVALS_MAX_ROWS = 5
 EVALS_MAX_COLWIDTH = SCORES_MAX_COLWIDTH
 EVALS_MAX_CHARS = 50_000
 
+_VIEWER_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.dirname(_VIEWER_DIR)
+
+# A run directory is untrusted input, because an eval run writes it. A model
+# config can load a Python class (generator_class) or start an agent CLI. Thus
+# a run can select only a model config that ships with EvalBench, and only a
+# generator that the summarizer can use (it reads client and vertex_model).
+TRUSTED_MODEL_CONFIG_DIRS = (
+    os.path.join(_VIEWER_DIR, "config"),
+    os.path.join(_REPO_ROOT, "datasets", "model_configs"),
+)
+RUN_SELECTABLE_GENERATORS = frozenset({"gcp_vertex_gemini"})
+
+
+def _is_inside(path, directory):
+    """Returns True if path is inside directory after symlinks are resolved."""
+    real_path = os.path.realpath(path)
+    real_directory = os.path.realpath(directory)
+    try:
+        return (
+            real_path != real_directory
+            and os.path.commonpath([real_path, real_directory]) == real_directory
+        )
+    except ValueError:
+        return False
+
+
+def _trusted_run_model_config(selected):
+    """Returns the model config path that a run selected, or None if rejected.
+
+    A relative path is relative to the repository root, as in a run config.
+    """
+    if not isinstance(selected, str) or not selected:
+        return None
+    path = os.path.realpath(os.path.join(_REPO_ROOT, selected))
+    if not any(_is_inside(path, d) for d in TRUSTED_MODEL_CONFIG_DIRS):
+        logger.warning(
+            "Ignored the run-specific summarizer model config %r: it is "
+            "outside the trusted config directories.", selected,
+        )
+        return None
+    try:
+        config = load_yaml_config(path)
+    except Exception as e:
+        logger.warning(
+            "Ignored the run-specific summarizer model config %r: %s",
+            selected, e,
+        )
+        return None
+    if (
+        not isinstance(config, dict)
+        or config.get("generator_class")
+        or config.get("generator") not in RUN_SELECTABLE_GENERATORS
+    ):
+        logger.warning(
+            "Ignored the run-specific summarizer model config %r: a run can "
+            "select only these generators: %s.",
+            selected, sorted(RUN_SELECTABLE_GENERATORS),
+        )
+        return None
+    return path
+
 
 def render_scores_for_prompt(scores_df):
     """Render scores.csv for the analyzer prompt within a bounded size."""
@@ -62,7 +124,10 @@ def render_evals_for_prompt(evals_df):
 
 
 def get_summarizer(results_dir: str = None, dataset_name: str = None, model_config_path: str = None):
-    """Loads the generator based on explicit parameter, run_config.yaml, dataset_models mapping, or viewer/config/summarizer_config.yaml fallback."""
+    """Loads the generator based on explicit parameter, run_config.yaml, dataset_models mapping, or viewer/config/summarizer_config.yaml fallback.
+
+    The run_config.yaml of a run is untrusted. See _trusted_run_model_config.
+    """
     selected_config_path = model_config_path
     base_dir = os.getcwd() if selected_config_path else None
 
@@ -72,9 +137,10 @@ def get_summarizer(results_dir: str = None, dataset_name: str = None, model_conf
         if os.path.exists(run_config_file):
             try:
                 run_config = load_yaml_config(run_config_file)
-                selected_config_path = run_config.get("summarizer_model_config")
+                selected_config_path = _trusted_run_model_config(
+                    run_config.get("summarizer_model_config")
+                )
                 if selected_config_path:
-                    base_dir = results_dir
                     logger.info(f"Found run-specific summarizer model config: {selected_config_path}")
             except Exception as e:
                 logger.warning(f"Could not load run_config.yaml from {run_config_file}: {e}")
