@@ -121,13 +121,8 @@ rubric judge and leave latency-sensitive judges (`behavioral_metrics`,
   network call.
 - **SSRF guard.** `fetch_url` resolves the hostname and rejects responses
   pointing at private / loopback / link-local / multicast / reserved address
-  ranges (Python's `ipaddress` classification).
-- **Redirects.** Each redirect target gets the same checks as the first URL.
-  A refused redirect stops the request.
-- **Connection address.** The connection resolves the host name one time,
-  checks each address, and connects to one of those addresses. If the DNS
-  answer changes after the URL check, the tool does not connect to a private
-  address.
+  ranges (Python's `ipaddress` classification). The same check applies to
+  each redirect target and to the address of each connection.
 - **No proxy.** The tool ignores proxy settings such as `HTTPS_PROXY`,
   because a proxy resolves the host name itself.
 
