@@ -627,9 +627,10 @@ def _metric_cards(
     """
     with me.box(
         style=me.Style(
-            display="flex",
-            flex_direction="row",
-            flex_wrap="wrap",
+            display="grid",
+            # 4 cards in each row, as the cards of the suite stats. A flex
+            # row makes the cards of the last row wider than the others.
+            grid_template_columns="repeat(4, minmax(0, 1fr))",
             gap="16px",
             width="100%",
             margin=me.Margin(bottom="16px"),
