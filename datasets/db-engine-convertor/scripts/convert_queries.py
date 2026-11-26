@@ -8,6 +8,7 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
+from db_convertor.query_converters.mysql_to_pg import MySQLToPGQueryConverter
 from db_convertor.query_converters.sqlite_to_pg import SQLiteToPGQueryConverter
 from db_convertor.query_converters.sqlite_to_mysql import SQLiteToMySQLQueryConverter
 from db_convertor.query_converters.pg_to_mysql import PGToMySQLQueryConverter
@@ -96,6 +97,8 @@ Examples:
                        help='Maximum attempts per query (default: 10)')
     parser.add_argument('--num-workers', type=int, default=1,
                        help='Number of parallel workers (default: 1)')
+    parser.add_argument('--strict-row-order', action='store_true',
+                       help='Disable tie-equivalence matching and require strict positional row matching')
     parser.add_argument('--output',
                        help='Output file for conversion results (JSON)')
     
@@ -134,8 +137,12 @@ Examples:
     
     print(f"Loaded {len(queries)} queries to convert")
     
+    allow_tie_equivalence = not args.strict_row_order
+
     # Get converter
-    if args.source_type == 'sqlite' and args.target_type == 'postgresql':
+    if args.source_type == 'mysql' and args.target_type == 'postgresql':
+        converter = MySQLToPGQueryConverter(allow_tie_equivalence=allow_tie_equivalence)
+    elif args.source_type == 'sqlite' and args.target_type == 'postgresql':
         converter = SQLiteToPGQueryConverter()
     elif args.source_type == 'sqlite' and args.target_type == 'mysql':
         converter = SQLiteToMySQLQueryConverter()
