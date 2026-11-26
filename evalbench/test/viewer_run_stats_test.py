@@ -209,42 +209,93 @@ class TestSuiteStats(RunStatsTestCase):
                          [card[:2] for card in cards])
 
 
-class TestRunStatsComponent(RunStatsTestCase):
+class TestSuiteStatsComponent(RunStatsTestCase):
+    """The stats of the suite on the Dashboard tab."""
 
-    def texts(self, summary=None):
+    def render(self, summary=None, on_open_stability=None):
         with patch.object(run_stats, "me") as me:
-            run_stats.run_stats_component(self.results_dir, summary)
+            run_stats.suite_stats_component(
+                self.results_dir, summary, on_open_stability)
+        return me
+
+    def texts(self, me):
         return [c.args[0] for c in me.text.call_args_list if c.args]
 
     def test_draws_nothing_without_the_file(self):
-        self.assertEqual([], self.texts(pd.DataFrame(SUITE_SUMMARY)))
+        me = self.render(pd.DataFrame(SUITE_SUMMARY), MagicMock())
 
-    def test_draws_the_suite_cards_and_the_scenarios(self):
+        self.assertEqual([], self.texts(me))
+        me.button.assert_not_called()
+
+    def test_draws_the_suite_cards_and_no_scenario(self):
         self.write(run_stats.RUN_STATS_FILE,
                    [STABLE_PASS, FLAKY, STABLE_FAILURE, NO_SCORED_TRIAL])
 
-        texts = self.texts(pd.DataFrame(SUITE_SUMMARY))
+        texts = self.texts(self.render(pd.DataFrame(SUITE_SUMMARY)))
 
         for expected in [
-            "Stats across trials",
-            "4 scenarios, 3 trials each. "
-            "Select a scenario to see the result of each trial.",
+            "Stats across trials", "4 scenarios, 3 trials each",
             "Pass rate", "56%", "95% interval: 27% to 81%",
             "Flaky scenarios", "1 of 4", "0.30", "0.13",
+        ]:
+            with self.subTest(expected=expected):
+                self.assertIn(expected, texts)
+        # The scenarios are on the Stability tab.
+        self.assertNotIn("create-backup", texts)
+
+    def test_a_button_opens_the_stability_tab(self):
+        self.write(run_stats.RUN_STATS_FILE, [STABLE_PASS])
+        on_open_stability = MagicMock()
+
+        me = self.render(None, on_open_stability)
+
+        me.button.assert_called_once()
+        self.assertEqual("View the scenarios in the Stability tab",
+                         me.button.call_args.args[0])
+        self.assertIs(on_open_stability,
+                      me.button.call_args.kwargs["on_click"])
+
+    def test_no_button_without_the_handler(self):
+        self.write(run_stats.RUN_STATS_FILE, [STABLE_PASS])
+
+        self.render().button.assert_not_called()
+
+
+class TestStabilityComponent(RunStatsTestCase):
+    """The stats of each scenario on the Stability tab."""
+
+    def render(self):
+        with patch.object(run_stats, "me") as me:
+            run_stats.stability_component(self.results_dir)
+        return me
+
+    def texts(self, me):
+        return [c.args[0] for c in me.text.call_args_list if c.args]
+
+    def test_draws_the_scenarios_with_the_flaky_scenario_first(self):
+        self.write(run_stats.RUN_STATS_FILE,
+                   [STABLE_PASS, FLAKY, STABLE_FAILURE, NO_SCORED_TRIAL])
+
+        texts = self.texts(self.render())
+
+        for expected in [
+            "Stability",
+            "4 scenarios, 3 trials each. "
+            "Select a scenario to see the result of each trial.",
             "create-backup", "2/3", "67%", "21% to 94%", "0.89",
             "clone-instance", "3 unscored", "ERROR",
         ]:
             with self.subTest(expected=expected):
                 self.assertIn(expected, texts)
-        # The flaky scenario is the first row of the table.
         self.assertLess(texts.index("create-backup"),
                         texts.index("list-instances"))
+        # The suite cards are on the Dashboard tab.
+        self.assertNotIn("Flaky scenarios", texts)
 
     def test_each_column_but_the_scenario_has_a_tooltip(self):
         self.write(run_stats.RUN_STATS_FILE, [STABLE_PASS])
 
-        with patch.object(run_stats, "me") as me:
-            run_stats.run_stats_component(self.results_dir)
+        me = self.render()
 
         tips = [c.kwargs["message"] for c in me.tooltip.call_args_list]
         self.assertEqual(6, len(tips))
@@ -254,6 +305,17 @@ class TestRunStatsComponent(RunStatsTestCase):
                          "Wilson interval", "4p(1 - p)", "above 90%"]:
             with self.subTest(expected=expected):
                 self.assertTrue(any(expected in tip for tip in tips))
+
+    def test_a_run_without_the_file_gets_a_message(self):
+        self.assertEqual(["This run has no stats across trials."],
+                         self.texts(self.render()))
+
+    def test_only_a_run_with_the_file_has_the_tab(self):
+        self.assertFalse(run_stats.has_run_stats(self.results_dir))
+
+        self.write(run_stats.RUN_STATS_FILE, [STABLE_PASS])
+
+        self.assertTrue(run_stats.has_run_stats(self.results_dir))
 
 
 def _score_row(scenario, trial, score, **values):
@@ -310,8 +372,8 @@ class TestTrialDetails(RunStatsTestCase):
         """Draws the component with the rows in `expanded` open."""
         with patch.object(run_stats, "me") as me:
             me.state.return_value.expanded = expanded
-            run_stats.run_stats_component(
-                self.results_dir, None, on_open_conversation)
+            run_stats.stability_component(
+                self.results_dir, on_open_conversation)
         return me
 
     def texts(self, me):
@@ -421,45 +483,42 @@ class TestTrialDetails(RunStatsTestCase):
                     expected, run_stats.trial_score({"score": score}))
 
 
-class TestDashboardShowsRunStats(RunStatsTestCase):
+class TestDashboardShowsSuiteStats(RunStatsTestCase):
 
-    def texts(self):
+    def render(self, on_open_stability=None):
         with patch.object(dashboard, "me"), \
                 patch.object(run_stats, "me") as me:
-            dashboard.dashboard_component(self.results_dir)
+            dashboard.dashboard_component(
+                self.results_dir, on_open_stability=on_open_stability)
+        return me
+
+    def texts(self, me):
         return [c.args[0] for c in me.text.call_args_list if c.args]
 
-    def test_a_multi_trial_run_gets_the_stats(self):
+    def test_a_multi_trial_run_gets_the_suite_stats(self):
         self.write("summary.csv", SUITE_SUMMARY)
         self.write(run_stats.RUN_STATS_FILE, [STABLE_PASS, FLAKY])
 
-        texts = self.texts()
+        texts = self.texts(self.render())
 
         self.assertIn("Stats across trials", texts)
         self.assertIn("56%", texts)
-        self.assertIn("create-backup", texts)
+        self.assertNotIn("create-backup", texts)
+
+    def test_the_dashboard_passes_the_handler_of_the_stability_tab(self):
+        self.write("summary.csv", SUITE_SUMMARY)
+        self.write(run_stats.RUN_STATS_FILE, [STABLE_PASS])
+        on_open_stability = MagicMock()
+
+        me = self.render(on_open_stability)
+
+        self.assertIs(on_open_stability,
+                      me.button.call_args.kwargs["on_click"])
 
     def test_a_single_trial_run_gets_no_stats(self):
         self.write("summary.csv", SUITE_SUMMARY[1:])
 
-        self.assertEqual([], self.texts())
-
-    def test_the_dashboard_passes_the_conversation_handler(self):
-        self.write("summary.csv", SUITE_SUMMARY)
-        self.write(run_stats.RUN_STATS_FILE, [FLAKY])
-        self.write("scores.csv", [_score_row("create-backup", 0, 100.0)])
-        self.write("evals.csv", [{"eval_id": "create-backup_trial_0",
-                                  "conversation_history": "[]"}])
-        make_handler = MagicMock()
-
-        with patch.object(dashboard, "me"), \
-                patch.object(run_stats, "me") as me:
-            me.state.return_value.expanded = [
-                run_stats.row_key(self.results_dir, "create-backup")]
-            dashboard.dashboard_component(
-                self.results_dir, on_open_conversation=make_handler)
-
-        make_handler.assert_called_once_with(0)
+        self.assertEqual([], self.texts(self.render()))
 
 
 if __name__ == "__main__":
