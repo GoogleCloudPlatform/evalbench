@@ -98,15 +98,16 @@ def compare_evals(id1, id2):
         for path in (path1, path2)
         for name in ("evals.csv", "scores.csv")
     ]
-    for run_file in run_files:
-        if os.path.exists(run_file) and os.path.getsize(run_file) > _MAX_CSV_BYTES:
+    file_states = [_file_state(run_file) for run_file in run_files]
+    for run_file, state in zip(run_files, file_states):
+        if state and state[1] > _MAX_CSV_BYTES:
             return (
                 f"Error: {os.path.basename(run_file)} of run "
                 f"{os.path.basename(os.path.dirname(run_file))} is larger than "
                 f"{_MAX_CSV_BYTES // (1024 * 1024)} MB. The AI comparison does not read it."
             )
 
-    cache_key = (id1, id2, tuple(_file_state(run_file) for run_file in run_files))
+    cache_key = (id1, id2, tuple(file_states))
     with _cache_lock:
         if cache_key in _cache:
             _cache.move_to_end(cache_key)
