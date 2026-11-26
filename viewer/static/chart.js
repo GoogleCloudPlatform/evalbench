@@ -150,8 +150,18 @@ function drawChart() {
         .attr("class", d => `dot product-${products.indexOf(d[hueCol])}`)
         .on("mouseover", function (event, d) {
             d3.select(this).attr("r", 8).style("stroke-width", "3px");
-            tooltip.style("opacity", 1)
-                .html(`<strong>Product:</strong> ${d[hueCol]}<br/><strong>Time:</strong> ${d[xCol]}<br/><strong>Value:</strong> ${d[yCol]}<br/><strong>Eval ID:</strong> ${d.job_id}`);
+            // Run data is untrusted, so add it as text and not as HTML.
+            tooltip.style("opacity", 1).html("");
+            [
+                ["Product", d[hueCol]],
+                ["Time", d[xCol]],
+                ["Value", d[yCol]],
+                ["Eval ID", d.job_id],
+            ].forEach(([label, value], i) => {
+                if (i > 0) tooltip.append("br");
+                tooltip.append("strong").text(`${label}:`);
+                tooltip.append("span").text(` ${value}`);
+            });
         })
         .on("mousemove", function (event) {
             tooltip.style("left", (event.pageX + 15) + "px")

@@ -1,3 +1,4 @@
+import json
 import os
 import logging
 import mesop as me
@@ -27,13 +28,32 @@ def get_results_dir():
     return results_dir_candidates[1]  # Fallback to default
 
 
+def _json_for_script(value):
+    """Serializes value as JSON that is safe inside a <script> block.
+
+    json.dumps does not escape '<', '>', or '&', so a string with '</script>'
+    ends the block. The \\uXXXX form is the same string in JavaScript.
+    """
+    return (
+        json.dumps(value)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+    )
+
+
 def generate_d3_chart(df, x_col, y_col, hue_col, title, ylabel):
     df_sorted = df.sort_values(by=x_col)
 
-    # Convert dataframe to records for JSON
-    data_records = df_sorted.to_dict(orient='records')
-    import json
-    data_json = json.dumps(data_records)
+    # Run data is untrusted. Product and dataset names come from run configs.
+    data_json = _json_for_script(df_sorted.to_dict(orient='records'))
+    config_json = _json_for_script({
+        "xCol": x_col,
+        "yCol": y_col,
+        "hueCol": hue_col,
+        "title": title,
+        "ylabel": ylabel,
+    })
 
     html = f"""
     <!DOCTYPE html>
@@ -72,13 +92,7 @@ def generate_d3_chart(df, x_col, y_col, hue_col, title, ylabel):
 
         <script>
             window.chartData = {data_json};
-            window.chartConfig = {{
-                xCol: "{x_col}",
-                yCol: "{y_col}",
-                hueCol: "{hue_col}",
-                title: "{title}",
-                ylabel: "{ylabel}"
-            }};
+            window.chartConfig = {config_json};
         </script>
         <script src="/static/chart.js"></script>
     </body>
