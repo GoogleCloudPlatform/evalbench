@@ -14,6 +14,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from generators.models.tools.fetch_url import (  # noqa: E402
     _CheckedRedirectHandler,
+    _connect,
     _open,
     fetch_url,
 )
@@ -231,3 +232,82 @@ def test_refused_redirect_is_returned_as_string(mock_getaddrinfo, mock_open):
 
     assert result.startswith("Error: URL error fetching")
     assert "redirect refused" in result
+
+
+# --- The connection uses an address that the check saw ---
+
+def _addrinfo(ip, port=443):
+    return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, port))]
+
+
+@patch("generators.models.tools.fetch_url.socket.getaddrinfo")
+def test_connect_refuses_a_blocked_address(mock_getaddrinfo):
+    for ip in ("127.0.0.1", "10.0.0.1", "169.254.169.254"):
+        mock_getaddrinfo.return_value = _addrinfo(ip)
+
+        with pytest.raises(OSError) as error:
+            _connect(("rebind.example", 443), 1)
+
+        assert "refusing to connect to 'rebind.example'" in str(error.value)
+
+
+@patch("generators.models.tools.fetch_url.socket.getaddrinfo")
+def test_connect_refuses_if_one_of_the_addresses_is_blocked(mock_getaddrinfo):
+    mock_getaddrinfo.return_value = (
+        _addrinfo("93.184.216.34") + _addrinfo("127.0.0.1"))
+
+    with pytest.raises(OSError) as error:
+        _connect(("rebind.example", 443), 1)
+
+    assert "refusing to connect" in str(error.value)
+
+
+def test_connect_resolves_the_name_one_time():
+    """Connects to a local listener. The test allows the loopback address."""
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    port = listener.getsockname()[1]
+    allow = patch(
+        "generators.models.tools.fetch_url._is_blocked_ip", return_value=False)
+    lookup = patch(
+        "generators.models.tools.fetch_url.socket.getaddrinfo",
+        return_value=_addrinfo("127.0.0.1", port))
+    try:
+        with allow, lookup as mock_getaddrinfo:
+            sock = _connect(("public.example", port), 2)
+        try:
+            assert sock.getpeername() == ("127.0.0.1", port)
+        finally:
+            sock.close()
+    finally:
+        listener.close()
+
+    assert mock_getaddrinfo.call_count == 1
+
+
+@patch("generators.models.tools.fetch_url.socket.getaddrinfo")
+def test_dns_answer_that_changes_after_the_check_is_refused(mock_getaddrinfo):
+    # The first lookup is the URL check. The second lookup is the connection.
+    mock_getaddrinfo.side_effect = [_public_addrinfo(), _addrinfo("127.0.0.1")]
+
+    result = fetch_url({"url": "https://rebind.example/"})
+
+    assert "refusing to connect to 'rebind.example'" in result
+    assert mock_getaddrinfo.call_count == 2
+
+
+def test_opener_connects_with_the_check_and_ignores_a_proxy(monkeypatch):
+    monkeypatch.setenv("https_proxy", "http://127.0.0.1:9")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+    addresses = []
+
+    def fake_connect(address, *args, **kwargs):
+        addresses.append(address)
+        raise OSError("stop")
+
+    with patch("generators.models.tools.fetch_url._connect", fake_connect):
+        with pytest.raises(urllib.error.URLError):
+            _open(urllib.request.Request("https://example.com/"))
+
+    assert addresses == [("example.com", 443)]

@@ -4,12 +4,14 @@ Fetches an HTTPS URL, strips HTML to text, and returns the result so the
 judge can ground rubric questions in external state.
 
 Defense in depth: HTTPS only, SSRF guard against private/loopback/link-local
-hosts (also for each redirect target), 10s timeout, 50KB body cap.
+hosts (also for each redirect target, and for the address of each
+connection), 10s timeout, 50KB body cap.
 """
 
 from html.parser import HTMLParser
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
+import http.client
 import ipaddress
 import logging
 import socket
@@ -49,21 +51,23 @@ class _TextExtractor(HTMLParser):
         return " ".join("".join(self._chunks).split())
 
 
+def _is_blocked_ip(ip_str: str) -> bool:
+    """True if ip_str is a private/loopback/link-local address, or no IP."""
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return True
+    return (ip.is_private or ip.is_loopback or ip.is_link_local
+            or ip.is_multicast or ip.is_reserved)
+
+
 def _is_blocked_host(host: str) -> bool:
     """True if host resolves to a private/loopback/link-local address."""
     try:
         addr_info = socket.getaddrinfo(host, None)
     except socket.gaierror:
         return True
-    for family, _, _, _, sockaddr in addr_info:
-        ip_str = sockaddr[0]
-        try:
-            ip = ipaddress.ip_address(ip_str)
-        except ValueError:
-            continue
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
-            return True
-    return False
+    return any(_is_blocked_ip(sockaddr[0]) for _, _, _, _, sockaddr in addr_info)
 
 
 def _url_error(url: str) -> Optional[str]:
@@ -91,9 +95,61 @@ class _CheckedRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
+def _connect(address, timeout=None, source_address=None):
+    """Connects to an address of the host that passed the check.
+
+    http.client resolves the host name again for the connection, and the DNS
+    answer can change after the URL check. This function resolves the name
+    one time, checks each address, and connects to one of those addresses.
+    """
+    host, port = address
+    addr_info = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    for _, _, _, _, sockaddr in addr_info:
+        if _is_blocked_ip(sockaddr[0]):
+            raise OSError(
+                f"refusing to connect to '{host}' "
+                "(private, loopback, or link-local address)")
+    error = None
+    for family, socktype, proto, _, sockaddr in addr_info:
+        sock = None
+        try:
+            sock = socket.socket(family, socktype, proto)
+            if isinstance(timeout, (int, float)):
+                sock.settimeout(timeout)
+            if source_address:
+                sock.bind(source_address)
+            sock.connect(sockaddr)
+            return sock
+        except OSError as e:
+            error = e
+            if sock is not None:
+                sock.close()
+    raise error or OSError(f"no address for '{host}'")
+
+
+class _CheckedHTTPSConnection(http.client.HTTPSConnection):
+    """Connects with _connect. TLS still verifies the host name."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = _connect
+
+
+class _CheckedHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(
+            _CheckedHTTPSConnection, req, context=self._context)
+
+
 def _open(request):
-    """Opens request. A redirect target gets the same checks as the URL."""
-    opener = urllib.request.build_opener(_CheckedRedirectHandler)
+    """Opens request. Checks each redirect target and each connection."""
+    opener = urllib.request.build_opener(
+        # A proxy resolves the host name itself, so the address check cannot
+        # apply. This tool does not use a proxy.
+        urllib.request.ProxyHandler({}),
+        _CheckedHTTPSHandler,
+        _CheckedRedirectHandler,
+    )
     return opener.open(request, timeout=_TIMEOUT_SECONDS)
 
 
