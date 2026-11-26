@@ -172,6 +172,24 @@ def verify(results_dir):
         rt.run_path(ROOT_PAGE)
         check_data(label)
 
+    def check_chart_script(label):
+        # Run data is untrusted. It must not end the script block of a chart.
+        import pandas as pd
+        import trends
+        payload = "</script><script>alert(1)</script>"
+        frame = pd.DataFrame([{
+            "run_time": "2026-01-01", "latency": 1,
+            "product_dataset": payload, "job_id": payload,
+        }])
+        page = trends.generate_d3_chart(
+            frame, "run_time", "latency", "product_dataset", "Latency", "ms")
+        if payload in page:
+            failures.append(f"{label} holds run data as raw HTML")
+        # The d3 script, the data block, and chart.js.
+        if page.count("</script>") != 3:
+            failures.append(
+                f"{label} has {page.count('</script>')} script blocks, not 3")
+
     def fire_on_load(label):
         # Mesop's order: query params, then on_load, then the render that sees it.
         rt.context().set_query_param("job_id", FIXTURE_JOB_ID)
@@ -221,6 +239,8 @@ def verify(results_dir):
 
     for tab in EXPECTED_TABS:
         attempt(f"rendering tab {tab!r}", partial(render_tab, tab))
+
+    attempt("the chart page", check_chart_script)
 
     print(f"Checked {len(registered)} page(s) {sorted(registered)}, "
           f"on_load, and {len(EXPECTED_TABS)} tab(s) "
