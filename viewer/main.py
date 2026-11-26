@@ -2196,10 +2196,6 @@ def render_app_content():
                 def on_tab_change(e: me.ButtonToggleChangeEvent):
                     state.selected_tab = e.value
 
-                def on_open_stability(e: me.ClickEvent):
-                    state = me.state(State)
-                    state.selected_tab = "Stability"
-
                 def on_generate_summary_click(e: me.ClickEvent):
                     state = me.state(State)
                     run_dir = run_index.resolve_run_dir(
@@ -2306,9 +2302,7 @@ def render_app_content():
                                 me.text(str(v), style=me.Style(font_size="20px", color="#0f172a", font_weight="500"))
 
                 if selected_tab == "Dashboard":
-                    dashboard.dashboard_component(
-                        run_dir_path, on_open_stability=on_open_stability
-                    )
+                    dashboard.dashboard_component(run_dir_path)
 
                     me.divider()
                     me.text("AI Summary", type="headline-5")
