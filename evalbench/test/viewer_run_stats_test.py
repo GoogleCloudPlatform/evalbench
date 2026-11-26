@@ -535,44 +535,60 @@ class TestNumericMetrics(RunStatsTestCase):
             with self.subTest(summary=summary):
                 self.assertEqual([], run_stats.suite_metrics(summary))
 
-    def test_the_dashboard_shows_the_suite_metrics(self):
+    def test_a_metric_label_has_words(self):
+        self.assertEqual("End to end latency",
+                         run_stats.metric_label("end_to_end_latency"))
+        self.assertEqual("Turn count", run_stats.metric_label("turn_count"))
+
+    def test_the_dashboard_shows_a_card_for_each_suite_metric(self):
         with patch.object(run_stats, "me") as me:
             run_stats.suite_stats_component(
                 self.results_dir, pd.DataFrame(self.SUMMARY))
 
         texts = self.texts(me)
-        for expected in ["Metrics across trials", "Metric", "Min", "Median",
-                         "Max", "token_consumption", "76,542", "113,908",
-                         "135,533"]:
+        # The label, the median, and the note of the card.
+        for expected in ["Token consumption", "113,908",
+                         "Median. Min 76,542, max 135,533"]:
             with self.subTest(expected=expected):
                 self.assertIn(expected, texts)
+        # The card shows words, not the name in the file.
+        self.assertNotIn("token_consumption", texts)
+        tips = [c.kwargs["message"] for c in me.tooltip.call_args_list]
+        self.assertEqual(1, len(tips))
+        self.assertIn("suite average of the metric", tips[0])
 
-    def test_the_dashboard_shows_no_metrics_without_the_values(self):
+    def test_the_dashboard_shows_no_metric_card_without_the_values(self):
         with patch.object(run_stats, "me") as me:
             run_stats.suite_stats_component(
                 self.results_dir, pd.DataFrame(SUITE_SUMMARY))
 
-        self.assertNotIn("Metrics across trials", self.texts(me))
+        self.assertNotIn("Token consumption", self.texts(me))
+        me.tooltip.assert_not_called()
 
-    def test_an_open_row_shows_the_metrics_of_the_scenario(self):
+    def test_an_open_row_shows_the_metric_cards_of_the_scenario(self):
         key = run_stats.row_key(self.results_dir, "create-backup")
         with patch.object(run_stats, "me") as me:
             me.state.return_value.expanded = [key]
             run_stats.stability_component(self.results_dir)
 
         texts = self.texts(me)
-        for expected in ["Metrics", "token_consumption", "76,542",
-                         "turn_count", "1.7", "Trial 1"]:
+        for expected in ["Token consumption", "113,908",
+                         "Median. Min 76,542, max 135,533",
+                         "Turn count", "1.7", "Median. Min 1, max 2",
+                         "Trial 1"]:
             with self.subTest(expected=expected):
                 self.assertIn(expected, texts)
+        tips = [c.kwargs["message"] for c in me.tooltip.call_args_list]
+        self.assertEqual(
+            2, sum("scored trials of this scenario" in tip for tip in tips))
 
-    def test_an_open_row_without_metric_values_shows_no_metrics(self):
+    def test_an_open_row_without_metric_values_shows_no_metric_card(self):
         key = run_stats.row_key(self.results_dir, "clone-instance")
         with patch.object(run_stats, "me") as me:
             me.state.return_value.expanded = [key]
             run_stats.stability_component(self.results_dir)
 
-        self.assertNotIn("Metrics", self.texts(me))
+        self.assertNotIn("Token consumption", self.texts(me))
 
 
 class TestDashboardShowsSuiteStats(RunStatsTestCase):

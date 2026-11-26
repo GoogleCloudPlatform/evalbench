@@ -72,11 +72,13 @@ _COLUMNS = (
      "The chance, from 0 to 1, that the true pass rate is above 90%."),
 )
 _ROW_HINT = "Select a scenario to see the result of each trial."
-_METRIC_GRID = "minmax(160px, 240px) 110px 110px 110px"
-_SUITE_METRICS_NOTE = (
-    "For each trial, the suite average of the metric. Only the scenarios "
-    "with a scored result in every trial count.")
-_SCENARIO_METRICS_NOTE = "Over the scored trials of this scenario."
+# The tooltips of the metric cards.
+_SUITE_METRICS_TIP = (
+    "The median, min, and max across trials. For each trial, EvalBench "
+    "takes the suite average of the metric. Only the scenarios with a "
+    "scored result in every trial count.")
+_SCENARIO_METRICS_TIP = (
+    "The median, min, and max over the scored trials of this scenario.")
 # The trial details show at most this number of characters of an error.
 _MAX_ERROR_LENGTH = 600
 
@@ -320,7 +322,47 @@ def _line() -> me.BorderSide:
     return me.BorderSide(width="1px", color=_LINE, style="solid")
 
 
-def _card(label: str, value: str, note: str, color: str) -> None:
+def _label_with_tip(label: str, tip: str, style: me.Style) -> None:
+    """Draws a label with an info icon. A tooltip opens on the two."""
+    # The outer box keeps the tooltip area as narrow as the label and icon.
+    with me.box(style=me.Style(display="flex")):
+        with me.tooltip(message=tip, position="above"):
+            with me.box(
+                style=me.Style(
+                    display="flex",
+                    align_items="center",
+                    gap="4px",
+                    cursor="help",
+                )
+            ):
+                me.text(label, style=style)
+                me.icon(
+                    "info",
+                    style=me.Style(
+                        font_size="14px",
+                        width="14px",
+                        height="14px",
+                        color=_GREY,
+                    ),
+                )
+
+
+def _card(
+    label: str,
+    value: str,
+    note: str,
+    color: str,
+    tip: str = "",
+    compact: bool = False,
+) -> None:
+    """Draws a card in the style of the Dashboard Summary cards.
+
+    The card has a label, a value in large text, and a note below it. With
+    `tip`, the label has a tooltip. A compact card has a smaller value, for
+    the open scenario rows.
+    """
+    label_style = me.Style(
+        font_weight="600", font_size="12px", color="#374151")
     with me.box(
         style=me.Style(
             flex_grow=1,
@@ -332,18 +374,18 @@ def _card(label: str, value: str, note: str, color: str) -> None:
             box_shadow="0 1px 3px rgba(0,0,0,0.06)",
         )
     ):
-        me.text(
-            label,
-            style=me.Style(
-                font_weight="600",
-                font_size="12px",
-                color="#374151",
-                margin=me.Margin(bottom="4px"),
-            ),
-        )
+        with me.box(style=me.Style(margin=me.Margin(bottom="4px"))):
+            if tip:
+                _label_with_tip(label, tip, label_style)
+            else:
+                me.text(label, style=label_style)
         me.text(
             value,
-            style=me.Style(font_weight="700", font_size="22px", color=color),
+            style=me.Style(
+                font_weight="700",
+                font_size="16px" if compact else "22px",
+                color=color,
+            ),
         )
         if note:
             me.text(
@@ -436,27 +478,7 @@ def _column_header(label: str, tip: str) -> None:
             ),
         )
         return
-    # The outer box keeps the tooltip area as narrow as the label and icon.
-    with me.box(style=me.Style(display="flex")):
-        with me.tooltip(message=tip, position="above"):
-            with me.box(
-                style=me.Style(
-                    display="flex",
-                    align_items="center",
-                    gap="4px",
-                    cursor="help",
-                )
-            ):
-                me.text(label, style=style)
-                me.icon(
-                    "info",
-                    style=me.Style(
-                        font_size="14px",
-                        width="14px",
-                        height="14px",
-                        color=_GREY,
-                    ),
-                )
+    _label_with_tip(label, tip, style)
 
 
 def row_key(results_dir: str, scenario_id: str) -> str:
@@ -587,37 +609,41 @@ def _trial(
             )
 
 
-def _metrics_table(title: str, note: str, metrics: list[tuple]) -> None:
-    """Draws the min, median, and max of each numeric metric."""
-    header = me.Style(font_size="12px", font_weight="600", color=_MUTED)
-    with me.box(style=me.Style(margin=me.Margin(bottom="16px"))):
-        me.text(
-            title,
-            style=me.Style(font_size="13px", font_weight="700", color=_TEXT),
+def metric_label(name: str) -> str:
+    """Returns the name of a metric as words.
+
+    For example, end_to_end_latency gives "End to end latency".
+    """
+    return name.replace("_", " ").strip().capitalize()
+
+
+def _metric_cards(
+    metrics: list[tuple], tip: str, compact: bool = False
+) -> None:
+    """Draws one card for each numeric metric.
+
+    The card has the median in large text, and the min and the max below
+    it. me.text escapes the metric name, which comes from a file.
+    """
+    with me.box(
+        style=me.Style(
+            display="flex",
+            flex_direction="row",
+            flex_wrap="wrap",
+            gap="16px",
+            width="100%",
+            margin=me.Margin(bottom="16px"),
         )
-        me.text(note, style=me.Style(font_size="12px", color=_MUTED))
-        with me.box(
-            style=me.Style(
-                display="grid",
-                grid_template_columns=_METRIC_GRID,
-                gap="4px 12px",
-                margin=me.Margin(top="8px"),
+    ):
+        for name, low, median, high in metrics:
+            _card(
+                metric_label(name),
+                median,
+                f"Median. Min {low}, max {high}",
+                _TEXT,
+                tip=tip,
+                compact=compact,
             )
-        ):
-            for label in ("Metric", "Min", "Median", "Max"):
-                me.text(label, style=header)
-            for name, low, median, high in metrics:
-                # me.text escapes the metric name, which comes from a file.
-                me.text(
-                    name,
-                    style=me.Style(
-                        font_size="13px", font_weight="500", color=_TEXT),
-                )
-                for value in (low, median, high):
-                    me.text(
-                        value,
-                        style=me.Style(font_size="13px", color=_TEXT),
-                    )
 
 
 def _trial_details(
@@ -638,8 +664,8 @@ def _trial_details(
         )
     ):
         if row["metrics"]:
-            _metrics_table(
-                "Metrics", _SCENARIO_METRICS_NOTE, row["metrics"])
+            _metric_cards(
+                row["metrics"], _SCENARIO_METRICS_TIP, compact=True)
         for trial in trials:
             _trial(
                 trial,
@@ -789,7 +815,7 @@ def suite_stats_component(
             _card(*card)
     metrics = suite_metrics(summary_df)
     if metrics:
-        _metrics_table("Metrics across trials", _SUITE_METRICS_NOTE, metrics)
+        _metric_cards(metrics, _SUITE_METRICS_TIP)
 
 
 def stability_component(
