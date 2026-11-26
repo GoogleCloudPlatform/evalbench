@@ -245,8 +245,8 @@ def on_load(e: me.LoadEvent):
         state.selected_main_tab = "Compare"
         state.compare_tab_visible = True
         state.compare_evals = json.dumps([eval1, eval2])
-        # Trigger the AI comparison
-        state.ai_comparison = compare_evals(eval1, eval2)
+        # A page load must not start a model call. The user starts the AI
+        # comparison with the button on the Compare tab.
 
 
 def status_component():
@@ -2462,7 +2462,13 @@ def render_app_content():
                             with me.box(style=me.Style(margin=me.Margin(bottom="16px"))):
                                 me.markdown(f'Comparing: <a href="/?job_id={comp_evals[0]}" target="_blank">{comp_evals[0]}</a> vs <a href="/?job_id={comp_evals[1]}" target="_blank">{comp_evals[1]}</a>')
 
-                            if not state.ai_comparison or state.ai_comparison == "Comparing...":
+                            if not state.ai_comparison:
+                                me.button(
+                                    "Run AI comparison",
+                                    on_click=on_compare_tab_click,
+                                    type="flat",
+                                )
+                            elif state.ai_comparison == "Comparing...":
                                 me.text("Comparing...", style=me.Style(font_weight="bold", color="#0284c7", margin=me.Margin(bottom="16px")))
                             else:
                                 with me.box(style=me.Style(
