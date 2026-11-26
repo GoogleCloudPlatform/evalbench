@@ -1,14 +1,16 @@
-"""Stats across trials for the Dashboard tab.
+"""Stats across trials for the viewer.
 
 An agent run with num_trials above 1 writes run_stats.csv, with one row for
-each scenario, and adds the stats of the suite to summary.csv. A run without
-run_stats.csv gets no output from this module.
+each scenario, and adds the stats of the suite to summary.csv. The Dashboard
+tab shows the stats of the suite, and the Stability tab shows the scenarios.
+A run without run_stats.csv has no Stability tab and no stats on the
+Dashboard tab.
 """
 
 import logging
 import math
 import os
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import mesop as me
 import pandas as pd
@@ -391,13 +393,31 @@ def _table(rows: list[dict]) -> None:
                 me.text(row["confidence"], style=cell)
 
 
-def run_stats_component(
-    results_dir: str, summary_df: Optional[pd.DataFrame] = None
+def has_run_stats(results_dir: str) -> bool:
+    """Tells if a run has stats across trials, and so a Stability tab."""
+    return load_run_stats(results_dir) is not None
+
+
+def _subtitle(text: str) -> None:
+    me.text(
+        text,
+        style=me.Style(
+            font_size="13px", color=_MUTED, margin=me.Margin(bottom="16px")),
+    )
+
+
+def suite_stats_component(
+    results_dir: str,
+    summary_df: Optional[pd.DataFrame] = None,
+    on_open_stability: Optional[Callable] = None,
 ) -> None:
-    """Draws the stats across trials of a run.
+    """Draws the stats of the suite across trials, for the Dashboard tab.
 
     Draws nothing for a run without run_stats.csv, which is a run with one
     trial or a run that is not an agent run.
+
+    `on_open_stability` is the click handler that opens the Stability tab.
+    Without it, the section has no button for the tab.
     """
     run_stats = load_run_stats(results_dir)
     if run_stats is None:
@@ -412,11 +432,7 @@ def run_stats_component(
             margin=me.Margin(top="28px", bottom="4px"),
         ),
     )
-    me.text(
-        trials_summary(run_stats),
-        style=me.Style(
-            font_size="13px", color=_MUTED, margin=me.Margin(bottom="16px")),
-    )
+    _subtitle(trials_summary(run_stats))
     with me.box(
         style=me.Style(
             display="flex",
@@ -428,4 +444,29 @@ def run_stats_component(
     ):
         for card in suite_cards(suite_stats(summary_df), rows):
             _card(*card)
-    _table(rows)
+    if on_open_stability:
+        me.button(
+            "View the scenarios in the Stability tab",
+            on_click=on_open_stability,
+            type="stroked",
+            style=me.Style(margin=me.Margin(top="16px", bottom="8px")),
+        )
+
+
+def stability_component(results_dir: str) -> None:
+    """Draws the Stability tab: the stats of each scenario across trials."""
+    run_stats = load_run_stats(results_dir)
+    if run_stats is None:
+        me.text("This run has no stats across trials.")
+        return
+
+    me.text(
+        "Stability",
+        style=me.Style(
+            font_size="24px",
+            font_weight="bold",
+            margin=me.Margin(bottom="4px"),
+        ),
+    )
+    _subtitle(trials_summary(run_stats))
+    _table(scenario_rows(run_stats))

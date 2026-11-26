@@ -73,10 +73,11 @@ if os.environ.get("MESOP_XSRF_CHECK") == "false":
 try:
     import dashboard
     import conversations
+    import run_stats
 except ImportError:
     # Optional modules could not be imported; continue without them.
     logging.warning(
-        "Optional modules 'dashboard', and 'conversations' "
+        "Optional modules 'dashboard', 'conversations', and 'run_stats' "
         "could not be imported (absolute or relative)."
     )
 
@@ -2195,6 +2196,10 @@ def render_app_content():
                 def on_tab_change(e: me.ButtonToggleChangeEvent):
                     state.selected_tab = e.value
 
+                def on_open_stability(e: me.ClickEvent):
+                    state = me.state(State)
+                    state.selected_tab = "Stability"
+
                 def on_generate_summary_click(e: me.ClickEvent):
                     state = me.state(State)
                     run_dir = run_index.resolve_run_dir(
@@ -2214,21 +2219,41 @@ def render_app_content():
                     state = me.state(State)
                     state.show_formula = not state.show_formula
 
+                run_dir_path = os.path.join(
+                    results_dir, state.selected_directory
+                )
+                # Only a run with stats across trials has a Stability tab.
+                has_stability = run_stats.has_run_stats(run_dir_path)
+                selected_tab = state.selected_tab
+                if selected_tab == "Stability" and not has_stability:
+                    # The state can keep the Stability tab from a run that
+                    # has it. Show the Dashboard tab for a run without it.
+                    selected_tab = "Dashboard"
+
+                tab_buttons = [
+                    me.ButtonToggleButton(
+                        label="Dashboard", value="Dashboard"
+                    ),
+                ]
+                if has_stability:
+                    tab_buttons.append(
+                        me.ButtonToggleButton(
+                            label="Stability", value="Stability"
+                        )
+                    )
+                tab_buttons += [
+                    me.ButtonToggleButton(
+                        label="Configs", value="Configs"
+                    ),
+                    # me.ButtonToggleButton(label="Evals", value="Evals"),
+                    # me.ButtonToggleButton(label="Scores", value="Scores"),
+                    me.ButtonToggleButton(
+                        label="Conversations", value="Conversations"
+                    ),
+                ]
                 me.button_toggle(
-                    value=state.selected_tab,
-                    buttons=[
-                        me.ButtonToggleButton(
-                            label="Dashboard", value="Dashboard"
-                        ),
-                        me.ButtonToggleButton(
-                            label="Configs", value="Configs"
-                        ),
-                        # me.ButtonToggleButton(label="Evals", value="Evals"),
-                        # me.ButtonToggleButton(label="Scores", value="Scores"),
-                        me.ButtonToggleButton(
-                            label="Conversations", value="Conversations"
-                        ),
-                    ],
+                    value=selected_tab,
+                    buttons=tab_buttons,
                     on_change=on_tab_change,
                 )
 
@@ -2280,9 +2305,9 @@ def render_app_content():
                                 me.text(k, style=me.Style(font_size="16px", color="#64748b", font_weight="600", text_transform="uppercase"))
                                 me.text(str(v), style=me.Style(font_size="20px", color="#0f172a", font_weight="500"))
 
-                if state.selected_tab == "Dashboard":
+                if selected_tab == "Dashboard":
                     dashboard.dashboard_component(
-                        os.path.join(results_dir, state.selected_directory)
+                        run_dir_path, on_open_stability=on_open_stability
                     )
 
                     me.divider()
@@ -2339,6 +2364,8 @@ def render_app_content():
                         clean_summary = re.sub(r"^\s*\*\*General Score:\s*\d+(\.\d+)?[^*]*\*\*\s*", "", state.ai_summary)
                         me.markdown(clean_summary)
 
+                elif state.selected_tab == "Stability":
+                    run_stats.stability_component(run_dir_path)
                 elif state.selected_tab == "Conversations":
 
                     def on_prev_conversation(e: me.ClickEvent):

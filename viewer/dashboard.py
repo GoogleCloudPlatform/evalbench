@@ -17,7 +17,11 @@ def _format_count(value) -> str:
     return f"{number:.0f}" if number.is_integer() else f"{number:.2f}"
 
 
-def dashboard_component(results_dir: str):
+def dashboard_component(results_dir: str, on_open_stability=None):
+    """Draws the Dashboard tab of a run.
+
+    `on_open_stability` is the click handler that opens the Stability tab.
+    """
     me.text(
         "Dashboard Summary",
         style=me.Style(
@@ -138,4 +142,4 @@ def dashboard_component(results_dir: str):
                 except Exception as e:
                     print(f"Error reading scores.csv for dashboard: {e}")
 
-    run_stats.run_stats_component(results_dir, df)
+    run_stats.suite_stats_component(results_dir, df, on_open_stability)
