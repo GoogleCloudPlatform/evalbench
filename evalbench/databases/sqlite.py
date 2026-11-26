@@ -14,6 +14,7 @@ from .util import (
     DatabaseSchema,
 )
 from util.rate_limit import rate_limit, ResourceExhaustedError
+from util.safepath import contained_path
 from typing import Any, List, Optional, Tuple
 
 DROP_TABLE_SQL = "DROP TABLE {TABLE};"
@@ -229,7 +230,7 @@ class SQLiteDB(DB):
             logging.error(f"Could not delete database: {error}")
 
     def ensure_database_exists(self, database_name: str) -> None:
-        filename = f"{self.db_path}/{database_name}{self.extension}"
+        filename = self._get_connection_path(self.db_path, database_name)
         os.makedirs(self.db_path, exist_ok=True)
         conn = sqlite3.connect(filename)
         conn.close()
@@ -294,5 +295,5 @@ class SQLiteDB(DB):
         if not db_name.endswith(extension):
             db_name = db_name + extension
 
-        connection_path = os.path.join(db_path, f"{db_name}")
-        return connection_path
+        # The name can come from the dataset. Keep the file in db_path.
+        return contained_path(db_path, db_name)
