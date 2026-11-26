@@ -42,7 +42,10 @@ def load_db_data_from_csvs(data_directory: str):
             with open(
                 os.path.join(current_directory, data_directory, filename), "r"
             ) as csvfile:
-                reader = csv.reader(csvfile, quotechar='"')
+                # Normalize synthetic datasets' triple-quoted fields with embedded delimiters (e.g. """'a","b'""")
+                # so csv.reader does not split them across multiple columns.
+                cleaned_lines = [re.sub(r'"""[\'"]?(.*?)[\'"]?"""', lambda m: '"' + re.sub(r'["\']+\s*,\s*["\']+', ', ', m.group(1)).replace('"', '').replace("'", "") + '"', line) for line in csvfile]
+                reader = csv.reader(cleaned_lines, quotechar='"')
                 rows = []
                 for row in reader:
                     rows.append(row)
