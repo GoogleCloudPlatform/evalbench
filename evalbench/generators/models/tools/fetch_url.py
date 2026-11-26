@@ -52,7 +52,10 @@ class _TextExtractor(HTMLParser):
 
 
 def _is_blocked_ip(ip_str: str) -> bool:
-    """True if ip_str is a private/loopback/link-local address, or no IP."""
+    """True if ip_str is a blocked address, or is not a valid IP address.
+
+    Blocked: private, loopback, link-local, multicast, and reserved addresses.
+    """
     try:
         ip = ipaddress.ip_address(ip_str)
     except ValueError:
@@ -96,7 +99,7 @@ class _CheckedRedirectHandler(urllib.request.HTTPRedirectHandler):
 
 
 def _connect(address, timeout=None, source_address=None):
-    """Connects to an address of the host that passed the check.
+    """Resolves the host one time and connects to an address that passed the check.
 
     http.client resolves the host name again for the connection, and the DNS
     answer can change after the URL check. This function resolves the name
@@ -136,6 +139,8 @@ class _CheckedHTTPSConnection(http.client.HTTPSConnection):
 
 
 class _CheckedHTTPSHandler(urllib.request.HTTPSHandler):
+    """Opens each HTTPS connection with _CheckedHTTPSConnection."""
+
     def https_open(self, req):
         return self.do_open(
             _CheckedHTTPSConnection, req, context=self._context)
