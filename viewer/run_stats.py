@@ -8,13 +8,17 @@ Dashboard tab.
 
 On the Stability tab, a click on a scenario row opens the result of each
 trial of the scenario, from scores.csv.
+
+Both tabs also show the min, median, and max of each numeric metric, such as
+token_consumption: the Dashboard tab for the suite, and an open scenario row
+for the scenario.
 """
 
 import logging
 import math
 import os
 from dataclasses import field
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 import mesop as me
 import pandas as pd
@@ -68,6 +72,11 @@ _COLUMNS = (
      "The chance, from 0 to 1, that the true pass rate is above 90%."),
 )
 _ROW_HINT = "Select a scenario to see the result of each trial."
+_METRIC_GRID = "minmax(160px, 240px) 110px 110px 110px"
+_SUITE_METRICS_NOTE = (
+    "For each trial, the suite average of the metric. Only the scenarios "
+    "with a scored result in every trial count.")
+_SCENARIO_METRICS_NOTE = "Over the scored trials of this scenario."
 # The trial details show at most this number of characters of an error.
 _MAX_ERROR_LENGTH = 600
 
@@ -108,6 +117,49 @@ def format_score(value: Any) -> str:
     """Formats a flakiness or a confidence value with 2 decimals."""
     number = _number(value)
     return _EMPTY if number is None else f"{number:.2f}"
+
+
+def format_number(value: Any) -> str:
+    """Formats the value of a numeric metric with thousands separators.
+
+    A value below 100 that is not a whole number gets 1 decimal. The value
+    has the unit of its scorer, and the text has no unit.
+    """
+    number = _number(value)
+    if number is None:
+        return _EMPTY
+    if number.is_integer() or abs(number) >= 100:
+        return f"{number:,.0f}"
+    return f"{number:,.1f}"
+
+
+def metric_names(columns: Iterable[str]) -> list[str]:
+    """Returns the numeric metrics of run_stats.csv, in the column order.
+
+    The file has the columns `<metric>_min`, `<metric>_median`, and
+    `<metric>_max` for each numeric metric, such as token_consumption.
+    """
+    columns = list(columns)
+    names = []
+    for column in columns:
+        name = column[:-len("_min")]
+        if (column.endswith("_min") and f"{name}_median" in columns
+                and f"{name}_max" in columns):
+            names.append(name)
+    return names
+
+
+def _metric_row(
+    name: Any, low: Any, median: Any, high: Any
+) -> Optional[tuple[str, str, str, str]]:
+    """Returns the name, min, median, and max of a metric as texts.
+
+    Returns None for a metric without a value.
+    """
+    if all(_number(value) is None for value in (low, median, high)):
+        return None
+    return (str(name), format_number(low), format_number(median),
+            format_number(high))
 
 
 def _rate_color(rate: Optional[float]) -> str:
@@ -154,7 +206,13 @@ def scenario_rows(run_stats: pd.DataFrame) -> list[dict]:
     the job has no pass metric.
     """
     rows = []
+    names = metric_names(run_stats.columns)
     for record in run_stats.to_dict(orient="records"):
+        metrics = (
+            _metric_row(name, record.get(f"{name}_min"),
+                        record.get(f"{name}_median"),
+                        record.get(f"{name}_max"))
+            for name in names)
         scored = _count(record.get("scored_trials"))
         unscored = _count(record.get("unscored_trials"))
         passed = None
@@ -171,6 +229,8 @@ def scenario_rows(run_stats: pd.DataFrame) -> list[dict]:
             "failed": scored - passed if passed is not None else None,
             "unscored": unscored,
             "num_trials": _count(record.get("num_trials")),
+            # The numeric metrics that have a value for this scenario.
+            "metrics": [metric for metric in metrics if metric],
             "trials": _trials_text(passed, scored, unscored),
             "pass_rate": format_rate(record.get("pass_rate")),
             "interval": format_interval(
@@ -201,6 +261,24 @@ def suite_stats(summary_df: Optional[pd.DataFrame]) -> dict[str, float]:
         if number is not None:
             stats[column] = number
     return stats
+
+
+def suite_metrics(
+    summary_df: Optional[pd.DataFrame]
+) -> list[tuple[str, str, str, str]]:
+    """Returns the min, median, and max across trials of each numeric metric.
+
+    The values come from the trial_min, trial_median, and trial_max columns
+    of summary.csv. For each trial, the job takes the suite average of the
+    metric. A metric without these values is not in the result.
+    """
+    columns = ("metric_name", "trial_min", "trial_median", "trial_max")
+    if summary_df is None or not set(columns) <= set(summary_df.columns):
+        return []
+    metrics = (
+        _metric_row(*(record[column] for column in columns))
+        for record in summary_df.to_dict(orient="records"))
+    return [metric for metric in metrics if metric]
 
 
 def trials_summary(run_stats: pd.DataFrame) -> str:
@@ -509,13 +587,47 @@ def _trial(
             )
 
 
+def _metrics_table(title: str, note: str, metrics: list[tuple]) -> None:
+    """Draws the min, median, and max of each numeric metric."""
+    header = me.Style(font_size="12px", font_weight="600", color=_MUTED)
+    with me.box(style=me.Style(margin=me.Margin(bottom="16px"))):
+        me.text(
+            title,
+            style=me.Style(font_size="13px", font_weight="700", color=_TEXT),
+        )
+        me.text(note, style=me.Style(font_size="12px", color=_MUTED))
+        with me.box(
+            style=me.Style(
+                display="grid",
+                grid_template_columns=_METRIC_GRID,
+                gap="4px 12px",
+                margin=me.Margin(top="8px"),
+            )
+        ):
+            for label in ("Metric", "Min", "Median", "Max"):
+                me.text(label, style=header)
+            for name, low, median, high in metrics:
+                # me.text escapes the metric name, which comes from a file.
+                me.text(
+                    name,
+                    style=me.Style(
+                        font_size="13px", font_weight="500", color=_TEXT),
+                )
+                for value in (low, median, high):
+                    me.text(
+                        value,
+                        style=me.Style(font_size="13px", color=_TEXT),
+                    )
+
+
 def _trial_details(
     row: dict,
     trials: list[dict],
     conversation_index_of: dict[str, int],
     on_open_conversation: Optional[Callable[[int], Callable]],
 ) -> None:
-    """Draws the result of each trial of a scenario, below its row."""
+    """Draws the metrics and the result of each trial, below a scenario row.
+    """
     with me.box(
         style=me.Style(
             min_width="1000px",
@@ -525,6 +637,9 @@ def _trial_details(
             border=me.Border(bottom=_line()),
         )
     ):
+        if row["metrics"]:
+            _metrics_table(
+                "Metrics", _SCENARIO_METRICS_NOTE, row["metrics"])
         for trial in trials:
             _trial(
                 trial,
@@ -672,6 +787,9 @@ def suite_stats_component(
     ):
         for card in suite_cards(suite_stats(summary_df), rows):
             _card(*card)
+    metrics = suite_metrics(summary_df)
+    if metrics:
+        _metrics_table("Metrics across trials", _SUITE_METRICS_NOTE, metrics)
 
 
 def stability_component(
