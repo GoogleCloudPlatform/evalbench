@@ -3,15 +3,22 @@
 An agent run with num_trials above 1 writes run_stats.csv, with one row for
 each scenario, and adds the stats of the suite to summary.csv. A run without
 run_stats.csv gets no output from this module.
+
+A click on a scenario row opens the result of each trial of the scenario,
+from scores.csv.
 """
 
 import logging
 import math
 import os
-from typing import Any, Optional
+from dataclasses import field
+from typing import Any, Callable, Optional
 
 import mesop as me
 import pandas as pd
+
+import trial_details
+from conversations import conversation_indexes
 
 RUN_STATS_FILE = "run_stats.csv"
 # The scorer that decides if a trial passes.
@@ -56,6 +63,15 @@ _COLUMNS = (
     ("Confidence",
      "The chance, from 0 to 1, that the true pass rate is above 90%."),
 )
+_ROW_HINT = "Select a scenario to see the result of each trial."
+# The trial details show at most this number of characters of an error.
+_MAX_ERROR_LENGTH = 600
+
+
+@me.stateclass
+class RunStatsState:
+    # The keys of the scenario rows with open trial details. See row_key.
+    expanded: list[str] = field(default_factory=list)
 
 
 def _number(value: Any) -> Optional[float]:
@@ -150,6 +166,7 @@ def scenario_rows(run_stats: pd.DataFrame) -> list[dict]:
             "passed": passed,
             "failed": scored - passed if passed is not None else None,
             "unscored": unscored,
+            "num_trials": _count(record.get("num_trials")),
             "trials": _trials_text(passed, scored, unscored),
             "pass_rate": format_rate(record.get("pass_rate")),
             "interval": format_interval(
@@ -267,6 +284,20 @@ def _row_style(header: bool = False) -> me.Style:
         padding=me.Padding.symmetric(vertical="10px", horizontal="16px"),
         border=me.Border(bottom=_line()),
         background="#f8fafc" if header else "#ffffff",
+        # A click on a scenario row opens its trial details.
+        cursor="default" if header else "pointer",
+    )
+
+
+def _chip_style(color: str) -> me.Style:
+    """Returns the style of a small label with white text on `color`."""
+    return me.Style(
+        font_size="11px",
+        font_weight="700",
+        color="#ffffff",
+        background=color,
+        border_radius="999px",
+        padding=me.Padding.symmetric(vertical="2px", horizontal="8px"),
     )
 
 
@@ -311,7 +342,17 @@ def _column_header(label: str, tip: str) -> None:
     """
     style = me.Style(font_size="12px", font_weight="600", color=_MUTED)
     if not tip:
-        me.text(label, style=style)
+        # Only the Scenario column has no tooltip. The margin puts the label
+        # above the scenario ids, which have an arrow icon before them.
+        me.text(
+            label,
+            style=me.Style(
+                font_size="12px",
+                font_weight="600",
+                color=_MUTED,
+                margin=me.Margin(left="24px"),
+            ),
+        )
         return
     # The outer box keeps the tooltip area as narrow as the label and icon.
     with me.box(style=me.Style(display="flex")):
@@ -336,7 +377,176 @@ def _column_header(label: str, tip: str) -> None:
                 )
 
 
-def _table(rows: list[dict]) -> None:
+def row_key(results_dir: str, scenario_id: str) -> str:
+    """Returns the key of a scenario row.
+
+    The key has the name of the run directory, so a row that is open in one
+    run is not open in a different run with the same scenario.
+    """
+    run = os.path.basename(os.path.normpath(results_dir))
+    return f"{run}/{scenario_id}"
+
+
+def _on_toggle_scenario(e: me.ClickEvent) -> None:
+    """Opens the trial details of the clicked scenario row, or closes them."""
+    state = me.state(RunStatsState)
+    if e.key in state.expanded:
+        state.expanded.remove(e.key)
+    else:
+        state.expanded.append(e.key)
+
+
+def trial_score(trial: dict) -> tuple[str, str]:
+    """Returns the score text of a trial and the color of the text.
+
+    The colors are the same as in the Conversations tab: green for 100, red
+    for 0, and amber between them. A trial without a score is gray. The
+    color does not tell if the trial passed, because the pass limit of a job
+    can be below 100.
+    """
+    score = trial["score"]
+    if score is None:
+        return "Unscored", _GREY
+    if score >= 100:
+        return f"Score {score:g}", _GREEN
+    return f"Score {score:g}", _RED if score <= 0 else _AMBER
+
+
+def _shorten(text: str) -> str:
+    if len(text) <= _MAX_ERROR_LENGTH:
+        return text
+    return f"{text[:_MAX_ERROR_LENGTH]}…"
+
+
+def _trial(
+    trial: dict,
+    conversation_index: Optional[int],
+    on_open_conversation: Optional[Callable[[int], Callable]],
+) -> None:
+    """Draws the result of one trial.
+
+    The result has the score, the verdict of the judge on each goal, the
+    errors, and the summary of the judge. All texts come from scores.csv,
+    and me.text escapes them.
+    """
+    score_text, score_color = trial_score(trial)
+    small = me.Style(font_size="12px", color=_MUTED)
+    with me.box(style=me.Style(margin=me.Margin(bottom="14px"))):
+        with me.box(
+            style=me.Style(
+                display="flex",
+                align_items="center",
+                flex_wrap="wrap",
+                gap="10px",
+            )
+        ):
+            me.text(
+                f"Trial {trial['trial_index'] + 1}",
+                style=me.Style(
+                    font_size="13px", font_weight="700", color=_TEXT),
+            )
+            me.text(score_text, style=_chip_style(score_color))
+            me.text(trial["eval_id"], style=small)
+            if on_open_conversation and conversation_index is not None:
+                me.button(
+                    "Open conversation",
+                    on_click=on_open_conversation(conversation_index),
+                    type="stroked",
+                    style=me.Style(font_size="12px"),
+                )
+        for goal in trial["goals"]:
+            with me.box(
+                style=me.Style(
+                    display="flex",
+                    align_items="flex-start",
+                    gap="8px",
+                    margin=me.Margin(top="6px"),
+                )
+            ):
+                me.icon(
+                    "check_circle" if goal["met"] else "cancel",
+                    style=me.Style(
+                        font_size="16px",
+                        width="16px",
+                        height="16px",
+                        flex_shrink=0,
+                        color=_GREEN if goal["met"] else _RED,
+                    ),
+                )
+                with me.box():
+                    me.text(
+                        goal["goal"],
+                        style=me.Style(
+                            font_size="13px", font_weight="500", color=_TEXT),
+                    )
+                    if goal["reasoning"]:
+                        me.text(goal["reasoning"], style=small)
+        for label, error in (("Agent error", trial["agent_error"]),
+                             ("Scorer error", trial["scorer_error"])):
+            if error:
+                me.text(
+                    f"{label}: {_shorten(error)}",
+                    style=me.Style(
+                        font_size="12px",
+                        color=_RED,
+                        margin=me.Margin(top="6px"),
+                        overflow_wrap="anywhere",
+                    ),
+                )
+        if trial["summary"]:
+            me.text(
+                f"Summary: {trial['summary']}",
+                style=me.Style(
+                    font_size="12px",
+                    color=_MUTED,
+                    margin=me.Margin(top="6px"),
+                ),
+            )
+
+
+def _trial_details(
+    row: dict,
+    trials: list[dict],
+    conversation_index_of: dict[str, int],
+    on_open_conversation: Optional[Callable[[int], Callable]],
+) -> None:
+    """Draws the result of each trial of a scenario, below its row."""
+    with me.box(
+        style=me.Style(
+            min_width="1000px",
+            background="#f8fafc",
+            padding=me.Padding(
+                top="14px", right="16px", bottom="2px", left="40px"),
+            border=me.Border(bottom=_line()),
+        )
+    ):
+        for trial in trials:
+            _trial(
+                trial,
+                conversation_index_of.get(trial["eval_id"]),
+                on_open_conversation,
+            )
+        missing = row["num_trials"] - len(trials)
+        if missing > 0:
+            me.text(
+                f"scores.csv has no result for {missing} of "
+                f"{row['num_trials']} trials.",
+                style=me.Style(
+                    font_size="12px",
+                    color=_MUTED,
+                    margin=me.Margin(bottom="12px"),
+                ),
+            )
+
+
+def _table(
+    rows: list[dict],
+    open_keys: set[str],
+    trials: dict[str, list[dict]],
+    conversation_index_of: dict[str, int],
+    on_open_conversation: Optional[Callable[[int], Callable]],
+) -> None:
+    """Draws the scenario table. A row in `open_keys` shows its trials."""
     cell = me.Style(font_size="13px", color=_TEXT)
     with me.box(
         style=me.Style(
@@ -352,30 +562,42 @@ def _table(rows: list[dict]) -> None:
             for label, tip in _COLUMNS:
                 _column_header(label, tip)
         for row in rows:
-            with me.box(style=_row_style()):
-                # me.text escapes the scenario id, which comes from a file.
-                me.text(
-                    row["scenario_id"],
+            is_open = row["key"] in open_keys
+            with me.box(
+                style=_row_style(),
+                key=row["key"],
+                on_click=_on_toggle_scenario,
+            ):
+                with me.box(
                     style=me.Style(
-                        font_size="13px",
-                        font_weight="500",
-                        color=_TEXT,
-                        overflow_wrap="anywhere",
-                    ),
-                )
+                        display="flex", align_items="center", gap="6px")
+                ):
+                    me.icon(
+                        "expand_more" if is_open else "chevron_right",
+                        style=me.Style(
+                            font_size="18px",
+                            width="18px",
+                            height="18px",
+                            flex_shrink=0,
+                            color=_MUTED,
+                        ),
+                    )
+                    # me.text escapes the scenario id, which comes from a
+                    # file.
+                    me.text(
+                        row["scenario_id"],
+                        style=me.Style(
+                            font_size="13px",
+                            font_weight="500",
+                            color=_TEXT,
+                            overflow_wrap="anywhere",
+                        ),
+                    )
                 with me.box(style=me.Style(display="flex")):
                     me.text(
                         row["status"],
-                        style=me.Style(
-                            font_size="11px",
-                            font_weight="700",
-                            color="#ffffff",
-                            background=_STATUS_COLORS.get(
-                                row["status"], _GREY),
-                            border_radius="999px",
-                            padding=me.Padding.symmetric(
-                                vertical="2px", horizontal="8px"),
-                        ),
+                        style=_chip_style(
+                            _STATUS_COLORS.get(row["status"], _GREY)),
                     )
                 _trials_cell(row)
                 me.text(row["pass_rate"], style=cell)
@@ -389,20 +611,42 @@ def _table(rows: list[dict]) -> None:
                     ),
                 )
                 me.text(row["confidence"], style=cell)
+            if is_open:
+                _trial_details(
+                    row,
+                    trials.get(row["scenario_id"], []),
+                    conversation_index_of,
+                    on_open_conversation,
+                )
 
 
 def run_stats_component(
-    results_dir: str, summary_df: Optional[pd.DataFrame] = None
+    results_dir: str,
+    summary_df: Optional[pd.DataFrame] = None,
+    on_open_conversation: Optional[Callable[[int], Callable]] = None,
 ) -> None:
     """Draws the stats across trials of a run.
 
     Draws nothing for a run without run_stats.csv, which is a run with one
     trial or a run that is not an agent run.
+
+    `on_open_conversation` takes the index of a conversation and returns the
+    click handler that opens it. Without it, the trial details have no
+    button for the conversation.
     """
     run_stats = load_run_stats(results_dir)
     if run_stats is None:
         return
     rows = scenario_rows(run_stats)
+    for row in rows:
+        row["key"] = row_key(results_dir, row["scenario_id"])
+    open_keys = (set(me.state(RunStatsState).expanded)
+                 & {row["key"] for row in rows})
+    # scores.csv and evals.csv can be large. Read them only for an open row.
+    trials = trial_details.load_trials(results_dir) if open_keys else {}
+    conversation_index_of = (
+        conversation_indexes(results_dir)
+        if open_keys and on_open_conversation else {})
 
     me.text(
         "Stats across trials",
@@ -413,7 +657,7 @@ def run_stats_component(
         ),
     )
     me.text(
-        trials_summary(run_stats),
+        f"{trials_summary(run_stats)}. {_ROW_HINT}",
         style=me.Style(
             font_size="13px", color=_MUTED, margin=me.Margin(bottom="16px")),
     )
@@ -428,4 +672,5 @@ def run_stats_component(
     ):
         for card in suite_cards(suite_stats(summary_df), rows):
             _card(*card)
-    _table(rows)
+    _table(rows, open_keys, trials, conversation_index_of,
+           on_open_conversation)

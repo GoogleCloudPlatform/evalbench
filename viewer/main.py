@@ -2281,8 +2281,19 @@ def render_app_content():
                                 me.text(str(v), style=me.Style(font_size="20px", color="#0f172a", font_weight="500"))
 
                 if state.selected_tab == "Dashboard":
+
+                    def make_open_conversation(target_idx: int):
+                        def handler(e: me.ClickEvent):
+                            s = me.state(State)
+                            s.conversation_index = target_idx
+                            s.selected_tab = "Conversations"
+
+                        handler.__name__ = f"open_conversation_{target_idx}"
+                        return handler
+
                     dashboard.dashboard_component(
-                        os.path.join(results_dir, state.selected_directory)
+                        os.path.join(results_dir, state.selected_directory),
+                        on_open_conversation=make_open_conversation,
                     )
 
                     me.divider()

@@ -4,7 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pandas as pd
 
@@ -226,7 +226,9 @@ class TestRunStatsComponent(RunStatsTestCase):
         texts = self.texts(pd.DataFrame(SUITE_SUMMARY))
 
         for expected in [
-            "Stats across trials", "4 scenarios, 3 trials each",
+            "Stats across trials",
+            "4 scenarios, 3 trials each. "
+            "Select a scenario to see the result of each trial.",
             "Pass rate", "56%", "95% interval: 27% to 81%",
             "Flaky scenarios", "1 of 4", "0.30", "0.13",
             "create-backup", "2/3", "67%", "21% to 94%", "0.89",
@@ -254,6 +256,171 @@ class TestRunStatsComponent(RunStatsTestCase):
                 self.assertTrue(any(expected in tip for tip in tips))
 
 
+def _score_row(scenario, trial, score, **values):
+    """Returns the goal_completion row of a trial in scores.csv."""
+    row = {"id": f"{scenario}_trial_{trial}", "prompt_id": scenario,
+           "trial_index": trial, "comparator": "goal_completion",
+           "score": score, "comparison_logs": None, "generated_error": None,
+           "comparison_error": None}
+    row.update(values)
+    return row
+
+
+class TestTrialDetails(RunStatsTestCase):
+    """A click on a scenario row opens the result of each trial."""
+
+    def setUp(self):
+        super().setUp()
+        self.write(run_stats.RUN_STATS_FILE, [STABLE_PASS, FLAKY])
+        self.write("scores.csv", [
+            _score_row("list-instances", 0, 100.0),
+            _score_row(
+                "create-backup", 0, 100.0,
+                comparison_logs="2/2 success criteria met.\n"
+                "[MET] The agent creates a backup — The call succeeded.\n"
+                "[MET] The agent reports the backup id — The reply has it.\n"
+                "Summary: The agent did both steps."),
+            _score_row(
+                "create-backup", 1, 50.0,
+                comparison_logs="1/2 success criteria met.\n"
+                "[MET] The agent creates a backup — The call succeeded.\n"
+                "[UNMET] The agent reports the backup id — "
+                "The reply has no id."),
+            _score_row(
+                "create-backup", 2, None,
+                comparison_error="The judge reply was not JSON."),
+        ])
+        # The row without a conversation has no index in the Conversations
+        # tab, so the indexes are 0, 1, 2, and 3.
+        self.write("evals.csv", [
+            {"eval_id": "list-instances_trial_0",
+             "conversation_history": "[]"},
+            {"eval_id": "create-backup_trial_0",
+             "conversation_history": "[]"},
+            {"eval_id": "list-instances_trial_1",
+             "conversation_history": None},
+            {"eval_id": "create-backup_trial_1",
+             "conversation_history": "[]"},
+            {"eval_id": "create-backup_trial_2",
+             "conversation_history": "[]"},
+        ])
+        self.flaky_key = run_stats.row_key(self.results_dir, "create-backup")
+
+    def render(self, expanded, on_open_conversation=None):
+        """Draws the component with the rows in `expanded` open."""
+        with patch.object(run_stats, "me") as me:
+            me.state.return_value.expanded = expanded
+            run_stats.run_stats_component(
+                self.results_dir, None, on_open_conversation)
+        return me
+
+    def texts(self, me):
+        return [c.args[0] for c in me.text.call_args_list if c.args]
+
+    def test_a_closed_row_shows_no_trials_and_reads_no_trial_file(self):
+        with patch.object(run_stats.trial_details, "load_trials") as load, \
+                patch.object(run_stats, "conversation_indexes") as indexes:
+            me = self.render([], MagicMock())
+
+        load.assert_not_called()
+        indexes.assert_not_called()
+        self.assertNotIn("Trial 1", self.texts(me))
+
+    def test_an_open_row_shows_the_result_of_each_trial(self):
+        texts = self.texts(self.render([self.flaky_key]))
+
+        for expected in [
+            "Trial 1", "Score 100", "create-backup_trial_0",
+            "Summary: The agent did both steps.",
+            "Trial 2", "Score 50", "create-backup_trial_1",
+            "The agent reports the backup id", "The reply has no id.",
+            "Trial 3", "Unscored", "create-backup_trial_2",
+            "Scorer error: The judge reply was not JSON.",
+        ]:
+            with self.subTest(expected=expected):
+                self.assertIn(expected, texts)
+        # The other scenario stays closed.
+        self.assertNotIn("list-instances_trial_0", texts)
+
+    def test_a_goal_has_an_icon_that_tells_if_it_is_met(self):
+        me = self.render([self.flaky_key])
+
+        icons = [c.args[0] for c in me.icon.call_args_list if c.args]
+        self.assertEqual(3, icons.count("check_circle"))
+        self.assertEqual(1, icons.count("cancel"))
+        # The open row has a different arrow from the closed row.
+        self.assertEqual(1, icons.count("expand_more"))
+        self.assertEqual(1, icons.count("chevron_right"))
+
+    def test_an_open_row_has_a_button_for_each_conversation(self):
+        make_handler = MagicMock()
+
+        me = self.render([self.flaky_key], make_handler)
+
+        self.assertEqual([call(1), call(2), call(3)],
+                         make_handler.call_args_list)
+        self.assertEqual(
+            ["Open conversation"] * 3,
+            [c.args[0] for c in me.button.call_args_list])
+        self.assertEqual(
+            [make_handler.return_value] * 3,
+            [c.kwargs["on_click"] for c in me.button.call_args_list])
+
+    def test_an_open_row_has_no_button_without_the_handler(self):
+        me = self.render([self.flaky_key])
+
+        me.button.assert_not_called()
+
+    def test_a_trial_without_a_conversation_has_no_button(self):
+        self.write("evals.csv", [{"eval_id": "create-backup_trial_1",
+                                  "conversation_history": "[]"}])
+        make_handler = MagicMock()
+
+        self.render([self.flaky_key], make_handler)
+
+        self.assertEqual([call(0)], make_handler.call_args_list)
+
+    def test_the_key_of_a_different_run_opens_no_row(self):
+        texts = self.texts(self.render(["other-run/create-backup"]))
+
+        self.assertNotIn("Trial 1", texts)
+
+    def test_a_trial_without_rows_in_the_scores_file_is_reported(self):
+        self.write("scores.csv", [_score_row("create-backup", 0, 100.0)])
+
+        texts = self.texts(self.render([self.flaky_key]))
+
+        self.assertIn("Trial 1", texts)
+        self.assertIn("scores.csv has no result for 2 of 3 trials.", texts)
+
+    def test_a_click_opens_a_row_and_a_second_click_closes_it(self):
+        state = MagicMock()
+        state.expanded = []
+        with patch.object(run_stats, "me") as me:
+            me.state.return_value = state
+
+            run_stats._on_toggle_scenario(MagicMock(key="run/s1"))
+            self.assertEqual(["run/s1"], state.expanded)
+
+            run_stats._on_toggle_scenario(MagicMock(key="run/s1"))
+            self.assertEqual([], state.expanded)
+
+    def test_the_row_key_has_the_run_directory_and_the_scenario(self):
+        self.assertEqual("run-a/s1", run_stats.row_key("/results/run-a", "s1"))
+        self.assertEqual("run-a/s1", run_stats.row_key("/results/run-a/", "s1"))
+
+    def test_the_score_color_is_the_color_of_the_conversations_tab(self):
+        for score, expected in [
+            (100.0, ("Score 100", run_stats._GREEN)),
+            (66.7, ("Score 66.7", run_stats._AMBER)),
+            (0.0, ("Score 0", run_stats._RED)),
+            (None, ("Unscored", run_stats._GREY)),
+        ]:
+            with self.subTest(score=score):
+                self.assertEqual(
+                    expected, run_stats.trial_score({"score": score}))
+
+
 class TestDashboardShowsRunStats(RunStatsTestCase):
 
     def texts(self):
@@ -276,6 +443,23 @@ class TestDashboardShowsRunStats(RunStatsTestCase):
         self.write("summary.csv", SUITE_SUMMARY[1:])
 
         self.assertEqual([], self.texts())
+
+    def test_the_dashboard_passes_the_conversation_handler(self):
+        self.write("summary.csv", SUITE_SUMMARY)
+        self.write(run_stats.RUN_STATS_FILE, [FLAKY])
+        self.write("scores.csv", [_score_row("create-backup", 0, 100.0)])
+        self.write("evals.csv", [{"eval_id": "create-backup_trial_0",
+                                  "conversation_history": "[]"}])
+        make_handler = MagicMock()
+
+        with patch.object(dashboard, "me"), \
+                patch.object(run_stats, "me") as me:
+            me.state.return_value.expanded = [
+                run_stats.row_key(self.results_dir, "create-backup")]
+            dashboard.dashboard_component(
+                self.results_dir, on_open_conversation=make_handler)
+
+        make_handler.assert_called_once_with(0)
 
 
 if __name__ == "__main__":
