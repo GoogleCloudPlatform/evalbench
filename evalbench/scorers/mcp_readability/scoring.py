@@ -21,6 +21,8 @@ scorers and the orchestrator can import it without a cycle.
 from dataclasses import dataclass, field
 from typing import Any
 
+from scorers.mcp_readability.carry_forward import BaselineContext
+
 
 @dataclass
 class EndpointContext:
@@ -35,6 +37,8 @@ class EndpointContext:
     tools: list  # list[mcp.types.Tool]
     man_page: str
     exceptions: list  # applicable waivers for this endpoint
+    # Defaulted last so existing positional construction keeps working.
+    baseline: BaselineContext | None = None
 
 
 @dataclass

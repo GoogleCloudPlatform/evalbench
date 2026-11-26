@@ -12,12 +12,15 @@ defensively so a slightly malformed response degrades to an ERROR row rather tha
 crashing the run.
 """
 
+from collections.abc import Sequence
 import html
 import json
 import logging
 import re
+from typing import Any
 
 from generators.models import get_generator
+from scorers.mcp_readability import carry_forward as cf
 from scorers.mcp_readability.fingerprint import (
     canonical_exceptions,
     judge_fingerprint,
@@ -58,6 +61,8 @@ Return ONLY a JSON object (no markdown, no prose) with exactly this shape:
     {{"tool": "<tool name, or 'general'>",
       "findings": [
         {{"severity": "P0|P1|P2", "rule_id": "<string>",
+          "locator": "<the parameter path this is about, or 'description' /
+                      'name' when it is about the tool itself; omit if none>",
           "title": "<short one-line summary>", "message": "<what is wrong>",
           "suggestion": "<how to fix>"}}
       ]}}
@@ -156,6 +161,17 @@ rule would otherwise have been violated, note that in the waived entry.
 PROMPT_VERSION = "1"
 
 
+# Appended on partial runs so the judge only emits findings for changed tools.
+_FOCUS_CLAUSE = """
+### SCOPE OF THIS REVIEW
+Only these tools have changed since the last review: {focus_tools}
+Read the whole man page above for context -- your severity calibration must
+account for the entire tool surface -- but emit "findings_by_tool" entries ONLY
+for the tools listed on this line. Findings for every other tool are carried
+over from the previous review and will be discarded if you repeat them.
+"""
+
+
 class McpStyleReadabilityScorer:
     """Scores a tools spec against the MCP style guide using an LLM."""
 
@@ -172,6 +188,9 @@ class McpStyleReadabilityScorer:
         "mcp_readability_style_guide_sha",
         "mcp_readability_prompt_version",
         "mcp_readability_judge_model",
+        "mcp_readability_feedback_mode",
+        "mcp_readability_change_reason",
+        "mcp_readability_feedback_provenance_json",
     ]
 
     def __init__(self, config: dict, global_models):
@@ -198,25 +217,48 @@ class McpStyleReadabilityScorer:
         self.judge_model = _judge_model_name(self.model_config)
 
     def run(self, context: EndpointContext) -> ScoreContribution:
-        """Evaluate one endpoint: judge the man page, pass iff no P0 findings.
-
-        The judge fingerprint is recorded but not acted on: nothing compares it
-        to a previous run yet.
-        """
+        """Evaluate one endpoint, carrying forward findings for unchanged tools."""
+        baseline_context = context.baseline
         components = self._judge_components(context)
         fingerprint, components = judge_fingerprint(components)
-        feedback = self.evaluate(
-            tools_markup=context.man_page,
-            style_guide=self.style_guide,
-            product_name=context.product_name,
-            exceptions=context.exceptions,
+        decision = cf.decide_with_components(
+            baseline_context, fingerprint, components
         )
-        p0 = int(feedback.get("p0_issues", 0))
+        # Man-page order, used to order the merged findings.
+        tool_order = _tool_names(context.tools)
+        if baseline_context and baseline_context.tool_fingerprints:
+            tool_order = list(baseline_context.tool_fingerprints)
+
+        judged = None
+        if decision.needs_model_call:
+            judged = self.evaluate(
+                tools_markup=context.man_page,
+                style_guide=self.style_guide,
+                product_name=context.product_name,
+                exceptions=context.exceptions,
+                focus_tools=(
+                    decision.tools_to_report
+                    if decision.mode == cf.MODE_PARTIAL
+                    else None
+                ),
+            )
+
+        feedback = self._merged_feedback(decision, judged, tool_order)
+        logging.info(
+            "mcp_readability: %s judged %s (%s): %d findings, %d model call(s)",
+            context.product_name,
+            decision.mode,
+            decision.change_reason,
+            feedback["p0_issues"] + feedback["p1_issues"] + feedback["p2_issues"],
+            1 if decision.needs_model_call else 0,
+        )
+
+        p0 = feedback["p0_issues"]
         return ScoreContribution(
             row_fields={
                 "mcp_readability_p0_issues": p0,
-                "mcp_readability_p1_issues": int(feedback.get("p1_issues", 0)),
-                "mcp_readability_p2_issues": int(feedback.get("p2_issues", 0)),
+                "mcp_readability_p1_issues": feedback["p1_issues"],
+                "mcp_readability_p2_issues": feedback["p2_issues"],
                 "mcp_readability_score": int(feedback.get("readability_score", 0)),
                 # Both feedback columns omit the readability score on purpose;
                 # only the numeric metric column above carries it.
@@ -233,11 +275,17 @@ class McpStyleReadabilityScorer:
                 "mcp_readability_style_guide_sha": self.style_guide_sha,
                 "mcp_readability_prompt_version": PROMPT_VERSION,
                 "mcp_readability_judge_model": self.judge_model,
+                "mcp_readability_feedback_mode": decision.mode,
+                "mcp_readability_change_reason": decision.change_reason,
+                "mcp_readability_feedback_provenance_json": json.dumps(
+                    feedback.get("provenance") or {}, sort_keys=True
+                ),
             },
             score=100 if p0 == 0 else 0,
             logs=(
                 f"p0_issues={p0}, "
-                f"readability_score={feedback.get('readability_score', 0)}"
+                f"readability_score={feedback.get('readability_score', 0)}, "
+                f"mode={decision.mode}, reason={decision.change_reason}"
             ),
         )
 
@@ -259,12 +307,42 @@ class McpStyleReadabilityScorer:
             "exceptions": canonical_exceptions(context.exceptions),
         }
 
+    def _merged_feedback(
+        self,
+        decision: cf.Decision,
+        judged: dict[str, Any] | None,
+        tool_order: list[str],
+    ) -> dict[str, Any]:
+        """Merge carried and fresh findings and recompute severity counts."""
+        merged = cf.merge_feedback(decision, judged, tool_order)
+        entries = merged["findings_by_tool"]
+        cf.mint_finding_ids(entries)
+        counts = _severity_counts(
+            [finding for entry in entries for finding in entry["findings"]]
+        )
+        if decision.mode == cf.MODE_CARRIED and decision.baseline is not None:
+            score = decision.baseline.readability_score
+        else:
+            # _parse() has already coerced this to an int.
+            score = (judged or {}).get("readability_score", 0)
+        return {
+            "readability_score": score,
+            "p0_issues": counts["P0"],
+            "p1_issues": counts["P1"],
+            "p2_issues": counts["P2"],
+            "findings_by_tool": entries,
+            "waived": merged["waived"],
+            "summary": merged["summary"],
+            "provenance": cf.build_provenance(decision, entries),
+        }
+
     def evaluate(
         self,
         tools_markup: str,
         style_guide: str,
         product_name: str,
         exceptions: list[dict] | None = None,
+        focus_tools: list[str] | None = None,
     ) -> dict:
         """Run the LLM readability check and return a normalized feedback dict."""
         prompt = PROMPT_TEMPLATE.format(
@@ -273,6 +351,8 @@ class McpStyleReadabilityScorer:
             tools_markup=tools_markup or "(no tools)",
             exceptions=json.dumps(exceptions or [], indent=2),
         )
+        if focus_tools:
+            prompt += _FOCUS_CLAUSE.format(focus_tools=", ".join(focus_tools))
         raw = self._generate(prompt)
         return self._parse(raw)
 
@@ -335,22 +415,28 @@ class McpStyleReadabilityScorer:
         if fence:
             text = fence.group(1).strip()
         try:
-            return json.loads(text)
-        except json.JSONDecodeError:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as e:
             # Fallback: grab the outermost {...} span.
             start = text.find("{")
             end = text.rfind("}")
-            if start != -1 and end > start:
-                try:
-                    return json.loads(text[start:end + 1])
-                except json.JSONDecodeError:
-                    pass
+            if start == -1 or end <= start:
+                raise ValueError("no JSON object found in model response") from e
+            try:
+                parsed = json.loads(text[start:end + 1])
+            except json.JSONDecodeError as inner_e:
+                raise ValueError(
+                    "no JSON object found in model response"
+                ) from inner_e
+        if not isinstance(parsed, dict):
             raise ValueError("no JSON object found in model response")
+        return parsed
 
     def _parse(self, raw: str) -> dict:
         """Normalize the model output into a stable feedback dict."""
         data = self._extract_json(raw)
         by_tool = _clean_findings_by_tool(data.get("findings_by_tool"))
+        cf.mint_finding_ids(by_tool)
         counts = _severity_counts(
             [f for entry in by_tool for f in entry["findings"]]
         )
@@ -368,11 +454,11 @@ class McpStyleReadabilityScorer:
     def to_html(feedback: dict, product_name: str = "") -> str:
         """Render feedback as a human-readable HTML fragment.
 
-        Leads with the overall summary, renders the judge's per-tool findings
-        lists in the order it returned them, and ends with the allowed exceptions
-        (waived rules) and their reasons. It deliberately omits any numeric
-        readability score -- the intent is review notes an engineer can act on,
-        not a grade.
+        Leads with the overall summary, renders the per-tool findings lists
+        (``general`` first, then man-page order), and ends with the allowed
+        exceptions (waived rules) and their reasons. It deliberately omits any
+        numeric readability score -- the intent is review notes an engineer can
+        act on, not a grade.
 
         HTML (rather than Markdown) because this column is surfaced in a
         dashboard that renders it as HTML. All model-supplied text is escaped.
@@ -440,6 +526,15 @@ class McpStyleReadabilityScorer:
         return "".join(parts)
 
 
+def _tool_names(tools: Sequence[Any] | None) -> list[str]:
+    """Return the man-page order of tool names, skipping unnamed tools."""
+    return [
+        name
+        for name in (getattr(tool, "name", "") for tool in tools or [])
+        if name
+    ]
+
+
 def _judge_model_name(model_config_path: str) -> str:
     """The judge's model id, read from its model config.
 
@@ -495,13 +590,15 @@ def _severity_counts(findings: list) -> dict[str, int]:
 
 
 def _public_feedback(feedback: dict) -> dict:
-    """The feedback dict as persisted to the JSON column: no readability score.
+    """The feedback dict as persisted to the JSON column.
 
-    Keeps every structured field a human or downstream tool needs (findings,
-    counts, waived rules, summary) while dropping the numeric score so neither
-    feedback column reports a grade.
+    Drops ``readability_score`` and ``provenance`` (each has its own column).
     """
-    return {k: v for k, v in feedback.items() if k != "readability_score"}
+    return {
+        k: v
+        for k, v in feedback.items()
+        if k not in ("readability_score", "provenance")
+    }
 
 
 def _safe_int(value) -> int:
