@@ -42,6 +42,8 @@ _STATUS_COLORS = {"PASS": _GREEN, "FAIL": _RED, "ERROR": _GREY}
 # The flaky scenarios come first, then these statuses in this order.
 _STATUS_ORDER = {"FAIL": 1, "ERROR": 2, "PASS": 3}
 _EMPTY = "–"
+# The Dashboard tab has the stats of the suite only.
+_STABILITY_HINT = "The Stability tab shows each scenario."
 
 _GRID = "minmax(180px, 2fr) 90px minmax(190px, 1.5fr) 90px 120px 100px 110px"
 # The label of each column of the scenario table, and the text of its tooltip.
@@ -637,17 +639,12 @@ def _subtitle(text: str) -> None:
 
 
 def suite_stats_component(
-    results_dir: str,
-    summary_df: Optional[pd.DataFrame] = None,
-    on_open_stability: Optional[Callable] = None,
+    results_dir: str, summary_df: Optional[pd.DataFrame] = None
 ) -> None:
     """Draws the stats of the suite across trials, for the Dashboard tab.
 
     Draws nothing for a run without run_stats.csv, which is a run with one
     trial or a run that is not an agent run.
-
-    `on_open_stability` is the click handler that opens the Stability tab.
-    Without it, the section has no button for the tab.
     """
     run_stats = load_run_stats(results_dir)
     if run_stats is None:
@@ -662,7 +659,7 @@ def suite_stats_component(
             margin=me.Margin(top="28px", bottom="4px"),
         ),
     )
-    _subtitle(trials_summary(run_stats))
+    _subtitle(f"{trials_summary(run_stats)}. {_STABILITY_HINT}")
     with me.box(
         style=me.Style(
             display="flex",
@@ -670,17 +667,11 @@ def suite_stats_component(
             flex_wrap="wrap",
             gap="16px",
             width="100%",
+            margin=me.Margin(bottom="16px"),
         )
     ):
         for card in suite_cards(suite_stats(summary_df), rows):
             _card(*card)
-    if on_open_stability:
-        me.button(
-            "View the scenarios in the Stability tab",
-            on_click=on_open_stability,
-            type="stroked",
-            style=me.Style(margin=me.Margin(top="16px", bottom="8px")),
-        )
 
 
 def stability_component(

@@ -212,29 +212,24 @@ class TestSuiteStats(RunStatsTestCase):
 class TestSuiteStatsComponent(RunStatsTestCase):
     """The stats of the suite on the Dashboard tab."""
 
-    def render(self, summary=None, on_open_stability=None):
+    def texts(self, summary=None):
         with patch.object(run_stats, "me") as me:
-            run_stats.suite_stats_component(
-                self.results_dir, summary, on_open_stability)
-        return me
-
-    def texts(self, me):
+            run_stats.suite_stats_component(self.results_dir, summary)
         return [c.args[0] for c in me.text.call_args_list if c.args]
 
     def test_draws_nothing_without_the_file(self):
-        me = self.render(pd.DataFrame(SUITE_SUMMARY), MagicMock())
-
-        self.assertEqual([], self.texts(me))
-        me.button.assert_not_called()
+        self.assertEqual([], self.texts(pd.DataFrame(SUITE_SUMMARY)))
 
     def test_draws_the_suite_cards_and_no_scenario(self):
         self.write(run_stats.RUN_STATS_FILE,
                    [STABLE_PASS, FLAKY, STABLE_FAILURE, NO_SCORED_TRIAL])
 
-        texts = self.texts(self.render(pd.DataFrame(SUITE_SUMMARY)))
+        texts = self.texts(pd.DataFrame(SUITE_SUMMARY))
 
         for expected in [
-            "Stats across trials", "4 scenarios, 3 trials each",
+            "Stats across trials",
+            "4 scenarios, 3 trials each. "
+            "The Stability tab shows each scenario.",
             "Pass rate", "56%", "95% interval: 27% to 81%",
             "Flaky scenarios", "1 of 4", "0.30", "0.13",
         ]:
@@ -242,23 +237,6 @@ class TestSuiteStatsComponent(RunStatsTestCase):
                 self.assertIn(expected, texts)
         # The scenarios are on the Stability tab.
         self.assertNotIn("create-backup", texts)
-
-    def test_a_button_opens_the_stability_tab(self):
-        self.write(run_stats.RUN_STATS_FILE, [STABLE_PASS])
-        on_open_stability = MagicMock()
-
-        me = self.render(None, on_open_stability)
-
-        me.button.assert_called_once()
-        self.assertEqual("View the scenarios in the Stability tab",
-                         me.button.call_args.args[0])
-        self.assertIs(on_open_stability,
-                      me.button.call_args.kwargs["on_click"])
-
-    def test_no_button_without_the_handler(self):
-        self.write(run_stats.RUN_STATS_FILE, [STABLE_PASS])
-
-        self.render().button.assert_not_called()
 
 
 class TestStabilityComponent(RunStatsTestCase):
@@ -497,40 +475,26 @@ class TestTrialDetails(RunStatsTestCase):
 
 class TestDashboardShowsSuiteStats(RunStatsTestCase):
 
-    def render(self, on_open_stability=None):
+    def texts(self):
         with patch.object(dashboard, "me"), \
                 patch.object(run_stats, "me") as me:
-            dashboard.dashboard_component(
-                self.results_dir, on_open_stability=on_open_stability)
-        return me
-
-    def texts(self, me):
+            dashboard.dashboard_component(self.results_dir)
         return [c.args[0] for c in me.text.call_args_list if c.args]
 
     def test_a_multi_trial_run_gets_the_suite_stats(self):
         self.write("summary.csv", SUITE_SUMMARY)
         self.write(run_stats.RUN_STATS_FILE, [STABLE_PASS, FLAKY])
 
-        texts = self.texts(self.render())
+        texts = self.texts()
 
         self.assertIn("Stats across trials", texts)
         self.assertIn("56%", texts)
         self.assertNotIn("create-backup", texts)
 
-    def test_the_dashboard_passes_the_handler_of_the_stability_tab(self):
-        self.write("summary.csv", SUITE_SUMMARY)
-        self.write(run_stats.RUN_STATS_FILE, [STABLE_PASS])
-        on_open_stability = MagicMock()
-
-        me = self.render(on_open_stability)
-
-        self.assertIs(on_open_stability,
-                      me.button.call_args.kwargs["on_click"])
-
     def test_a_single_trial_run_gets_no_stats(self):
         self.write("summary.csv", SUITE_SUMMARY[1:])
 
-        self.assertEqual([], self.texts(self.render()))
+        self.assertEqual([], self.texts())
 
 
 if __name__ == "__main__":
