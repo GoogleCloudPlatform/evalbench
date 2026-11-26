@@ -119,7 +119,7 @@ class TestLoadTrials(unittest.TestCase):
         self.assertEqual([True, False], [g["met"] for g in trial["goals"]])
         self.assertTrue(trial["summary"].startswith("The agent created"))
         self.assertEqual(("", ""),
-                         (trial["agent_error"], trial["scorer_error"]))
+                         (trial["run_error"], trial["scorer_error"]))
 
     def test_a_trial_with_a_scorer_error_has_no_score(self):
         trial = self.load([_score_row(
@@ -137,7 +137,18 @@ class TestLoadTrials(unittest.TestCase):
             generated_error="The CLI timed out.")])["s1"][0]
 
         self.assertIsNone(trial["score"])
-        self.assertEqual("The CLI timed out.", trial["agent_error"])
+        self.assertEqual("The CLI timed out.", trial["run_error"])
+
+    def test_a_trial_with_an_error_is_unscored_also_with_a_judge_score(self):
+        # The job leaves this trial out of the stats in run_stats.csv.
+        trial = self.load([_score_row(
+            "s1", 0, "goal_completion", 100.0, comparison_logs=JUDGE_LOG,
+            generated_error="Simulated user error: empty reply")])["s1"][0]
+
+        self.assertIsNone(trial["score"])
+        self.assertEqual("Simulated user error: empty reply",
+                         trial["run_error"])
+        self.assertEqual(2, len(trial["goals"]))
 
     def test_a_run_with_one_trial_has_no_trials(self):
         # A run with one trial has no trial labels.

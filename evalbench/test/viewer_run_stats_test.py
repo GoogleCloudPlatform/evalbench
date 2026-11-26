@@ -404,6 +404,18 @@ class TestTrialDetails(RunStatsTestCase):
         # The other scenario stays closed.
         self.assertNotIn("list-instances_trial_0", texts)
 
+    def test_a_trial_with_an_error_shows_the_error_and_no_score(self):
+        # The judge gave a score, but the job does not count the trial.
+        self.write("scores.csv", [_score_row(
+            "create-backup", 0, 100.0,
+            generated_error="Simulated user error: empty reply")])
+
+        texts = self.texts(self.render([self.flaky_key]))
+
+        self.assertIn("Unscored", texts)
+        self.assertIn("Error: Simulated user error: empty reply", texts)
+        self.assertNotIn("Score 100", texts)
+
     def test_a_goal_has_an_icon_that_tells_if_it_is_met(self):
         me = self.render([self.flaky_key])
 

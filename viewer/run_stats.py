@@ -427,9 +427,9 @@ def _trial(
 ) -> None:
     """Draws the result of one trial.
 
-    The result has the score, the verdict of the judge on each goal, the
-    errors, and the summary of the judge. All texts come from scores.csv,
-    and me.text escapes them.
+    The result has the score, the errors, the verdict of the judge on each
+    goal, and the summary of the judge. All texts come from scores.csv, and
+    me.text escapes them.
     """
     score_text, score_color = trial_score(trial)
     small = me.Style(font_size="12px", color=_MUTED)
@@ -455,6 +455,19 @@ def _trial(
                     on_click=on_open_conversation(conversation_index),
                     type="stroked",
                     style=me.Style(font_size="12px"),
+                )
+        # An error is the reason for an unscored trial, so it comes first.
+        for label, error in (("Error", trial["run_error"]),
+                             ("Scorer error", trial["scorer_error"])):
+            if error:
+                me.text(
+                    f"{label}: {_shorten(error)}",
+                    style=me.Style(
+                        font_size="12px",
+                        color=_RED,
+                        margin=me.Margin(top="6px"),
+                        overflow_wrap="anywhere",
+                    ),
                 )
         for goal in trial["goals"]:
             with me.box(
@@ -483,18 +496,6 @@ def _trial(
                     )
                     if goal["reasoning"]:
                         me.text(goal["reasoning"], style=small)
-        for label, error in (("Agent error", trial["agent_error"]),
-                             ("Scorer error", trial["scorer_error"])):
-            if error:
-                me.text(
-                    f"{label}: {_shorten(error)}",
-                    style=me.Style(
-                        font_size="12px",
-                        color=_RED,
-                        margin=me.Margin(top="6px"),
-                        overflow_wrap="anywhere",
-                    ),
-                )
         if trial["summary"]:
             me.text(
                 f"Summary: {trial['summary']}",

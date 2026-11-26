@@ -74,17 +74,23 @@ def _trial(eval_rows: pd.DataFrame, trial_index: int) -> dict:
     goal_rows = eval_rows[eval_rows["comparator"] == PASS_METRIC]
     goal_row = goal_rows.iloc[0] if len(goal_rows) else {}
     goals, summary = parse_judge_log(goal_row.get("comparison_logs"))
-    # Each row of a trial has the same agent error.
-    agent_errors = [
+    # `generated_error` has the error of the agent or of the simulated user.
+    # Each row of a trial has the same value.
+    run_errors = [
         _text(value) for value in eval_rows.get("generated_error", [])]
+    run_error = next((e for e in run_errors if e), "")
+    scorer_error = _text(goal_row.get("comparison_error"))
+    # The job does not count a trial with an error as scored, also if the
+    # judge gave it a score. Give the same result as run_stats.csv.
+    has_error = bool(run_error or scorer_error)
     return {
         "eval_id": _text(eval_rows["id"].iloc[0]),
         "trial_index": trial_index,
-        "score": _number(goal_row.get("score")),
+        "score": None if has_error else _number(goal_row.get("score")),
         "goals": goals,
         "summary": summary,
-        "agent_error": next((e for e in agent_errors if e), ""),
-        "scorer_error": _text(goal_row.get("comparison_error")),
+        "run_error": run_error,
+        "scorer_error": scorer_error,
     }
 
 
@@ -96,9 +102,13 @@ def load_trials(results_dir: str) -> dict[str, list[dict]]:
 
     - `eval_id`: the id of the trial, `<scenario>_trial_<k>`.
     - `trial_index`: the number of the trial. The first trial is 0.
-    - `score`: the goal_completion score, or None if the trial has no score.
+    - `score`: the goal_completion score, or None for an unscored trial. A
+      trial with an error is unscored, as in run_stats.csv.
     - `goals`, `summary`: the result of `parse_judge_log`.
-    - `agent_error`, `scorer_error`: the error text, or an empty string.
+    - `run_error`: the error of the agent or of the simulated user, or an
+      empty string.
+    - `scorer_error`: the error of the goal_completion scorer, or an empty
+      string.
 
     The result is empty for a run without trial labels in scores.csv.
     """
