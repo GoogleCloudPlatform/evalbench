@@ -1,6 +1,7 @@
 from google.cloud import bigquery
 from google.api_core.exceptions import TooManyRequests, ServiceUnavailable
 import logging
+import re
 import pandas as pd
 from reporting.report import Reporter, STORETYPE
 from util.gcp import get_gcp_project
@@ -94,12 +95,37 @@ class BigQueryReporter(Reporter):
         self.results_table = "{}.results".format(self.dataset_path)
         self.scores_table = "{}.scores".format(self.dataset_path)
         self.summary_table = "{}.summary".format(self.dataset_path)
+        self.run_stats_table = "{}.run_stats".format(self.dataset_path)
 
         # Make chunk size configurable, defaulting to 500
         self.chunk_size = int(reporting_config.get(
             "chunk_size") or _DEFAULT_CHUNK_SIZE)
 
     def store(self, results, type: STORETYPE):
+        if type == STORETYPE.CONFIGS:
+            table = self.configs_table
+        elif type == STORETYPE.EVALS:
+            table = self.results_table
+        elif type == STORETYPE.SCORES:
+            table = self.scores_table
+        elif type == STORETYPE.SUMMARY:
+            table = self.summary_table
+        self._load(results, table, type)
+
+    def store_run_stats(self, run_stats):
+        # The stats have one column for each metric of the job. A metric
+        # name can have a character that a BigQuery column name cannot have.
+        columns = [re.sub(r"[^A-Za-z0-9_]", "_", name)
+                   for name in run_stats.columns]
+        self._load(
+            run_stats.set_axis(columns, axis=1), self.run_stats_table,
+            "run stats")
+
+    def _load(self, results, table, type):
+        """Appends the rows of `results` to `table`.
+
+        `type` is the STORETYPE of the rows, or a name for the log.
+        """
         if results is None or results.empty:
             logging.info(f"No results to store for {type}")
             return
@@ -120,14 +146,6 @@ class BigQueryReporter(Reporter):
             bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION,
             bigquery.SchemaUpdateOption.ALLOW_FIELD_RELAXATION,
         ]
-        if type == STORETYPE.CONFIGS:
-            table = self.configs_table
-        elif type == STORETYPE.EVALS:
-            table = self.results_table
-        elif type == STORETYPE.SCORES:
-            table = self.scores_table
-        elif type == STORETYPE.SUMMARY:
-            table = self.summary_table
 
         # Chunk this to avoid BQ OOM
         job_config.write_disposition = (

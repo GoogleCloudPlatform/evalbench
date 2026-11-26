@@ -109,7 +109,7 @@ scorers:
 
 ### Stats across trials
 
-Set [`num_trials`](/docs/configs/run-config.md#num_trials-examples) above 1 in the run config to run each scenario more than one time. The job then also writes `run_stats.csv`. The file has one row for each scenario. Only the `csv` reporter writes it.
+Set [`num_trials`](/docs/configs/run-config.md#num_trials-examples) above 1 in the run config to run each scenario more than one time. The job then also writes one row of stats for each scenario. The `csv` reporter writes the rows to `run_stats.csv`, and the `bigquery` reporter writes them to the `run_stats` table.
 
 A trial passes if its `goal_completion` score is at or above `pass_threshold`. The default is 100. To change it, set `pass_threshold` on the scorer to a number from 0 to 100:
 
@@ -138,6 +138,8 @@ A trial is unscored if it has an agent error in `generated_error` or if the `goa
 | `<scorer>_pass_rate` | For each other 0 to 100 scorer, such as `trajectory_matcher`: the share of scored trials with a score at or above the `pass_threshold` of that scorer. The default is 100. |
 
 If a scenario has no scored trial, its `status` is `ERROR` and its other stats are empty. Without the `goal_completion` scorer, the pass stats are empty.
+
+In the `run_stats` table, a character of a column name that is not a letter, a digit, or an underscore becomes an underscore.
 
 With few trials, the `confidence` is low and the interval is wide. For example, 3 passes in 3 trials give a `confidence` of 0.34 and an interval of 0.44 to 1.
 
