@@ -5,10 +5,12 @@ import subprocess
 import os
 import json
 import logging
+import pwd
 import shlex
 import sys
 import re
 import shutil
+import stat
 import threading
 import time
 from typing import Optional, Union, Dict, List
@@ -18,6 +20,31 @@ from util.sessionmgr import validate_session_id
 
 # Session sandboxes under eval_server.py. The volume is shared across sessions.
 SESSIONS_ROOT = "/tmp_sessions"
+
+# The non-root account that runs Claude Code when EvalBench runs as root.
+# evalbench_service/Dockerfile creates it.
+CLAUDE_USER = "claudeuser"
+
+
+def _chown_tree(root: str, uid: int, gid: int) -> None:
+    """Gives a directory tree to an account. Does not follow symbolic links.
+
+    The agent can write to the tree, so a link in it must not move the change
+    to a file outside the tree. A file with more than one hard link can also
+    be a file outside the tree, so it keeps its owner.
+    """
+    for _, dirnames, filenames, dirfd in os.fwalk(root):
+        os.chown(dirfd, uid, gid)
+        for name in dirnames + filenames:
+            try:
+                info = os.stat(name, dir_fd=dirfd, follow_symlinks=False)
+                if info.st_uid == uid and info.st_gid == gid:
+                    continue
+                if stat.S_ISREG(info.st_mode) and info.st_nlink > 1:
+                    continue
+                os.chown(name, uid, gid, dir_fd=dirfd, follow_symlinks=False)
+            except FileNotFoundError:
+                continue  # The entry went away during the walk.
 
 
 class CLICommand:
@@ -59,13 +86,11 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         os.makedirs(self.fake_home, exist_ok=True)
         os.makedirs(self.claude_config_dir, exist_ok=True)
 
-        # When running as root, chown fake_home so the non-root claudeuser
-        # (used to run Claude Code) can write to it.
-        self._chown_for_claudeuser = os.getuid() == 0
+        # Stop now if EvalBench is root and has no account for Claude Code.
+        self._non_root_account()
 
         self.env = querygenerator_config.get("env") or {}
         self.env["HOME"] = self.fake_home
-        self.env["IS_SANDBOX"] = "1"
 
         api_key = self.env.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
 
@@ -634,6 +659,66 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         else:
             logging.info(f"Successfully installed plugin '{plugin_id}'")
 
+    @staticmethod
+    def _non_root_account():
+        """Returns the passwd entry of the account that runs Claude Code.
+
+        Returns None when EvalBench is not root. Claude Code then runs as the
+        same account as EvalBench.
+
+        Claude Code runs with --dangerously-skip-permissions, so it must not
+        have root. The container image runs EvalBench as root.
+
+        Raises:
+            RuntimeError: If EvalBench is root and CLAUDE_USER is not a
+                non-root account on this machine.
+        """
+        if os.geteuid() != 0:
+            return None
+        try:
+            account = pwd.getpwnam(CLAUDE_USER)
+        except KeyError:
+            account = None
+        if account is None or account.pw_uid == 0:
+            raise RuntimeError(
+                "EvalBench runs as root, and Claude Code must not. Create "
+                f"the non-root user '{CLAUDE_USER}' (`useradd -m "
+                f"{CLAUDE_USER}`), or run EvalBench as a non-root user."
+            )
+        return account
+
+    def _non_root_kwargs(self, work_dir: str) -> dict:
+        """Returns the subprocess arguments that make Claude Code non-root.
+
+        Returns {} when EvalBench is not root. As root, EvalBench writes the
+        config, the credentials, and the plugins into the sandbox home, so
+        this also gives that directory to the non-root account. A work
+        directory outside the sandbox home keeps its owner: a dataset sets
+        `work_dir`, and it can be any path.
+        """
+        account = self._non_root_account()
+        if account is None:
+            return {}
+        _chown_tree(self.fake_home, account.pw_uid, account.pw_gid)
+        home = os.path.realpath(self.fake_home)
+        warned = self.__dict__.setdefault("_warned_work_dirs", set())
+        if (
+            os.path.commonpath([os.path.realpath(work_dir), home]) != home
+            and work_dir not in warned
+        ):
+            warned.add(work_dir)
+            logging.warning(
+                f"Claude Code runs as '{CLAUDE_USER}'. The work directory "
+                f"{work_dir} is outside the sandbox home, so it keeps its "
+                f"owner. Claude Code can write there only if '{CLAUDE_USER}' "
+                "has write permission."
+            )
+        return {
+            "user": account.pw_uid,
+            "group": account.pw_gid,
+            "extra_groups": os.getgrouplist(account.pw_name, account.pw_gid),
+        }
+
     def generate_internal(self, cli_cmd, timeout_seconds=None):
         if not isinstance(cli_cmd, CLICommand):
             cli_cmd = CLICommand(self.claude_code_version, str(cli_cmd))
@@ -643,11 +728,13 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         self, command: list[str], env: dict[str, str] | None = None,
         cwd: str | None = None, timeout_seconds: float | int | None = None,
     ) -> subprocess.CompletedProcess:
+        cwd = cwd or self.fake_home
+        non_root = self._non_root_kwargs(cwd)
         try:
             result = subprocess.run(
                 command, capture_output=True, text=True, check=False, env=env,
-                cwd=cwd if cwd else self.fake_home, stdin=subprocess.DEVNULL,
-                timeout=timeout_seconds,
+                cwd=cwd, stdin=subprocess.DEVNULL,
+                timeout=timeout_seconds, **non_root,
             )
             return result
         except subprocess.TimeoutExpired as e:
@@ -678,13 +765,16 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         Claude's stream-json carries no timestamps, so stamping arrival times
         here is the only path to per-tool latency.
         """
+        cwd = cwd or self.fake_home
+        non_root = self._non_root_kwargs(cwd)
         try:
             proc = subprocess.Popen(
-                command, env=env, cwd=cwd or self.fake_home, text=True,
+                command, env=env, cwd=cwd, text=True,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 bufsize=1,  # line-buffered so events arrive as Claude flushes them
+                **non_root,
             )
         except FileNotFoundError:
             return subprocess.CompletedProcess(
@@ -870,11 +960,6 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         if allowed_tools:
             for tool in allowed_tools:
                 command.extend(["--allowedTools", tool])
-
-        # Claude Code refuses --dangerously-skip-permissions when running as
-        # root.  Wrap with `su` to drop privileges to a non-root user.
-        # Recursively chown the fake_home so claudeuser can write to it
-        # (covers .claude dir, gcloud creds, MCP config copied during init).
 
         logging.info(f"Running Claude Code CLI: {' '.join(command)}")
 

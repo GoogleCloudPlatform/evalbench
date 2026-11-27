@@ -1,5 +1,6 @@
 import json
 import os
+import pwd
 import sys
 from unittest.mock import MagicMock, patch, ANY
 
@@ -8,7 +9,7 @@ import pytest
 # Add parent directory to path so we can import generators
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from generators.models.claude_code import ClaudeCodeGenerator
+from generators.models.claude_code import ClaudeCodeGenerator, _chown_tree
 
 
 @patch('generators.models.claude_code.os.makedirs')
@@ -363,3 +364,132 @@ def test_local_run_copies_gcloud_credentials_into_the_sandbox(
     assert os.path.exists(os.path.join(fake_gcloud, "access_tokens.db"))
     assert generator.env["GOOGLE_APPLICATION_CREDENTIALS"] == os.path.join(
         fake_gcloud, "application_default_credentials.json")
+
+
+def _account(uid=1001, gid=1001):
+    return pwd.struct_passwd(
+        ("claudeuser", "x", uid, gid, "", "/home/claudeuser", "/bin/bash"))
+
+
+def _as_root(account):
+    """Makes the generator see a root EvalBench and the given passwd entry."""
+    lookup = {"return_value": account} if account else {"side_effect": KeyError("claudeuser")}
+    return (
+        patch('generators.models.claude_code.os.geteuid', return_value=0),
+        patch('generators.models.claude_code.pwd.getpwnam', **lookup),
+        patch('generators.models.claude_code.os.getgrouplist', return_value=[1001]),
+    )
+
+
+def test_claude_code_keeps_the_account_when_evalbench_is_not_root():
+    generator = object.__new__(ClaudeCodeGenerator)
+    generator.fake_home = os.getcwd()
+
+    with patch('generators.models.claude_code.os.geteuid', return_value=1000), \
+            patch('generators.models.claude_code._chown_tree') as mock_chown, \
+            patch('generators.models.claude_code.subprocess.run') as mock_run:
+        generator._execute_cli_command(["claude", "-p", "hi"], env={})
+
+    mock_chown.assert_not_called()
+    for name in ("user", "group", "extra_groups"):
+        assert name not in mock_run.call_args.kwargs
+
+
+def test_claude_code_runs_as_the_non_root_account_when_evalbench_is_root(tmp_path):
+    generator = object.__new__(ClaudeCodeGenerator)
+    generator.fake_home = str(tmp_path)
+    proc = MagicMock(stdout=[], stderr=[], returncode=0)
+
+    root, getpwnam, groups = _as_root(_account())
+    with root, getpwnam as mock_getpwnam, groups, \
+            patch('generators.models.claude_code._chown_tree') as mock_chown, \
+            patch('generators.models.claude_code.subprocess.Popen', return_value=proc) as mock_popen, \
+            patch('generators.models.claude_code.subprocess.run') as mock_run:
+        generator._execute_cli_streaming(["claude", "-p", "hi"], env={})
+        generator._execute_cli_command(["claude", "plugins", "install", "x"], env={})
+
+    mock_getpwnam.assert_called_with("claudeuser")
+    for call in (mock_popen.call_args, mock_run.call_args):
+        assert call.kwargs["user"] == 1001
+        assert call.kwargs["group"] == 1001
+        assert call.kwargs["extra_groups"] == [1001]
+        assert call.kwargs["cwd"] == str(tmp_path)
+    mock_chown.assert_called_with(str(tmp_path), 1001, 1001)
+
+
+def test_work_dir_outside_the_sandbox_home_keeps_its_owner(tmp_path, caplog):
+    generator = object.__new__(ClaudeCodeGenerator)
+    generator.fake_home = str(tmp_path / "home")
+    work_dir = tmp_path / "dataset_work_dir"
+    os.makedirs(generator.fake_home)
+    work_dir.mkdir()
+
+    root, getpwnam, groups = _as_root(_account())
+    with root, getpwnam, groups, \
+            patch('generators.models.claude_code._chown_tree') as mock_chown:
+        generator._non_root_kwargs(str(work_dir))
+        generator._non_root_kwargs(str(work_dir))
+
+    assert [call.args[0] for call in mock_chown.call_args_list] == [generator.fake_home] * 2
+    assert caplog.text.count("keeps its owner") == 1
+
+
+@pytest.mark.parametrize("account", [None, _account(uid=0, gid=0)], ids=["no_account", "account_is_root"])
+def test_root_evalbench_without_a_non_root_account_stops(tmp_path, monkeypatch, account):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "real_home"))
+
+    root, getpwnam, groups = _as_root(account)
+    with root, getpwnam, groups:
+        with pytest.raises(RuntimeError, match="Claude Code must not"):
+            ClaudeCodeGenerator({})
+
+
+def test_generator_does_not_set_the_root_bypass(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "real_home"))
+
+    generator = ClaudeCodeGenerator({})
+
+    assert "IS_SANDBOX" not in generator.env
+
+
+def test_chown_tree_does_not_leave_the_tree(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret").write_text("x")
+    tree = tmp_path / "tree"
+    (tree / "sub").mkdir(parents=True)
+    (tree / "sub" / "file").write_text("x")
+    (tree / "link_to_file").symlink_to(outside / "secret")
+    (tree / "link_to_dir").symlink_to(outside, target_is_directory=True)
+    os.link(outside / "secret", tree / "hard_link")
+
+    by_name, by_fd = [], []
+
+    def fake_chown(path, uid, gid, *, dir_fd=None, follow_symlinks=True):
+        if isinstance(path, int):
+            by_fd.append(path)
+        else:
+            by_name.append((path, dir_fd is not None, follow_symlinks))
+
+    # Another account, so that no entry counts as "already has this owner".
+    with patch('generators.models.claude_code.os.chown', side_effect=fake_chown):
+        _chown_tree(str(tree), os.getuid() + 1, os.getgid() + 1)
+
+    assert len(by_fd) == 2  # tree and tree/sub
+    assert sorted(name for name, _, _ in by_name) == ["file", "link_to_dir", "link_to_file", "sub"]
+    assert all(has_dir_fd and not follow for _, has_dir_fd, follow in by_name)
+
+
+def test_chown_tree_skips_a_link_at_the_root(tmp_path):
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "file").write_text("x")
+    link = tmp_path / "link"
+    link.symlink_to(target, target_is_directory=True)
+
+    with patch('generators.models.claude_code.os.chown') as mock_chown:
+        _chown_tree(str(link), os.getuid() + 1, os.getgid() + 1)
+
+    mock_chown.assert_not_called()
