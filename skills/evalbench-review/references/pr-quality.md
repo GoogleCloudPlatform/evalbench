@@ -126,8 +126,9 @@ Look for: a non-obvious constraint with no comment explaining it; a magic
 number; an abbreviation only the author knows; a function whose name describes
 its implementation rather than its effect.
 
-House exemplars of doing this right: the `mcp>=1.8,<2` and `pyOpenSSL<26.2`
-comments in `pyproject.toml` (each says what broke and what lifts the pin) and
+House exemplars of doing this right: the `mcp>=1.8,<2` and
+`google-auth>=2.55.2` comments in `pyproject.toml` (each says what broke and
+when the pin can change) and
 the `AGY_CLI_DISABLE_AUTO_UPDATE` comment in the Dockerfile (says why there's
 no matching install). Hold new non-obvious code to that bar.
 

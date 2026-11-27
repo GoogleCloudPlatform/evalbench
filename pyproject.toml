@@ -60,7 +60,7 @@ dependencies = [
     "jupyter-client",
     "nbformat",
     "ipykernel",
-    "tornado",
+    "tornado>=6.6.1",
     "dbt-core",
     "dbt-bigquery",
     "dbt-postgres",
@@ -70,11 +70,11 @@ dependencies = [
     # 1.8 floor is where streamablehttp_client was introduced. Lift once the
     # call site is migrated to the 2.x name.
     "mcp>=1.8,<2",
-    # 26.2.0 turned a long-standing deprecation into a hard error
-    # (mutating SSL.Context after use), breaking google-auth's mTLS path
-    # (urllib3.contrib.pyopenssl.inject_into_urllib3). Lift when google-auth
-    # stops using the deprecated inject pattern.
-    "pyOpenSSL<26.2",
+    # Releases before 2.55.2 use pyOpenSSL in the mTLS path
+    # (urllib3.contrib.pyopenssl.inject_into_urllib3), and pyOpenSSL>=26.2
+    # breaks that path. google-adk requires google-auth[pyopenssl], so an
+    # older google-auth installs pyOpenSSL again. Do not lower this floor.
+    "google-auth>=2.55.2",
     # Dispatches one Kubernetes Job per eval case when `containerization` is
     # enabled (evalbench/container/k8s_backend.py). Imported lazily, so other
     # runs never load it. Capped below 37, which moves to pydantic and drags in

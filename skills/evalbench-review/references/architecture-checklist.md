@@ -166,8 +166,8 @@ makes shared mutable state the dominant risk:
 ## Dependencies
 
 - Every pin in `pyproject.toml` gets a comment saying *why* it's pinned and what
-  lifts it. The existing `mcp>=1.8,<2` and `pyOpenSSL<26.2` entries are the
-  template. An unexplained pin is a finding.
+  lifts it. The existing `mcp>=1.8,<2` and `google-auth>=2.55.2` entries are
+  the template. An unexplained pin is a finding.
 - A new dependency needs an edge in the `docs/architecture.md` graph and a real
   import under `evalbench/` — the graph is documented as "no unused deps".
 - New deps also affect `uv.lock`, the container build (`Makefile`,
