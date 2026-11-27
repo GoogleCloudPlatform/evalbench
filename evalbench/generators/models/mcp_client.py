@@ -64,12 +64,42 @@ def extract_mcp_oauth_scopes(server_config: dict) -> list[str]:
     return validate_oauth_scopes(clean_scopes)
 
 
+# The only URLs that can receive a Google access token: https, and a host
+# below googleapis.com. The pattern matches the full URL, so the host cannot
+# hide behind userinfo ("https://googleapis.com@evil.example/") or behind a
+# backslash, which some URL parsers read as a path separator.
+_GOOGLE_CREDENTIALS_URL_RE = re.compile(
+    r"https://(?:[a-z0-9-]+\.)+googleapis\.com(?::[0-9]{1,5})?"
+    r"(?:[/?#][!-\[\]-~]*)?",
+    re.IGNORECASE,
+)
+
+
+def validate_google_credentials_url(url) -> str:
+    """Checks that a Google access token can go to an MCP server URL.
+
+    ``authProviderType: google_credentials`` sends a live token for the local
+    Google account to the server. A URL outside Google APIs would give that
+    token to a third party.
+
+    Raises:
+        ValueError: If the URL is not https on a host below googleapis.com.
+    """
+    if not isinstance(url, str) or not _GOOGLE_CREDENTIALS_URL_RE.fullmatch(url):
+        raise ValueError(
+            f"MCP server URL {url!r} cannot use google_credentials auth. "
+            "The URL must be https on a host below googleapis.com."
+        )
+    return url
+
+
 def auth_headers(server_config: dict) -> dict | None:
     """Build request headers for an MCP server (configured headers + auth).
 
     ``authProviderType: google_credentials`` mints a bearer token from ADC for
-    the server's OAuth scopes. Returns ``None`` when the server needs no
-    headers.
+    the server's OAuth scopes. The token goes only to a Google API URL (see
+    ``validate_google_credentials_url``). Returns ``None`` when the server
+    needs no headers.
     """
     headers = dict(server_config.get("headers") or {})
     if server_config.get("authProviderType") == "google_credentials":
@@ -82,6 +112,21 @@ def auth_headers(server_config: dict) -> dict | None:
                 "google_credentials auth requires oauth.scopes on the MCP "
                 "server config; none provided"
             )
+        # A caller can read either key, so both must be safe.
+        urls = [
+            server_config[key] for key in ("httpUrl", "url")
+            if server_config.get(key)
+        ]
+        if not urls:
+            raise McpToolsError(
+                "google_credentials auth requires httpUrl or url on the MCP "
+                "server config; none provided"
+            )
+        try:
+            for url in urls:
+                validate_google_credentials_url(url)
+        except ValueError as e:
+            raise McpToolsError(str(e)) from e
         try:
             creds, _ = google.auth.default(scopes=scopes)
             creds.refresh(google.auth.transport.requests.Request())

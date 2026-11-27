@@ -627,6 +627,8 @@ class CodexCliGenerator(AgentCliGenerator):
 
         auth_provider = config.get("authProviderType")
         if auth_provider == "google_credentials" and "Authorization" not in headers:
+            # Codex sends the token to this URL on every turn.
+            mcp_client.validate_google_credentials_url(url)
             # Supply the bearer token via `bearer_token_env_var` rather than a
             # static header so it can be refreshed on every turn: each
             # `codex exec` is a fresh process that re-reads the env var, and
