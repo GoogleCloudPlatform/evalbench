@@ -139,7 +139,7 @@ A trial is unscored if it has an agent error in `generated_error` or if the `goa
 
 If a scenario has no scored trial, its `status` is `ERROR` and its other stats are empty. Without the `goal_completion` scorer, the pass stats are empty.
 
-With few trials, the `confidence` is low and the interval is wide. For example, 3 passes in 3 trials give a `confidence` of 0.34 and an interval of 0.44 to 1.
+With few trials, the `confidence` is low and the interval is wide. For example, 3 passes in 3 trials give a `confidence` of 0.34 and an interval of 0.44 to 1. See [How to select `num_trials`](#how-to-select-num_trials).
 
 The job also adds the stats of the whole suite to `summary.csv`, in these columns. The existing columns do not change.
 
@@ -152,6 +152,37 @@ The job also adds the stats of the whole suite to `summary.csv`, in these column
 | `trial_min`, `trial_median`, `trial_max` | Each numeric metric | EvalBench takes the suite average of the metric in each trial. These columns have the min, median, and max of those averages. Only the scenarios with a scored result in every trial count. |
 
 The viewer shows these stats for a run with `run_stats.csv`. The Dashboard tab has the section "Stats across trials", with the pass stats of the suite. The Stability tab has one row for each scenario, with the flaky scenarios first. A tooltip on each column header gives the definition of the column. A click on a scenario row opens the result of each trial: the `goal_completion` score, the verdict of the judge on each success criterion or sub-goal, the error of an unscored trial, and a button that opens the conversation of the trial. The Dashboard tab and an open scenario row also show the min, median, and max of each numeric metric. A run without `run_stats.csv` has no such section and no Stability tab.
+
+### How to select `num_trials`
+
+A job with `num_trials: N` makes N times the agent calls, the simulated-user calls, and the judge calls of a job with one trial. It also takes N times as long, because the trials run one after another. Each trial uses real quota of the MCP servers and of the cloud resources. The default is `num_trials: 1`.
+
+Use the lowest value that answers your question:
+
+| Goal | `num_trials` | What the result shows |
+| ---- | ------------ | --------------------- |
+| Triage | 3 | Stable passes (3/3), stable failures (0/3), and flaky scenarios (1/3 or 2/3). |
+| Compare two setups | 5 or more | A moderate change of the suite pass rate between the two setups, of about 15 points or more. |
+| Confirm that one scenario is flaky | 11, in a job with only that scenario | A useful `confidence` value for the scenario. |
+
+With few trials, a difference of one trial on one scenario is normal noise. An example is 2/3 in one job and 3/3 in the next job. Treat a difference as a real change only in these cases:
+
+- The result drops by more than one trial, for example from 3/3 to 0/3.
+- A new job with a higher `num_trials` confirms the difference.
+
+If every trial passes, the `confidence` and the Wilson interval depend only on the number of trials:
+
+| `num_trials` | `confidence` | Wilson interval |
+| ------------ | ------------ | --------------- |
+| 1 | 0.19 | 0.21 to 1 |
+| 3 | 0.34 | 0.44 to 1 |
+| 5 | 0.47 | 0.57 to 1 |
+| 11 | 0.72 | 0.74 to 1 |
+| 15 | 0.81 | 0.80 to 1 |
+
+Both values are low with few trials. A scenario with a true pass rate of 90% passes 3 trials in a row in about 7 of 10 jobs, because 0.9 × 0.9 × 0.9 = 0.73. So 3 passes do not show that the true pass rate is above 90%.
+
+One failure lowers the two values a lot. For example, 2 passes in 3 trials give a `confidence` of 0.05 and an interval of 0.21 to 0.94. With few trials, use the pass rate and the interval, not the `confidence`.
 
 ---
 
