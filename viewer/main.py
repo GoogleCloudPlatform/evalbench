@@ -2359,7 +2359,20 @@ def render_app_content():
                         me.markdown(clean_summary)
 
                 elif state.selected_tab == "Stability":
-                    run_stats.stability_component(run_dir_path)
+
+                    def make_open_conversation(target_idx: int):
+                        def handler(e: me.ClickEvent):
+                            s = me.state(State)
+                            s.conversation_index = target_idx
+                            s.selected_tab = "Conversations"
+
+                        handler.__name__ = f"open_conversation_{target_idx}"
+                        return handler
+
+                    run_stats.stability_component(
+                        run_dir_path,
+                        on_open_conversation=make_open_conversation,
+                    )
                 elif state.selected_tab == "Conversations":
 
                     def on_prev_conversation(e: me.ClickEvent):

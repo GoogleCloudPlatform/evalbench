@@ -97,6 +97,46 @@ def _get_conversation_status(
     return "neutral", []
 
 
+def _conversation_rows(evals_df: pd.DataFrame) -> pd.DataFrame:
+    """Returns the rows of evals.csv that have a conversation, in file order.
+
+    The Conversations tab shows one conversation for each of these rows.
+    """
+    return evals_df[evals_df["conversation_history"].notna()].reset_index(drop=True)
+
+
+def _eval_id(conversation_rows: pd.DataFrame, row_idx: int) -> str:
+    """Returns the eval id of a conversation, or its index if the file has no id."""
+    if "eval_id" in conversation_rows.columns:
+        return str(conversation_rows["eval_id"].iloc[row_idx])
+    if "id" in conversation_rows.columns:
+        return str(conversation_rows["id"].iloc[row_idx])
+    return str(row_idx)
+
+
+def conversation_indexes(results_dir: str) -> dict[str, int]:
+    """Returns the index of each conversation in the Conversations tab, by eval id.
+
+    The result is empty for a run without conversations.
+    """
+    evals_path = os.path.join(results_dir, "evals.csv")
+    if not os.path.exists(evals_path):
+        return {}
+    try:
+        df = pd.read_csv(evals_path)
+    except Exception as e:
+        logging.warning(f"Failed to read evals.csv in conversation_indexes: {e}")
+        return {}
+    if "conversation_history" not in df.columns:
+        return {}
+    rows = _conversation_rows(df)
+    indexes: dict[str, int] = {}
+    for row_idx in range(len(rows)):
+        # If two conversations have the same id, keep the first one.
+        indexes.setdefault(_eval_id(rows, row_idx), row_idx)
+    return indexes
+
+
 def conversations_component(
     results_dir: str,
     conversation_index: int = 0,
@@ -127,7 +167,7 @@ def conversations_component(
         try:
             df = pd.read_csv(evals_path)
             if "conversation_history" in df.columns:
-                valid_df = df[df["conversation_history"].notna()].reset_index(drop=True)
+                valid_df = _conversation_rows(df)
                 histories = valid_df["conversation_history"].tolist()
 
                 if not histories:
@@ -139,11 +179,7 @@ def conversations_component(
                     idx = max(0, min(conversation_index, total - 1))
 
                     def _get_eval_id(row_idx: int) -> str:
-                        if "eval_id" in valid_df.columns:
-                            return str(valid_df["eval_id"].iloc[row_idx])
-                        if "id" in valid_df.columns:
-                            return str(valid_df["id"].iloc[row_idx])
-                        return str(row_idx)
+                        return _eval_id(valid_df, row_idx)
 
                     eval_id = _get_eval_id(idx)
 
