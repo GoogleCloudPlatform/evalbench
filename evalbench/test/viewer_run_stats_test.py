@@ -555,7 +555,7 @@ class TestNumericMetrics(RunStatsTestCase):
         self.assertNotIn("token_consumption", texts)
         tips = [c.kwargs["message"] for c in me.tooltip.call_args_list]
         self.assertEqual(1, len(tips))
-        self.assertIn("median, min, and max of these trial averages", tips[0])
+        self.assertIn("median, min, and max of the trial averages", tips[0])
 
     def test_the_dashboard_shows_no_metric_card_without_the_values(self):
         with patch.object(run_stats, "me") as me:
@@ -580,7 +580,7 @@ class TestNumericMetrics(RunStatsTestCase):
                 self.assertIn(expected, texts)
         tips = [c.kwargs["message"] for c in me.tooltip.call_args_list]
         self.assertEqual(
-            2, sum("between the trials of this scenario" in tip for tip in tips))
+            2, sum("scored trials of this scenario" in tip for tip in tips))
 
     def test_an_open_row_without_metric_values_shows_no_metric_card(self):
         key = run_stats.row_key(self.results_dir, "clone-instance")
