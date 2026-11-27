@@ -74,15 +74,12 @@ _COLUMNS = (
 _ROW_HINT = "Select a scenario to see the result of each trial."
 # The tooltips of the metric cards.
 _SUITE_METRICS_TIP = (
-    "This card shows how the metric changes between trials. For each "
-    "trial, EvalBench calculates the average of the metric over the "
-    "scenarios. The card shows the median, min, and max of these trial "
-    "averages. Only the scenarios with a scored result in each trial are "
-    "in the averages.")
+    "The median, min, and max of the trial averages. A trial average is "
+    "the average of the metric over the scenarios in one trial. Only the "
+    "scenarios with a scored result in each trial are in the average.")
 _SCENARIO_METRICS_TIP = (
-    "This card shows how the metric changes between the trials of this "
-    "scenario. It shows the median, min, and max of the metric over the "
-    "scored trials.")
+    "The median, min, and max of the metric over the scored trials of "
+    "this scenario.")
 # The trial details show at most this number of characters of an error.
 _MAX_ERROR_LENGTH = 600
 
