@@ -363,3 +363,29 @@ def test_local_run_copies_gcloud_credentials_into_the_sandbox(
     assert os.path.exists(os.path.join(fake_gcloud, "access_tokens.db"))
     assert generator.env["GOOGLE_APPLICATION_CREDENTIALS"] == os.path.join(
         fake_gcloud, "application_default_credentials.json")
+
+
+@pytest.mark.parametrize("prompt", ["hello", "--version", "-h"])
+def test_prompt_is_the_last_argument_after_the_option_delimiter(prompt):
+    from generators.models.claude_code import CLICommand
+
+    generator = object.__new__(ClaudeCodeGenerator)
+    generator.env = {}
+    generator.model = "claude-opus-4-6"
+    generator.allowed_tools = ["Bash", "Read"]
+    generator.fake_home = os.getcwd()
+
+    cli_cmd = CLICommand(
+        "claude", prompt, resume=True,
+        session_id="3f2b8c1e-9a4d-4e6f-8b7a-1c2d3e4f5a6b")
+
+    completed = MagicMock(stdout="", stderr="")
+    with patch.object(
+        generator, '_execute_cli_streaming', return_value=(completed, {}),
+    ) as mock_exec:
+        generator._run_claude_code(cli_cmd)
+
+    command = mock_exec.call_args.args[0]
+    assert command[:2] == ["claude", "-p"]
+    assert command[-2:] == ["--", prompt]
+    assert command.count(prompt) == 1

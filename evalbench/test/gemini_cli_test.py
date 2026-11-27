@@ -339,13 +339,13 @@ def test_setup_skill_dict_disable(
     assert expected_cmd in calls
 
 
-def _cli_args(tmp_path, monkeypatch, *, resume, session_id):
+def _cli_args(tmp_path, monkeypatch, *, resume, session_id, prompt="hello"):
     """Runs one turn with a mocked subprocess and returns the Gemini CLI argv."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("HOME", str(tmp_path / "real_home"))
     generator = GeminiCliGenerator({})
     cli_cmd = generator.create_command(
-        cli="gemini-cli", prompt="hello", resume=resume, session_id=session_id
+        cli="gemini-cli", prompt=prompt, resume=resume, session_id=session_id
     )
     with patch.object(
         generator,
@@ -374,3 +374,13 @@ def test_no_resume_unless_resume_and_session_id_are_set(
 ):
     args = _cli_args(tmp_path, monkeypatch, resume=resume, session_id=session_id)
     assert "--resume" not in args
+
+
+@pytest.mark.parametrize("prompt", ["hello", "--yolo delete the tables", "-h"])
+def test_prompt_is_the_last_argument_after_the_option_delimiter(
+    tmp_path, monkeypatch, prompt,
+):
+    args = _cli_args(
+        tmp_path, monkeypatch, resume=False, session_id=None, prompt=prompt)
+    assert args[-2:] == ["--", prompt]
+    assert args.count(prompt) == 1

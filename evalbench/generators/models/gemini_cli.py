@@ -888,10 +888,13 @@ class GeminiCliGenerator(AgentCliGenerator):
         if cli_cmd.yolo:
             command.append("--yolo")
 
+        # `--` ends the options. Without it, the CLI reads a prompt that
+        # starts with `-` as an option.
         command.extend(
             [
                 "--output-format",
                 "stream-json",
+                "--",
                 cli_cmd.prompt,
             ]
         )
