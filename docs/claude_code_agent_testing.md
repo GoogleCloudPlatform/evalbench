@@ -501,6 +501,13 @@ To resolve this with user ADC, re-authenticate and explicitly specify the requir
 gcloud auth application-default login --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/<scope>"
 ```
 
+### EvalBench runs as root (container image)
+
+Claude Code runs with `--dangerously-skip-permissions`, so EvalBench does not start it as root. When EvalBench is root, it starts Claude Code as the non-root user `claudeuser` and gives the sandbox home to that user. The container image creates `claudeuser`.
+
+- `EvalBench runs as root, and Claude Code must not`: the machine has no non-root `claudeuser`. Run `useradd -m claudeuser`, or run EvalBench as a non-root user.
+- Claude Code cannot write to the `work_dir` of a scenario: EvalBench does not change the owner of a work directory outside the sandbox home. Give `claudeuser` write permission on that directory.
+
 ### `npm exec` is slow on first run
 
 `npm exec --yes <package>@<version>` downloads the package on first use (~30 sec). Subsequent runs use the cache.
