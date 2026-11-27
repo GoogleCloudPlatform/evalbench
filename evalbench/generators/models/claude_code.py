@@ -840,8 +840,9 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         else:
             command = [cli]
 
-        # -p "prompt" for non-interactive single-prompt mode
-        command.extend(["-p", cli_cmd.prompt])
+        # -p for non-interactive single-prompt mode. The prompt is the last
+        # argument (see below).
+        command.append("-p")
 
         # Auto-accept all tool uses (like --yolo in Gemini CLI)
         command.append("--dangerously-skip-permissions")
@@ -870,6 +871,10 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         if allowed_tools:
             for tool in allowed_tools:
                 command.extend(["--allowedTools", tool])
+
+        # `--` ends the options. Without it, the CLI reads a prompt that
+        # starts with `-` as an option.
+        command.extend(["--", cli_cmd.prompt])
 
         # Claude Code refuses --dangerously-skip-permissions when running as
         # root.  Wrap with `su` to drop privileges to a non-root user.

@@ -234,3 +234,33 @@ def test_fetch_gcloud_access_token_rejects_unsafe_scopes():
         generator._fetch_gcloud_access_token(
             scopes=['$(whoami)']
         )
+
+
+@pytest.mark.parametrize("resume", [False, True])
+@pytest.mark.parametrize("prompt", ["test prompt", "--dangerously-bypass-approvals-and-sandbox", "-h"])
+def test_prompt_is_the_last_argument_after_the_option_delimiter(resume, prompt):
+    generator = object.__new__(CodexCliGenerator)
+    generator.env = {}
+    generator.json_flag = "--json"
+    generator.sandbox_mode = "workspace-write"
+    generator.approval_mode = "never"
+    generator.model = "gpt-5"
+    generator.profile = None
+
+    cli_cmd = MagicMock()
+    cli_cmd.cli = "codex"
+    cli_cmd.resume = resume
+    cli_cmd.session_id = "0197a0a0-0000-7000-8000-000000000000"
+    cli_cmd.prompt = prompt
+    cli_cmd.env = {}
+    cli_cmd.cwd = None
+
+    completed = MagicMock(stdout="", stderr="")
+    with patch.object(
+        generator, '_execute_cli_command', return_value=(completed, {}),
+    ) as mock_exec:
+        generator._run_codex_cli(cli_cmd)
+
+    command = mock_exec.call_args.args[0]
+    assert command[-2:] == ["--", prompt]
+    assert command.count(prompt) == 1

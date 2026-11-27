@@ -926,7 +926,9 @@ class CodexCliGenerator(AgentCliGenerator):
         if self.profile:
             command.extend(["--profile", self.profile])
 
-        command.append(cli_cmd.prompt)
+        # `--` ends the options. Without it, the CLI reads a prompt that
+        # starts with `-` as an option.
+        command.extend(["--", cli_cmd.prompt])
 
         logging.info(f"Running Codex CLI: {' '.join(command)}")
 
