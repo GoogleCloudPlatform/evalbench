@@ -473,6 +473,145 @@ class TestTrialDetails(RunStatsTestCase):
                     expected, run_stats.trial_score({"score": score}))
 
 
+class TestNumericMetrics(RunStatsTestCase):
+    """The min, median, and max of the numeric metrics."""
+
+    METRICS = {"token_consumption_min": 76542.3333,
+               "token_consumption_median": 113907.6667,
+               "token_consumption_max": 135533.0,
+               "turn_count_min": 1.0, "turn_count_median": 1.6667,
+               "turn_count_max": 2.0}
+    SUMMARY = SUITE_SUMMARY + [
+        {"metric_name": "token_consumption", "correct_results_count": 9,
+         "total_results_count": 9, "trial_min": 76542.3333,
+         "trial_median": 113907.6667, "trial_max": 135533.3333}]
+
+    def setUp(self):
+        super().setUp()
+        # The second scenario has no metric values.
+        self.write(run_stats.RUN_STATS_FILE, [
+            dict(FLAKY, **self.METRICS),
+            dict(NO_SCORED_TRIAL, **dict.fromkeys(self.METRICS))])
+        self.write("scores.csv", [_score_row("create-backup", 0, 100.0)])
+
+    def texts(self, me):
+        return [c.args[0] for c in me.text.call_args_list if c.args]
+
+    def test_formats_numbers(self):
+        for value, expected in [
+            (76542.3333, "76,542"), (135533.0, "135,533"), (1.6667, "1.7"),
+            (2.0, "2"), (99.94, "99.9"), (0, "0"), (None, "–"), ("N/A", "–"),
+        ]:
+            with self.subTest(value=value):
+                self.assertEqual(expected, run_stats.format_number(value))
+
+    def test_a_metric_has_a_min_a_median_and_a_max_column(self):
+        self.assertEqual(
+            ["token_consumption", "turn_count"],
+            run_stats.metric_names([
+                "scenario_id", "token_consumption_min",
+                "token_consumption_median", "token_consumption_max",
+                "turn_count_min", "turn_count_median", "turn_count_max",
+                # Not a metric: no median and no max.
+                "other_min", "interval_low", "score_mean"]))
+
+    def test_a_scenario_row_has_its_metrics(self):
+        rows = run_stats.scenario_rows(
+            run_stats.load_run_stats(self.results_dir))
+
+        self.assertEqual(
+            [("token_consumption", "76,542", "113,908", "135,533"),
+             ("turn_count", "1", "1.7", "2")],
+            rows[0]["metrics"])
+        self.assertEqual([], rows[1]["metrics"])
+
+    def test_the_suite_metrics_come_from_the_summary(self):
+        self.assertEqual(
+            [("token_consumption", "76,542", "113,908", "135,533")],
+            run_stats.suite_metrics(pd.DataFrame(self.SUMMARY)))
+
+    def test_a_summary_without_the_trial_columns_has_no_suite_metrics(self):
+        for summary in (None, pd.DataFrame(), pd.DataFrame(SUITE_SUMMARY)):
+            with self.subTest(summary=summary):
+                self.assertEqual([], run_stats.suite_metrics(summary))
+
+    def test_a_metric_label_has_words(self):
+        self.assertEqual("End to end latency",
+                         run_stats.metric_label("end_to_end_latency"))
+        self.assertEqual("Turn count", run_stats.metric_label("turn_count"))
+
+    def test_the_dashboard_shows_a_card_for_each_suite_metric(self):
+        with patch.object(run_stats, "me") as me:
+            run_stats.suite_stats_component(
+                self.results_dir, pd.DataFrame(self.SUMMARY))
+
+        texts = self.texts(me)
+        # The label, the median, and the note of the card.
+        for expected in ["Token consumption", "113,908",
+                         "Median. Min 76,542, max 135,533"]:
+            with self.subTest(expected=expected):
+                self.assertIn(expected, texts)
+        # The card shows words, not the name in the file.
+        self.assertNotIn("token_consumption", texts)
+        tips = [c.kwargs["message"] for c in me.tooltip.call_args_list]
+        # The other tooltips are the tooltips of the suite cards.
+        self.assertEqual(1, sum(
+            "median, min, and max of the trial averages" in tip
+            for tip in tips))
+
+    def test_the_dashboard_shows_no_metric_card_without_the_values(self):
+        with patch.object(run_stats, "me") as me:
+            run_stats.suite_stats_component(
+                self.results_dir, pd.DataFrame(SUITE_SUMMARY))
+
+        self.assertNotIn("Token consumption", self.texts(me))
+        tips = [c.kwargs["message"] for c in me.tooltip.call_args_list]
+        self.assertFalse(any("trial averages" in tip for tip in tips))
+
+    def test_an_open_row_shows_the_metric_cards_of_the_scenario(self):
+        key = run_stats.row_key(self.results_dir, "create-backup")
+        with patch.object(run_stats, "me") as me:
+            me.state.return_value.expanded = [key]
+            run_stats.stability_component(self.results_dir)
+
+        texts = self.texts(me)
+        for expected in ["Token consumption", "113,908",
+                         "Median. Min 76,542, max 135,533",
+                         "Turn count", "1.7", "Median. Min 1, max 2",
+                         "Trial 1"]:
+            with self.subTest(expected=expected):
+                self.assertIn(expected, texts)
+        tips = [c.kwargs["message"] for c in me.tooltip.call_args_list]
+        self.assertEqual(
+            2, sum("scored trials of this scenario" in tip for tip in tips))
+
+    def test_an_open_row_without_metric_values_shows_no_metric_card(self):
+        key = run_stats.row_key(self.results_dir, "clone-instance")
+        with patch.object(run_stats, "me") as me:
+            me.state.return_value.expanded = [key]
+            run_stats.stability_component(self.results_dir)
+
+        self.assertNotIn("Token consumption", self.texts(me))
+
+
+class TestSuiteCardTooltips(RunStatsTestCase):
+
+    def test_each_suite_card_has_a_tooltip_with_its_definition(self):
+        self.write(run_stats.RUN_STATS_FILE, [STABLE_PASS, FLAKY])
+
+        with patch.object(run_stats, "me") as me:
+            run_stats.suite_stats_component(
+                self.results_dir, pd.DataFrame(SUITE_SUMMARY))
+
+        tips = [c.kwargs["message"] for c in me.tooltip.call_args_list]
+        self.assertEqual(4, len(tips))
+        for expected in ["over all scenarios", "Wilson interval",
+                         "some scored trials passed and some failed",
+                         "4p(1 - p)", "above 90%"]:
+            with self.subTest(expected=expected):
+                self.assertTrue(any(expected in tip for tip in tips))
+
+
 class TestDashboardShowsSuiteStats(RunStatsTestCase):
 
     def texts(self):

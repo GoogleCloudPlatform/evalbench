@@ -8,13 +8,17 @@ Dashboard tab.
 
 On the Stability tab, a click on a scenario row opens the result of each
 trial of the scenario, from scores.csv.
+
+Both tabs also show the min, median, and max of each numeric metric, such as
+token_consumption: the Dashboard tab for the suite, and an open scenario row
+for the scenario.
 """
 
 import logging
 import math
 import os
 from dataclasses import field
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 import mesop as me
 import pandas as pd
@@ -68,6 +72,31 @@ _COLUMNS = (
      "The chance, from 0 to 1, that the true pass rate is above 90%."),
 )
 _ROW_HINT = "Select a scenario to see the result of each trial."
+# The tooltips of the suite cards on the Dashboard tab.
+_PASS_RATE_TIP = (
+    "Passed trials divided by scored trials, over all scenarios. A trial "
+    "passes if its goal_completion score is at or above the pass threshold "
+    "of the job. The 95% interval is the Wilson interval. It is the range "
+    "that holds the true pass rate with 95% certainty.")
+_FLAKY_SCENARIOS_TIP = (
+    "The number of scenarios in which some scored trials passed and some "
+    "failed.")
+_FLAKINESS_TIP = (
+    "The average flakiness of the scenarios with more than one scored "
+    "trial. The flakiness of a scenario is 4p(1 - p) for its pass rate p. "
+    "It is 0 if all scored trials agree and 1 at 50/50.")
+_CONFIDENCE_TIP = (
+    "The average confidence of the scenarios with more than one scored "
+    "trial. The confidence of a scenario is the chance, from 0 to 1, that "
+    "its true pass rate is above 90%.")
+# The tooltips of the metric cards.
+_SUITE_METRICS_TIP = (
+    "The median, min, and max of the trial averages. A trial average is "
+    "the average of the metric over the scenarios in one trial. Only the "
+    "scenarios with a scored result in each trial are in the average.")
+_SCENARIO_METRICS_TIP = (
+    "The median, min, and max of the metric over the scored trials of "
+    "this scenario.")
 # The trial details show at most this number of characters of an error.
 _MAX_ERROR_LENGTH = 600
 
@@ -108,6 +137,49 @@ def format_score(value: Any) -> str:
     """Formats a flakiness or a confidence value with 2 decimals."""
     number = _number(value)
     return _EMPTY if number is None else f"{number:.2f}"
+
+
+def format_number(value: Any) -> str:
+    """Formats the value of a numeric metric with thousands separators.
+
+    A value below 100 that is not a whole number gets 1 decimal. The value
+    has the unit of its scorer, and the text has no unit.
+    """
+    number = _number(value)
+    if number is None:
+        return _EMPTY
+    if number.is_integer() or abs(number) >= 100:
+        return f"{number:,.0f}"
+    return f"{number:,.1f}"
+
+
+def metric_names(columns: Iterable[str]) -> list[str]:
+    """Returns the numeric metrics of run_stats.csv, in the column order.
+
+    The file has the columns `<metric>_min`, `<metric>_median`, and
+    `<metric>_max` for each numeric metric, such as token_consumption.
+    """
+    columns = list(columns)
+    names = []
+    for column in columns:
+        name = column[:-len("_min")]
+        if (column.endswith("_min") and f"{name}_median" in columns
+                and f"{name}_max" in columns):
+            names.append(name)
+    return names
+
+
+def _metric_row(
+    name: Any, low: Any, median: Any, high: Any
+) -> Optional[tuple[str, str, str, str]]:
+    """Returns the name, min, median, and max of a metric as texts.
+
+    Returns None for a metric without a value.
+    """
+    if all(_number(value) is None for value in (low, median, high)):
+        return None
+    return (str(name), format_number(low), format_number(median),
+            format_number(high))
 
 
 def _rate_color(rate: Optional[float]) -> str:
@@ -154,7 +226,13 @@ def scenario_rows(run_stats: pd.DataFrame) -> list[dict]:
     the job has no pass metric.
     """
     rows = []
+    names = metric_names(run_stats.columns)
     for record in run_stats.to_dict(orient="records"):
+        metrics = (
+            _metric_row(name, record.get(f"{name}_min"),
+                        record.get(f"{name}_median"),
+                        record.get(f"{name}_max"))
+            for name in names)
         scored = _count(record.get("scored_trials"))
         unscored = _count(record.get("unscored_trials"))
         passed = None
@@ -171,6 +249,8 @@ def scenario_rows(run_stats: pd.DataFrame) -> list[dict]:
             "failed": scored - passed if passed is not None else None,
             "unscored": unscored,
             "num_trials": _count(record.get("num_trials")),
+            # The numeric metrics that have a value for this scenario.
+            "metrics": [metric for metric in metrics if metric],
             "trials": _trials_text(passed, scored, unscored),
             "pass_rate": format_rate(record.get("pass_rate")),
             "interval": format_interval(
@@ -203,6 +283,24 @@ def suite_stats(summary_df: Optional[pd.DataFrame]) -> dict[str, float]:
     return stats
 
 
+def suite_metrics(
+    summary_df: Optional[pd.DataFrame]
+) -> list[tuple[str, str, str, str]]:
+    """Returns the min, median, and max across trials of each numeric metric.
+
+    The values come from the trial_min, trial_median, and trial_max columns
+    of summary.csv. For each trial, the job takes the suite average of the
+    metric. A metric without these values is not in the result.
+    """
+    columns = ("metric_name", "trial_min", "trial_median", "trial_max")
+    if summary_df is None or not set(columns) <= set(summary_df.columns):
+        return []
+    metrics = (
+        _metric_row(*(record[column] for column in columns))
+        for record in summary_df.to_dict(orient="records"))
+    return [metric for metric in metrics if metric]
+
+
 def trials_summary(run_stats: pd.DataFrame) -> str:
     """Returns the number of scenarios and the number of trials of each."""
     counts = [_count(value) for value in run_stats["num_trials"]]
@@ -213,7 +311,8 @@ def trials_summary(run_stats: pd.DataFrame) -> str:
 
 
 def suite_cards(suite: dict[str, float], rows: list[dict]) -> list[tuple]:
-    """Returns the label, value, note, and color of each suite card."""
+    """Returns the label, value, note, color, and tooltip of each suite card.
+    """
     cards = []
     if "pass_rate" in suite:
         interval = format_interval(
@@ -221,20 +320,22 @@ def suite_cards(suite: dict[str, float], rows: list[dict]) -> list[tuple]:
         cards.append((
             "Pass rate", format_rate(suite["pass_rate"]),
             f"95% interval: {interval}" if interval != _EMPTY else "",
-            _rate_color(suite["pass_rate"])))
+            _rate_color(suite["pass_rate"]), _PASS_RATE_TIP))
     flaky = sum(row["flaky"] for row in rows)
     cards.append((
         "Flaky scenarios", f"{flaky} of {len(rows)}",
         "Some trials passed and some failed",
-        _AMBER if flaky else _GREEN))
+        _AMBER if flaky else _GREEN, _FLAKY_SCENARIOS_TIP))
     if "flakiness" in suite:
         cards.append((
             "Flakiness", format_score(suite["flakiness"]),
-            "Average of the scenarios, from 0 to 1", _TEXT))
+            "Average of the scenarios, from 0 to 1", _TEXT,
+            _FLAKINESS_TIP))
     if "confidence" in suite:
         cards.append((
             "Confidence", format_score(suite["confidence"]),
-            "Average chance of a true pass rate above 90%", _TEXT))
+            "Average chance of a true pass rate above 90%", _TEXT,
+            _CONFIDENCE_TIP))
     return cards
 
 
@@ -242,7 +343,47 @@ def _line() -> me.BorderSide:
     return me.BorderSide(width="1px", color=_LINE, style="solid")
 
 
-def _card(label: str, value: str, note: str, color: str) -> None:
+def _label_with_tip(label: str, tip: str, style: me.Style) -> None:
+    """Draws a label with an info icon. A tooltip opens on the two."""
+    # The outer box keeps the tooltip area as narrow as the label and icon.
+    with me.box(style=me.Style(display="flex")):
+        with me.tooltip(message=tip, position="above"):
+            with me.box(
+                style=me.Style(
+                    display="flex",
+                    align_items="center",
+                    gap="4px",
+                    cursor="help",
+                )
+            ):
+                me.text(label, style=style)
+                me.icon(
+                    "info",
+                    style=me.Style(
+                        font_size="14px",
+                        width="14px",
+                        height="14px",
+                        color=_GREY,
+                    ),
+                )
+
+
+def _card(
+    label: str,
+    value: str,
+    note: str,
+    color: str,
+    tip: str = "",
+    compact: bool = False,
+) -> None:
+    """Draws a card in the style of the Dashboard Summary cards.
+
+    The card has a label, a value in large text, and a note below it. With
+    `tip`, the label has a tooltip. A compact card has a smaller value, for
+    the open scenario rows.
+    """
+    label_style = me.Style(
+        font_weight="600", font_size="12px", color="#374151")
     with me.box(
         style=me.Style(
             flex_grow=1,
@@ -254,18 +395,18 @@ def _card(label: str, value: str, note: str, color: str) -> None:
             box_shadow="0 1px 3px rgba(0,0,0,0.06)",
         )
     ):
-        me.text(
-            label,
-            style=me.Style(
-                font_weight="600",
-                font_size="12px",
-                color="#374151",
-                margin=me.Margin(bottom="4px"),
-            ),
-        )
+        with me.box(style=me.Style(margin=me.Margin(bottom="4px"))):
+            if tip:
+                _label_with_tip(label, tip, label_style)
+            else:
+                me.text(label, style=label_style)
         me.text(
             value,
-            style=me.Style(font_weight="700", font_size="22px", color=color),
+            style=me.Style(
+                font_weight="700",
+                font_size="16px" if compact else "22px",
+                color=color,
+            ),
         )
         if note:
             me.text(
@@ -358,27 +499,7 @@ def _column_header(label: str, tip: str) -> None:
             ),
         )
         return
-    # The outer box keeps the tooltip area as narrow as the label and icon.
-    with me.box(style=me.Style(display="flex")):
-        with me.tooltip(message=tip, position="above"):
-            with me.box(
-                style=me.Style(
-                    display="flex",
-                    align_items="center",
-                    gap="4px",
-                    cursor="help",
-                )
-            ):
-                me.text(label, style=style)
-                me.icon(
-                    "info",
-                    style=me.Style(
-                        font_size="14px",
-                        width="14px",
-                        height="14px",
-                        color=_GREY,
-                    ),
-                )
+    _label_with_tip(label, tip, style)
 
 
 def row_key(results_dir: str, scenario_id: str) -> str:
@@ -518,13 +639,52 @@ def _trial(
             )
 
 
+def metric_label(name: str) -> str:
+    """Returns the name of a metric as words.
+
+    For example, end_to_end_latency gives "End to end latency".
+    """
+    return name.replace("_", " ").strip().capitalize()
+
+
+def _metric_cards(
+    metrics: list[tuple], tip: str, compact: bool = False
+) -> None:
+    """Draws one card for each numeric metric.
+
+    The card has the median in large text, and the min and the max below
+    it. me.text escapes the metric name, which comes from a file.
+    """
+    with me.box(
+        style=me.Style(
+            display="grid",
+            # 4 cards in each row, as the cards of the suite stats. A flex
+            # row makes the cards of the last row wider than the others.
+            grid_template_columns="repeat(4, minmax(0, 1fr))",
+            gap="16px",
+            width="100%",
+            margin=me.Margin(bottom="16px"),
+        )
+    ):
+        for name, low, median, high in metrics:
+            _card(
+                metric_label(name),
+                median,
+                f"Median. Min {low}, max {high}",
+                _TEXT,
+                tip=tip,
+                compact=compact,
+            )
+
+
 def _trial_details(
     row: dict,
     trials: list[dict],
     conversation_index_of: dict[str, int],
     on_open_conversation: Optional[Callable[[int], Callable]],
 ) -> None:
-    """Draws the result of each trial of a scenario, below its row."""
+    """Draws the metrics and the result of each trial, below a scenario row.
+    """
     with me.box(
         style=me.Style(
             min_width="1000px",
@@ -534,6 +694,9 @@ def _trial_details(
             border=me.Border(bottom=_line()),
         )
     ):
+        if row["metrics"]:
+            _metric_cards(
+                row["metrics"], _SCENARIO_METRICS_TIP, compact=True)
         for trial in trials:
             _trial(
                 trial,
@@ -681,6 +844,9 @@ def suite_stats_component(
     ):
         for card in suite_cards(suite_stats(summary_df), rows):
             _card(*card)
+    metrics = suite_metrics(summary_df)
+    if metrics:
+        _metric_cards(metrics, _SUITE_METRICS_TIP)
 
 
 def stability_component(
