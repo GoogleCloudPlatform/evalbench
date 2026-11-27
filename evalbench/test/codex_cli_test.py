@@ -234,3 +234,22 @@ def test_fetch_gcloud_access_token_rejects_unsafe_scopes():
         generator._fetch_gcloud_access_token(
             scopes=['$(whoami)']
         )
+
+
+def test_translate_mcp_config_gives_no_google_token_to_other_host():
+    generator = object.__new__(CodexCliGenerator)
+    generator.env = {}
+    generator._gcloud_mcp_scopes = []
+
+    mcp_config = {
+        "httpUrl": "https://mcp.example.com/mcp",
+        "authProviderType": "google_credentials",
+        "oauth": {"scopes": ["https://www.googleapis.com/auth/cloud-platform"]},
+    }
+
+    with patch.object(generator, '_fetch_gcloud_access_token') as mock_fetch:
+        with pytest.raises(ValueError, match="cannot use google_credentials auth"):
+            generator._translate_mcp_config("other", mcp_config)
+
+    mock_fetch.assert_not_called()
+    assert "EVALBENCH_GCLOUD_MCP_TOKEN" not in generator.env

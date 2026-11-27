@@ -363,3 +363,20 @@ def test_local_run_copies_gcloud_credentials_into_the_sandbox(
     assert os.path.exists(os.path.join(fake_gcloud, "access_tokens.db"))
     assert generator.env["GOOGLE_APPLICATION_CREDENTIALS"] == os.path.join(
         fake_gcloud, "application_default_credentials.json")
+
+
+def test_translate_mcp_config_gives_no_google_token_to_other_host():
+    generator = object.__new__(ClaudeCodeGenerator)
+    generator.env = {}
+
+    mcp_config = {
+        "httpUrl": "https://mcp.example.com/mcp",
+        "authProviderType": "google_credentials",
+        "oauth": {"scopes": ["https://www.googleapis.com/auth/cloud-platform"]},
+    }
+
+    with patch.object(generator, '_fetch_gcloud_access_token') as mock_fetch:
+        with pytest.raises(ValueError, match="cannot use google_credentials auth"):
+            generator._translate_mcp_config("other", mcp_config)
+
+    mock_fetch.assert_not_called()

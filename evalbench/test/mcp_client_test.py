@@ -7,6 +7,7 @@ from generators.models.mcp_client import (
     McpToolsError,
     auth_headers,
     extract_mcp_oauth_scopes,
+    validate_google_credentials_url,
     validate_oauth_scopes,
 )
 
@@ -148,6 +149,7 @@ class AuthHeadersTest(unittest.TestCase):
     def test_google_credentials_adc_failure_raises_mcp_tools_error(self, mock_default):
         with self.assertRaises(McpToolsError) as ctx:
             auth_headers({
+                "httpUrl": "https://sqladmin.googleapis.com/mcp",
                 "authProviderType": "google_credentials",
                 "oauth": {"scopes": ["https://www.googleapis.com/auth/cloud-platform"]},
             })
@@ -161,6 +163,7 @@ class AuthHeadersTest(unittest.TestCase):
         mock_default.return_value = (mock_creds, "project1")
 
         headers = auth_headers({
+            "httpUrl": "https://sqladmin.googleapis.com/mcp",
             "authProviderType": "google_credentials",
             "headers": {"X-Goog-User-Project": "project1"},
             "oauth": {
@@ -172,6 +175,75 @@ class AuthHeadersTest(unittest.TestCase):
         )
         self.assertEqual(headers["Authorization"], "Bearer token123")
         self.assertEqual(headers["X-Goog-User-Project"], "project1")
+
+    @patch("google.auth.default")
+    def test_google_credentials_other_host_gets_no_token(self, mock_default):
+        with self.assertRaises(McpToolsError) as ctx:
+            auth_headers({
+                "httpUrl": "https://mcp.example.com/mcp",
+                "authProviderType": "google_credentials",
+                "oauth": {"scopes": ["https://www.googleapis.com/auth/cloud-platform"]},
+            })
+        self.assertIn("cannot use google_credentials auth", str(ctx.exception))
+        mock_default.assert_not_called()
+
+    @patch("google.auth.default")
+    def test_google_credentials_checks_both_url_keys(self, mock_default):
+        with self.assertRaises(McpToolsError):
+            auth_headers({
+                "httpUrl": "https://sqladmin.googleapis.com/mcp",
+                "url": "https://mcp.example.com/mcp",
+                "authProviderType": "google_credentials",
+                "oauth": {"scopes": ["https://www.googleapis.com/auth/cloud-platform"]},
+            })
+        mock_default.assert_not_called()
+
+    @patch("google.auth.default")
+    def test_google_credentials_without_url_gets_no_token(self, mock_default):
+        with self.assertRaises(McpToolsError) as ctx:
+            auth_headers({
+                "authProviderType": "google_credentials",
+                "oauth": {"scopes": ["https://www.googleapis.com/auth/cloud-platform"]},
+            })
+        self.assertIn("requires httpUrl or url", str(ctx.exception))
+        mock_default.assert_not_called()
+
+
+class ValidateGoogleCredentialsUrlTest(unittest.TestCase):
+
+    def test_google_api_urls_pass(self):
+        for url in [
+            "https://sqladmin.googleapis.com/mcp",
+            "https://bigtableadmin.googleapis.com",
+            "https://test-dfareporting.sandbox.googleapis.com/mcp",
+            "https://SQLADMIN.googleapis.com:443/mcp?alt=sse#top",
+        ]:
+            with self.subTest(url=url):
+                self.assertEqual(validate_google_credentials_url(url), url)
+
+    def test_other_urls_raise_value_error(self):
+        for url in [
+            "http://sqladmin.googleapis.com/mcp",
+            "https://mcp.example.com/mcp",
+            "https://googleapis.com/mcp",
+            "https://evilgoogleapis.com/mcp",
+            "https://sqladmin.googleapis.com.example.com/mcp",
+            "https://sqladmin.googleapis.com@example.com/mcp",
+            "https://example.com\\@sqladmin.googleapis.com/mcp",
+            "https://example.com/?next=https://sqladmin.googleapis.com/mcp",
+            "https://example.com#.googleapis.com",
+            "https://sqladmin.googleapis.com:99999999/mcp",
+            " https://sqladmin.googleapis.com/mcp",
+            "https://sqladmin.googleapis.com/mcp\n",
+            "https://sqladmin.googleapis.com/a b",
+            "",
+            None,
+            ["https://sqladmin.googleapis.com/mcp"],
+        ]:
+            with self.subTest(url=url):
+                with self.assertRaises(ValueError) as ctx:
+                    validate_google_credentials_url(url)
+                self.assertIn("cannot use google_credentials auth", str(ctx.exception))
 
 
 if __name__ == "__main__":

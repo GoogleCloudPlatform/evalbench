@@ -303,6 +303,8 @@ class ClaudeCodeGenerator(AgentCliGenerator):
         config.pop("oauth", None)
 
         if auth_provider == "google_credentials":
+            # Claude Code sends the token to this URL on every connection.
+            mcp_client.validate_google_credentials_url(config.get("url"))
             headers = config.get("headers", {}) or {}
 
             # Refresh the token on every MCP connection via `headersHelper`.
