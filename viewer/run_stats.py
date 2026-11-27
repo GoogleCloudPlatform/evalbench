@@ -452,11 +452,20 @@ def _trial(
             me.text(score_text, style=_chip_style(score_color))
             me.text(trial["eval_id"], style=small)
             if on_open_conversation and conversation_index is not None:
+                # The default button is 40px high with round ends. It is
+                # too large next to the 12px text of the trial.
                 me.button(
                     "Open conversation",
                     on_click=on_open_conversation(conversation_index),
                     type="stroked",
-                    style=me.Style(font_size="12px"),
+                    style=me.Style(
+                        font_size="12px",
+                        height="26px",
+                        line_height="24px",
+                        border_radius="6px",
+                        padding=me.Padding.symmetric(
+                            vertical="0", horizontal="10px"),
+                    ),
                 )
         # An error is the reason for an unscored trial, so it comes first.
         for label, error in (("Error", trial["run_error"]),
