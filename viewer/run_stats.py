@@ -72,6 +72,23 @@ _COLUMNS = (
      "The chance, from 0 to 1, that the true pass rate is above 90%."),
 )
 _ROW_HINT = "Select a scenario to see the result of each trial."
+# The tooltips of the suite cards on the Dashboard tab.
+_PASS_RATE_TIP = (
+    "Passed trials divided by scored trials, over all scenarios. A trial "
+    "passes if its goal_completion score is at or above the pass threshold "
+    "of the job. The 95% interval is the Wilson interval. It is the range "
+    "that holds the true pass rate with 95% certainty.")
+_FLAKY_SCENARIOS_TIP = (
+    "The number of scenarios in which some scored trials passed and some "
+    "failed.")
+_FLAKINESS_TIP = (
+    "The average flakiness of the scenarios with more than one scored "
+    "trial. The flakiness of a scenario is 4p(1 - p) for its pass rate p. "
+    "It is 0 if all scored trials agree and 1 at 50/50.")
+_CONFIDENCE_TIP = (
+    "The average confidence of the scenarios with more than one scored "
+    "trial. The confidence of a scenario is the chance, from 0 to 1, that "
+    "its true pass rate is above 90%.")
 # The tooltips of the metric cards.
 _SUITE_METRICS_TIP = (
     "The median, min, and max of the trial averages. A trial average is "
@@ -294,7 +311,8 @@ def trials_summary(run_stats: pd.DataFrame) -> str:
 
 
 def suite_cards(suite: dict[str, float], rows: list[dict]) -> list[tuple]:
-    """Returns the label, value, note, and color of each suite card."""
+    """Returns the label, value, note, color, and tooltip of each suite card.
+    """
     cards = []
     if "pass_rate" in suite:
         interval = format_interval(
@@ -302,20 +320,22 @@ def suite_cards(suite: dict[str, float], rows: list[dict]) -> list[tuple]:
         cards.append((
             "Pass rate", format_rate(suite["pass_rate"]),
             f"95% interval: {interval}" if interval != _EMPTY else "",
-            _rate_color(suite["pass_rate"])))
+            _rate_color(suite["pass_rate"]), _PASS_RATE_TIP))
     flaky = sum(row["flaky"] for row in rows)
     cards.append((
         "Flaky scenarios", f"{flaky} of {len(rows)}",
         "Some trials passed and some failed",
-        _AMBER if flaky else _GREEN))
+        _AMBER if flaky else _GREEN, _FLAKY_SCENARIOS_TIP))
     if "flakiness" in suite:
         cards.append((
             "Flakiness", format_score(suite["flakiness"]),
-            "Average of the scenarios, from 0 to 1", _TEXT))
+            "Average of the scenarios, from 0 to 1", _TEXT,
+            _FLAKINESS_TIP))
     if "confidence" in suite:
         cards.append((
             "Confidence", format_score(suite["confidence"]),
-            "Average chance of a true pass rate above 90%", _TEXT))
+            "Average chance of a true pass rate above 90%", _TEXT,
+            _CONFIDENCE_TIP))
     return cards
 
 

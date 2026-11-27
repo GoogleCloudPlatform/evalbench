@@ -554,8 +554,10 @@ class TestNumericMetrics(RunStatsTestCase):
         # The card shows words, not the name in the file.
         self.assertNotIn("token_consumption", texts)
         tips = [c.kwargs["message"] for c in me.tooltip.call_args_list]
-        self.assertEqual(1, len(tips))
-        self.assertIn("median, min, and max of the trial averages", tips[0])
+        # The other tooltips are the tooltips of the suite cards.
+        self.assertEqual(1, sum(
+            "median, min, and max of the trial averages" in tip
+            for tip in tips))
 
     def test_the_dashboard_shows_no_metric_card_without_the_values(self):
         with patch.object(run_stats, "me") as me:
@@ -563,7 +565,8 @@ class TestNumericMetrics(RunStatsTestCase):
                 self.results_dir, pd.DataFrame(SUITE_SUMMARY))
 
         self.assertNotIn("Token consumption", self.texts(me))
-        me.tooltip.assert_not_called()
+        tips = [c.kwargs["message"] for c in me.tooltip.call_args_list]
+        self.assertFalse(any("trial averages" in tip for tip in tips))
 
     def test_an_open_row_shows_the_metric_cards_of_the_scenario(self):
         key = run_stats.row_key(self.results_dir, "create-backup")
@@ -589,6 +592,24 @@ class TestNumericMetrics(RunStatsTestCase):
             run_stats.stability_component(self.results_dir)
 
         self.assertNotIn("Token consumption", self.texts(me))
+
+
+class TestSuiteCardTooltips(RunStatsTestCase):
+
+    def test_each_suite_card_has_a_tooltip_with_its_definition(self):
+        self.write(run_stats.RUN_STATS_FILE, [STABLE_PASS, FLAKY])
+
+        with patch.object(run_stats, "me") as me:
+            run_stats.suite_stats_component(
+                self.results_dir, pd.DataFrame(SUITE_SUMMARY))
+
+        tips = [c.kwargs["message"] for c in me.tooltip.call_args_list]
+        self.assertEqual(4, len(tips))
+        for expected in ["over all scenarios", "Wilson interval",
+                         "some scored trials passed and some failed",
+                         "4p(1 - p)", "above 90%"]:
+            with self.subTest(expected=expected):
+                self.assertTrue(any(expected in tip for tip in tips))
 
 
 class TestDashboardShowsSuiteStats(RunStatsTestCase):
