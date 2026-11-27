@@ -42,6 +42,7 @@ graph LR
         CSQL_PG["cloud-sql-python-connector<br/>[pg8000]"]
         CSQL_TDS["cloud-sql-python-connector<br/>[pytds]"]
         PGBQ[pandas-gbq]
+        GAUTH["google-auth &ge;2.55.2"]
     end
 
     subgraph SQL ["DB drivers / ORM"]
@@ -98,6 +99,7 @@ graph LR
 
     GEN_DEA --> A2A
     GEN_DEA --> GDA
+    GEN_DEA --> GAUTH
 
     DB --> SQLA
     DB --> SQLA_SP
@@ -111,6 +113,7 @@ graph LR
     DB --> CSQL_PG
     DB --> CSQL_TDS
     DB --> PGBQ
+    DB --> GAUTH
 
     DBUTIL --> SECRETS
     DBUTIL --> REDIS
@@ -155,7 +158,7 @@ graph LR
 
     class GEN_SDK,GEN_AGENT,GEN_DEA,DB,DBUTIL,SCORE,REPORT,SESSION,EVALBENCH internal
     class GENAI,ANTHROPIC,A2A,ADK,GDA llm
-    class SPANNER,SQLA_SP,BIGTABLE,SECRETS,FIRESTORE,STORAGE,IAM,ALLOY,CSQL_PG,CSQL_TDS,PGBQ gcp
+    class SPANNER,SQLA_SP,BIGTABLE,SECRETS,FIRESTORE,STORAGE,IAM,ALLOY,CSQL_PG,CSQL_TDS,PGBQ,GAUTH gcp
     class SQLA,SQLA_TDS,PYMYSQL,PYMONGO,MONGOMOCK,REDIS sql
     class SQLGLOT,SQLPARSE parse
     class DBT_CORE,DBT_BQ,DBT_PG dbt
